@@ -10,6 +10,7 @@ struct ExtractedImage: Identifiable, Sendable {
   let data: Data
 
   /// Decode the image data to NSImage
+  @MainActor
   var nsImage: NSImage? {
     NSImage(data: data)
   }
@@ -22,7 +23,6 @@ struct ImageExtractionResult: Sendable {
   let didReadFile: Bool    // Whether file was successfully opened and read
   let didFindEntry: Bool   // Whether the target entry UUID was found in the file
 
-  /// Convenience initializer with default values
   nonisolated init(images: [ExtractedImage] = [], promptText: String? = nil, didReadFile: Bool = false, didFindEntry: Bool = false) {
     self.images = images
     self.promptText = promptText
@@ -124,12 +124,10 @@ actor ImageExtractor {
 
     // Track in-flight task
     inFlight[entryId] = task
+    defer { inFlight[entryId] = nil }
 
     // Await result
     let result = await task.value
-
-    // Clean up in-flight tracking
-    inFlight[entryId] = nil
 
     // Cache the result only if we successfully found the entry
     // (Don't cache mid-write/incomplete JSONL reads or missing entries)
@@ -160,15 +158,15 @@ actor ImageExtractor {
 
     do {
       // Wrap file access for sandbox builds
-      let isSandboxed = accessProvider != nil && providerID != nil
+      let hasAccessProvider = accessProvider != nil
       let result: ImageExtractionResult = try {
         if let provider = accessProvider, let provID = providerID {
           return try provider.withAccess(for: provID) { _ in
-            try Self.extractFromFile(entryId: entryId, url: url, isSandboxed: isSandboxed, log: log)
+            try Self.extractFromFile(entryId: entryId, url: url, hasAccessProvider: hasAccessProvider, log: log)
           }
         } else {
           // DMG build or unknown provider - direct access
-          return try Self.extractFromFile(entryId: entryId, url: url, isSandboxed: isSandboxed, log: log)
+          return try Self.extractFromFile(entryId: entryId, url: url, hasAccessProvider: hasAccessProvider, log: log)
         }
       }()
 
@@ -183,14 +181,14 @@ actor ImageExtractor {
   private static func extractFromFile(
     entryId: String,
     url: URL,
-    isSandboxed: Bool,
+    hasAccessProvider: Bool,
     log: Logger
   ) throws -> ImageExtractionResult {
     guard let fileHandle = FileHandle(forReadingAtPath: url.path) else {
       // Sandbox failure is likely a permission issue (warning)
       // File missing in DMG build is normal churn (debug)
-      if isSandboxed {
-        log.warning("[IMAGE-EXTRACT] Could not open file in sandboxed environment (likely missing security scope): \(url.path, privacy: .public)")
+      if hasAccessProvider {
+        log.warning("[IMAGE-EXTRACT] Could not open file (likely missing security scope): \(url.path, privacy: .public)")
       } else {
         log.debug("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
       }
@@ -310,8 +308,13 @@ actor ImageExtractor {
 
   /// Cache result with FIFO eviction based on both entry count and byte size
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
-    // Verify cache/cacheOrder invariant
+    // Verify cache/cacheOrder invariants
+    #if DEBUG
     assert(cache.count == cacheOrder.count, "cache/cacheOrder out of sync")
+    assert(Set(cacheOrder).count == cacheOrder.count, "cacheOrder contains duplicates")
+    assert(cacheOrder.allSatisfy { cache[$0] != nil }, "cacheOrder has missing cache entries")
+    assert(cache.keys.allSatisfy { cacheOrder.contains($0) }, "cache has keys missing from cacheOrder")
+    #endif
 
     let resultBytes = byteSize(of: result)
 
@@ -346,6 +349,14 @@ actor ImageExtractor {
     cache[entryId] = result
     cacheOrder.append(entryId)
     cachedBytes += resultBytes
+
+    // Verify post-mutation invariants
+    #if DEBUG
+    assert(cache.count == cacheOrder.count, "cache/cacheOrder out of sync after mutation")
+    assert(Set(cacheOrder).count == cacheOrder.count, "cacheOrder contains duplicates after mutation")
+    assert(cacheOrder.allSatisfy { cache[$0] != nil }, "cacheOrder has missing cache entries after mutation")
+    assert(cache.keys.allSatisfy { cacheOrder.contains($0) }, "cache has keys missing from cacheOrder after mutation")
+    #endif
   }
 
   /// Clear the image cache
