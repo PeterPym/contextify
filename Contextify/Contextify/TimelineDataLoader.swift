@@ -198,11 +198,7 @@ public actor TimelineDataLoader {
 
     // MARK: - Reset
 
-    /// Reset loader state for project/session change
-    /// - Parameter clearCursor: true for project change (clear cursor), false for session change (keep cursor)
-    public func reset(clearCursor: Bool, reason: String) {
-        log.info("[RESET] reason=\(reason, privacy: .public) clearCursor=\(clearCursor, privacy: .public)")
-
+    private func resetState(clearCursor: Bool) {
         seenEntryIDs.removeAll(keepingCapacity: false)
         spawnedAgentsLookup.removeAll()
         contextifyEntryIds.removeAll()
@@ -213,6 +209,26 @@ public actor TimelineDataLoader {
             lastSeenCursor = nil
             currentProjectId = nil
         }
+    }
+
+    /// Reset loader state for project/session change
+    /// - Parameter clearCursor: true for project change (clear cursor), false for session change (keep cursor)
+    public func reset(clearCursor: Bool, reason: String) {
+        log.info("[RESET] reason=\(reason, privacy: .public) clearCursor=\(clearCursor, privacy: .public)")
+        resetState(clearCursor: clearCursor)
+    }
+
+    /// Reset loader state only if it is still associated with the expected project.
+    /// Used to avoid racing a late reset against a new project after a rapid switch.
+    public func resetIfProjectMatches(_ expectedProjectId: String?, clearCursor: Bool, reason: String) {
+        if let expectedProjectId,
+           let currentProjectId,
+           currentProjectId != expectedProjectId {
+            log.debug("[RESET-SKIP] reason=\(reason, privacy: .public) expected=\(expectedProjectId, privacy: .public) current=\(currentProjectId, privacy: .public)")
+            return
+        }
+        log.info("[RESET] reason=\(reason, privacy: .public) clearCursor=\(clearCursor, privacy: .public)")
+        resetState(clearCursor: clearCursor)
     }
 
     // MARK: - Feed Loading
@@ -277,6 +293,18 @@ public actor TimelineDataLoader {
     ) throws -> IncrementalUpdateResult {
         // Cancellation checkpoint
         try Task.checkCancellation()
+
+        if let currentProjectId, currentProjectId != projectId {
+            log.warning("[INCR-UPDATE] Project mismatch (current=\(currentProjectId, privacy: .public), requested=\(projectId, privacy: .public)); resetting state and forcing reload")
+            resetState(clearCursor: true)
+            return IncrementalUpdateResult(
+                newEntries: [],
+                transcriptPaths: [:],
+                updatedCursor: nil,
+                decoration: DecorationSnapshot.empty
+            )
+        }
+        currentProjectId = projectId
 
         guard let cursor = lastSeenCursor else {
             log.debug("[INCR-UPDATE] No cursor available")

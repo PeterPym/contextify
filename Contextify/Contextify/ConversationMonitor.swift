@@ -635,6 +635,13 @@ final class ConversationMonitor {
         isMonitoring = false
         lastMonitorReadyAt = nil
         activeSession = nil
+        let projectIdAtStop = currentProjectId
+
+        // Cancel any in-flight feed hydration to prevent late UI mutation after teardown
+        let hydrationTask = feedHydrationTask
+        feedHydrationTask = nil
+        hydrationTask?.cancel()
+
         // Cancel background task group
         // P1.2: backgroundTasks?.cancel() does NOT stop health monitoring - must call stopMonitoring()
         backgroundTasks?.cancel()
@@ -652,8 +659,14 @@ final class ConversationMonitor {
 
         // Reset data loader state (cursor, seenIDs, decoration data)
         if let loader = dataLoader {
-            Task { await loader.reset(clearCursor: true, reason: "stop-monitoring") }
+            Task { await loader.resetIfProjectMatches(projectIdAtStop, clearCursor: true, reason: "stop-monitoring") }
         }
+
+        // Cancel any pending startup/policy evaluation work
+        startupTask?.cancel()
+        startupTask = nil
+        policyEvalTask?.cancel()
+        policyEvalTask = nil
 
         debounceTask?.cancel()
         debounceTask = nil
@@ -703,11 +716,10 @@ final class ConversationMonitor {
         // Reset all viewport tracking state for new project/session
         viewportCoordinator.fullReset(reason: "project-session-change")
 
-        // Reset data loader state (seenIDs, decoration data)
-        // Note: Uses clearCursor: true for safety; loadCursor() will reload the correct cursor
-        if let loader = dataLoader {
-            Task { await loader.reset(clearCursor: true, reason: "project-session-change") }
-        }
+        // Cancel any in-flight feed hydration to prevent late UI mutation during project/session switch
+        let hydrationTask = feedHydrationTask
+        feedHydrationTask = nil
+        hydrationTask?.cancel()
 
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
@@ -740,6 +752,11 @@ final class ConversationMonitor {
         // CXT-10: Removed @MainActor to prevent blocking UI during database operations
         startupTask = Task {
             do {
+                // Phase 2: Reset loader state before cursor/feed work (avoid reset/load races)
+                if let loader = await MainActor.run(body: { self.dataLoader }) {
+                    await loader.reset(clearCursor: true, reason: "project-session-change")
+                }
+
                 // 1. Load policy from DB (C: restore followMode)
                 try Task.checkCancellation()
                 await self.loadPolicyForCurrentProject()
@@ -1068,24 +1085,24 @@ final class ConversationMonitor {
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
-            // Phase 2B: Sync loader state after session switch
-            // Reset loader's seenEntryIDs and update cursor to stay in sync
+            // Phase 2B: Sync loader state after session switch.
+            // Cursor is project-scoped, so we keep it (but rebuild seen IDs for this view).
+            let latestForCursor = transcriptEntries.max(by: { a, b in
+                if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                return a.id < b.id
+            })
+
             if let loader = dataLoader {
-                // Reset loader state (this clears seenEntryIDs, will be rebuilt on next feed load)
                 await loader.reset(clearCursor: false, reason: "session-switch")
-                // Update loader cursor from latest entry
-                if let latest = transcriptEntries.max(by: { a, b in
-                    if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
-                    if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-                    return a.id < b.id
-                }) {
-                    await loader.setCursor(EntryCursor(from: latest))
+                if let latestForCursor {
+                    await loader.setCursor(EntryCursor(from: latestForCursor))
                 }
             }
 
-            // Update CM cursor (backward compat)
-            if let latest = transcriptEntries.first {
-                lastSeenCursor = EntryCursor(from: latest)
+            // Update CM cursor (backward compat) to match loader
+            if let latestForCursor {
+                lastSeenCursor = EntryCursor(from: latestForCursor)
             }
 
             // Route through policy engine to update follow state and emit system events
@@ -1471,8 +1488,13 @@ final class ConversationMonitor {
                 // Check cancellation before UI work
                 try Task.checkCancellation()
 
-                await MainActor.run {
-                    guard self.currentProjectId == projectId else { return }
+                let shouldApply = await MainActor.run { [weak self] in
+                    guard let self else { return false }
+                    return self.currentProjectId == projectId && self.phase == .loading
+                }
+                guard shouldApply else {
+                    self.log.debug("[TIMELINE-HYDRATE-DROP] Dropping load result for stale projectId=\(projectId, privacy: .public)")
+                    return
                 }
                 await self.finishFeedLoad(
                     projectId: projectId,
@@ -1484,13 +1506,19 @@ final class ConversationMonitor {
                 )
             } catch {
                 if error is CancellationError {
-                    await MainActor.run {
-                        self.restoreLoadStateAfterCancellation(priorReady: priorReady)
+                    let shouldApply = await MainActor.run { [weak self] in
+                        guard let self else { return false }
+                        return self.currentProjectId == projectId
                     }
+                    guard shouldApply else { return }
+                    await MainActor.run { self.restoreLoadStateAfterCancellation(priorReady: priorReady) }
                 } else {
-                    await MainActor.run {
-                        self.handleFeedLoadError(error, priorReady: priorReady)
+                    let shouldApply = await MainActor.run { [weak self] in
+                        guard let self else { return false }
+                        return self.currentProjectId == projectId
                     }
+                    guard shouldApply else { return }
+                    await MainActor.run { self.handleFeedLoadError(error, priorReady: priorReady) }
                 }
             }
         }
@@ -2419,8 +2447,13 @@ final class ConversationMonitor {
                     // Loader already filtered to unseen entries, no dedup needed here
 
                     // Try to get cache for this entry
-                    let key = CacheKey(content: entry.contentSha256, window: entry.windowSha256 ?? "")
-                    let cache = try? orchestrator.getCachedTimeline(key: key)
+                    let cache: TimelineCache?
+                    if let windowSha = entry.windowSha256 {
+                        let key = CacheKey(content: entry.contentSha256, window: windowSha)
+                        cache = try? orchestrator.getCachedTimeline(key: key)
+                    } else {
+                        cache = nil
+                    }
 
                     // Collect cache miss for background generation
                     if cache == nil, let windowSha = entry.windowSha256 {
