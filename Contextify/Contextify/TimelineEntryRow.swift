@@ -38,8 +38,6 @@ struct TimelineEntryRow: View, Equatable {
     // Image preview state
     @State private var extractedImages: [ExtractedImage] = []
     @State private var imagePromptText: String?
-    @State private var showImagePreview = false
-    @State private var selectedImageIndex = 0
     @State private var hasLoadedImages = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
@@ -63,14 +61,17 @@ struct TimelineEntryRow: View, Equatable {
                     .font(.callout)
                     .foregroundStyle(.primary)
 
-                // Show image thumbnails if entry has images (aligned with text)
+                // Show image thumbnails if entry has images
                 if !extractedImages.isEmpty {
                     ImageThumbnailRow(images: extractedImages) { index in
-                        selectedImageIndex = index
-                        showImagePreview = true
+                        ImagePreviewPanelController.shared.show(
+                            images: extractedImages,
+                            promptText: imagePromptText,
+                            startIndex: index
+                        )
                     }
                     .padding(.top, 6)
-                    .padding(.leading, 2)  // Align with text content
+                    .padding(.leading, 4)  // Align with text content
                 }
 
                 if isExpanded {
@@ -150,14 +151,6 @@ struct TimelineEntryRow: View, Equatable {
             }
             // Load images for this entry (lazy, cached)
             loadImagesIfNeeded()
-        }
-        .sheet(isPresented: $showImagePreview) {
-            ImagePreviewSheet(
-                images: extractedImages,
-                promptText: imagePromptText,
-                selectedIndex: $selectedImageIndex,
-                isPresented: $showImagePreview
-            )
         }
     }
 
