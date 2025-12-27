@@ -10,6 +10,8 @@ struct ExtractedImage: Identifiable, Sendable {
   let data: Data
 
   /// Decode the image data to NSImage
+  /// AppKit types are main-thread/actor oriented; require MainActor to avoid accidental background usage.
+  @MainActor
   var nsImage: NSImage? {
     NSImage(data: data)
   }
@@ -326,6 +328,12 @@ actor ImageExtractor {
       return
     }
 
+    // Byte drift detection (pre-mutation) to pinpoint the first call site that introduced drift.
+    #if DEBUG
+    let preComputedBytes = cache.values.reduce(0) { $0 + byteSize(of: $1) }
+    assert(preComputedBytes == cachedBytes, "cachedBytes drifted pre-mutation: computed=\(preComputedBytes) stored=\(cachedBytes)")
+    #endif
+
     // Defensive: if we're re-caching the same entryId, remove old accounting + ordering.
     if let existing = cache.removeValue(forKey: entryId) {
       cachedBytes -= byteSize(of: existing)
@@ -351,9 +359,10 @@ actor ImageExtractor {
 
     // Verify post-mutation invariants
     #if DEBUG
+    let postKeySet = Set(cache.keys)
     let postOrderSet = Set(cacheOrder)
     assert(postOrderSet.count == cacheOrder.count, "cacheOrder contains duplicates after mutation")
-    assert(postOrderSet == Set(cache.keys), "cache and cacheOrder keysets diverged after mutation")
+    assert(postOrderSet == postKeySet, "cache and cacheOrder keysets diverged after mutation")
 
     // Byte drift detection
     let computedBytes = cache.values.reduce(0) { $0 + byteSize(of: $1) }

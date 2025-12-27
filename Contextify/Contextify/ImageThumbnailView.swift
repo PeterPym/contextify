@@ -42,7 +42,6 @@ struct ImageThumbnailRow: View {
 }
 
 /// A single image thumbnail
-@MainActor
 struct ImageThumbnail: View {
     let image: ExtractedImage
 
@@ -146,7 +145,6 @@ final class ImagePreviewPanelController: NSObject, NSWindowDelegate {
 }
 
 /// Content view for the floating image preview panel
-@MainActor
 struct ImagePreviewPanelContent: View {
     let images: [ExtractedImage]
     let promptText: String?
