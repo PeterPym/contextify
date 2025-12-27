@@ -590,6 +590,7 @@ struct ContextifyApp: App {
     #endif
 
     await AppStateOrchestrator.shared.configureAccessProvider(provider)
+    await ImageExtractor.shared.configure(accessProvider: provider)
     sharedAccessProvider = provider
     return provider
   }
@@ -661,6 +662,7 @@ struct ContextifyApp: App {
       )
 
       await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
+      await ImageExtractor.shared.configure(accessProvider: newProvider)
       ConversationMonitor.shared.configureSharedOrchestrator(sharedOrchestrator)
       ProjectSwitcherState.shared.configureSharedOrchestrator(sharedOrchestrator)
       projectsVM?.applyAccessProvider(newProvider, folderAccessController: folderAccessController)
