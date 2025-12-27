@@ -220,7 +220,64 @@ brought back into the timeline view. This creates noise and clutter.
 
 ---
 
+## Project Misattribution - Session ID Collision Across Directories (1 item)
+
+**Status:** Not started
+**Priority:** P0 (data integrity - user-visible)
+**Discovered:** 2025-12-27
+
+- [ ] #MISATTRIBUTION: Fix transcript entries appearing in wrong project timeline
+
+**Background:**
+When Claude Code session is resumed (e.g., via `/handoff`) from a different working directory,
+it reuses the same session ID but writes to a different project's transcript folder. This causes
+entries to be attributed to the wrong project in Contextify.
+
+**Root Cause:**
+1. User runs Claude in `/contextify` → transcript `84f46bc9...` created in `-Users-...-contextify/`
+2. User resumes session from `/contextify-worker-bee` with `/handoff`
+3. Claude writes to NEW file: `-Users-...-contextify-worker-bee/84f46bc9...` (same session ID)
+4. Contextify's file lookup/ingestion uses session ID match, associates with wrong project
+5. Entries appear in wrong project timeline
+
+**Recommended Fix:** CWD-based project assignment - use the `cwd` field from each transcript
+entry to determine correct project attribution.
+
+**Investigation:** `build/notes/todo-support/MISATTRIBUTION-investigation.md`
+
+---
+
 # P1 (High Priority)
+
+---
+
+## Image Rendering Pipeline Optimization (4 items)
+
+**Status:** Not started
+**Priority:** P1 (performance/stability)
+**Discovered:** 2025-12-27
+
+- [ ] #IMAGE-RENDER-ASYNC: Fix blocking file I/O in ImageExtractor actor
+- [ ] #IMAGE-RENDER-CACHE: Implement proper LRU cache with byte-budget eviction
+- [ ] #IMAGE-RENDER-MEMORY: Reduce memory footprint with thumbnail caching
+- [ ] #IMAGE-RENDER-UX: Address minor UX issues (index bounds, gestures, decode errors)
+
+**Background:**
+Image rendering feature works but has performance/memory concerns identified in code review:
+1. Actor blocked by synchronous full-file reads (can stall timeline)
+2. Cache eviction is not LRU (Dictionary.keys.first is unpredictable)
+3. Raw Data caching for 100 entries could consume hundreds of MB
+4. Repeated NSImage decodes on every view access
+
+**Phase 1 (Critical):**
+- Move file I/O outside actor boundary (or use async)
+- Replace Dictionary with proper LRU + byte budget
+
+**Phase 2 (Stability):**
+- Cache thumbnails (64px) vs full images (~50MB → ~200KB per entry)
+- Cache decoded NSImage to avoid redundant decodes
+
+**Reference:** `/tmp/image-rendering-improvements-todo.md` (full breakdown)
 
 ---
 
@@ -1023,6 +1080,33 @@ Several settings panes (including the CLI tab) are functionally correct but visu
 ---
 
 # P2 (Medium Priority)
+
+---
+
+## Multi-Tenant Database Architecture (1 item)
+
+**Status:** Not started
+**Priority:** P2 (architectural planning)
+**Discovered:** 2025-12-27
+
+- [ ] #MULTI-TENANT-DB: Design and implement multi-tenant database architecture
+
+**Background:**
+Current database schema assumes single-user local operation. As the product evolves,
+there may be requirements for:
+- Team/organization-level data isolation
+- Shared project access across users
+- Per-user data segregation within shared instances
+- Cloud sync with tenant isolation
+
+**Investigation Needed:**
+1. Define use cases: Is this for teams? Cloud sync? Multi-machine users?
+2. Evaluate approaches: tenant column, schema-per-tenant, database-per-tenant
+3. Consider migration path from current single-tenant schema
+4. Identify security implications (data isolation, access control)
+
+**Note:** This is architectural planning. Scope and priority may change based on
+product direction decisions.
 
 ---
 
