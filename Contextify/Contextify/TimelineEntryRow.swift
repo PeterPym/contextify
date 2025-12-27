@@ -37,6 +37,7 @@ struct TimelineEntryRow: View, Equatable {
     @State private var showQueuedInfo = false
     // Image preview state
     @State private var extractedImages: [ExtractedImage] = []
+    @State private var imagePromptText: String?
     @State private var showImagePreview = false
     @State private var selectedImageIndex = 0
     @State private var hasLoadedImages = false
@@ -62,13 +63,14 @@ struct TimelineEntryRow: View, Equatable {
                     .font(.callout)
                     .foregroundStyle(.primary)
 
-                // Show image thumbnails if entry has images
+                // Show image thumbnails if entry has images (aligned with text)
                 if !extractedImages.isEmpty {
                     ImageThumbnailRow(images: extractedImages) { index in
                         selectedImageIndex = index
                         showImagePreview = true
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 6)
+                    .padding(.leading, 2)  // Align with text content
                 }
 
                 if isExpanded {
@@ -152,6 +154,7 @@ struct TimelineEntryRow: View, Equatable {
         .sheet(isPresented: $showImagePreview) {
             ImagePreviewSheet(
                 images: extractedImages,
+                promptText: imagePromptText,
                 selectedIndex: $selectedImageIndex,
                 isPresented: $showImagePreview
             )
@@ -164,14 +167,15 @@ struct TimelineEntryRow: View, Equatable {
         hasLoadedImages = true
 
         Task {
-            let images = await ImageExtractor.shared.extractImages(
+            let result = await ImageExtractor.shared.extractImages(
                 entryId: entry.sourceIdentifier,
                 transcriptPath: entry.sourceContext?.filePath
             )
-            if !images.isEmpty {
+            if !result.images.isEmpty {
                 await MainActor.run {
-                    self.extractedImages = images
-                    log.info("[IMAGE-LOAD] Loaded \(images.count, privacy: .public) images for entry \(entry.sourceIdentifier.prefix(8), privacy: .public)")
+                    self.extractedImages = result.images
+                    self.imagePromptText = result.promptText
+                    log.info("[IMAGE-LOAD] Loaded \(result.images.count, privacy: .public) images for entry \(entry.sourceIdentifier.prefix(8), privacy: .public)")
                 }
             }
         }

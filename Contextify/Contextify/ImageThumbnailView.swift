@@ -72,15 +72,19 @@ struct ImageThumbnail: View {
 /// Full-screen image preview with navigation
 struct ImagePreviewSheet: View {
     let images: [ExtractedImage]
+    let promptText: String?
     @Binding var selectedIndex: Int
     @Binding var isPresented: Bool
 
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
 
+    /// Maximum characters for prompt text (~2 tweets)
+    private let maxPromptLength = 280
+
     var body: some View {
         ZStack {
-            // Dark background
+            // Dark background - tap to dismiss
             Color.black.opacity(0.9)
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -88,30 +92,33 @@ struct ImagePreviewSheet: View {
                 }
 
             VStack(spacing: 0) {
-                // Header with close button and counter
-                HStack {
-                    Button(action: { isPresented = false }) {
+                // Header with close button and counter - draggable area
+                WindowDragArea {
+                    HStack {
+                        Button(action: { isPresented = false }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.escape, modifiers: [])
+
+                        Spacer()
+
+                        Text("\(selectedIndex + 1) of \(images.count)")
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.8))
+
+                        Spacer()
+
+                        // Placeholder for symmetry
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
-                            .foregroundStyle(.white.opacity(0.8))
+                            .opacity(0)
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.escape, modifiers: [])
-
-                    Spacer()
-
-                    Text("\(selectedIndex + 1) of \(images.count)")
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.8))
-
-                    Spacer()
-
-                    // Placeholder for symmetry
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .opacity(0)
+                    .padding()
+                    .background(Color.black.opacity(0.01)) // Ensure hit testing works
                 }
-                .padding()
 
                 // Main image view
                 GeometryReader { geometry in
@@ -155,6 +162,17 @@ struct ImagePreviewSheet: View {
                     }
                 }
 
+                // Prompt text (if available)
+                if let prompt = promptText, !prompt.isEmpty {
+                    Text(truncatedPrompt(prompt))
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                }
+
                 // Navigation arrows (only if multiple images)
                 if images.count > 1 {
                     HStack(spacing: 40) {
@@ -183,6 +201,14 @@ struct ImagePreviewSheet: View {
         .frame(minWidth: 600, minHeight: 400)
     }
 
+    private func truncatedPrompt(_ text: String) -> String {
+        if text.count <= maxPromptLength {
+            return text
+        }
+        let truncated = String(text.prefix(maxPromptLength - 3))
+        return truncated + "..."
+    }
+
     private func previousImage() {
         guard selectedIndex > 0 else { return }
         withAnimation(.easeInOut(duration: 0.2)) {
@@ -203,6 +229,39 @@ struct ImagePreviewSheet: View {
         scale = 1.0
         offset = .zero
     }
+}
+
+/// A view that enables window dragging when the user drags within it
+struct WindowDragArea<Content: View>: View {
+    let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        content()
+            .background(WindowDragGesture())
+    }
+}
+
+/// NSViewRepresentable that enables window dragging
+private struct WindowDragGesture: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowDragView()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// Custom NSView that initiates window drag on mouse down
+private class WindowDragView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+
+    override var mouseDownCanMoveWindow: Bool { true }
 }
 
 #Preview("Thumbnail Row") {
