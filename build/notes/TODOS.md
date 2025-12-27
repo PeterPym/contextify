@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-25 (Phase 1 ConversationMonitor refactor complete)
+**Last Updated:** 2025-12-26 (Phase 2 TimelineDataLoader wiring complete)
 **Status:** Active
 
 **Priority Levels:**
@@ -155,7 +155,7 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## ConversationMonitor Refactoring - Phase 1 (Complete)
+## ConversationMonitor Refactoring - Phases 1-2 (Complete)
 
 **Status:** Complete
 **Priority:** P0 (architecture tech debt)
@@ -191,13 +191,37 @@ transcript provider permission via Settings. Two bugs were fixed:
 - Scroll gate for programmatic scroll coordination
 - 6 rounds of external code review hardening
 
+### Phase 2: TimelineDataLoader wiring (merged)
+
+**Branch:** `feature/conversation-monitor-phase2-wiring`
+
+- [x] #ARCH-REFACTOR-PHASE2: Wire TimelineDataLoader as background actor for DB operations
+
+**Changes:**
+- **TimelineDataLoader.swift** (467 lines) - Background actor owning cursor, seenIDs, decoration data
+- **StringExtensions.swift** (20 lines) - Shared sha1Hex() utility
+- **ConversationMonitor.swift** (+125 -200 net) - Wired to use loader, removed duplicate state
+
+**Key improvements:**
+- Loader is background actor (not @MainActor) - all DB work off main thread
+- Single authoritative cursor and seenEntryIDs (eliminates split-brain)
+- DecorationSnapshot, FeedLoadResult, IncrementalUpdateResult for explicit Sendable data passing
+- Defensive guards: feedLoadGeneration token, resetIfProjectMatches(), project mismatch error
+- Cancellation safety: check project/phase/generation before applying async results
+- External code review with 8 specific questions addressed
+
+**Definition of done (verified):**
+- CM does not call orchestrator feed APIs directly (getRecentFeed, getEntriesAfterCursor)
+- Only one authoritative cursor exists (loader owns, CM syncs)
+- Only one authoritative seen-ID store exists (loader owns for main paths)
+- No DB work on main actor (loader is background actor)
+
 **Validation:**
 - 277 tests passing
 - Zero build warnings
-- All P0-P2 review issues resolved
+- Gap analysis doc: `/tmp/phase2-gap-analysis-v5.md`
 
 **Remaining phases (deferred):**
-- Phase 2: TimelineDataLoader wiring (medium risk)
 - Phase 3: TimelineCacheCoordinator extraction (high risk)
 
 ---
@@ -2622,8 +2646,8 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 **Prerequisites:**
 - ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
-  - [x] Phase 1: HealthMonitoringCoordinator extraction (complete, see #ARCH-REFACTOR-PHASE1)
-  - [ ] Phase 2: TimelineLoader extraction (deferred)
+  - [x] Phase 1: HealthMonitoringCoordinator + ViewportTrackingCoordinator (complete)
+  - [x] Phase 2: TimelineDataLoader wiring (complete, see #ARCH-REFACTOR-PHASE2)
   - [ ] Phase 3: TimelineCacheCoordinator extraction (deferred)
 
 ---

@@ -4,34 +4,9 @@ import OSLog
 import ContextifyCore
 import AppKit
 import SwiftUI
-import CryptoKit
 
-// MARK: - R3: String hash extension for stable cursor keys
-
-extension String {
-    /// R3: Normalize project paths to stable short keys for cursor persistence
-    nonisolated func sha1Hex() -> String {
-        let digest = Insecure.SHA1.hash(data: Data(self.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-// MARK: - P0-3: Cursor Persistence Actor
-
-/// Off-main-thread cursor persistence to avoid UI jank
-/// R3: Uses sha1 hash of project path for stable UserDefaults keys
-private actor CursorPersistence {
-    func load(projectId: String) -> EntryCursor? {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(EntryCursor.self, from: data)
-    }
-    func save(projectId: String, cursor: EntryCursor) {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = try? JSONEncoder().encode(cursor) else { return }
-        UserDefaults.standard.set(data, forKey: key)
-    }
-}
+// Note: sha1Hex() extension moved to StringExtensions.swift
+// Note: CursorPersistence actor merged into TimelineDataLoader
 
 // MARK: - Timeline State
 
@@ -234,7 +209,10 @@ final class ConversationMonitor {
     }()
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
-    @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
+    /// Legacy: seenEntryIDs for dedup. Main paths (loadFeedFromSQL, processIncrementalUpdate)
+    /// now use TimelineDataLoader's seenEntryIDs. This local copy is only used by
+    /// switchToSessionFromUser and related legacy paths.
+    @ObservationIgnored private var seenEntryIDs = Set<String>()
     @ObservationIgnored private var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]  // entry.id -> agent decoration info
     @ObservationIgnored private var contextifyEntryIds: Set<String> = Set()  // entry IDs for Contextify calls
     @ObservationIgnored private var contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]  // toolKey + isResult for Contextify entries
@@ -281,7 +259,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastSystemEventTs: Int64?
     @ObservationIgnored private var seenSystemEventIds = Set<String>()
     @ObservationIgnored private let policyEngine = ActiveSessionPolicyEngine()
-    @ObservationIgnored private let cursorPersistence = CursorPersistence()  // P0-3: Off-main cursor I/O
+    // Note: Cursor persistence now handled by TimelineDataLoader actor
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     // Health monitoring and diagnostics
@@ -291,6 +269,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
     @ObservationIgnored private var feedHydrationTask: Task<Void, Never>?  // Cancelable hydration work item
+    @ObservationIgnored private var feedLoadGeneration: UInt64 = 0  // Monotonic token to gate async load application
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
@@ -657,6 +636,13 @@ final class ConversationMonitor {
         isMonitoring = false
         lastMonitorReadyAt = nil
         activeSession = nil
+        let projectIdAtStop = currentProjectId
+
+        // Cancel any in-flight feed hydration to prevent late UI mutation after teardown
+        let hydrationTask = feedHydrationTask
+        feedHydrationTask = nil
+        hydrationTask?.cancel()
+
         // Cancel background task group
         // P1.2: backgroundTasks?.cancel() does NOT stop health monitoring - must call stopMonitoring()
         backgroundTasks?.cancel()
@@ -671,6 +657,17 @@ final class ConversationMonitor {
 
         // Reset all viewport tracking state via coordinator
         viewportCoordinator.fullReset(reason: "stop-monitoring")
+
+        // Reset data loader state (cursor, seenIDs, decoration data)
+        if let loader = dataLoader {
+            Task { await loader.resetIfProjectMatches(projectIdAtStop, clearCursor: true, reason: "stop-monitoring") }
+        }
+
+        // Cancel any pending startup/policy evaluation work
+        startupTask?.cancel()
+        startupTask = nil
+        policyEvalTask?.cancel()
+        policyEvalTask = nil
 
         debounceTask?.cancel()
         debounceTask = nil
@@ -720,6 +717,11 @@ final class ConversationMonitor {
         // Reset all viewport tracking state for new project/session
         viewportCoordinator.fullReset(reason: "project-session-change")
 
+        // Cancel any in-flight feed hydration to prevent late UI mutation during project/session switch
+        let hydrationTask = feedHydrationTask
+        feedHydrationTask = nil
+        hydrationTask?.cancel()
+
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
 
@@ -751,6 +753,11 @@ final class ConversationMonitor {
         // CXT-10: Removed @MainActor to prevent blocking UI during database operations
         startupTask = Task {
             do {
+                // Phase 2: Reset loader state before cursor/feed work (avoid reset/load races)
+                if let loader = await MainActor.run(body: { self.dataLoader }) {
+                    await loader.reset(clearCursor: true, reason: "project-session-change")
+                }
+
                 // 1. Load policy from DB (C: restore followMode)
                 try Task.checkCancellation()
                 await self.loadPolicyForCurrentProject()
@@ -826,6 +833,8 @@ final class ConversationMonitor {
     @available(*, unavailable, message: "Use watchForDebouncedTranscriptUpdates()")
     private func handleTranscriptUpdate(projectId: String?) async {}
 
+    /// Legacy: Prune CM's local seenEntryIDs. Only used by switchToSessionFromUser.
+    /// Main paths use TimelineDataLoader.pruneSeenIDsIfNeeded() instead.
     @MainActor
     private func pruneSeenIDsIfNeeded() {
         let cap = config.maxEntries * 2
@@ -1077,10 +1086,24 @@ final class ConversationMonitor {
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
-            // Update cursor from latest entry (P1-4: persist)
-            if let latest = transcriptEntries.first {
-                lastSeenCursor = EntryCursor(from: latest)
-                saveCursor()
+            // Phase 2B: Sync loader state after session switch.
+            // Cursor is project-scoped, so we keep it (but rebuild seen IDs for this view).
+            let latestForCursor = transcriptEntries.max(by: { a, b in
+                if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                return a.id < b.id
+            })
+
+            if let loader = dataLoader {
+                await loader.reset(clearCursor: false, reason: "session-switch")
+                if let latestForCursor {
+                    await loader.setCursor(EntryCursor(from: latestForCursor))
+                }
+            }
+
+            // Update CM cursor (backward compat) to match loader
+            if let latestForCursor {
+                lastSeenCursor = EntryCursor(from: latestForCursor)
             }
 
             // Route through policy engine to update follow state and emit system events
@@ -1222,27 +1245,19 @@ final class ConversationMonitor {
             return
         }
 
+        // Phase 2B: Use loader for session loading (DB work off main actor)
+        guard let loader = dataLoader else {
+            log.warning("Cannot load sessions: dataLoader not initialized")
+            return
+        }
+
         do {
-            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-            let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
-
-            // Fetch entry counts for all transcripts
-            var entryCounts: [String: Int] = [:]
-            for transcript in transcripts {
-                if let count = try? orchestrator.getEntryCount(transcriptId: transcript.id) {
-                    entryCounts[transcript.id] = count
-                }
-            }
-
-            let sessions = Self.mapTranscriptsToSessions(
-                transcripts: transcripts,
-                latestTimestamps: latestTimestamps,
-                entryCounts: entryCounts
-            )
-
+            let sessions = try await loader.loadAllSessions(projectId: projectId)
             allSessions = sessions
             allSessionsLastUpdate = Date()
             log.info("Loaded \(sessions.count) sessions from database for transcripts")
+        } catch is CancellationError {
+            log.debug("Session loading cancelled")
         } catch {
             log.error("Failed to load sessions from database: \(error.localizedDescription, privacy: .public)")
         }
@@ -1345,6 +1360,8 @@ final class ConversationMonitor {
     }
 
     /// Refresh decoration lookup tables for the current project
+    /// Legacy: Only used by switchToSessionFromUser. Main paths (loadFeedFromSQL,
+    /// processIncrementalUpdate) now use decoration snapshots from TimelineDataLoader.
     private func refreshDecorationData(projectId: String) {
         guard let orchestrator = orchestrator else {
             spawnedAgentsLookup.removeAll()
@@ -1447,49 +1464,71 @@ final class ConversationMonitor {
         phase = .loading
         log.info("[UIOPT-BRANCH] phase → loading")
 
+        feedLoadGeneration &+= 1
+        let loadGeneration = feedLoadGeneration
+
         isReadyForUpdates = false
         isProcessing = true
 
         cancelPrimerRetry(reason: "entries-available")
 
-        feedHydrationTask = Task(priority: .userInitiated) { [weak self] in
-            guard let self else { return }
+        feedHydrationTask = Task(priority: .userInitiated) { [weak self, dataLoader, loadGeneration] in
+            guard let self, let loader = dataLoader else { return }
 
             do {
                 let startTime = Date()
-                log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
+                log.info("[SUMM-LOAD] Loading feed via dataLoader for project: \(projectId, privacy: .public)")
                 log.info("[TIMELINE-HYDRATE-START] project=\(projectId, privacy: .public) count=\(maxEntries, privacy: .public)")
 
-                log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
-                let feed = try orchestrator.getRecentFeed(
-                    forProject: projectId,
+                // Phase 2: Use dataLoader instead of direct orchestrator calls
+                log.info("[UIOPT-AWAIT] before dataLoader.loadFeed")
+                let result = try await loader.loadFeed(
+                    projectId: projectId,
                     limit: maxEntries,
                     generatorSignature: signature
                 )
-                log.info("[UIOPT-AWAIT] after DAO.getRecentFeed; count=\(feed.count)")
+                log.info("[UIOPT-AWAIT] after dataLoader.loadFeed; count=\(result.entries.count)")
 
-                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-                let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
+                // Check cancellation before UI work
+                try Task.checkCancellation()
 
-                await MainActor.run {
-                    guard self.currentProjectId == projectId else { return }
+                let shouldApply = await MainActor.run { [weak self] in
+                    guard let self else { return false }
+                    return self.currentProjectId == projectId
+                        && self.phase == .loading
+                        && self.feedLoadGeneration == loadGeneration
+                }
+                guard shouldApply else {
+                    self.log.debug("[TIMELINE-HYDRATE-DROP] Dropping load result for stale projectId=\(projectId, privacy: .public)")
+                    return
                 }
                 await self.finishFeedLoad(
                     projectId: projectId,
-                    feed: feed,
-                    transcriptPaths: transcriptPaths,
+                    feed: result.entries,
+                    transcriptPaths: result.transcriptPaths,
+                    decoration: result.decoration,
                     startTime: startTime,
                     priorReady: priorReady
                 )
             } catch {
                 if error is CancellationError {
-                    await MainActor.run {
-                        self.restoreLoadStateAfterCancellation(priorReady: priorReady)
+                    let shouldApply = await MainActor.run { [weak self] in
+                        guard let self else { return false }
+                        return self.currentProjectId == projectId
+                            && self.phase == .loading
+                            && self.feedLoadGeneration == loadGeneration
                     }
+                    guard shouldApply else { return }
+                    await MainActor.run { self.restoreLoadStateAfterCancellation(priorReady: priorReady) }
                 } else {
-                    await MainActor.run {
-                        self.handleFeedLoadError(error, priorReady: priorReady)
+                    let shouldApply = await MainActor.run { [weak self] in
+                        guard let self else { return false }
+                        return self.currentProjectId == projectId
+                            && self.phase == .loading
+                            && self.feedLoadGeneration == loadGeneration
                     }
+                    guard shouldApply else { return }
+                    await MainActor.run { self.handleFeedLoadError(error, priorReady: priorReady) }
                 }
             }
         }
@@ -1502,6 +1541,7 @@ final class ConversationMonitor {
         projectId: String,
         feed: [(TranscriptEntry, TimelineCache?)],
         transcriptPaths: [String: String],
+        decoration: DecorationSnapshot,
         startTime: Date,
         priorReady: Bool
     ) async {
@@ -1509,24 +1549,24 @@ final class ConversationMonitor {
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
             log.info("[TIMELINE-LOAD] DAO.fetchPrimerEntries \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
 
-            // Refresh decoration data for this project (agent types, Contextify entries)
-            refreshDecorationData(projectId: projectId)
+            // Phase 2: Copy decoration snapshot to CM properties for backward compat
+            self.spawnedAgentsLookup = decoration.spawnedAgentsLookup
+            self.contextifyEntryIds = decoration.contextifyEntryIds
+            self.contextifyEntryInfo = decoration.contextifyEntryInfo
 
-            // Map to UI entries and track seen IDs + collect cache misses
+            // Map to UI entries + collect cache misses
+            // Note: seenEntryIDs now managed by dataLoader
             let mapStart = Date()
             log.info("[UIOPT-MAP-START] Mapping \(feed.count, privacy: .public) entries to timeline UI models...")
-            seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
 
             // Get active entry ID from generator (if any)
             let activeGeneratingID = cacheMissGenerator?.activeEntryID
 
             let newEntries = feed.map { entry, cache in
-                seenEntryIDs.insert(entry.id)
-
                 // Collect cache miss for background generation
                 if cache == nil, let windowSha = entry.windowSha256 {
-                    let ctxInfo = contextifyEntryInfo[entry.id]
+                    let ctxInfo = decoration.contextifyEntryInfo[entry.id]
                     let miss = CacheMiss(
                         entryId: entry.id,
                         projectId: projectId,  // Track project for cancellation when switching
@@ -1565,7 +1605,7 @@ final class ConversationMonitor {
             // Update state (ensure SwiftUI reactivity)
             setEntries(newEntries)
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
-            pruneSeenIDsIfNeeded()
+            // Note: seenIDs pruning now handled by dataLoader
 
             log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000), privacy: .public)ms")
             log.info("[UIOPT-YIELD] post-setEntries scheduling UI tick")
@@ -1596,12 +1636,12 @@ final class ConversationMonitor {
                 resetInitialViewportState(reason: "post-load-no-miss")
             }
 
-            // Always seed cursor from the newest entry so incremental updates start from current timeline.
-            if let newestEntry = feed.last {
-                let e = newestEntry.0
-                lastSeenCursor = EntryCursor(from: e)
-                saveCursor()  // P1-4: Persist cursor for project
-                log.debug("Initialized cursor from newest entry: \(e.id)")
+            // Phase 2: Cursor already updated by dataLoader; sync local copy for backward compat
+            if let loader = dataLoader {
+                lastSeenCursor = await loader.lastSeenCursor
+                if let cursor = lastSeenCursor {
+                    log.debug("Synced cursor from dataLoader: \(cursor.id)")
+                }
             }
 
             lastUpdate = Date()
@@ -1677,25 +1717,26 @@ final class ConversationMonitor {
 
     // MARK: - Cursor Persistence (P1-4)
 
-    /// Load persisted cursor for current project from UserDefaults
-    /// P0-3: Async I/O via cursor persistence actor to avoid main thread jank
+    /// Load persisted cursor for current project from dataLoader
+    /// Phase 2: Cursor persistence now owned by TimelineDataLoader actor
     @MainActor
     private func loadCursor() async {
-        guard let projectId = currentProjectId else { return }
-
-        if let cursor = await cursorPersistence.load(projectId: projectId) {
-            lastSeenCursor = cursor
+        guard let projectId = currentProjectId, let loader = dataLoader else { return }
+        await loader.loadCursor(projectId: projectId)
+        // Sync local cursor from loader for backward compat during wiring
+        lastSeenCursor = await loader.lastSeenCursor
+        if let cursor = lastSeenCursor {
             log.debug("Loaded persisted cursor for project \(projectId, privacy: .public): \(cursor.id, privacy: .public)")
         }
     }
 
-    /// Save current cursor to UserDefaults for restart safety
-    /// P0-3: Fire-and-forget detached task to avoid blocking main thread
+    /// Save current cursor to UserDefaults via dataLoader
+    /// Phase 2: Cursor persistence now owned by TimelineDataLoader actor (best-effort, actor-internal)
     private func saveCursor() {
-        guard let projectId = currentProjectId, let cursor = lastSeenCursor else { return }
-
-        Task.detached { [cursor, projectId, cursorPersistence] in
-            await cursorPersistence.save(projectId: projectId, cursor: cursor)
+        guard let cursor = lastSeenCursor, let loader = dataLoader else { return }
+        // Fire-and-forget: loader handles persistence internally
+        Task {
+            await loader.setCursor(cursor)
         }
     }
 
@@ -2368,13 +2409,14 @@ final class ConversationMonitor {
         repeat {
             updateDirty = false
 
-            guard let projectId = currentProjectId, orchestrator != nil else {
-                log.debug("[INCR-UPDATE-SKIP] No projectId or orchestrator yet (normal during startup)")
+            guard let projectId = currentProjectId, let loader = dataLoader else {
+                log.debug("[INCR-UPDATE-SKIP] No projectId or dataLoader yet (normal during startup)")
                 return
             }
 
-            // If no cursor, do full reload instead
-            guard let cursor = lastSeenCursor else {
+            // If no cursor in loader, do full reload instead
+            let hasCursor = await loader.lastSeenCursor != nil
+            guard hasCursor else {
                 log.debug("[INCR-UPDATE-RELOAD] No cursor available, doing full reload")
                 await loadFeedFromSQL()?.value
                 return
@@ -2384,17 +2426,15 @@ final class ConversationMonitor {
                 let startTime = Date()
 
                 log.info("[INCR-UPDATE-FETCH] Fetching new entries after cursor for projectId: \(projectId, privacy: .public)")
-                // Get new entries using keyset pagination (prevents duplicates/skips)
-                let newEntries = try orchestrator.getEntriesAfterCursor(
-                    projectId: projectId,
-                    after: cursor
-                )
+                // Use loader for incremental update (handles cursor, dedup, decoration)
+                let result = try await loader.processIncremental(projectId: projectId)
 
-                guard !newEntries.isEmpty else {
+                guard !result.newEntries.isEmpty else {
                     log.debug("[INCR-UPDATE-EMPTY] No new entries in incremental update")
                     break  // No more entries, exit the drain loop
                 }
 
+                let newEntries = result.newEntries
                 log.info("[INCR-UPDATE-ENTRIES] ✅ Found \(newEntries.count, privacy: .public) new entries to process")
                 for (index, entry) in newEntries.prefix(5).enumerated() {  // Log first 5
                     log.info("[INCR-UPDATE-ENTRY] Entry \(index + 1, privacy: .public): \(entry.id, privacy: .public) kind: \(entry.kind, privacy: .public) timestamp: \(entry.timestamp, privacy: .public)")
@@ -2403,12 +2443,10 @@ final class ConversationMonitor {
                     log.info("[INCR-UPDATE-ENTRY] ... and \(newEntries.count - 5, privacy: .public) more entries")
                 }
 
-                // Build transcript path lookup for new entries
-                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-                let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
-
-                // Refresh decoration data (new entries may have agent/contextify calls)
-                refreshDecorationData(projectId: projectId)
+                // Copy decoration snapshot to CM properties (backward compat during wiring)
+                self.spawnedAgentsLookup = result.decoration.spawnedAgentsLookup
+                self.contextifyEntryIds = result.decoration.contextifyEntryIds
+                self.contextifyEntryInfo = result.decoration.contextifyEntryInfo
 
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
@@ -2416,21 +2454,20 @@ final class ConversationMonitor {
                 var misses: [CacheMiss] = []
 
                 for entry in newEntries {
-                    // Deduplicate using seenEntryIDs
-                    guard !seenEntryIDs.contains(entry.id) else {
-                        log.debug("Skipping duplicate entry: \(entry.id)")
-                        continue
-                    }
-
-                    seenEntryIDs.insert(entry.id)
+                    // Loader already filtered to unseen entries, no dedup needed here
 
                     // Try to get cache for this entry
-                    let key = CacheKey(content: entry.contentSha256, window: entry.windowSha256 ?? "")
-                    let cache = try? orchestrator.getCachedTimeline(key: key)
+                    let cache: TimelineCache?
+                    if let windowSha = entry.windowSha256 {
+                        let key = CacheKey(content: entry.contentSha256, window: windowSha)
+                        cache = try? orchestrator.getCachedTimeline(key: key)
+                    } else {
+                        cache = nil
+                    }
 
                     // Collect cache miss for background generation
                     if cache == nil, let windowSha = entry.windowSha256 {
-                        let ctxInfo = contextifyEntryInfo[entry.id]
+                        let ctxInfo = result.decoration.contextifyEntryInfo[entry.id]
                         let miss = CacheMiss(
                             entryId: entry.id,
                             projectId: projectId,  // Track project for cancellation when switching
@@ -2447,7 +2484,7 @@ final class ConversationMonitor {
                         misses.append(miss)
                     }
 
-                    let transcriptPath = transcriptPaths[entry.transcriptId]
+                    let transcriptPath = result.transcriptPaths[entry.transcriptId]
                     let timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
                     appendEntry(timelineEntry)
                     addedCount += 1
@@ -2466,17 +2503,12 @@ final class ConversationMonitor {
 
                 // Trim to max size and prune dedupe set (ensures bounded memory)
                 trimEntries()
-                pruneSeenIDsIfNeeded()
+                // Prune loader's seenIDs (loader owns the set now)
+                let currentIDs = state.entries.map { $0.sourceIdentifier }
+                await loader.pruneSeenIDsIfNeeded(currentEntryIDs: currentIDs, maxEntries: config.maxEntries)
 
-                // Update cursor to latest entry added (P1-4: persist)
-                if let latestNew = newEntries.max(by: { a, b in
-                    if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
-                    if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-                    return a.id < b.id
-                }) {
-                    lastSeenCursor = EntryCursor(from: latestNew)
-                    saveCursor()
-                }
+                // Sync cursor from loader (loader already updated it)
+                lastSeenCursor = await loader.lastSeenCursor
 
                 lastUpdate = Date()
                 log.info("[INCR-UPDATE-APPENDED] ✅ Appended \(addedCount, privacy: .public) new entries to timeline")
@@ -2509,7 +2541,17 @@ final class ConversationMonitor {
 
                 let elapsed = Date().timeIntervalSince(startTime)
                 // R8: Drop to debug to reduce noise under heavy ingestion
-                log.debug("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
+                log.debug("Added \(addedCount) new entries in \(Int(elapsed * 1000))ms")
+            } catch is CancellationError {
+                log.debug("[INCR-UPDATE] Cancelled")
+                return
+            } catch let error as TimelineDataLoaderError {
+                switch error {
+                case let .projectMismatch(current, requested):
+                    log.warning("[INCR-UPDATE] Project mismatch during incremental (current=\(current, privacy: .public), requested=\(requested, privacy: .public)); forcing full reload")
+                    await loadFeedFromSQL()?.value
+                    return
+                }
             } catch {
                 lastError = "Failed to fetch new entries: \(error.localizedDescription)"
                 log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
@@ -2522,38 +2564,6 @@ final class ConversationMonitor {
                 break
             }
         } while true
-    }
-
-
-    nonisolated private static func mapTranscriptsToSessions(
-        transcripts: [Transcript],
-        latestTimestamps: [String: Int],
-        entryCounts: [String: Int]
-    ) -> [TranscriptSession] {
-        return transcripts.compactMap { transcript in
-            let fileURL = URL(fileURLWithPath: transcript.filePath)
-            let provider: TimelineSourceContext.Provider
-            switch transcript.provider {
-            case "claude.code": provider = .claudeCode
-            case "codex.cli": provider = .codexCLI
-            default: provider = .other
-            }
-
-            // Use latest conversation timestamp if available, otherwise fall back to file modified time
-            let lastActivityTimestamp = latestTimestamps[transcript.id] ?? transcript.updatedAt
-            let lastActivity = Date(timeIntervalSince1970: TimeInterval(lastActivityTimestamp))
-
-            // Get entry count (defaults to 0 if not found)
-            let entryCount = entryCounts[transcript.id] ?? 0
-
-            return TranscriptSession(
-                provider: provider,
-                identifier: transcript.id,
-                fileURL: fileURL,
-                lastActivity: lastActivity,
-                entryCount: entryCount
-            )
-        }.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     private func generatorSignature() -> String {
