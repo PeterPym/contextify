@@ -201,9 +201,15 @@ final class ConversationMonitor {
     @ObservationIgnored private let healthMonitor = HealthMonitoringCoordinator()
     // Timeline data loader (Phase 2 extraction - handles feed loading, cursor, decoration data)
     @ObservationIgnored private var dataLoader: TimelineDataLoader?
-    // Viewport tracking coordinator (Phase 3 extraction - handles viewport state machine, visibility)
+    // Viewport tracking coordinator (Phase 1B extraction - handles viewport state machine, visibility)
     @ObservationIgnored private lazy var viewportCoordinator: ViewportTrackingCoordinator = {
         let coord = ViewportTrackingCoordinator()
+        coord.delegate = self
+        return coord
+    }()
+    // Cache coordination (Phase 3 extraction - handles cache miss creation, queue management)
+    @ObservationIgnored private lazy var cacheCoordinator: TimelineCacheCoordinator = {
+        let coord = TimelineCacheCoordinator()
         coord.delegate = self
         return coord
     }()
@@ -1155,66 +1161,15 @@ final class ConversationMonitor {
             // Without this, the user would have to scroll the entry out of view and back in
             // to trigger regeneration due to viewport-based queueing with 1.25s debounce
             await MainActor.run {
-                queueRegeneratedEntry(contentSha256: contentSha256, windowSha256: windowSha256)
+                // Phase 3: Delegate to cache coordinator
+                cacheCoordinator.queueForRegeneration(contentSha256: contentSha256, windowSha256: windowSha256)
             }
         } catch {
             log.error("Failed to regenerate summary: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// Queue a regenerated entry immediately for summarization
-    ///
-    /// This bypasses the normal viewport tracking and debounce mechanism to provide
-    /// immediate feedback when user explicitly requests regeneration via right-click menu.
-    /// Without this, user would need to scroll the entry out of view and back in to
-    /// trigger the viewport-based queueing (with 1.25s settling time).
-    @MainActor
-    private func queueRegeneratedEntry(contentSha256: String, windowSha256: String) {
-        guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
-            log.warning("[REGEN] Cannot queue - projectId or generator not available")
-            return
-        }
-
-        // Find the entry that matches these hashes
-        guard let entry = visibleEntries.first(where: {
-            $0.contentSha256 == contentSha256 && $0.windowSha256 == windowSha256
-        }) else {
-            log.warning("[REGEN] Entry not found for regeneration (may not be in visible entries)")
-            return
-        }
-
-        guard entry.action == .unsummarized else {
-            log.debug("[REGEN] Entry already has summary or is processing")
-            return
-        }
-
-        guard let content = entry.sourceContent else {
-            log.warning("[REGEN] Entry missing source content")
-            return
-        }
-
-        // Create cache miss
-        let ctxInfo = contextifyEntryInfo[entry.sourceIdentifier]
-        let miss = CacheMiss(
-            entryId: entry.sourceIdentifier,
-            projectId: projectId,
-            contentSha256: contentSha256,
-            windowSha256: windowSha256,
-            content: content,
-            context: entry.detail,
-            kind: entry.kind.rawValue,
-            provider: entry.sourceContext?.provider.rawValue ?? "other",
-            isContextify: ctxInfo != nil,
-            contextifyToolKey: ctxInfo?.toolKey,
-            isContextifyResult: ctxInfo?.isResult ?? false
-        )
-
-        // Queue with high priority (user explicitly requested it)
-        Task(priority: .userInitiated) {
-            log.info("[REGEN] Immediately queueing entry for regeneration: \(entry.id.uuidString.prefix(8), privacy: .public)")
-            await generator.queueMisses([miss])
-        }
-    }
+    // queueRegeneratedEntry - MOVED to TimelineCacheCoordinator.queueForRegeneration (Phase 3)
 
     /// Load all sessions from database for transcripts
     /// This is called when the transcripts window opens to ensure sessions are populated
@@ -2178,128 +2133,9 @@ final class ConversationMonitor {
         viewportCoordinator.replayPendingSnapshot(reason: reason)
     }
 
-    /// Prune generator queue to keep only visible entries
-    @MainActor
-    private func pruneQueueToVisible(_ ids: Set<UUID>) async {
-        guard let generator = cacheMissGenerator else { return }
-
-        #if DEBUG
-        log.debug("[SUMM-PRUNE-START] Pruning queue to \(ids.count, privacy: .public) visible entries")
-
-        // Check queue depth before pruning
-        let beforeCount = await generator.getStatus().pending
-        log.debug("[SUMM-PRUNE-BEFORE] Queue depth before pruning: \(beforeCount, privacy: .public)")
-        #endif
-
-        let relevantUUIDs = ids.union(viewportCoordinator.recentVisibleIDs())
-        // Convert UUID set to entry ID strings (sourceIdentifier)
-        let visibleEntryIDs = Set(visibleEntries
-            .filter { relevantUUIDs.contains($0.id) }
-            .map { $0.sourceIdentifier })
-
-        #if DEBUG
-        log.debug("[SUMM-PRUNE-VISIBLE-IDS] Keeping \(visibleEntryIDs.count, privacy: .public) visible entry IDs")
-        #endif
-
-        await generator.pruneQueue(keepOnly: visibleEntryIDs)
-
-        #if DEBUG
-        // Check queue depth after pruning
-        let afterCount = await generator.getStatus().pending
-        log.debug("[SUMM-PRUNE-AFTER] Queue depth after pruning: \(afterCount, privacy: .public)")
-        log.debug("[SUMM-PRUNE-REMOVED] Removed \(beforeCount - afterCount, privacy: .public) items from queue")
-        #endif
-    }
-
-    /// Queue entries that are both visible and generating summaries
-    @MainActor
-    private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) async {
-        guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
-            let pidStr = self.currentProjectId?.prefix(8) ?? "nil"
-            let genStr = self.cacheMissGenerator != nil ? "exists" : "nil"
-            log.debug("[SUMM-QUEUE] Cannot queue - projectId=\(pidStr, privacy: .public), generator=\(genStr, privacy: .public)")
-            return
-        }
-
-        // Debug: check what's available
-        // Note: ids = actually visible on screen (viewport tracking)
-        //       visibleEntries = buffered entries (up to 25, may not all be visible)
-        let bufferedEntries = self.visibleEntries.filter { ids.contains($0.id) }
-        let unsummarizedVisible = bufferedEntries.filter { $0.action == .unsummarized }
-
-        log.debug("[SUMM-QUEUE] Checking \(ids.count) actually-visible IDs (buffered: \(self.visibleEntries.count))")
-        log.debug("[SUMM-QUEUE] Matching in buffer: \(bufferedEntries.count), Unsummarized: \(unsummarizedVisible.count)")
-
-        var misses: [CacheMiss] = []
-        for entry in bufferedEntries where entry.action == .unsummarized {
-            guard let contentSha = entry.contentSha256,
-                  let windowSha = entry.windowSha256,
-                  let sourceText = entry.sourceContent else {
-                continue
-            }
-
-            let entryId = entry.sourceIdentifier
-            if await generator.isEntryQueued(entryId) {
-                log.debug(
-                    "[SUMM-QUEUE-SKIP] Entry \(entryId.prefix(8), privacy: .public) already queued, skipping re-queue"
-                )
-                continue
-            }
-
-            let ctxInfo = contextifyEntryInfo[entryId]
-            misses.append(CacheMiss(
-                entryId: entryId,  // Use original DB ID, not UUID
-                projectId: projectId,
-                contentSha256: contentSha,
-                windowSha256: windowSha,
-                content: sourceText,
-                context: entry.detail,
-                kind: entry.kind.rawValue,
-                provider: entry.sourceContext?.provider.rawValue ?? "other",
-                isContextify: ctxInfo != nil,
-                contextifyToolKey: ctxInfo?.toolKey,
-                isContextifyResult: ctxInfo?.isResult ?? false
-            ))
-        }
-
-        guard !misses.isEmpty else {
-            log.debug("[SUMM-QUEUE] No entries need queueing (all visible entries have summaries)")
-            return
-        }
-
-        log.info("[SUMM-QUEUE-INITIAL] About to queue visible entries needing summaries")
-        log.info("[SUMM-QUEUE-VISIBLE-COUNT] Visible IDs: \(ids.count, privacy: .public)")
-        log.info("[SUMM-QUEUE-NEEDS-SUMMARY-COUNT] Entries needing summaries: \(misses.count, privacy: .public)")
-
-        log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible unsummarized entries:")
-
-        // Create lookup map from source identifier to timeline entry (for isQueued status)
-        let entryLookup = Dictionary(uniqueKeysWithValues: visibleEntries.map { ($0.sourceIdentifier, $0) })
-
-        for miss in misses {
-            let contentPreview = String(miss.content.prefix(15))
-            let isQueued = entryLookup[miss.entryId]?.isQueued ?? false
-            log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | isQueued=\(isQueued, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
-        }
-
-        log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
-        await generator.queueMisses(misses)
-        log.debug("[SUMM-QUEUE] generator.queueMisses() completed")
-    }
-
-    /// Derive entry status for logging (cached/queued/generating/not_queued/error)
-    @MainActor
-    private func getEntryStatus(_ entry: TimelineEntry) async -> String {
-        if entry.isError { return "error" }
-        if entry.action != .unsummarized { return "cached" }
-        if let generator = cacheMissGenerator {
-            if generator.activeEntryID == entry.id { return "generating" }
-            if await generator.isEntryQueued(entry.sourceIdentifier) {
-                return "queued"
-            }
-        }
-        return "not_queued"
-    }
+    // pruneQueueToVisible - MOVED to TimelineCacheCoordinator.pruneQueueToVisible (Phase 3)
+    // queueVisibleGeneratingEntries - MOVED to TimelineCacheCoordinator.queueVisibleGeneratingEntries (Phase 3)
+    // getEntryStatus - MOVED to TimelineCacheCoordinator.getEntryStatus (Phase 3)
 
     /// Handle app resigning active - background LLM processing not implemented
     @MainActor
@@ -3008,8 +2844,8 @@ extension ConversationMonitor: ViewportTrackingDelegate {
     func viewportDidSettle(visibleIDs: Set<UUID>) {
         debugVisibleIDs = visibleIDs
         Task {
-            await pruneQueueToVisible(visibleIDs)
-            await queueVisibleGeneratingEntries(visibleIDs)
+            // Phase 3: Delegate to cache coordinator for queue management
+            await cacheCoordinator.handleViewportSettle(visibleIDs: visibleIDs)
         }
     }
 
@@ -3040,6 +2876,19 @@ extension ConversationMonitor: ViewportTrackingDelegate {
 
     var maxEntries: Int {
         config.maxEntries
+    }
+}
+
+// MARK: - CacheCoordinatorDelegate
+
+extension ConversationMonitor: CacheCoordinatorDelegate {
+    // currentProjectId - protocol satisfied by private var of same name
+    // cacheMissGenerator - protocol satisfied by private(set) var of same name
+    // visibleEntries - protocol satisfied by public computed property of same name
+    // getContextifyEntryInfo - protocol satisfied by existing method in ViewportTrackingDelegate
+
+    func getRecentVisibleIDs() -> Set<UUID> {
+        viewportCoordinator.recentVisibleIDs()
     }
 }
 
