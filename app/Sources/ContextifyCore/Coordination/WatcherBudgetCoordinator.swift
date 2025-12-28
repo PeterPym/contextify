@@ -25,6 +25,7 @@ public actor WatcherBudgetCoordinator {
   private var promotionDebounceTasksByProject: [String: Task<Void, Never>] = [:]
   private var residencyUntilByTranscript: [String: Date] = [:]
   private var degradedModeHotOnly = false
+  private var residencyRecomputeTask: Task<Void, Never>?
 
   // Generation token for activation ordering (P0.1 fix: prevents stale activations from racing)
   private var lastAppliedGeneration: UInt64 = 0
@@ -60,6 +61,8 @@ public actor WatcherBudgetCoordinator {
     tiersByProject.removeAll()
     promotionDebounceTasksByProject.values.forEach { $0.cancel() }
     promotionDebounceTasksByProject.removeAll()
+    residencyRecomputeTask?.cancel()
+    residencyRecomputeTask = nil
     residencyUntilByTranscript.removeAll()
     watchedTranscriptsByProject.removeAll()
   }
@@ -109,6 +112,20 @@ public actor WatcherBudgetCoordinator {
       await self?.recomputePlan(reason: "promotion")
     }
     promotionDebounceTasksByProject[projectId] = task
+  }
+
+  private func scheduleResidencyRecompute(after expiry: Date) {
+    // Cancel any existing residency recompute task
+    residencyRecomputeTask?.cancel()
+
+    let delay = max(expiry.timeIntervalSinceNow + 0.1, 0.1) // Add 100ms buffer
+    let delayMs = Int(delay * 1000)
+    residencyRecomputeTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(delayMs))
+      guard !Task.isCancelled else { return }
+      self?.log.info("[RESIDENCY-RECOMPUTE-TRIGGER] reason=residency_expired")
+      await self?.recomputePlan(reason: "residency_expired")
+    }
   }
 
   private func recomputePlan(reason: String) async {
@@ -164,16 +181,33 @@ public actor WatcherBudgetCoordinator {
 
     let now = Date()
     var stopped = 0
+    var skippedDueToResidency = 0
+    var earliestResidencyExpiry: Date?
+
     for stop in diff.stops {
       if !degradedModeHotOnly,
          let residencyUntil = residencyUntilByTranscript[stop.transcriptId],
          now < residencyUntil {
+        skippedDueToResidency += 1
+        let remainingMs = Int((residencyUntil.timeIntervalSince(now)) * 1000)
+        log.info("[WATCHER-STOP-SKIP] transcript=\(stop.transcriptId, privacy: .public) reason=residency remaining_ms=\(remainingMs, privacy: .public)")
+        // Track earliest expiry for delayed recompute
+        if earliestResidencyExpiry == nil || residencyUntil < earliestResidencyExpiry! {
+          earliestResidencyExpiry = residencyUntil
+        }
         continue
       }
       orchestrator.stopWatchingTranscript(transcriptId: stop.transcriptId)
       watchedTranscriptsByProject[stop.projectId]?.remove(stop.transcriptId)
+      residencyUntilByTranscript.removeValue(forKey: stop.transcriptId)
       stopped += 1
       log.info("[WATCHER-STOP] transcript=\(stop.transcriptId, privacy: .public) project=\(stop.projectId, privacy: .public) reason=\(stop.reason, privacy: .public)")
+    }
+
+    // Schedule delayed recompute if any stops were skipped due to residency
+    if skippedDueToResidency > 0, let expiry = earliestResidencyExpiry {
+      scheduleResidencyRecompute(after: expiry)
+      log.info("[RESIDENCY-RECOMPUTE-SCHEDULED] skipped=\(skippedDueToResidency, privacy: .public) delay_ms=\(Int(expiry.timeIntervalSince(now) * 1000), privacy: .public)")
     }
 
     var failedStarts: [WatcherPlanFailure] = []
