@@ -186,6 +186,52 @@ final class WatcherBudgetCoordinatorTests: XCTestCase {
     XCTAssertEqual(tierC_after, .cold)
   }
 
+  func testDeactivateAll_StopsAllWatchers() async throws {
+    let fileURL = tempDir.appendingPathComponent("watcher-test.jsonl")
+    try "line\n".write(to: fileURL, atomically: true, encoding: .utf8)
+    try orchestrator.startWatchingTranscript(
+      transcriptId: "t1",
+      fileURL: fileURL,
+      provider: TranscriptProviderID.claude
+    )
+    XCTAssertEqual(orchestrator.watcherCount, 1)
+
+    await coordinator.deactivateAll()
+    XCTAssertEqual(orchestrator.watcherCount, 0)
+
+    await coordinator.deactivateAll()
+    XCTAssertEqual(orchestrator.watcherCount, 0)
+
+    try orchestrator.startWatchingTranscript(
+      transcriptId: "t1",
+      fileURL: fileURL,
+      provider: TranscriptProviderID.claude
+    )
+    XCTAssertEqual(orchestrator.watcherCount, 1)
+  }
+
+  func testStopWatching_AllowsRestart() async throws {
+    let fileURL = tempDir.appendingPathComponent("watcher-test-restart.jsonl")
+    try "line\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+    try orchestrator.startWatchingTranscript(
+      transcriptId: "t2",
+      fileURL: fileURL,
+      provider: TranscriptProviderID.claude
+    )
+    XCTAssertEqual(orchestrator.watcherCount, 1)
+
+    orchestrator.stopWatchingTranscript(transcriptId: "t2")
+    XCTAssertEqual(orchestrator.watcherCount, 0)
+
+    try orchestrator.startWatchingTranscript(
+      transcriptId: "t2",
+      fileURL: fileURL,
+      provider: TranscriptProviderID.claude
+    )
+    XCTAssertEqual(orchestrator.watcherCount, 1)
+  }
+
   // MARK: - Activity Notification Tests
 
   func testNoteTranscriptActivity_SchedulesPromotionRecompute() async throws {

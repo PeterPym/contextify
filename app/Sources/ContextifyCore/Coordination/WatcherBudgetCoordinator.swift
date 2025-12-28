@@ -52,12 +52,9 @@ public actor WatcherBudgetCoordinator {
   }
 
   public func deactivateAll() async {
-    let watchedIds = watchedTranscriptsByProject.values.reduce(into: Set<String>()) { partial, ids in
-      partial.formUnion(ids)
-    }
-    for transcriptId in watchedIds {
-      orchestrator.stopWatchingTranscript(transcriptId: transcriptId)
-    }
+    // Note: This is a shutdown-style teardown. It preserves degraded-mode state
+    // and generation gating to avoid re-enabling warm watching mid-session.
+    orchestrator.stopAllWatchingTranscripts(reason: "deactivate_all")
 
     lruProjects.removeAll()
     tiersByProject.removeAll()
@@ -65,8 +62,6 @@ public actor WatcherBudgetCoordinator {
     promotionDebounceTasksByProject.removeAll()
     residencyUntilByTranscript.removeAll()
     watchedTranscriptsByProject.removeAll()
-    degradedModeHotOnly = false
-    lastAppliedGeneration = 0
   }
 
   public func isTranscriptWatched(projectId: String, transcriptId: String) async -> Bool {
@@ -214,10 +209,14 @@ public actor WatcherBudgetCoordinator {
     }
 
     if failedStarts.contains(where: { $0.isFdExhaustion }) {
-      degradedModeHotOnly = true
-      residencyUntilByTranscript.removeAll()
-      log.error("[DEGRADED-MODE] enabled=1 reason=fd_exhaustion")
-      await recomputePlan(reason: "degraded")
+      if !degradedModeHotOnly {
+        degradedModeHotOnly = true
+        residencyUntilByTranscript.removeAll()
+        log.error("[DEGRADED-MODE] enabled=1 reason=fd_exhaustion")
+        await recomputePlan(reason: "degraded")
+      } else {
+        log.error("[DEGRADED-MODE] already_enabled=1 additional_fd_exhaustion=1")
+      }
     }
   }
 

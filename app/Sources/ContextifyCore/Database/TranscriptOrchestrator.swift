@@ -2235,6 +2235,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     watcher.stopWatching(transcriptId: transcriptId)
   }
 
+  public func stopAllWatchingTranscripts(reason: String = "manual") {
+    let count = watcher.stopAll()
+    log.info("[WATCHER-STOP-ALL] count=\(count, privacy: .public) reason=\(reason, privacy: .public)")
+  }
+
   public func getTranscript(transcriptId: String) throws -> Transcript? {
     return try transcriptRepo.get(transcriptId)
   }
