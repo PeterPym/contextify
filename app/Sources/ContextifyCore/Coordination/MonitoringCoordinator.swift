@@ -3,15 +3,31 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "MonitoringCoordinator")
 
+/// Protocol for orchestrator operations used by MonitoringCoordinator.
+/// Enables testing with mock implementations.
+public protocol TranscriptOrchestratorProtocol: Sendable {
+  nonisolated func ensureProjectWatcher(projectId: String, targetTranscriptId: String?) throws -> WatcherRecoverySummary
+  nonisolated func stopAllWatchers(forProjectId: String) throws
+  nonisolated func rehooverDirtyTranscripts(projectId: String) async throws -> Int
+}
+
+/// Extension to make TranscriptOrchestrator conform to the protocol
+extension TranscriptOrchestrator: TranscriptOrchestratorProtocol {}
+
 /// Coordinates watcher lifecycle around the active project with hysteresis to avoid thrash.
 public actor MonitoringCoordinator {
-  private let orchestrator: TranscriptOrchestrator
+  private let orchestrator: any TranscriptOrchestratorProtocol
 
   private(set) var activeProjectId: String?
   private var watchersReadyProjectId: String? = nil
   private var pendingTeardowns: [String: Task<Void, Never>] = [:]
   private let teardownDelay: Duration = .seconds(5)
 
+  public init(orchestrator: any TranscriptOrchestratorProtocol) {
+    self.orchestrator = orchestrator
+  }
+
+  /// Convenience initializer for production use with TranscriptOrchestrator
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
   }
@@ -28,7 +44,7 @@ public actor MonitoringCoordinator {
     let previousId = activeProjectId
 
     do {
-      let summary = try orchestrator.ensureProjectWatcher(projectId: projectId)
+      let summary = try orchestrator.ensureProjectWatcher(projectId: projectId, targetTranscriptId: nil)
 
       // Only schedule teardown for previous AFTER new watchers started
       if let previousId, previousId != projectId {
@@ -73,7 +89,9 @@ public actor MonitoringCoordinator {
     watchersReadyProjectId = nil
   }
 
-  public func isActiveProject(_ projectId: String) -> Bool {
+  /// Internal helper to check if a project is selected/active.
+  /// Private to prevent accidental misuse - use isActiveProjectWithWatchers for watcher decisions.
+  private func isActiveProject(_ projectId: String) -> Bool {
     activeProjectId == projectId
   }
 
@@ -81,6 +99,12 @@ public actor MonitoringCoordinator {
   /// Use this for determining whether FSEvents should handle a project
   public func isActiveProjectWithWatchers(_ projectId: String) -> Bool {
     activeProjectId == projectId && watchersReadyProjectId == projectId
+  }
+
+  /// Check if a project has a pending teardown scheduled.
+  /// Exposed for testing purposes.
+  public func hasPendingTeardown(for projectId: String) -> Bool {
+    pendingTeardowns[projectId] != nil
   }
 
   // MARK: - Private helpers

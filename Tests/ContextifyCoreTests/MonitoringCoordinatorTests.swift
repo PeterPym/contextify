@@ -2,10 +2,209 @@ import XCTest
 @testable import ContextifyCore
 
 /// Tests for MonitoringCoordinator lazy watcher lifecycle management
-///
-/// Note: Full integration tests require a real database and orchestrator.
-/// These tests document expected behavior and verify the feature flag works.
 final class MonitoringCoordinatorTests: XCTestCase {
+
+  // MARK: - Mock Orchestrator
+
+  /// Mock orchestrator that records calls and can be configured to throw errors
+  final class MockOrchestrator: TranscriptOrchestratorProtocol, @unchecked Sendable {
+    private var ensureProjectWatcherCalls: [String] = []
+    private var stopAllWatchersCalls: [String] = []
+    private var rehooverDirtyTranscriptsCalls: [String] = []
+    private var projectsToFail: Set<String> = []
+
+    nonisolated func ensureProjectWatcher(projectId: String, targetTranscriptId: String?) throws -> WatcherRecoverySummary {
+      ensureProjectWatcherCalls.append(projectId)
+
+      if projectsToFail.contains(projectId) {
+        throw TestError.ensureWatcherFailed
+      }
+
+      return WatcherRecoverySummary(
+        projectId: projectId,
+        startedCount: 3,
+        alreadyActiveCount: 0,
+        missingFileCount: 0,
+        targetTranscriptId: targetTranscriptId
+      )
+    }
+
+    nonisolated func stopAllWatchers(forProjectId projectId: String) throws {
+      stopAllWatchersCalls.append(projectId)
+    }
+
+    nonisolated func rehooverDirtyTranscripts(projectId: String) async throws -> Int {
+      rehooverDirtyTranscriptsCalls.append(projectId)
+      return 0
+    }
+
+    func reset() {
+      ensureProjectWatcherCalls.removeAll()
+      stopAllWatchersCalls.removeAll()
+      rehooverDirtyTranscriptsCalls.removeAll()
+      projectsToFail.removeAll()
+    }
+
+    func setProjectToFail(_ projectId: String) {
+      projectsToFail.insert(projectId)
+    }
+
+    // Accessors for test assertions
+    func getEnsureCalls() -> [String] { ensureProjectWatcherCalls }
+    func getStopCalls() -> [String] { stopAllWatchersCalls }
+    func getRehooverCalls() -> [String] { rehooverDirtyTranscriptsCalls }
+
+    enum TestError: Error {
+      case ensureWatcherFailed
+    }
+  }
+
+  // MARK: - Behavioral Tests
+
+  /// Test 1: Activation success schedules teardown for previous project
+  func testActivationSuccess_schedulesTeardownForPrevious() async throws {
+    let mock = MockOrchestrator()
+    let coordinator = MonitoringCoordinator(orchestrator: mock)
+
+    // Activate project A
+    await coordinator.activateProject("project-A")
+
+    // Verify A is active and no teardown scheduled
+    let activeAfterA = await coordinator.activeProjectId
+    XCTAssertEqual(activeAfterA, "project-A")
+
+    let hasPendingA = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertFalse(hasPendingA, "Newly activated project should not have pending teardown")
+
+    // Activate project B
+    await coordinator.activateProject("project-B")
+
+    // Verify B is active and A has pending teardown
+    let activeAfterB = await coordinator.activeProjectId
+    XCTAssertEqual(activeAfterB, "project-B")
+
+    let hasPendingAAfterB = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertTrue(hasPendingAAfterB, "Previous project should have pending teardown")
+
+    let hasPendingB = await coordinator.hasPendingTeardown(for: "project-B")
+    XCTAssertFalse(hasPendingB, "Newly activated project should not have pending teardown")
+
+    // Verify orchestrator calls
+    let ensureCalls = mock.getEnsureCalls()
+    XCTAssertEqual(ensureCalls, ["project-A", "project-B"], "Should start watchers for both projects")
+  }
+
+  /// Test 2: Activation failure does not teardown previous project
+  func testActivationFailure_doesNotTeardownPrevious() async throws {
+    let mock = MockOrchestrator()
+    let coordinator = MonitoringCoordinator(orchestrator: mock)
+
+    // Activate project A successfully
+    await coordinator.activateProject("project-A")
+
+    let activeAfterA = await coordinator.activeProjectId
+    XCTAssertEqual(activeAfterA, "project-A")
+
+    let isActiveWithWatchersA = await coordinator.isActiveProjectWithWatchers("project-A")
+    XCTAssertTrue(isActiveWithWatchersA, "Project A should be active with watchers")
+
+    // Configure mock to fail for project B
+    mock.setProjectToFail("project-B")
+
+    // Try to activate project B (should fail)
+    await coordinator.activateProject("project-B")
+
+    // Verify A is still active and has no pending teardown
+    let activeAfterFailedB = await coordinator.activeProjectId
+    XCTAssertEqual(activeAfterFailedB, "project-A", "Previous project should remain active after failure")
+
+    let hasPendingA = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertFalse(hasPendingA, "Previous project should not have teardown after failed activation")
+
+    let isActiveWithWatchersAfterFail = await coordinator.isActiveProjectWithWatchers("project-A")
+    XCTAssertTrue(isActiveWithWatchersAfterFail, "Project A should still be active with watchers after failed activation")
+
+    // Verify orchestrator calls
+    let ensureCalls = mock.getEnsureCalls()
+    XCTAssertEqual(ensureCalls, ["project-A", "project-B"], "Should attempt to start watchers for both")
+
+    let stopCalls = mock.getStopCalls()
+    XCTAssertEqual(stopCalls, [], "Should not stop any watchers after failed activation")
+  }
+
+  /// Test 3: Reactivation cancels pending teardown
+  func testReactivation_cancelsPendingTeardown() async throws {
+    let mock = MockOrchestrator()
+    let coordinator = MonitoringCoordinator(orchestrator: mock)
+
+    // Activate project A
+    await coordinator.activateProject("project-A")
+
+    // Activate project B (schedules teardown for A)
+    await coordinator.activateProject("project-B")
+
+    // Verify A has pending teardown
+    let hasPendingA = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertTrue(hasPendingA, "Project A should have pending teardown after switching to B")
+
+    // Reactivate project A before teardown executes
+    await coordinator.activateProject("project-A")
+
+    // Verify A is active and has no pending teardown
+    let activeAfterReactivation = await coordinator.activeProjectId
+    XCTAssertEqual(activeAfterReactivation, "project-A", "Project A should be active after reactivation")
+
+    let hasPendingAfterReactivation = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertFalse(hasPendingAfterReactivation, "Reactivation should cancel pending teardown")
+
+    // Verify B now has pending teardown
+    let hasPendingB = await coordinator.hasPendingTeardown(for: "project-B")
+    XCTAssertTrue(hasPendingB, "Project B should have pending teardown after switching back to A")
+
+    // Verify orchestrator calls (3 activations, no stops yet)
+    let ensureCalls = mock.getEnsureCalls()
+    XCTAssertEqual(ensureCalls, ["project-A", "project-B", "project-A"], "Should start watchers for all activations")
+
+    let stopCalls = mock.getStopCalls()
+    XCTAssertEqual(stopCalls, [], "Should not stop any watchers yet (teardown not executed)")
+  }
+
+  /// Test 4: deactivateAll stops active and pending projects
+  func testDeactivateAll_stopsActiveAndPending() async throws {
+    let mock = MockOrchestrator()
+    let coordinator = MonitoringCoordinator(orchestrator: mock)
+
+    // Activate project A
+    await coordinator.activateProject("project-A")
+
+    // Activate project B (schedules teardown for A)
+    await coordinator.activateProject("project-B")
+
+    // Verify state before deactivateAll
+    let activeBeforeDeactivate = await coordinator.activeProjectId
+    XCTAssertEqual(activeBeforeDeactivate, "project-B")
+
+    let hasPendingA = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertTrue(hasPendingA, "Project A should have pending teardown")
+
+    // Call deactivateAll
+    await coordinator.deactivateAll()
+
+    // Verify all state cleared
+    let activeAfterDeactivate = await coordinator.activeProjectId
+    XCTAssertNil(activeAfterDeactivate, "No project should be active after deactivateAll")
+
+    let hasPendingAAfter = await coordinator.hasPendingTeardown(for: "project-A")
+    XCTAssertFalse(hasPendingAAfter, "Pending teardown should be cancelled")
+
+    let hasPendingBAfter = await coordinator.hasPendingTeardown(for: "project-B")
+    XCTAssertFalse(hasPendingBAfter, "No pending teardown should remain")
+
+    // Verify orchestrator calls - should stop both A and B
+    let stopCalls = mock.getStopCalls()
+    XCTAssertEqual(Set(stopCalls), Set(["project-A", "project-B"]), "Should stop watchers for both active and pending projects")
+    XCTAssertEqual(stopCalls.count, 2, "Should stop exactly 2 projects")
+  }
 
   // MARK: - Feature Flag Tests
 
@@ -62,83 +261,5 @@ final class MonitoringCoordinatorTests: XCTestCase {
     }
 
     XCTAssertTrue(true, "WatcherRecoverySummary is Sendable")
-  }
-
-  // MARK: - Behavioral Documentation Tests
-
-  /// Documents expected behavior of MonitoringCoordinator.activateProject
-  func testActivateProject_expectedBehavior() {
-    // Expected behavior when activateProject("project-1") is called:
-    //
-    // 1. If there's a pending teardown for project-1, cancel it
-    // 2. If there's a previous active project, schedule its teardown (5s delay)
-    // 3. Set activeProjectId = "project-1"
-    // 4. Call orchestrator.ensureProjectWatcher(projectId: "project-1")
-    // 5. Kick off rehooverDirtyTranscripts in background task
-
-    XCTAssertTrue(true, "activateProject behavior documented")
-  }
-
-  /// Documents expected behavior of MonitoringCoordinator.deactivateAll
-  func testDeactivateAll_expectedBehavior() {
-    // Expected behavior when deactivateAll() is called:
-    //
-    // 1. Cancel all pending teardown tasks
-    // 2. Clear pendingTeardowns dictionary
-    // 3. Call orchestrator.stopAllWatchers(forProjectId: activeProjectId)
-    // 4. Set activeProjectId = nil
-
-    XCTAssertTrue(true, "deactivateAll behavior documented")
-  }
-
-  /// Documents expected behavior of hysteresis (delayed teardown)
-  func testHysteresis_expectedBehavior() {
-    // Expected hysteresis behavior:
-    //
-    // 1. When switching from project-A to project-B:
-    //    - project-B watchers start immediately
-    //    - project-A teardown scheduled for 5 seconds later
-    //
-    // 2. If user switches back to project-A within 5 seconds:
-    //    - Pending teardown for project-A is cancelled
-    //    - project-A watchers remain active (no restart needed)
-    //
-    // 3. If 5 seconds pass without switching back:
-    //    - Teardown executes: stopAllWatchers(forProjectId: "project-A")
-    //    - project-A has 0 watchers
-
-    XCTAssertTrue(true, "Hysteresis behavior documented")
-  }
-
-  /// Documents expected FSEvents behavior matrix
-  func testFSEventsBehaviorMatrix_expectedBehavior() {
-    // Expected FSEvents handling in ProjectActivityMonitor:
-    //
-    // | Project  | File State | Action                                    |
-    // |----------|------------|-------------------------------------------|
-    // | Active   | Existing   | No-op (per-file watcher handles updates)  |
-    // | Active   | New        | discoverTranscript(startWatching: true)   |
-    // | Inactive | Existing   | discoverTranscript(startWatching: false)  |
-    // | Inactive | New        | discoverTranscript(startWatching: false)  |
-    // | Any      | Delete     | markPendingRehoover if transcript exists  |
-
-    XCTAssertTrue(true, "FSEvents behavior matrix documented")
-  }
-
-  /// Documents expected rehoover behavior on activation
-  func testRehooverOnActivation_expectedBehavior() {
-    // Expected rehooverDirtyTranscripts behavior:
-    //
-    // 1. Query all transcripts for projectId
-    // 2. For each transcript, check if rehoover needed:
-    //    - pending_rehoover = 1 (previously marked dirty)
-    //    - OR filesystem mtime > stored mtime_ms (offline changes)
-    // 3. If rehoover needed:
-    //    - Call hooverEngine.hooverTranscript()
-    //    - Update mtime_ms to current filesystem mtime
-    //    - Set pending_rehoover = 0
-    // 4. Return count of transcripts rehoovered
-
-    XCTAssertTrue(true, "Rehoover on activation behavior documented")
   }
 }
