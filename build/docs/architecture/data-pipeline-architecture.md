@@ -82,6 +82,7 @@ graph TB
         ASO[AppStateOrchestrator<br/>Central Coordinator]
         LDS[LightweightDiscoveryService<br/>Stat-Only Scan]
         FPI[FastPathIngestionCoordinator<br/>JIT Ingestion]
+        WBC[WatcherBudgetCoordinator<br/>Tiered Watcher Lifecycle]
     end
 
     subgraph "Discovery Layer (Legacy)"
@@ -124,7 +125,7 @@ graph TB
     PDS --> SC
 
     SC --> PAM
-    SC --> TW
+    WBC --> TW
 
     PAM --> HE
     TW --> HE
@@ -168,6 +169,14 @@ graph TB
 - **Preview vs Completion:** Preview subset gets watchers; completion work uses `startWatching: false`
 - **Resume:** Pending completions restored on app restart via `resumePendingCompletions()`
 - **Lifecycle:** `pauseBackfill()` for project switch (resumable), `shutdown()` for termination
+
+**WatcherBudgetCoordinator** (`app/Sources/ContextifyCore/Coordination/WatcherBudgetCoordinator.swift`)
+- **Purpose:** Multi-project tiered budget system for transcript watchers
+- **Tiers:** HOT (20 transcripts), WARM (10 transcripts each), COLD (0 transcripts)
+- **LRU Tracking:** Manages 3 most recently activated projects
+- **Algorithm:** Plan → diff → apply to enforce watcher budgets
+- **Activation:** Triggers catch-up rehoover for missed changes when project promoted from COLD
+- **Recency-based:** Only watches most recent transcripts within each project, not all
 
 ### Discovery Layer (Legacy)
 

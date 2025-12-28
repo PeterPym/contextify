@@ -30,7 +30,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v26** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v32** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -84,6 +84,7 @@ This document provides detailed information about Contextify's architecture and 
 - **v28**: FTS5 search index for conversation search
 - **v29**: include summaries in FTS
 - **v30**: sidechain ingestion (`transcript_entries.is_sidechain`) + `tool_invocations` table
+- **v32**: lazy watcher baseline tracking (`transcripts.known_last_entry_ts`, `known_file_size`, `unread_approx_count`, `unread_approx_confidence`, `unread_approx_method`, `last_activity_detected_at`, `activation_generation`)
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
@@ -121,13 +122,17 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **Note:** Planned future refactoring into 4 focused components (see architecture-refactoring-analysis.md):
   - ConversationMonitor (400 lines) - Timeline coordination only
   - TimelineLoader (300 lines) - Database queries & pagination
-  - WatcherBudgetCoordinator (250 lines) - Watcher lifecycle
+  - WatcherBudgetCoordinator (250 lines) - Watcher lifecycle (extracted)
   - TimelineCacheCoordinator (200 lines) - LLM queue management
 
 **WatcherBudgetCoordinator** (`app/Sources/ContextifyCore/Coordination/WatcherBudgetCoordinator.swift`):
-- Owns watcher lifecycle for hot/warm projects
-- Applies plan → diff → apply to enforce watcher budgets
-- Triggers activation catch-up rehoover for missed changes
+- Single lifecycle authority for transcript watchers
+- Implements tiered budget system: HOT (20 transcripts), WARM (10 each), COLD (0)
+- Manages LRU tracking for 3 most recently activated projects
+- Applies plan → diff → apply algorithm to enforce watcher budgets
+- Triggers activation catch-up rehoover for missed changes during COLD state
+- Recency-based watching: Only monitors most recent transcripts within projects, not all
+- See: [lazy-watchers-architecture.md](lazy-watchers-architecture.md) for detailed diagrams and design rationale
 
 **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`):
 - Queue #1 - LIFO processing for timeline entry summaries

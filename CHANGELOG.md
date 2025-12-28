@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Universal color compatibility across all provider brands
 
 ### Changed
-- **Lazy Watcher Monitoring** - Per-file watchers track only the active project; inactive projects ingest via FSEvents with deferred rehoovering.
+- **Lazy Watcher Monitoring** - Per-file watchers run on a budgeted HOT + WARM set (up to three projects) with cold activity signals and optional unread approximation; degraded mode drops to hot-only on FD exhaustion.
 - **Timeline Colors** - Updated timeline accent colors for better visual harmony
   - User messages: Rich blue `#4A7BA7` (professional, distinct)
   - Assistant messages: Warm gray `#9B8B7E` (brand-neutral, works with any provider)

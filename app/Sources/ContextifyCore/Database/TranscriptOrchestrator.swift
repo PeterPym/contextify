@@ -1767,6 +1767,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// - Parameter transcriptId: Transcript ID to delete
   /// - Note: Cascading deletes will remove: transcript_entries, timeline_cache, parse_errors, file_snapshots, tracked_files, transcript_summaries, system_events, assistant_usage
   public func deleteTranscript(transcriptId: String) throws {
+    stopWatchingTranscript(transcriptId: transcriptId)
     try transcriptRepo.delete(id: transcriptId)
     log.info("Deleted transcript: \(transcriptId)")
   }
@@ -1798,6 +1799,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
 
     for transcript in missingTranscripts {
+      stopWatchingTranscript(transcriptId: transcript.id)
       log.info("Cleaned up transcript with missing file: \(transcript.id) at \(transcript.filePath)")
     }
 

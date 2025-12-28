@@ -52,12 +52,21 @@ public actor WatcherBudgetCoordinator {
   }
 
   public func deactivateAll() async {
+    let watchedIds = watchedTranscriptsByProject.values.reduce(into: Set<String>()) { partial, ids in
+      partial.formUnion(ids)
+    }
+    for transcriptId in watchedIds {
+      orchestrator.stopWatchingTranscript(transcriptId: transcriptId)
+    }
+
     lruProjects.removeAll()
     tiersByProject.removeAll()
     promotionDebounceTasksByProject.values.forEach { $0.cancel() }
     promotionDebounceTasksByProject.removeAll()
     residencyUntilByTranscript.removeAll()
     watchedTranscriptsByProject.removeAll()
+    degradedModeHotOnly = false
+    lastAppliedGeneration = 0
   }
 
   public func isTranscriptWatched(projectId: String, transcriptId: String) async -> Bool {
@@ -161,7 +170,8 @@ public actor WatcherBudgetCoordinator {
     let now = Date()
     var stopped = 0
     for stop in diff.stops {
-      if let residencyUntil = residencyUntilByTranscript[stop.transcriptId],
+      if !degradedModeHotOnly,
+         let residencyUntil = residencyUntilByTranscript[stop.transcriptId],
          now < residencyUntil {
         continue
       }
@@ -205,6 +215,7 @@ public actor WatcherBudgetCoordinator {
 
     if failedStarts.contains(where: { $0.isFdExhaustion }) {
       degradedModeHotOnly = true
+      residencyUntilByTranscript.removeAll()
       log.error("[DEGRADED-MODE] enabled=1 reason=fd_exhaustion")
       await recomputePlan(reason: "degraded")
     }
