@@ -106,7 +106,10 @@ final class MultiProjectIngestionCoordinator {
       log.info(
         "[PRIMER-QUEUE] entries=\(primerQueue.count, privacy: .public) projects=\(Set(primerProjects).count, privacy: .public) target=\(primerTarget, privacy: .public) limit=\(primerBatchLimit, privacy: .public)"
       )
-      try await runPrimer(queue: primerQueue)
+      let startWatchingForProject: (String) -> Bool = { _ in
+        return false
+      }
+      try await runPrimer(queue: primerQueue, startWatchingForProject: startWatchingForProject)
     } else {
       log.info("[PRIMER-SKIP] All projects already above target; skipping primer sweep")
     }
@@ -116,6 +119,7 @@ final class MultiProjectIngestionCoordinator {
     }
 
     for batch in backfillBatches {
+      let shouldStartWatching = false
       let transcriptFiles = batch.transcripts.map { descriptor in
         (url: descriptor.fileURL, provider: descriptor.provider, sessionId: descriptor.sessionId)
       }
@@ -123,7 +127,8 @@ final class MultiProjectIngestionCoordinator {
         projectId: batch.projectId,
         transcriptFiles: transcriptFiles,
         progress: nil,
-        concurrency: 8
+        concurrency: 8,
+        startWatching: shouldStartWatching
       )
     }
   }
@@ -183,7 +188,10 @@ final class MultiProjectIngestionCoordinator {
     return mapped
   }
 
-  private func runPrimer(queue: [PrimerQueueEntry]) async throws {
+  private func runPrimer(
+    queue: [PrimerQueueEntry],
+    startWatchingForProject: @escaping (String) -> Bool
+  ) async throws {
     let scheduler = orchestrator.hooverScheduler
     let active = await scheduler.activeTaskCount
     let queued = await scheduler.queueDepth
@@ -196,13 +204,14 @@ final class MultiProjectIngestionCoordinator {
         log.info(
           "[PRIMER-ENQUEUE] project=\(entry.projectId, privacy: .public) transcript=\(entry.descriptor.fileURL.lastPathComponent, privacy: .public) provider=\(entry.descriptor.provider, privacy: .public)"
         )
-        group.addTask { [orchestrator] in
+        let startWatching = startWatchingForProject(entry.projectId)
+        group.addTask { [orchestrator, startWatching] in
           try await orchestrator.discoverTranscript(
             projectId: entry.projectId,
             fileURL: entry.descriptor.fileURL,
             provider: entry.descriptor.provider,
             providerSessionId: entry.descriptor.sessionId,
-            startWatching: true,
+            startWatching: startWatching,
             progress: nil,
             ingestLimit: .none,
             isPrimer: true

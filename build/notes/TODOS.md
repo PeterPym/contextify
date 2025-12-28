@@ -2113,7 +2113,7 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 
 **Agent Capabilities:**
 1. **Create TODOs**
-   - Auto-generate IDs (P{N}-{SLUG} format)
+   - Auto-generate IDs (stable slug format; no priority prefixes)
    - Insert in correct priority section
    - Create supporting docs in `build/notes/todos/` with YAML front matter
    - Reference research files appropriately
@@ -2165,7 +2165,7 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 
 **Problem:**
 - TODOS.md is 2k+ lines, AI must read full file to update one status
-- Priority embedded in task IDs (e.g., `#WEBSITE`) makes reprioritization awkward
+- Priority in TODO IDs makes reprioritization awkward; IDs should be stable and priority-free
 - No clear rules on when entry needs backing file
 - Ad-hoc detail file structure
 
@@ -2713,7 +2713,6 @@ When a project not currently visible in the tab bar receives new messages:
 - [ ] #TIMELINE-SUMMARY-HEIGHT: Add regression coverage for the row-height-capping behavior so any future change to `summaryFrameMinHeight` or the logged deltas is caught automatically.
 
 **Plan:** `build/notes/todo-support/TIMELINE-SUMMARY-HEIGHT.md`
-
 
 **Prerequisites:**
 - ConversationMonitor refactoring (see ROADMAP.md #CM-REFACTOR for history)

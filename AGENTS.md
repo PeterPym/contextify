@@ -141,7 +141,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/docs/architecture/sql-backend.md` - Schema, migrations, repositories
 - `build/docs/architecture/COMPONENTS.md` - Database layer components
 - `build/docs/operations/DATABASE-LOCATIONS.md` - Custom locations, discovery
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v26)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v32)
 
 **LLM/Timeline work:**
 - `build/docs/architecture/llm-processing.md` - LLM queue architecture (start here)

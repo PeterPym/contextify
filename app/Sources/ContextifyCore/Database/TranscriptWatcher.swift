@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatch
 /// Errors that can occur during transcript watching
 public enum TranscriptWatcherError: Error {
   case transcriptNotFound
+  case fileDescriptorOpenFailed(errno: Int32)
 }
 
 /// Watches transcript files for changes and triggers incremental streaming
@@ -20,7 +21,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
   private var lastEventTime: [String: Date] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
   private var heartbeatStarted = false
-  private var shouldStopHeartbeat = false
+  private var heartbeatToken: UInt64 = 0
 
   // Event deduplication: filter events within 50ms of previous event for same transcript
   private let minEventInterval: TimeInterval = 0.05
@@ -77,12 +78,24 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     // Combined: start heartbeat on first watch and check if already watching (single sync call)
+    var shouldStartHeartbeat = false
+    var heartbeatEpoch: UInt64 = 0
     let alreadyWatching = watcherQueue.sync { () -> Bool in
       if !heartbeatStarted {
         heartbeatStarted = true
-        startHeartbeat()
+        heartbeatToken &+= 1
+        heartbeatEpoch = heartbeatToken
+        shouldStartHeartbeat = true
       }
       return watchers[transcriptId] != nil
+    }
+    if shouldStartHeartbeat {
+      let shouldLaunch = watcherQueue.sync {
+        heartbeatStarted && heartbeatToken == heartbeatEpoch
+      }
+      if shouldLaunch {
+        startHeartbeat(epoch: heartbeatEpoch)
+      }
     }
 
     if alreadyWatching {
@@ -98,43 +111,44 @@ public final class TranscriptWatcher: @unchecked Sendable {
        let accessProvider {
       log.debug("[WATCHER-SCOPE] Starting watcher inside security scope for provider=\(provider, privacy: .public)")
       try accessProvider.withAccess(for: provider) { _ in
-        self.armWatcher(transcriptId: transcriptId, fileURL: fileURL)
+        try self.armWatcher(transcriptId: transcriptId, fileURL: fileURL)
       }
     } else {
-      armWatcher(transcriptId: transcriptId, fileURL: fileURL)
+      try armWatcher(transcriptId: transcriptId, fileURL: fileURL)
     }
   }
 
   /// Stop watching a transcript
   public func stopWatching(transcriptId: String) {
-    watcherQueue.sync {
-      if let source = watchers[transcriptId] {
-        source.cancel()
-        watchers.removeValue(forKey: transcriptId)
-        if LoggingConfig.enableVerboseWatcherLogs {
-          log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
-        }
-      }
-
-      if let timer = debounceTimers[transcriptId] {
-        timer.invalidate()
-        debounceTimers.removeValue(forKey: transcriptId)
-      }
+    let (source, timer) = detachWatcher(transcriptId: transcriptId)
+    source?.cancel()
+    if let timer {
+      invalidateTimer(timer)
     }
-
     log.debug("Stopped watching transcript: \(transcriptId)")
   }
 
-  /// Stop all watchers
-  public func stopAll() {
-    watcherQueue.sync {
-      shouldStopHeartbeat = true
+  /// Stop all watchers (idempotent)
+  @discardableResult
+  public func stopAll() -> Int {
+    var sources: [DispatchSourceFileSystemObject] = []
+    var timers: [Timer] = []
+    let count = watcherQueue.sync { () -> Int in
+      if heartbeatStarted {
+        heartbeatStarted = false
+        heartbeatToken &+= 1
+      }
+      let currentCount = watchers.count
+      sources = Array(watchers.values)
+      timers = Array(debounceTimers.values)
+      watchers.removeAll()
+      debounceTimers.removeAll()
+      lastEventTime.removeAll()
+      return currentCount
     }
-
-    let allKeys = watcherQueue.sync { Array(watchers.keys) }
-    for transcriptId in allKeys {
-      stopWatching(transcriptId: transcriptId)
-    }
+    sources.forEach { $0.cancel() }
+    timers.forEach { invalidateTimer($0) }
+    return count
   }
 
   /// Handle file change event (debounced)
@@ -183,7 +197,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
   }
 
-  private func armWatcher(transcriptId: String, fileURL: URL) {
+  private func armWatcher(transcriptId: String, fileURL: URL) throws {
     if LoggingConfig.enableVerboseWatcherRecovery {
       log.debug("[WATCHER-ARM-START] Arming watcher for transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
     }
@@ -192,7 +206,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     guard fileDescriptor >= 0 else {
       let errorCode = errno
       log.error("[WATCHER-FD-OPEN-FAILED] Failed to open file descriptor: path=\(fileURL.path, privacy: .public) errno=\(errorCode) (\(String(cString: strerror(errorCode))))")
-      return
+      throw TranscriptWatcherError.fileDescriptorOpenFailed(errno: Int32(errorCode))
     }
 
     if LoggingConfig.enableVerboseWatcherLogs {
@@ -256,6 +270,11 @@ public final class TranscriptWatcher: @unchecked Sendable {
     // Use background queue to avoid blocking UI
     watcherQueue.async { [weak self] in
       guard let self else { return }
+      let stillWatching = self.watchers[transcriptId] != nil
+      guard stillWatching else {
+        log.debug("[WATCHER-PROCESS-SKIP] Transcript no longer watched: \(transcriptId)")
+        return
+      }
       do {
         guard let transcript = try self.transcriptRepo.get(transcriptId) else {
           log.error("[WATCHER-PROCESS-ERROR] Transcript not found: \(transcriptId, privacy: .public)")
@@ -302,16 +321,19 @@ public final class TranscriptWatcher: @unchecked Sendable {
 
   // MARK: - Heartbeat
 
-  private func startHeartbeat() {
+  private func startHeartbeat(epoch: UInt64) {
     // Start periodic heartbeat on background queue
-    // Loop exits when shouldStopHeartbeat is set or self is deallocated
+    // Loop exits when heartbeat token changes, heartbeat is stopped, or no watchers remain.
     DispatchQueue.global(qos: .utility).async { [weak self] in
       while let strongSelf = self {
         Thread.sleep(forTimeInterval: strongSelf.heartbeatInterval)
 
-        // Check if we should stop
-        let shouldStop = strongSelf.watcherQueue.sync { strongSelf.shouldStopHeartbeat }
-        if shouldStop {
+        let shouldContinue = strongSelf.watcherQueue.sync {
+          strongSelf.heartbeatStarted
+            && strongSelf.heartbeatToken == epoch
+            && !strongSelf.watchers.isEmpty
+        }
+        if !shouldContinue {
           log.info("[FSEVENTS-HEARTBEAT] Stopping heartbeat")
           break
         }
@@ -333,5 +355,36 @@ public final class TranscriptWatcher: @unchecked Sendable {
   private func needsSecurityScope(for provider: String) -> Bool {
     guard Sandbox.isSandboxed else { return false }
     return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
+  }
+
+  private func detachWatcher(
+    transcriptId: String
+  ) -> (DispatchSourceFileSystemObject?, Timer?) {
+    var source: DispatchSourceFileSystemObject?
+    var timer: Timer?
+    watcherQueue.sync {
+      source = watchers.removeValue(forKey: transcriptId)
+      timer = debounceTimers.removeValue(forKey: transcriptId)
+      lastEventTime.removeValue(forKey: transcriptId)
+      if watchers.isEmpty, heartbeatStarted {
+        heartbeatStarted = false
+        heartbeatToken &+= 1
+      }
+    }
+    if LoggingConfig.enableVerboseWatcherLogs, source != nil {
+      log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
+    }
+    return (source, timer)
+  }
+
+  private func invalidateTimer(_ timer: Timer) {
+    // Timer.invalidate() must be called from the thread that created it.
+    // Our timers are created on the main thread, so dispatch there.
+    // Use nonisolated(unsafe) to satisfy Swift 6 strict concurrency since
+    // Timer is not Sendable but invalidate() is thread-safe.
+    nonisolated(unsafe) let unsafeTimer = timer
+    DispatchQueue.main.async {
+      unsafeTimer.invalidate()
+    }
   }
 }

@@ -271,7 +271,7 @@ struct ProjectSwitcherView: View {
             ProjectTabView(
               project: project,
               isActive: project.id == state.activeProjectId,
-              unreadCount: state.unreadCounts[project.id] ?? 0,
+              indicator: state.unreadIndicators[project.id],
               isDragging: draggingProject?.id == project.id,
               onDragStart: {
                 self.draggingProject = project
@@ -364,7 +364,7 @@ struct ProjectSwitcherView: View {
 struct ProjectTabView: View {
   let project: ProjectInfo
   let isActive: Bool
-  let unreadCount: Int
+  let indicator: UnreadIndicatorResult?
   let isDragging: Bool
   var onDragStart: () -> NSItemProvider
   @Environment(ProjectSwitcherState.self) private var state
@@ -377,6 +377,20 @@ struct ProjectTabView: View {
 
   private var tabBorderColor: Color {
     isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
+  }
+
+  private var accessibilityUnreadLabel: String {
+    guard let indicator else { return "no unread" }
+    if indicator.accurateUnread > 0 {
+      return "\(indicator.accurateUnread) unread"
+    }
+    if let approx = indicator.approxDelta, approx > 0 {
+      return "~\(approx) unread"
+    }
+    if indicator.hasActivitySignal {
+      return "new activity"
+    }
+    return "no unread"
   }
 
   var body: some View {
@@ -405,10 +419,20 @@ struct ProjectTabView: View {
           .fontWeight(isActive ? .semibold : .regular)
           .lineLimit(1)
 
-        if unreadCount > 0 {
-          Text(unreadCount > 99 ? "(99+)" : "(\(unreadCount))")
-            .font(.caption)
-            .foregroundStyle(Color.contextifyBlue)
+        if let indicator {
+          if indicator.accurateUnread > 0 {
+            Text(indicator.accurateUnread > 99 ? "(99+)" : "(\(indicator.accurateUnread))")
+              .font(.caption)
+              .foregroundStyle(Color.contextifyBlue)
+          } else if let approx = indicator.approxDelta, approx > 0 {
+            Text("~\(approx)")
+              .font(.caption)
+              .foregroundStyle(Color.contextifyBlue)
+          } else if indicator.hasActivitySignal {
+            Circle()
+              .fill(Color.contextifyBlue)
+              .frame(width: 6, height: 6)
+          }
         }
       }
       .padding(.horizontal, 12)
@@ -473,7 +497,7 @@ struct ProjectTabView: View {
           .foregroundStyle(.secondary)
       }
     }
-    .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
+    .accessibilityLabel("Project \(project.name), \(accessibilityUnreadLabel)")
     .accessibilityHint("Activate to switch to this project")
     .accessibilityAddTraits(.isButton)
   }

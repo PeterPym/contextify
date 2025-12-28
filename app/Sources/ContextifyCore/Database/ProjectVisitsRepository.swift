@@ -36,6 +36,25 @@ public struct ProjectWithUnread: Sendable {
   }
 }
 
+public struct UnreadIndicatorResult: Sendable {
+  public let accurateUnread: Int
+  public let hasActivitySignal: Bool
+  public let approxDelta: Int?
+  public let approxConfidence: String?
+
+  public init(
+    accurateUnread: Int,
+    hasActivitySignal: Bool,
+    approxDelta: Int?,
+    approxConfidence: String?
+  ) {
+    self.accurateUnread = accurateUnread
+    self.hasActivitySignal = hasActivitySignal
+    self.approxDelta = approxDelta
+    self.approxConfidence = approxConfidence
+  }
+}
+
 /// Repository for managing project visit tracking (for unread counts)
 public protocol ProjectVisitsRepository {
   /// Mark a project as viewed at a specific timestamp
@@ -73,6 +92,9 @@ public protocol ProjectVisitsRepository {
 
   /// Get unread count using an existing database handle (for transactional callers)
   func unreadCount(projectId: String, in db: Database) throws -> Int
+
+  /// Get unread indicator state for a project (accurate, approx, activity signal)
+  func getUnreadIndicator(projectId: String) throws -> UnreadIndicatorResult
 
   /// Ensure visit record exists for a project (creates if missing)
   /// - Parameter projectId: Project ID
@@ -207,6 +229,67 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
         result[pid] = c
       }
       return result
+    }
+  }
+
+  public func getUnreadIndicator(projectId: String) throws -> UnreadIndicatorResult {
+    try db.read { db in
+      let accurateUnread = try unreadCount(projectId: projectId, in: db)
+
+      let projectRow = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT last_viewed_ts, last_activity_detected_at
+          FROM projects
+          WHERE id = ?
+        """,
+        arguments: [projectId]
+      )
+      let lastViewedTs = projectRow?["last_viewed_ts"] as Double? ?? 0
+      let lastActivityDetectedAt = projectRow?["last_activity_detected_at"] as Int?
+      let hasActivitySignal = lastActivityDetectedAt.map { Double($0) > lastViewedTs } ?? false
+
+      let approxRow = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT
+            SUM(unread_approx_count) AS approx_sum,
+            MAX(
+              CASE unread_approx_confidence
+                WHEN 'high' THEN 2
+                WHEN 'medium' THEN 1
+                ELSE 0
+              END
+            ) AS confidence_rank
+          FROM transcripts
+          WHERE project_id = ?
+            AND pending_rehoover = 1
+            AND unread_approx_count IS NOT NULL
+            AND unread_approx_confidence IN ('medium','high')
+        """,
+        arguments: [projectId]
+      )
+
+      let approxSum = approxRow?["approx_sum"] as Int?
+      let confidenceRank = approxRow?["confidence_rank"] as Int? ?? 0
+      let approxConfidence: String?
+      switch confidenceRank {
+      case 2:
+        approxConfidence = "high"
+      case 1:
+        approxConfidence = "medium"
+      default:
+        approxConfidence = nil
+      }
+
+      let approxDelta = (approxSum ?? 0) > 0 ? approxSum : nil
+
+      return UnreadIndicatorResult(
+        accurateUnread: accurateUnread,
+        hasActivitySignal: hasActivitySignal,
+        approxDelta: approxDelta,
+        approxConfidence: approxConfidence
+      )
     }
   }
 
