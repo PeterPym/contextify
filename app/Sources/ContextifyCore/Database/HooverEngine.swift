@@ -218,6 +218,7 @@ public final class HooverEngine {
   private let transcriptRepo: TranscriptRepository
   private let entryRepo: EntryRepository
   private let errorRepo: ParseErrorRepository
+  private let projectRepo: ProjectRepository
   private let parser: TranscriptLineParser
   // v7 metadata repositories
   private let fileSnapshotRepo: FileSnapshotRepository
@@ -232,6 +233,7 @@ public final class HooverEngine {
     transcriptRepo: TranscriptRepository,
     entryRepo: EntryRepository,
     errorRepo: ParseErrorRepository,
+    projectRepo: ProjectRepository,
     parser: TranscriptLineParser,
     fileSnapshotRepo: FileSnapshotRepository,
     trackedFileRepo: TrackedFileRepository,
@@ -244,6 +246,7 @@ public final class HooverEngine {
     self.transcriptRepo = transcriptRepo
     self.entryRepo = entryRepo
     self.errorRepo = errorRepo
+    self.projectRepo = projectRepo
     self.parser = parser
     self.fileSnapshotRepo = fileSnapshotRepo
     self.trackedFileRepo = trackedFileRepo
@@ -251,6 +254,39 @@ public final class HooverEngine {
     self.systemEventRepo = systemEventRepo
     self.assistantUsageRepo = assistantUsageRepo
     self.metadataParser = metadataParser
+  }
+
+  /// Look up or create a project based on the CWD from an entry
+  /// Returns the project ID to use for the entry
+  private func resolveProjectId(fromCwd cwd: String?, transcriptProjectId: String, transcriptId: String) throws -> String {
+    // If no CWD, use the transcript's project
+    guard let entryCwd = cwd, !entryCwd.isEmpty else {
+      return transcriptProjectId
+    }
+
+    // Canonicalize the CWD path
+    let canonCwd = PathUtils.canonicalizePath(entryCwd)
+
+    // Check if this matches the transcript's project
+    if let transcriptProject = try projectRepo.get(id: transcriptProjectId),
+       transcriptProject.rootPath == canonCwd {
+      // CWD matches transcript's project - no reassignment needed
+      return transcriptProjectId
+    }
+
+    // CWD differs - look up or create the correct project
+    log.info("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+
+    // Try to find existing project with this CWD
+    if let existingProject = try projectRepo.list().first(where: { $0.rootPath == canonCwd }) {
+      log.info("[PROJECT-REASSIGN] Reassigning entry to existing project: id=\(existingProject.id, privacy: .public) path=\(canonCwd, privacy: .public)")
+      return existingProject.id
+    }
+
+    // Create new project for this CWD
+    let newProjectId = try projectRepo.create(name: nil, rootPath: entryCwd, bookmark: nil)
+    log.info("[PROJECT-REASSIGN] Created new project for CWD: id=\(newProjectId, privacy: .public) path=\(canonCwd, privacy: .public)")
+    return newProjectId
   }
 
   /// Update transcript checkpoint in database
@@ -429,7 +465,7 @@ public final class HooverEngine {
 
         var entryId: String? = nil
         do {
-          let entry = try parser.parse(
+          var entry = try parser.parse(
             line: lineString,
             lineNumber: lineNo,
             transcriptId: transcript.id,
@@ -437,6 +473,35 @@ public final class HooverEngine {
             provider: transcript.provider,
             sessionId: transcript.providerSessionId
           )
+
+          // Check if entry's CWD differs from transcript's project and reassign if needed
+          let correctProjectId = try resolveProjectId(
+            fromCwd: entry.cwd,
+            transcriptProjectId: transcript.projectId,
+            transcriptId: transcript.id
+          )
+
+          // If project differs, create new entry with corrected project ID
+          if correctProjectId != entry.projectId {
+            entry = EntryInsert(
+              id: entry.id,
+              transcriptId: entry.transcriptId,
+              projectId: correctProjectId,
+              sessionId: entry.sessionId,
+              provider: entry.provider,
+              kind: entry.kind,
+              timestamp: entry.timestamp,
+              content: entry.content,
+              contentSha256: entry.contentSha256,
+              parentId: entry.parentId,
+              gitBranch: entry.gitBranch,
+              gitCommit: entry.gitCommit,
+              cwd: entry.cwd,
+              hasTextContent: entry.hasTextContent,
+              isQueued: entry.isQueued
+            )
+          }
+
           batch.append(entry)
           entryId = entry.id
           lastEntryId = entry.id  // Track for checkpoint
@@ -584,7 +649,7 @@ public final class HooverEngine {
 
         var entryId: String? = nil
         do {
-          let entry = try parser.parse(
+          var entry = try parser.parse(
             line: lineString,
             lineNumber: lineNo,
             transcriptId: transcript.id,
@@ -592,6 +657,35 @@ public final class HooverEngine {
             provider: transcript.provider,
             sessionId: transcript.providerSessionId
           )
+
+          // Check if entry's CWD differs from transcript's project and reassign if needed
+          let correctProjectId = try resolveProjectId(
+            fromCwd: entry.cwd,
+            transcriptProjectId: transcript.projectId,
+            transcriptId: transcript.id
+          )
+
+          // If project differs, create new entry with corrected project ID
+          if correctProjectId != entry.projectId {
+            entry = EntryInsert(
+              id: entry.id,
+              transcriptId: entry.transcriptId,
+              projectId: correctProjectId,
+              sessionId: entry.sessionId,
+              provider: entry.provider,
+              kind: entry.kind,
+              timestamp: entry.timestamp,
+              content: entry.content,
+              contentSha256: entry.contentSha256,
+              parentId: entry.parentId,
+              gitBranch: entry.gitBranch,
+              gitCommit: entry.gitCommit,
+              cwd: entry.cwd,
+              hasTextContent: entry.hasTextContent,
+              isQueued: entry.isQueued
+            )
+          }
+
           batch.append(entry)
           entryId = entry.id
           lastEntryId = entry.id  // Track for checkpoint

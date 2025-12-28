@@ -199,6 +199,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
+      projectRepo: projectRepo,
       parser: parser,
       fileSnapshotRepo: fileSnapshotRepo,
       trackedFileRepo: trackedFileRepo,

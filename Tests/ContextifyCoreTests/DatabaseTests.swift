@@ -608,6 +608,7 @@ final class DatabaseTests: XCTestCase {
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
     let entryRepo = EntryRepositoryImpl(db: pool)
     let errorRepo = ParseErrorRepositoryImpl(db: pool)
+    let projectRepo = ProjectRepositoryImpl(db: pool)
     let parser = ClaudeCodeLineParser()
     let metadataParser = ClaudeCodeMetadataParser()
 
@@ -616,6 +617,7 @@ final class DatabaseTests: XCTestCase {
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
+      projectRepo: projectRepo,
       parser: parser,
       fileSnapshotRepo: FileSnapshotRepositoryImpl(db: pool),
       trackedFileRepo: TrackedFileRepositoryImpl(db: pool),
@@ -626,7 +628,6 @@ final class DatabaseTests: XCTestCase {
     )
 
     // Create project and transcript records
-    let projectRepo = ProjectRepositoryImpl(db: pool)
     let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
 
     let transcriptId = try transcriptRepo.upsert(
@@ -701,6 +702,7 @@ final class DatabaseTests: XCTestCase {
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
     let entryRepo = EntryRepositoryImpl(db: pool)
     let errorRepo = ParseErrorRepositoryImpl(db: pool)
+    let projectRepo = ProjectRepositoryImpl(db: pool)
     let parser = ClaudeCodeLineParser()
     let metadataParser = ClaudeCodeMetadataParser()
 
@@ -709,6 +711,7 @@ final class DatabaseTests: XCTestCase {
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
+      projectRepo: projectRepo,
       parser: parser,
       fileSnapshotRepo: FileSnapshotRepositoryImpl(db: pool),
       trackedFileRepo: TrackedFileRepositoryImpl(db: pool),
@@ -719,7 +722,6 @@ final class DatabaseTests: XCTestCase {
     )
 
     // Create project and transcript records
-    let projectRepo = ProjectRepositoryImpl(db: pool)
     let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
 
     let transcriptId = try transcriptRepo.upsert(
