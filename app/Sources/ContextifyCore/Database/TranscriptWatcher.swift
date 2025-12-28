@@ -272,7 +272,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
       guard let self else { return }
       let stillWatching = self.watchers[transcriptId] != nil
       guard stillWatching else {
-        self.log.debug("[WATCHER-PROCESS-SKIP] Transcript no longer watched: \(transcriptId, privacy: .public)")
+        log.debug("[WATCHER-PROCESS-SKIP] Transcript no longer watched: \(transcriptId)")
         return
       }
       do {
@@ -378,12 +378,13 @@ public final class TranscriptWatcher: @unchecked Sendable {
   }
 
   private func invalidateTimer(_ timer: Timer) {
-    if Thread.isMainThread {
-      timer.invalidate()
-    } else {
-      DispatchQueue.main.async {
-        timer.invalidate()
-      }
+    // Timer.invalidate() must be called from the thread that created it.
+    // Our timers are created on the main thread, so dispatch there.
+    // Use nonisolated(unsafe) to satisfy Swift 6 strict concurrency since
+    // Timer is not Sendable but invalidate() is thread-safe.
+    nonisolated(unsafe) let unsafeTimer = timer
+    DispatchQueue.main.async {
+      unsafeTimer.invalidate()
     }
   }
 }
