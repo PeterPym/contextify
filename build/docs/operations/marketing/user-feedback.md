@@ -32,6 +32,35 @@ Track notable user feedback, feature requests, and interactions.
 
 ---
 
+## Noah Zoschke (noah@housecat.com)
+
+**Source:** Email
+**First Contact:** 2025-12-26
+
+### 2025-12-26: Initial email - Sequoia support, schema questions
+
+**Context:** Got Contextify running from DMG on Sequoia, had questions about workflow
+
+**Feedback:**
+- Asked about backup frequency for comprehensive history
+- Interested in schema stability for building extensions
+- Asked about multi-machine setup with iCloud Drive
+- Curious about Total Recall CLI
+
+**Response:**
+- Explained transcript ingestion catches up on launch (no need to run continuously)
+- Recommended backing up source transcript files (`~/.claude/projects/`, `~/.codex/sessions/`)
+- Schema at v28, still evolving; recommended Total Recall CLI as stable interface
+- Confirmed multi-machine works with shared network location (avoid concurrent access)
+- Asked about team workflows and Total Recall experience
+
+**Impact:** Validates interest in:
+1. Building on top of Contextify (extension ecosystem)
+2. Multi-machine/team use cases
+3. Total Recall CLI as stable API surface
+
+---
+
 ## Template
 
 ```markdown
