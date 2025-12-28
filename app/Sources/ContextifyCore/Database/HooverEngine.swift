@@ -285,13 +285,136 @@ public final class HooverEngine {
   /// - All projects (fetched once on first mismatch)
   /// - Canonical project roots (computed once per project, not per entry)
   /// - Sorted canonical roots for efficient longest-prefix matching (sorted by length descending)
-  private struct ProjectResolutionCache {
+  ///
+  /// Internal visibility allows unit testing via @testable import.
+  struct ProjectResolutionCache {
     var transcriptProjectRootPath: String?
+    /// All projects fetched from DB (lazy-loaded on first cache miss). Note: newly created projects
+    /// during this hoover run are NOT added here; they're only added to projectRootToId/sortedCanonicalRoots.
+    /// This is intentional: allProjects is only used for initial population, not ongoing lookups.
     var allProjects: [Project]?
-    var canonicalRoots: [String: String] = [:]  // projectId -> canonical rootPath
     var sortedCanonicalRoots: [String] = []  // All canonical roots sorted by length descending for prefix matching
-    var projectRootToId: [String: String] = [:]  // canonical root -> projectId (fast reverse lookup)
+    var projectRootToId: [String: String] = [:]  // canonical root -> projectId (single source of truth for root<->id mapping)
     var loggedRoots: Set<String> = []  // Track which resolved roots we've logged (P1: reduce log spam, keyed by root not cwd)
+    var warnedEmptyCwds: Set<String> = []  // Track cwds that produced empty canonical paths (gate warning spam)
+
+    // MARK: - Static Helpers
+
+    /// Comparator for root paths: length descending, then lexicographic for tie-breaking.
+    /// Static to avoid init-order footgun (instance property can't reference self before init).
+    static func rootLess(_ lhs: String, _ rhs: String) -> Bool {
+      if lhs.count != rhs.count { return lhs.count > rhs.count }
+      return lhs < rhs  // Lexicographic tie-break for stability
+    }
+
+    /// Normalize a root path: strip trailing slash (except for "/").
+    /// Centralizes normalization to avoid repeated inline checks.
+    static func normalizeRoot(_ root: String) -> String {
+      if root.isEmpty { return root }
+      if root != "/" && root.hasSuffix("/") {
+        return String(root.dropLast())
+      }
+      return root
+    }
+
+    /// Deterministic collision winner: prefer nonzero createdAt, then earliest, then lexicographic id.
+    /// Returns true if (createdAt, id) is preferred over (overCreatedAt, overId).
+    static func isPreferredWinner(createdAt: Int, id: String, overCreatedAt: Int, overId: String) -> Bool {
+      // Prefer nonzero createdAt (zero may be sentinel for unset)
+      if overCreatedAt == 0 && createdAt != 0 { return true }
+      if createdAt == 0 && overCreatedAt != 0 { return false }
+      // Then prefer earliest createdAt
+      if createdAt != overCreatedAt { return createdAt < overCreatedAt }
+      // Finally lexicographic id
+      return id < overId
+    }
+
+    /// Append a loser prefix to the accumulator, respecting the cap.
+    /// Used during single-pass collision resolution to avoid re-walking allProjects.
+    static func appendLoserPrefix(
+      _ prefix: String,
+      forRoot root: String,
+      into accumulator: inout [String: [String]],
+      cap: Int
+    ) {
+      var losers = accumulator[root] ?? []
+      if losers.count < cap {
+        losers.append(prefix)
+        accumulator[root] = losers
+      }
+    }
+
+    /// Test-friendly initializer for unit testing prefix matching, insertion ordering, and collision resolution
+    /// without mocking GRDB. Pass tuples of (projectId, canonicalRoot, createdAt).
+    /// NOTE: The root param is normalized (trailing slash stripped) like production code,
+    /// so test inputs like "/foo/" become "/foo" in the cache.
+    init(projects: [(id: String, root: String, createdAt: Int)] = []) {
+      guard !projects.isEmpty else { return }
+
+      // Single-pass collision resolution (same as production code)
+      var bestByRoot: [String: (id: String, root: String, createdAt: Int)] = [:]
+
+      for project in projects {
+        let root = Self.normalizeRoot(project.root)
+        if root.isEmpty { continue }
+
+        if let existing = bestByRoot[root] {
+          // Use static helper for deterministic winner selection
+          let newWins = Self.isPreferredWinner(
+            createdAt: project.createdAt, id: project.id,
+            overCreatedAt: existing.createdAt, overId: existing.id
+          )
+          if newWins {
+            bestByRoot[root] = (project.id, root, project.createdAt)
+          }
+        } else {
+          bestByRoot[root] = (project.id, root, project.createdAt)
+        }
+      }
+
+      for (root, winner) in bestByRoot {
+        projectRootToId[root] = winner.id
+      }
+      sortedCanonicalRoots = bestByRoot.keys.sorted(by: Self.rootLess)
+    }
+
+    /// Insert a new root into sortedCanonicalRoots maintaining sort order.
+    /// Uses rootLess to ensure consistent ordering with initial sort.
+    /// Guard against duplicate insertion (idempotent).
+    mutating func insertRoot(_ newRoot: String) {
+      // Guard: skip if already present (idempotent)
+      if sortedCanonicalRoots.contains(newRoot) { return }
+
+      // Find insertion point using the same comparator as sort
+      var insertIndex = 0
+      while insertIndex < sortedCanonicalRoots.count {
+        if Self.rootLess(newRoot, sortedCanonicalRoots[insertIndex]) {
+          break
+        }
+        insertIndex += 1
+      }
+      sortedCanonicalRoots.insert(newRoot, at: insertIndex)
+    }
+
+    /// Find the project ID for a cwd using longest-prefix matching on cached roots.
+    /// Pure in-memory lookup - searches sortedCanonicalRoots (length-descending) and projectRootToId.
+    /// Returns (projectId, matchingRoot) if found, nil otherwise.
+    /// Marked mutating to keep call sites stable if we later add hit counters or per-root memoization.
+    mutating func findProjectByPrefix(_ canonCwd: String) -> (projectId: String, matchingRoot: String)? {
+      // Try exact match first (O(1) dictionary lookup)
+      if let cachedId = projectRootToId[canonCwd] {
+        return (cachedId, canonCwd)
+      }
+      // Try prefix match on cached roots (longest first due to sort order)
+      for cachedRoot in sortedCanonicalRoots {
+        if canonCwd == cachedRoot || canonCwd.hasPrefix(cachedRoot + "/") {
+          if let projectId = projectRootToId[cachedRoot] {
+            return (projectId, cachedRoot)
+          }
+        }
+      }
+      return nil
+    }
   }
 
   /// Look up or create a project based on the CWD from an entry.
@@ -300,9 +423,10 @@ public final class HooverEngine {
   /// This handles subdirectory cwds correctly (e.g., cwd=/repo/app/src matches project /repo).
   /// Returns the project ID to use for the entry.
   ///
-  /// IMPORTANT: ProjectRepositoryImpl methods (get/list/create) must be safe to call within
-  /// a transaction handle. Current implementation uses db.read/write internally which is safe,
-  /// but future refactors must maintain this transaction-safety property to avoid deadlocks.
+  /// TRANSACTION SAFETY: Must be called outside any db.write held by hooverTranscript.
+  /// resolveProjectId is invoked before/after commitBatch, never within the write transaction.
+  /// This method calls ProjectRepositoryImpl methods (get/list/create) which open their own
+  /// db.read/write transactions internally.
   private func resolveProjectId(
     fromCwd cwd: String?,
     transcriptProjectId: String,
@@ -317,112 +441,176 @@ public final class HooverEngine {
     // Canonicalize the CWD path and strip trailing slashes
     var canonCwd = PathUtils.canonicalizePath(entryCwd)
 
-    // Fix #7: Handle empty string from canonicalizePath (weird inputs like broken symlinks)
+    // Handle empty string from canonicalizePath (weird inputs like broken symlinks)
     // Fall back to transcript project if canonicalization produces empty string
+    // Gate warning to once per raw cwd to avoid log spam from repeated entries
     if canonCwd.isEmpty {
-      log.warning("[PROJECT-RESOLVE] canonicalizePath returned empty string for cwd=\(entryCwd, privacy: .public), falling back to transcript project")
+      if !cache.warnedEmptyCwds.contains(entryCwd) {
+        cache.warnedEmptyCwds.insert(entryCwd)
+        log.warning("[PROJECT-RESOLVE] canonicalizePath returned empty string for cwd=\(entryCwd, privacy: .public) transcript=\(transcriptId.prefix(8), privacy: .public), falling back to transcript project")
+      }
       return transcriptProjectId
     }
 
-    if canonCwd != "/" && canonCwd.hasSuffix("/") {
-      canonCwd = String(canonCwd.dropLast())
-    }
+    canonCwd = ProjectResolutionCache.normalizeRoot(canonCwd)
 
     // Fetch transcript project's rootPath once per transcript (P0: single DB lookup)
     if cache.transcriptProjectRootPath == nil {
       if let transcriptProject = try projectRepo.get(id: transcriptProjectId) {
-        var rootPath = PathUtils.canonicalizePath(transcriptProject.rootPath)
-        // Strip trailing slash from canonical root
-        if rootPath != "/" && rootPath.hasSuffix("/") {
-          rootPath = String(rootPath.dropLast())
-        }
+        let rootPath = ProjectResolutionCache.normalizeRoot(
+          PathUtils.canonicalizePath(transcriptProject.rootPath)
+        )
         cache.transcriptProjectRootPath = rootPath
-        cache.canonicalRoots[transcriptProjectId] = rootPath
         cache.projectRootToId[rootPath] = transcriptProjectId
         cache.sortedCanonicalRoots = [rootPath]  // Initial seed with transcript root
+
+        // DEBUG assertion: verify seeding was successful immediately (not just after slow-path)
+        #if DEBUG
+        assert(cache.sortedCanonicalRoots.contains(rootPath),
+               "Transcript root \(rootPath) missing from sortedCanonicalRoots immediately after seeding")
+        assert(cache.projectRootToId[rootPath] != nil,
+               "Transcript root \(rootPath) missing from projectRootToId immediately after seeding")
+        #endif
       }
     }
 
     // Check if CWD is within transcript's project (common case - no reassignment needed)
+    // OPTIMIZATION: This check is partially redundant since transcript root is in sortedCanonicalRoots,
+    // but it avoids the loop overhead for the most common case (entries within transcript project).
     if let transcriptRoot = cache.transcriptProjectRootPath {
       if canonCwd == transcriptRoot || canonCwd.hasPrefix(transcriptRoot + "/") {
         return transcriptProjectId
       }
     }
 
-    // Fix #1: FAST PATH - check cached roots before scanning allProjects
-    // Try exact match first (O(1) dictionary lookup)
-    if let cachedId = cache.projectRootToId[canonCwd] {
-      return cachedId
-    }
-
-    // Try prefix match on cached roots (uses sorted roots for efficient longest-prefix)
-    for cachedRoot in cache.sortedCanonicalRoots {
-      if canonCwd == cachedRoot || canonCwd.hasPrefix(cachedRoot + "/") {
-        // Found containing project in cache - return it
-        if let projectId = cache.projectRootToId[cachedRoot] {
-          return projectId
-        }
-      }
+    // FAST PATH - check cached roots before scanning allProjects
+    // Uses findProjectByPrefix helper for both fast and slow paths to reduce duplication.
+    if let (cachedProjectId, _) = cache.findProjectByPrefix(canonCwd) {
+      return cachedProjectId
     }
 
     // SLOW PATH: Cache miss - need to scan all projects from database
     // Fetch all projects once per transcript (P0: single list fetch, reused for all mismatched entries)
+    // NOTE: allProjects is only used as a source list for initial population; newly created projects
+    // during this hoover run are added to sortedCanonicalRoots/projectRootToId but NOT allProjects.
     if cache.allProjects == nil {
       cache.allProjects = try projectRepo.list()
 
-      // Fix #4: Build sorted roots list from all projects for fast prefix matching
-      var allRoots: [String] = []
+      // Build sorted roots list from all projects for fast prefix matching
+      // Use Set to merge with any pre-seeded roots (e.g., transcript root) and avoid duplicates.
+      // NOTE: Set merge also preserves newly created roots from earlier in this hoover run,
+      // ensuring subsequent subdirectory entries find the newly created project without another create.
+      var allRootsSet = Set(cache.sortedCanonicalRoots)  // Preserve seeded transcript root + any newly created roots
+
+      // Single-pass collision resolution: track best winner per root and collision counts
+      // Memory-efficient: O(unique roots) instead of O(projects) for collision tracking
+      // Also accumulate loser prefixes during scan to avoid O(N^2) re-walk for logging
+      var bestByRoot: [String: Project] = [:]  // canonical root -> winning project
+      var collisionCounts: [String: Int] = [:]  // canonical root -> total project count (explicit: 2 on first collision)
+      var loserPrefixesByRoot: [String: [String]] = [:]  // canonical root -> first 5 loser id prefixes
+      let loserCap = 5
+
       for project in cache.allProjects ?? [] {
-        var root = PathUtils.canonicalizePath(project.rootPath)
-        if root != "/" && root.hasSuffix("/") {
-          root = String(root.dropLast())
+        let rawRoot = PathUtils.canonicalizePath(project.rootPath)
+        let root = ProjectResolutionCache.normalizeRoot(rawRoot)
+
+        // Guard against empty rootPath (broken symlinks, etc.)
+        if root.isEmpty {
+          log.warning("[PROJECT-RESOLVE] Skipping project \(project.id.prefix(8), privacy: .public) with empty canonical rootPath (raw: \(project.rootPath, privacy: .public))")
+          continue
         }
-        cache.canonicalRoots[project.id] = root
-        cache.projectRootToId[root] = project.id
-        allRoots.append(root)
+
+        // Track all roots for sortedCanonicalRoots (before collision resolution)
+        allRootsSet.insert(root)
+
+        if let existing = bestByRoot[root] {
+          // Collision: use static helper for deterministic winner selection
+          let newWins = ProjectResolutionCache.isPreferredWinner(
+            createdAt: project.createdAt, id: project.id,
+            overCreatedAt: existing.createdAt, overId: existing.id
+          )
+
+          if newWins {
+            // New project wins - old winner becomes a loser
+            ProjectResolutionCache.appendLoserPrefix(
+              String(existing.id.prefix(8)), forRoot: root, into: &loserPrefixesByRoot, cap: loserCap
+            )
+            bestByRoot[root] = project
+          } else {
+            // Existing wins - new project is a loser
+            ProjectResolutionCache.appendLoserPrefix(
+              String(project.id.prefix(8)), forRoot: root, into: &loserPrefixesByRoot, cap: loserCap
+            )
+          }
+          // Explicit count: first collision sets to 2, subsequent increment
+          collisionCounts[root] = (collisionCounts[root] ?? 1) + 1
+        } else {
+          bestByRoot[root] = project
+          collisionCounts[root] = 1  // First-seen root: initialize count
+        }
       }
-      // Sort by length descending for efficient longest-prefix matching
-      cache.sortedCanonicalRoots = allRoots.sorted { $0.count > $1.count }
+
+      // Log collisions using pre-accumulated loser prefixes (O(1) per root, not O(N))
+      for (root, winner) in bestByRoot {
+        if let count = collisionCounts[root], count > 1 {
+          let losers = loserPrefixesByRoot[root] ?? []
+          let loserIds = losers.joined(separator: ", ")
+          let suffix = count > (loserCap + 1) ? " (+\(count - loserCap - 1) more)" : ""  // 1 winner + cap shown losers
+          log.warning("[PROJECT-RESOLVE] Collision: root=\(root, privacy: .public) has \(count, privacy: .public) projects, keeping \(winner.id.prefix(8), privacy: .public) (earliest createdAt), ignoring: \(loserIds, privacy: .public)\(suffix, privacy: .public)")
+        }
+
+        cache.projectRootToId[root] = winner.id
+      }
+
+      // Sort by length descending, then lexicographically for deterministic tie-breaking
+      cache.sortedCanonicalRoots = allRootsSet.sorted(by: ProjectResolutionCache.rootLess)
+
+      // DEBUG assertion: transcript root should be in cache after seeding
+      #if DEBUG
+      if let transcriptRoot = cache.transcriptProjectRootPath {
+        assert(cache.sortedCanonicalRoots.contains(transcriptRoot),
+               "Transcript root \(transcriptRoot) missing from sortedCanonicalRoots after population")
+        assert(cache.projectRootToId[transcriptRoot] != nil,
+               "Transcript root \(transcriptRoot) missing from projectRootToId after population")
+      }
+      #endif
     }
 
-    // Use sorted roots for efficient longest-prefix matching
-    // Since roots are sorted by length (longest first), first match is the longest match
-    for projectRoot in cache.sortedCanonicalRoots {
-      if canonCwd == projectRoot || canonCwd.hasPrefix(projectRoot + "/") {
-        if let projectId = cache.projectRootToId[projectRoot] {
-          // Fix #5: Log once per resolved root, not per cwd (reduces noise in deep trees)
-          let shouldLog = !cache.loggedRoots.contains(projectRoot)
-          if shouldLog {
-            cache.loggedRoots.insert(projectRoot)
-            log.debug("[PROJECT-REASSIGN] Matched CWD to existing project: cwd=\(canonCwd, privacy: .public) root=\(projectRoot, privacy: .public) id=\(projectId, privacy: .public)")
-          }
-          return projectId
-        }
+    // Use findProjectByPrefix helper for longest-prefix matching (same as fast path)
+    if let (projectId, projectRoot) = cache.findProjectByPrefix(canonCwd) {
+      // Log once per resolved root (not per cwd) when project differs from transcript project
+      // Include transcript context for actionable debugging
+      let shouldLog = !cache.loggedRoots.contains(projectRoot) && projectId != transcriptProjectId
+      if shouldLog {
+        cache.loggedRoots.insert(projectRoot)
+        log.debug("[PROJECT-REASSIGN] Entry reassigned: transcript=\(transcriptId.prefix(8), privacy: .public) transcriptProject=\(transcriptProjectId.prefix(8), privacy: .public) -> entryProject=\(projectId.prefix(8), privacy: .public) root=\(projectRoot, privacy: .public)")
       }
+      return projectId
     }
 
     // No containing project found - create new project for this CWD
     // Store canonical path, not raw path, to prevent duplicate projects
     let newProjectId = try projectRepo.create(name: nil, rootPath: canonCwd, bookmark: nil)
 
+    // Log new project creation with transcript context (symmetric with reassignment log)
     let shouldLog = !cache.loggedRoots.contains(canonCwd)
     if shouldLog {
       cache.loggedRoots.insert(canonCwd)
-      log.info("[PROJECT-REASSIGN] Created new project: cwd=\(canonCwd, privacy: .public) id=\(newProjectId, privacy: .public)")
+      log.info("[PROJECT-REASSIGN] Created project: transcript=\(transcriptId.prefix(8), privacy: .public) transcriptProject=\(transcriptProjectId.prefix(8), privacy: .public) root=\(canonCwd, privacy: .public) id=\(newProjectId.prefix(8), privacy: .public)")
     }
 
-    // Fix #2: Update all cache structures with new project root
-    cache.canonicalRoots[newProjectId] = canonCwd
-    cache.projectRootToId[canonCwd] = newProjectId
+    // Update cache structures with new project root
+    // Guard against duplicate insertion (projectRootToId[canonCwd] should be nil for new projects)
+    if cache.projectRootToId[canonCwd] == nil {
+      cache.projectRootToId[canonCwd] = newProjectId
 
-    // Fix #2: Add new root to sorted list (maintain sorted order)
-    // Insert at correct position to keep list sorted by length descending
-    var insertIndex = 0
-    while insertIndex < cache.sortedCanonicalRoots.count && cache.sortedCanonicalRoots[insertIndex].count > canonCwd.count {
-      insertIndex += 1
+      // Add new root to sorted list using same comparator as initial sort
+      cache.insertRoot(canonCwd)
+    } else {
+      // This shouldn't happen - we just created a project but root already exists
+      let existingProjectId = cache.projectRootToId[canonCwd] ?? "nil"
+      log.warning("[PROJECT-RESOLVE] Unexpected: created project \(newProjectId.prefix(8), privacy: .public) but root \(canonCwd, privacy: .public) already mapped to \(existingProjectId, privacy: .public)")
     }
-    cache.sortedCanonicalRoots.insert(canonCwd, at: insertIndex)
 
     return newProjectId
   }
