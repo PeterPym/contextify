@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-26 (Phase 2 TimelineDataLoader wiring complete)
+**Last Updated:** 2025-12-28 (Smart Lazy Watchers v2 implementation ready for review)
 **Status:** Active
 
 **Priority Levels:**
@@ -64,6 +64,14 @@ See tracking file for current branches in flight and review status.
 
 - [ ] #SMART-LAZY-WATCHERS-V2: Review and merge Smart Lazy Watchers v2 (no flags, v32 migration, watcher budgeting, unread approximation, cold activity signals)
 - [ ] #SMART-LAZY-WATCHERS-DELAY: Investigate and fix tap-to-switch delay regression (instrument logs, isolate root cause, verify fix). **Reference:** build/notes/todo-support/SMART-LAZY-WATCHERS-DELAY-reference.md
+
+---
+## Background Indexing UI Blocking (1 item)
+
+**Status:** Active (log evidence collected)
+**Priority:** P0 (blocking UI responsiveness)
+
+- [ ] #INDEXING-UI-BLOCKING: Fix background indexing running on main thread during project switch (16.5s blocking operation observed). Move indexing to background threads via Task.detached. **Investigation:** build/notes/todo-support/p0-indexing-ui-blocking.md
 
 ---
 ## Permission Fix for Dual-CLI Users (1 item)
@@ -2706,31 +2714,6 @@ When a project not currently visible in the tab bar receives new messages:
 
 **Plan:** `build/notes/todo-support/TIMELINE-SUMMARY-HEIGHT.md`
 
----
-
-## Lazy Watcher Optimization (1 item) ⬇️
-
-**Status:** Spec Complete
-**Priority:** Demoted from P2 (large effort, no immediate impact)
-**Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
-**Spec:** `build/notes/todo-support/LAZY-WATCHERS-design.md`
-
-- [ ] #LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
-
-**Related:** `#INGEST-GAP` - Once ingestion is fixed, watcher count will spike from ~300 to 1000+. This optimization becomes critical.
-
-**Problem:**
-Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
-
-**Solution:**
-Two-tier monitoring: active project gets real-time DispatchSource watchers; inactive projects use FSEvents-only with dirty transcript tracking. On activation, rehoover dirty transcripts (including offline changes via mtime check).
-
-**Key components:**
-- `MonitoringCoordinator` actor (extracted from ConversationMonitor)
-- FSEvents behavior matrix for active/inactive + new/existing transcripts
-- `pending_rehoover` + `last_known_mtime` DB columns (migration v27)
-- 5-second hysteresis for project switching
-- Feature flag for rollout (`lazyWatchersEnabled`)
 
 **Prerequisites:**
 - ConversationMonitor refactoring (see ROADMAP.md #CM-REFACTOR for history)
