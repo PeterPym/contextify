@@ -744,7 +744,7 @@ public actor ProjectActivityMonitor {
             try? await orchestrator.markPendingRehoover(transcriptId: resolvedTranscriptId)
             log.info("[LAZY-WATCHER] Marked pending rehoover for transcript \(resolvedTranscriptId.prefix(8), privacy: .public)")
           }
-          log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
+          log.error("[LAZY-WATCHER] FSEvents hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }
       }
     } catch {

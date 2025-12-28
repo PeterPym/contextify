@@ -8,7 +8,7 @@ public actor MonitoringCoordinator {
   private let orchestrator: TranscriptOrchestrator
 
   private(set) var activeProjectId: String?
-  private var watchersReady: Bool = false
+  private var watchersReadyProjectId: String? = nil
   private var pendingTeardowns: [String: Task<Void, Never>] = [:]
   private let teardownDelay: Duration = .seconds(5)
 
@@ -18,27 +18,29 @@ public actor MonitoringCoordinator {
 
   /// Activate a project and start per-file watchers for it.
   public func activateProject(_ projectId: String) async {
+    // Cancel any pending teardown for this project (reactivation)
     if let teardown = pendingTeardowns[projectId] {
       teardown.cancel()
       pendingTeardowns.removeValue(forKey: projectId)
       log.info("[LAZY-WATCHER] Cancelled teardown for project=\(projectId, privacy: .public)")
     }
 
-    if let previousId = activeProjectId, previousId != projectId {
-      scheduleTeardown(for: previousId)
-    }
-
-    // P0.1 FIX: Only mark as active AFTER watchers successfully start
-    watchersReady = false
+    let previousId = activeProjectId
 
     do {
       let summary = try orchestrator.ensureProjectWatcher(projectId: projectId)
+
+      // Only schedule teardown for previous AFTER new watchers started
+      if let previousId, previousId != projectId {
+        scheduleTeardown(for: previousId)
+      }
+
       activeProjectId = projectId
-      watchersReady = true
+      watchersReadyProjectId = projectId
       log.info("[LAZY-WATCHER] activeProjectId=\(projectId, privacy: .public) watcherCount=\(summary.startedCount + summary.alreadyActiveCount, privacy: .public)")
     } catch {
       log.error("[LAZY-WATCHER] Failed to start watchers for project=\(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
-      // Note: activeProjectId remains previous value; FSEvents will handle this project
+      // Leave previous project active, don't schedule its teardown
     }
 
     // Run rehoover in the background to avoid blocking activation.
@@ -68,7 +70,7 @@ public actor MonitoringCoordinator {
     }
 
     activeProjectId = nil
-    watchersReady = false
+    watchersReadyProjectId = nil
   }
 
   public func isActiveProject(_ projectId: String) -> Bool {
@@ -78,7 +80,7 @@ public actor MonitoringCoordinator {
   /// P0.1: Check if project is active AND has watchers ready
   /// Use this for determining whether FSEvents should handle a project
   public func isActiveProjectWithWatchers(_ projectId: String) -> Bool {
-    activeProjectId == projectId && watchersReady
+    activeProjectId == projectId && watchersReadyProjectId == projectId
   }
 
   // MARK: - Private helpers
