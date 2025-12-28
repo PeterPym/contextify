@@ -1227,7 +1227,7 @@ LIMIT 50
 **Target:** 4 focused components (~400 lines each)
 - ConversationMonitor - Timeline coordination
 - TimelineLoader - Database queries & pagination
-- MonitoringCoordinator - Watcher lifecycle
+- WatcherBudgetCoordinator - Watcher lifecycle
 - TimelineCacheCoordinator - LLM queue management
 
 **Estimated:** 3-4 weeks

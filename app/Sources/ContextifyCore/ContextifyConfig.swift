@@ -15,7 +15,6 @@ public final class ContextifyConfig: @unchecked Sendable {
     static let bulkLowPriority = "contextify.priority.bulkLow"
     static let primerTargetEntries = "contextify.primer.target"
     static let primerBatchLimit = "contextify.primer.batchLimit"
-    static let lazyWatchersEnabled = "contextify.lazyWatchers.enabled"
   }
 
   // Fix #1: Preflight
@@ -61,20 +60,6 @@ public final class ContextifyConfig: @unchecked Sendable {
     set { defaults.set(max(1, newValue), forKey: Key.primerBatchLimit) }
   }
 
-  public var lazyWatchersEnabled: Bool {
-    get {
-      if let stored = defaults.object(forKey: Key.lazyWatchersEnabled) as? Bool {
-        return stored
-      }
-      #if APPSTORE_BUILD
-      return false
-      #else
-      return true
-      #endif
-    }
-    set { defaults.set(newValue, forKey: Key.lazyWatchersEnabled) }
-  }
-
   // Targets for validation
   public let gitLatencyTargetMs: Int = 200
   public let hooverLatencyTargetMs: Int = 5000
@@ -91,6 +76,5 @@ public final class ContextifyConfig: @unchecked Sendable {
     defaults.removeObject(forKey: Key.bulkLowPriority)
     defaults.removeObject(forKey: Key.primerTargetEntries)
     defaults.removeObject(forKey: Key.primerBatchLimit)
-    defaults.removeObject(forKey: Key.lazyWatchersEnabled)
   }
 }

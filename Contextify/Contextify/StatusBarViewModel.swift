@@ -409,6 +409,10 @@ final class StatusBarViewModel {
         case .reordered:
             // Don't show reorder messages in status bar
             break
+
+        case .projectActivityDetected, .unreadApproximationUpdated:
+            // No status bar message for activity signals
+            break
         }
     }
 

@@ -35,7 +35,7 @@ public final class ProjectSwitcherState {
 
   private var orchestrator: TranscriptOrchestrator?
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
-  private var monitoringCoordinator: MonitoringCoordinator?
+  private var watcherBudgetCoordinator: WatcherBudgetCoordinator?
   private var fastPathCoordinator: FastPathIngestionCoordinator?
 
   // All discovered projects (Projects window + diagnostics)
@@ -49,6 +49,7 @@ public final class ProjectSwitcherState {
 
   // Unread counts per project
   private(set) var unreadCounts: [String: Int] = [:]
+  private(set) var unreadIndicators: [String: UnreadIndicatorResult] = [:]
 
   // Tracks whether any hidden projects exist
   private(set) var hasHiddenProjects: Bool = false
@@ -71,6 +72,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var pendingUnread: Set<String> = []
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
   @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
+
+  // Generation token for activation ordering (P0.1 fix: prevents stale activations from racing)
+  @ObservationIgnored private var activationGeneration: UInt64 = 0
 
   // Global refresh debounce (prevents spam from system events during discovery)
   @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
@@ -178,15 +182,13 @@ public final class ProjectSwitcherState {
       log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
-    if ContextifyCore.MonitorConfig.lazyWatchersEnabled {
-      if monitoringCoordinator == nil {
-        monitoringCoordinator = MonitoringCoordinator(orchestrator: orchestrator)
-        log.info("✅ ProjectSwitcher: initialized MonitoringCoordinator for lazy watchers")
-      }
-      if let monitor = activityMonitor, let coordinator = monitoringCoordinator {
-        Task {
-          await monitor.setMonitoringCoordinator(coordinator)
-        }
+    if watcherBudgetCoordinator == nil {
+      watcherBudgetCoordinator = WatcherBudgetCoordinator(orchestrator: orchestrator)
+      log.info("✅ ProjectSwitcher: initialized WatcherBudgetCoordinator")
+    }
+    if let monitor = activityMonitor, let coordinator = watcherBudgetCoordinator {
+      Task {
+        await monitor.setWatcherBudgetCoordinator(coordinator)
       }
     }
 
@@ -317,9 +319,7 @@ public final class ProjectSwitcherState {
 
     Task {
       await activityMonitor?.stopAll()
-      if ContextifyCore.MonitorConfig.lazyWatchersEnabled {
-        await monitoringCoordinator?.deactivateAll()
-      }
+      await watcherBudgetCoordinator?.deactivateAll()
     }
 
     log.info("ProjectSwitcherState stopped")
@@ -333,14 +333,23 @@ public final class ProjectSwitcherState {
     // Coordinator guarantees project exists in DB, so just set activeProjectId directly
     activeProjectId = context.id
 
-    if ContextifyCore.MonitorConfig.lazyWatchersEnabled, let coordinator = monitoringCoordinator {
-      Task.detached {
-        await coordinator.activateProject(context.id)
+    if let coordinator = watcherBudgetCoordinator {
+      // Increment generation to ensure last selection wins (P0.1 fix)
+      activationGeneration += 1
+      let thisGeneration = activationGeneration
+      Task {
+        await coordinator.activateProject(context.id, generation: thisGeneration)
       }
     }
 
     // Clear unread count for newly active project (CXT-13)
     unreadCounts[context.id] = 0
+    unreadIndicators[context.id] = UnreadIndicatorResult(
+      accurateUnread: 0,
+      hasActivitySignal: false,
+      approxDelta: nil,
+      approxConfidence: nil
+    )
 
     // Refresh project list to update UI (debounced to avoid spam during discovery)
     scheduleRefresh()
@@ -486,11 +495,15 @@ public final class ProjectSwitcherState {
     guard let orchestrator = ensureOrchestrator() else { return }
 
     do {
-      let counts = try orchestrator.getUnreadCounts()
+      let projectIds = allProjects.map(\.id)
+      let indicators = try orchestrator.getUnreadIndicators(projectIds: projectIds)
       await MainActor.run {
-        self.unreadCounts = counts
+        self.unreadIndicators = indicators
+        self.unreadCounts = indicators.reduce(into: [:]) { result, entry in
+          result[entry.key] = entry.value.accurateUnread
+        }
       }
-      log.debug("ProjectSwitcher: unread(all)=\(counts)")
+      log.debug("ProjectSwitcher: unread(all)=\(self.unreadCounts)")
     } catch {
       log.error("ProjectSwitcher: refreshUnreadCounts error=\(String(describing: error))")
     }
@@ -501,13 +514,14 @@ public final class ProjectSwitcherState {
     guard let orchestrator = ensureOrchestrator(), !projectIds.isEmpty else { return }
 
     do {
-      let pairs = try orchestrator.getUnreadCounts(projectIds: projectIds)
+      let indicators = try orchestrator.getUnreadIndicators(projectIds: projectIds)
       await MainActor.run {
-        for (pid, c) in pairs {
-          self.unreadCounts[pid] = c
+        for (pid, indicator) in indicators {
+          self.unreadIndicators[pid] = indicator
+          self.unreadCounts[pid] = indicator.accurateUnread
         }
       }
-      log.debug("ProjectSwitcher: unread(batch)=\(pairs)")
+      log.debug("ProjectSwitcher: unread(batch)=\(indicators.keys)")
     } catch {
       log.error("ProjectSwitcher: refreshUnreadCounts(batch) error=\(String(describing: error))")
     }
@@ -698,6 +712,12 @@ public final class ProjectSwitcherState {
         // Update observable state with fresh unread count
         await MainActor.run { [weak self] in
           self?.unreadCounts[projectId] = result.unreadCount
+        }
+
+        if let indicator = try? orchestrator.getUnreadIndicator(projectId: projectId) {
+          await MainActor.run { [weak self] in
+            self?.unreadIndicators[projectId] = indicator
+          }
         }
       } catch {
         logger.error("Failed to activate project: \(error.localizedDescription)")
@@ -962,12 +982,17 @@ public final class ProjectSwitcherState {
       await MainActor.run {
         self.allProjects.removeAll { $0.id == event.projectId }
         self.unreadCounts.removeValue(forKey: event.projectId)
+        self.unreadIndicators.removeValue(forKey: event.projectId)
         let visibleTabs = self.allProjects.filter { !$0.isOrphaned }
         self.updateTabProjects(visibleTabs)
       }
 
     case .transcriptUpdated:
       // Coalesce to avoid N DB reads for one write
+      guard event.projectId != self.activeProjectId else { return }
+      scheduleUnreadRefresh(for: event.projectId)
+
+    case .projectActivityDetected, .unreadApproximationUpdated:
       guard event.projectId != self.activeProjectId else { return }
       scheduleUnreadRefresh(for: event.projectId)
 

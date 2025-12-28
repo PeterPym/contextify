@@ -121,8 +121,13 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **Note:** Planned future refactoring into 4 focused components (see architecture-refactoring-analysis.md):
   - ConversationMonitor (400 lines) - Timeline coordination only
   - TimelineLoader (300 lines) - Database queries & pagination
-  - MonitoringCoordinator (250 lines) - Watcher lifecycle
+  - WatcherBudgetCoordinator (250 lines) - Watcher lifecycle
   - TimelineCacheCoordinator (200 lines) - LLM queue management
+
+**WatcherBudgetCoordinator** (`app/Sources/ContextifyCore/Coordination/WatcherBudgetCoordinator.swift`):
+- Owns watcher lifecycle for hot/warm projects
+- Applies plan → diff → apply to enforce watcher budgets
+- Triggers activation catch-up rehoover for missed changes
 
 **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`):
 - Queue #1 - LIFO processing for timeline entry summaries

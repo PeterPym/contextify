@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatch
 /// Errors that can occur during transcript watching
 public enum TranscriptWatcherError: Error {
   case transcriptNotFound
+  case fileDescriptorOpenFailed(errno: Int32)
 }
 
 /// Watches transcript files for changes and triggers incremental streaming
@@ -98,10 +99,10 @@ public final class TranscriptWatcher: @unchecked Sendable {
        let accessProvider {
       log.debug("[WATCHER-SCOPE] Starting watcher inside security scope for provider=\(provider, privacy: .public)")
       try accessProvider.withAccess(for: provider) { _ in
-        self.armWatcher(transcriptId: transcriptId, fileURL: fileURL)
+        try self.armWatcher(transcriptId: transcriptId, fileURL: fileURL)
       }
     } else {
-      armWatcher(transcriptId: transcriptId, fileURL: fileURL)
+      try armWatcher(transcriptId: transcriptId, fileURL: fileURL)
     }
   }
 
@@ -183,7 +184,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
   }
 
-  private func armWatcher(transcriptId: String, fileURL: URL) {
+  private func armWatcher(transcriptId: String, fileURL: URL) throws {
     if LoggingConfig.enableVerboseWatcherRecovery {
       log.debug("[WATCHER-ARM-START] Arming watcher for transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
     }
@@ -192,7 +193,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     guard fileDescriptor >= 0 else {
       let errorCode = errno
       log.error("[WATCHER-FD-OPEN-FAILED] Failed to open file descriptor: path=\(fileURL.path, privacy: .public) errno=\(errorCode) (\(String(cString: strerror(errorCode))))")
-      return
+      throw TranscriptWatcherError.fileDescriptorOpenFailed(errno: Int32(errorCode))
     }
 
     if LoggingConfig.enableVerboseWatcherLogs {

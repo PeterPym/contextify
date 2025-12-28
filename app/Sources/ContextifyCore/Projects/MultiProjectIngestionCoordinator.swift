@@ -106,9 +106,8 @@ final class MultiProjectIngestionCoordinator {
       log.info(
         "[PRIMER-QUEUE] entries=\(primerQueue.count, privacy: .public) projects=\(Set(primerProjects).count, privacy: .public) target=\(primerTarget, privacy: .public) limit=\(primerBatchLimit, privacy: .public)"
       )
-      let startWatchingForProject: (String) -> Bool = { projectId in
-        guard MonitorConfig.lazyWatchersEnabled else { return true }
-        return projectId == activeProjectId
+      let startWatchingForProject: (String) -> Bool = { _ in
+        return false
       }
       try await runPrimer(queue: primerQueue, startWatchingForProject: startWatchingForProject)
     } else {
@@ -120,12 +119,7 @@ final class MultiProjectIngestionCoordinator {
     }
 
     for batch in backfillBatches {
-      let shouldStartWatching: Bool
-      if MonitorConfig.lazyWatchersEnabled {
-        shouldStartWatching = (batch.projectId == activeProjectId)
-      } else {
-        shouldStartWatching = true
-      }
+      let shouldStartWatching = false
       let transcriptFiles = batch.transcripts.map { descriptor in
         (url: descriptor.fileURL, provider: descriptor.provider, sessionId: descriptor.sessionId)
       }

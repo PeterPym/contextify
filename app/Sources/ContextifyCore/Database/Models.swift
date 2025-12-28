@@ -13,6 +13,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var displayOrder: Int?  // Custom project ordering (v19)
   public var isOrphaned: Bool  // Orphaned tracking - directory missing (v20)
   public var orphanedSince: Int?  // When directory went missing (v20)
+  public var lastActivityDetectedAt: Int?
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -28,6 +29,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
     case displayOrder = "display_order"
     case isOrphaned = "is_orphaned"
     case orphanedSince = "orphaned_since"
+    case lastActivityDetectedAt = "last_activity_detected_at"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
@@ -53,6 +55,12 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
   public var lastError: String?
   public var mtimeMs: Int?
   public var pendingRehoover: Int?
+  public var knownLastEntryTs: Double?
+  public var knownFileSize: Int?
+  public var unreadApproxCount: Int?
+  public var unreadApproxConfidence: String?
+  public var unreadApproxUpdatedAt: Int?
+  public var lastActivityDetectedAt: Int?
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -76,6 +84,12 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
     case lastError = "last_error"
     case mtimeMs = "mtime_ms"
     case pendingRehoover = "pending_rehoover"
+    case knownLastEntryTs = "known_last_entry_ts"
+    case knownFileSize = "known_file_size"
+    case unreadApproxCount = "unread_approx_count"
+    case unreadApproxConfidence = "unread_approx_confidence"
+    case unreadApproxUpdatedAt = "unread_approx_updated_at"
+    case lastActivityDetectedAt = "last_activity_detected_at"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }

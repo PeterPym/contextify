@@ -3,14 +3,15 @@ import GRDB
 import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v31 (lazy watchers pending_rehoover tracking)
+/// Current version: v32 (smart lazy watchers v2 baselines + activity)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
-/// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
-/// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
+/// - File modification (mtime_ms): Unix milliseconds (Int64) for precise file change detection
+/// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
+/// - Latency (latency_ms): Milliseconds as Int for performance metrics
 enum DatabaseSchema {
-  static let version = 31
+  static let version = 32
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
 
   /// Create migrator for schema evolution
@@ -860,6 +861,67 @@ enum DatabaseSchema {
       """)
 
       logger.info("[MIGRATION-v31] Migration complete with index")
+    }
+
+    // v32: smart lazy watchers v2 (baselines, activity, approximations)
+    migrator.registerMigration("v32_lazy_watchers_v2") { db in
+      logger.info("[MIGRATION-v32] Adding baseline/activity/approximation fields")
+
+      if try !db.columnExists("known_last_entry_ts", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN known_last_entry_ts REAL")
+      }
+      if try !db.columnExists("known_file_size", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN known_file_size INTEGER")
+      }
+      if try !db.columnExists("unread_approx_count", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN unread_approx_count INTEGER")
+      }
+      if try !db.columnExists("unread_approx_confidence", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN unread_approx_confidence TEXT")
+      }
+      if try !db.columnExists("unread_approx_updated_at", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN unread_approx_updated_at INTEGER DEFAULT 0")
+      }
+      if try !db.columnExists("last_activity_detected_at", in: "transcripts") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN last_activity_detected_at INTEGER")
+      }
+      if try !db.columnExists("last_activity_detected_at", in: "projects") {
+        try db.execute(sql: "ALTER TABLE projects ADD COLUMN last_activity_detected_at INTEGER")
+      }
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_project_pending_rehoover
+        ON transcripts(project_id, pending_rehoover)
+        WHERE pending_rehoover = 1
+      """)
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_project_activity
+        ON transcripts(project_id, last_activity_detected_at)
+      """)
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_project_unread_approx
+        ON transcripts(project_id, unread_approx_updated_at)
+        WHERE unread_approx_count IS NOT NULL
+      """)
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_projects_activity
+        ON projects(last_activity_detected_at)
+      """)
+
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET known_last_entry_ts = (
+          SELECT MAX(created_ts)
+          FROM transcript_entries
+          WHERE transcript_entries.transcript_id = transcripts.id
+        )
+        WHERE known_last_entry_ts IS NULL
+      """)
+
+      logger.info("[MIGRATION-v32] Migration complete")
     }
 
     return migrator

@@ -2,6 +2,8 @@ import Foundation
 import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectActivity")
+private let activityLog = Logger(subsystem: "dev.contextify", category: "ActivitySignal")
+private let approxLog = Logger(subsystem: "dev.contextify", category: "UnreadApprox")
 
 private struct ProjectDiscoveryResult {
   let batches: [ProjectTranscriptBatch]
@@ -16,6 +18,8 @@ public struct ProjectEvent: Sendable {
     case transcriptUpdated
     case removed
     case reordered
+    case projectActivityDetected
+    case unreadApproximationUpdated
   }
 
   public let projectId: String
@@ -48,7 +52,9 @@ public actor ProjectActivityMonitor {
 
   private var fsEventsMonitor: FSEventsMonitor?
   private var fsEventsTask: Task<Void, Never>?
-  private var monitoringCoordinator: MonitoringCoordinator?
+  private var watcherBudgetCoordinator: WatcherBudgetCoordinator?
+  private let tailScanner = TranscriptTailScanner()
+  private var projectSignalTasks: [String: Task<Void, Never>] = [:]
 
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
@@ -61,9 +67,9 @@ public actor ProjectActivityMonitor {
     log.debug("ProjectActivity: monitor deallocated (id: \(monitorId))")
   }
 
-  /// Attach a monitoring coordinator for lazy watcher mode
-  public func setMonitoringCoordinator(_ coordinator: MonitoringCoordinator?) {
-    monitoringCoordinator = coordinator
+  /// Attach a watcher budget coordinator for lazy watcher mode
+  public func setWatcherBudgetCoordinator(_ coordinator: WatcherBudgetCoordinator?) {
+    watcherBudgetCoordinator = coordinator
   }
 
   /// Start global monitoring (FSEvents + fallback polling)
@@ -83,8 +89,8 @@ public actor ProjectActivityMonitor {
     if !projects.isEmpty {
       log.info("[INIT-SKIP-DISCOVERY] Projects already ingested (count: \(projects.count, privacy: .public)) - skipping duplicate discovery")
 
-      if MonitorConfig.lazyWatchersEnabled {
-        log.info("[INIT-LAZY-WATCHERS] Lazy watchers enabled - skipping global watcher start")
+      if watcherBudgetCoordinator != nil {
+        log.info("[INIT-WATCHER-BUDGET] Coordinator present - skipping global watcher start")
       } else {
         // CRITICAL: Still need to start file watchers for existing transcripts
         // Discovery starts watchers via hooverTranscript(..., startWatching: true)
@@ -151,6 +157,8 @@ public actor ProjectActivityMonitor {
   public func stopGlobalMonitoring() async {
     isMonitoring = false
     activeWatchers.removeAll()
+    projectSignalTasks.values.forEach { $0.cancel() }
+    projectSignalTasks.removeAll()
 
     // Stop FSEvents monitoring
     if let monitor = fsEventsMonitor {
@@ -256,6 +264,116 @@ public actor ProjectActivityMonitor {
   private func removeObserver(id: UUID) {
     eventObservers.removeValue(forKey: id)
     log.debug("ProjectActivity: removed observer \(id) (total: \(self.eventObservers.count))")
+  }
+
+  private func emitProjectSignalCoalesced(projectId: String, kind: ProjectEvent.Kind) async {
+    projectSignalTasks[projectId]?.cancel()
+    let task = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(200))
+      guard let self, !Task.isCancelled else { return }
+      await self.emitEvent(ProjectEvent(projectId: projectId, kind: kind))
+      activityLog.info("[PROJECT-SIGNAL-EMIT] project=\(projectId, privacy: .public) kind=\(kind.rawValue, privacy: .public)")
+    }
+    projectSignalTasks[projectId] = task
+  }
+
+  private func attemptUnreadApproximation(
+    projectId: String,
+    transcriptId: String,
+    fileURL: URL,
+    provider: String
+  ) async {
+    let now = Date()
+    guard let transcript = try? orchestrator.getTranscript(transcriptId: transcriptId) else {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=missing_transcript")
+      return
+    }
+
+    let baseline: (knownLastEntryTs: Double?, knownFileSize: Int64?)
+    do {
+      baseline = try orchestrator.getTranscriptBaseline(transcriptId: transcriptId)
+    } catch {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=no_baseline")
+      return
+    }
+
+    guard let knownLastEntryTs = baseline.knownLastEntryTs else {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=no_baseline")
+      return
+    }
+
+    let lastApproxUpdate = transcript.unreadApproxUpdatedAt ?? 0
+    if now.timeIntervalSince1970 - Double(lastApproxUpdate) < 1.0 {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=rate_limited")
+      return
+    }
+
+    let tailData: (data: Data, fileSize: Int64)
+    do {
+      tailData = try readTailData(fileURL: fileURL, provider: provider, maxBytes: 65536)
+    } catch {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=read_failed")
+      return
+    }
+
+    if let baselineFileSize = baseline.knownFileSize,
+       tailData.fileSize < baselineFileSize {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=truncated")
+      return
+    }
+
+    let result = await tailScanner.scanTail(
+      data: tailData.data,
+      fileSize: tailData.fileSize,
+      baselineLastEntryTs: knownLastEntryTs,
+      baselineFileSize: baseline.knownFileSize,
+      provider: provider
+    )
+
+    approxLog.info(
+      "[APPROX-TAIL-SCAN] transcript=\(transcriptId, privacy: .public) scanned_bytes=\(result.scannedBytes, privacy: .public) lines=\(result.totalLinesScanned, privacy: .public) errors=\(result.parseErrors, privacy: .public) new_entries=\(result.approxNewEntries ?? 0, privacy: .public) confidence=\(result.confidence?.rawValue ?? "low", privacy: .public) timeout=\(result.timedOut ? 1 : 0, privacy: .public)"
+    )
+
+    guard let confidence = result.confidence,
+          (confidence == .high || confidence == .medium),
+          let approx = result.approxNewEntries,
+          approx > 0 else {
+      approxLog.info("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=low_confidence")
+      return
+    }
+
+    do {
+      try orchestrator.setUnreadApproximation(
+        transcriptId: transcriptId,
+        count: approx,
+        confidence: confidence.rawValue,
+        updatedAt: now
+      )
+      emitEvent(ProjectEvent(projectId: projectId, kind: .unreadApproximationUpdated))
+      approxLog.info("[APPROX-STORED] transcript=\(transcriptId, privacy: .public) count=\(approx, privacy: .public) confidence=\(confidence.rawValue, privacy: .public)")
+    } catch {
+      approxLog.error("[APPROX-SKIP] transcript=\(transcriptId, privacy: .public) reason=store_failed")
+    }
+  }
+
+  private func readTailData(
+    fileURL: URL,
+    provider: String,
+    maxBytes: Int
+  ) throws -> (data: Data, fileSize: Int64) {
+    return try orchestrator.withAccess(for: provider) {
+      let handle = try FileHandle(forReadingFrom: fileURL)
+      defer { try? handle.close() }
+      let fileSize = try handle.seekToEnd()
+      let tailSize = min(Int(fileSize), maxBytes)
+      if tailSize <= 0 {
+        return (Data(), Int64(fileSize))
+      }
+      let startOffset = UInt64(fileSize) - UInt64(tailSize)
+      try handle.seek(toOffset: startOffset)
+      let data = try handle.readToEnd() ?? Data()
+      return (data, Int64(fileSize))
+    }
   }
 
   private func emitEvent(_ event: ProjectEvent) {
@@ -693,58 +811,75 @@ public actor ProjectActivityMonitor {
             rootPath: projPath
           )
 
-          // Resolve transcript if already known
-          let transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
+          var transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
           resolvedTranscriptId = transcriptId
-
-          // P2.1 + P0.1 FIX: Use isActiveProjectWithWatchers to ensure watchers are ready
-          let isActiveProject = monitoringCoordinator == nil
-            ? true
-            : (await monitoringCoordinator?.isActiveProjectWithWatchers(result.projectId) ?? false)
 
           if (isRemoval || isRename), let transcriptId {
             try await orchestrator.markPendingRehoover(transcriptId: transcriptId)
-            log.info("[LAZY-WATCHER] Marked pending rehoover for \(transcriptId.prefix(8), privacy: .public)")
+            activityLog.info("[ACTIVITY-DETECTED] project=\(result.projectId, privacy: .public) transcript=\(transcriptId, privacy: .public) watched=0")
+            await emitProjectSignalCoalesced(projectId: result.projectId, kind: .projectActivityDetected)
             return
           }
 
-          if isActiveProject,
-             let transcriptId,
-             orchestrator.isWatchingTranscript(transcriptId: transcriptId) {
-            log.debug("[LAZY-WATCHER] Active transcript already watched: \(transcriptId.prefix(8), privacy: .public)")
-            return
-          }
-
-          let shouldStartWatching = !MonitorConfig.lazyWatchersEnabled || isActiveProject
-          try await orchestrator.discoverTranscript(
-            projectId: result.projectId,
-            fileURL: url,
-            provider: providerString,
-            providerSessionId: sessionId,
-            startWatching: shouldStartWatching,
-            progress: nil
-          )
-          // Emit correct event based on whether project was newly created
-          // .discovered triggers project list refresh, .transcriptUpdated only updates unread counts
-          let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
-          self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
-
-          // Also post NotificationCenter event for ConversationMonitor compatibility
-          await MainActor.run {
-            NotificationCenter.default.post(
-              name: Notification.Name("TranscriptUpdated"),
-              object: nil,
-              userInfo: ["projectId": result.projectId]
+          if transcriptId == nil {
+            try await orchestrator.discoverTranscript(
+              projectId: result.projectId,
+              fileURL: url,
+              provider: providerString,
+              providerSessionId: sessionId,
+              startWatching: false,
+              progress: nil
             )
+            transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
+            resolvedTranscriptId = transcriptId
+
+            let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
+            self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
+            await MainActor.run {
+              NotificationCenter.default.post(
+                name: Notification.Name("TranscriptUpdated"),
+                object: nil,
+                userInfo: ["projectId": result.projectId]
+              )
+            }
           }
 
-          log.info("✅ Emitted project event kind=\(eventKind.rawValue, privacy: .public) project=\(result.projectId, privacy: .public)")
+          guard let transcriptId else { return }
+
+          let watched = await watcherBudgetCoordinator?.isTranscriptWatched(
+            projectId: result.projectId,
+            transcriptId: transcriptId
+          ) ?? orchestrator.isWatchingTranscript(transcriptId: transcriptId)
+
+          activityLog.info("[ACTIVITY-DETECTED] project=\(result.projectId, privacy: .public) transcript=\(transcriptId, privacy: .public) watched=\(watched ? 1 : 0, privacy: .public)")
+
+          if watched {
+            await watcherBudgetCoordinator?.noteTranscriptActivity(
+              projectId: result.projectId,
+              transcriptId: transcriptId
+            )
+            return
+          }
+
+          let now = Date()
+          try orchestrator.setTranscriptActivityDetectedAt(transcriptId: transcriptId, at: now)
+          try orchestrator.setProjectActivityDetectedAt(projectId: result.projectId, at: now)
+          try await orchestrator.markPendingRehoover(transcriptId: transcriptId)
+          await emitProjectSignalCoalesced(projectId: result.projectId, kind: .projectActivityDetected)
+          await watcherBudgetCoordinator?.noteTranscriptActivity(projectId: result.projectId, transcriptId: transcriptId)
+
+          await attemptUnreadApproximation(
+            projectId: result.projectId,
+            transcriptId: transcriptId,
+            fileURL: url,
+            provider: providerString
+          )
         } catch {
           if let resolvedTranscriptId {
             try? await orchestrator.markPendingRehoover(transcriptId: resolvedTranscriptId)
-            log.info("[LAZY-WATCHER] Marked pending rehoover for transcript \(resolvedTranscriptId.prefix(8), privacy: .public)")
           }
-          log.error("[LAZY-WATCHER] FSEvents hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
+          activityLog.error("[ACTIVITY-DETECTED] project=\(projPath, privacy: .public) transcript=\(resolvedTranscriptId ?? "unknown", privacy: .public) watched=0")
+          log.error("[FSEVENTS-ERROR] Failed to process change for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }
       }
     } catch {
