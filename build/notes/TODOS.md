@@ -56,6 +56,16 @@ See tracking file for current branches in flight and review status.
 
 ---
 
+## Smart Lazy Watchers v2 (2 items)
+
+**Status:** Active (implementation complete; pending review/merge)
+**Priority:** P0 (launch critical)
+**Branch:** `feat/lazy-watchers`
+
+- [ ] #SMART-LAZY-WATCHERS-V2: Review and merge Smart Lazy Watchers v2 (no flags, v32 migration, watcher budgeting, unread approximation, cold activity signals)
+- [ ] #SMART-LAZY-WATCHERS-DELAY: Investigate and fix tap-to-switch delay regression (instrument logs, isolate root cause, verify fix). **Reference:** build/notes/todo-support/SMART-LAZY-WATCHERS-DELAY-reference.md
+
+---
 ## Permission Fix for Dual-CLI Users (1 item)
 
 **Status:** Complete (verified 2025-12-11, E2E test backlogged)
