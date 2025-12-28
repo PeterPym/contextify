@@ -26,12 +26,13 @@ public enum MonitorConfig {
   public static let showQueuedMessages: Bool = {
     ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_QUEUED"] != "0"
   }()
-  public static let lazyWatchersEnabled: Bool = {
+  /// P1.1 FIX: Make this a computed var so changes apply without restart
+  public static var lazyWatchersEnabled: Bool {
     if let env = ProcessInfo.processInfo.environment["CONTEXTIFY_LAZY_WATCHERS"] {
       return env != "0"
     }
     return ContextifyConfig.shared.lazyWatchersEnabled
-  }()
+  }
 }
 
 // MARK: - Hoover Limits

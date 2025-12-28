@@ -2330,8 +2330,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       let currentMtimeMs: Int64
       do {
         currentMtimeMs = try fetchMtimeMs(fileURL: fileURL, provider: transcript.provider)
-      } catch {
-        log.warning("[LAZY-WATCHER] Skipping transcript \(transcript.id, privacy: .public) due to mtime fetch error: \(error.localizedDescription, privacy: .public)")
+      } catch let error as NSError {
+        // P1.3 FIX: If file doesn't exist, clear pending_rehoover to prevent infinite retry
+        if error.domain == NSCocoaErrorDomain && (error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError) {
+          log.info("[LAZY-WATCHER] File not found for transcript \(transcript.id, privacy: .public), clearing pending_rehoover flag")
+          try? clearPendingRehoover(transcriptId: transcript.id)
+        } else {
+          log.warning("[LAZY-WATCHER] Skipping transcript \(transcript.id, privacy: .public) due to mtime fetch error: \(error.localizedDescription, privacy: .public)")
+        }
         continue
       }
       let cachedMtimeMs = Int64(transcript.mtimeMs ?? 0)

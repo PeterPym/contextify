@@ -696,20 +696,22 @@ public actor ProjectActivityMonitor {
           // Resolve transcript if already known
           let transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
           resolvedTranscriptId = transcriptId
+
+          // P2.1 + P0.1 FIX: Use isActiveProjectWithWatchers to ensure watchers are ready
           let isActiveProject = monitoringCoordinator == nil
             ? true
-            : (await monitoringCoordinator?.isActiveProject(result.projectId) ?? false)
+            : (await monitoringCoordinator?.isActiveProjectWithWatchers(result.projectId) ?? false)
 
           if (isRemoval || isRename), let transcriptId {
             try await orchestrator.markPendingRehoover(transcriptId: transcriptId)
-            log.info("[FSEVENTS-REMOVE] Marked pending rehoover for \(transcriptId.prefix(8), privacy: .public)")
+            log.info("[LAZY-WATCHER] Marked pending rehoover for \(transcriptId.prefix(8), privacy: .public)")
             return
           }
 
           if isActiveProject,
              let transcriptId,
              orchestrator.isWatchingTranscript(transcriptId: transcriptId) {
-            log.debug("[FSEVENTS-SKIP] Active transcript already watched: \(transcriptId.prefix(8), privacy: .public)")
+            log.debug("[LAZY-WATCHER] Active transcript already watched: \(transcriptId.prefix(8), privacy: .public)")
             return
           }
 
@@ -740,7 +742,7 @@ public actor ProjectActivityMonitor {
         } catch {
           if let resolvedTranscriptId {
             try? await orchestrator.markPendingRehoover(transcriptId: resolvedTranscriptId)
-            log.info("[FSEVENTS-FAIL-PENDING] Marked pending rehoover for transcript \(resolvedTranscriptId.prefix(8), privacy: .public)")
+            log.info("[LAZY-WATCHER] Marked pending rehoover for transcript \(resolvedTranscriptId.prefix(8), privacy: .public)")
           }
           log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }
