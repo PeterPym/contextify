@@ -283,11 +283,13 @@ public final class HooverEngine {
   /// Avoids O(N) DB lookups per entry by caching:
   /// - The transcript project's canonical rootPath (fetched once)
   /// - All projects (fetched once on first mismatch)
-  /// - canonCwd -> projectId mappings (reused across entries)
+  /// - Canonical project roots (computed once per project, not per entry)
+  /// - projectRoot -> projectId mappings (normalized to project root, not every subdirectory)
   private struct ProjectResolutionCache {
     var transcriptProjectRootPath: String?
     var allProjects: [Project]?
-    var cwdToProjectId: [String: String] = [:]
+    var canonicalRoots: [String: String] = [:]  // projectId -> canonical rootPath
+    var projectRootToId: [String: String] = [:]  // canonical root -> projectId (normalized cache key)
     var loggedCwds: Set<String> = []  // Track which CWDs we've logged (P1: reduce log spam)
   }
 
@@ -306,25 +308,30 @@ public final class HooverEngine {
       return transcriptProjectId
     }
 
-    // Canonicalize the CWD path
-    let canonCwd = PathUtils.canonicalizePath(entryCwd)
-
-    // Check cache first (P0: avoid repeated lookups for same CWD)
-    if let cachedProjectId = cache.cwdToProjectId[canonCwd] {
-      return cachedProjectId
+    // Canonicalize the CWD path and strip trailing slashes (fix #5)
+    var canonCwd = PathUtils.canonicalizePath(entryCwd)
+    if canonCwd != "/" && canonCwd.hasSuffix("/") {
+      canonCwd = String(canonCwd.dropLast())
     }
 
     // Fetch transcript project's rootPath once per transcript (P0: single DB lookup)
     if cache.transcriptProjectRootPath == nil {
       if let transcriptProject = try projectRepo.get(id: transcriptProjectId) {
-        cache.transcriptProjectRootPath = PathUtils.canonicalizePath(transcriptProject.rootPath)
+        var rootPath = PathUtils.canonicalizePath(transcriptProject.rootPath)
+        // Strip trailing slash from canonical root (fix #5)
+        if rootPath != "/" && rootPath.hasSuffix("/") {
+          rootPath = String(rootPath.dropLast())
+        }
+        cache.transcriptProjectRootPath = rootPath
+        cache.canonicalRoots[transcriptProjectId] = rootPath
       }
     }
 
     // Check if CWD is within transcript's project (common case - no reassignment needed)
     if let transcriptRoot = cache.transcriptProjectRootPath {
       if canonCwd == transcriptRoot || canonCwd.hasPrefix(transcriptRoot + "/") {
-        cache.cwdToProjectId[canonCwd] = transcriptProjectId
+        // Cache under the project root, not every subdirectory CWD (fix #3)
+        cache.projectRootToId[transcriptRoot] = transcriptProjectId
         return transcriptProjectId
       }
     }
@@ -336,33 +343,48 @@ public final class HooverEngine {
     }
 
     // Log once per unique CWD per transcript (P1: reduce log spam)
+    // Downgrade to .debug per code review feedback (fix #6)
     let shouldLog = !cache.loggedCwds.contains(canonCwd)
     if shouldLog {
       cache.loggedCwds.insert(canonCwd)
-      log.info("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      log.debug("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
     }
 
     // P1: Use longest-prefix matching to find containing project
     // This handles subdirectory cwds (e.g., cwd=/repo/app matches project /repo)
     let projects = cache.allProjects ?? []
-    var bestMatch: (project: Project, pathLength: Int)?
+    var bestMatch: (projectId: String, rootPath: String, pathLength: Int)?
 
     for project in projects {
-      let projectRoot = PathUtils.canonicalizePath(project.rootPath)
+      // Get canonical root from cache if available (fix #2: avoid recomputing)
+      let projectRoot: String
+      if let cached = cache.canonicalRoots[project.id] {
+        projectRoot = cached
+      } else {
+        var root = PathUtils.canonicalizePath(project.rootPath)
+        // Strip trailing slash (fix #5)
+        if root != "/" && root.hasSuffix("/") {
+          root = String(root.dropLast())
+        }
+        cache.canonicalRoots[project.id] = root
+        projectRoot = root
+      }
+
       // Check if canonCwd is within this project (exact match or subdirectory)
       if canonCwd == projectRoot || canonCwd.hasPrefix(projectRoot + "/") {
         if bestMatch == nil || projectRoot.count > bestMatch!.pathLength {
-          bestMatch = (project, projectRoot.count)
+          bestMatch = (project.id, projectRoot, projectRoot.count)
         }
       }
     }
 
     if let match = bestMatch {
       if shouldLog {
-        log.debug("[PROJECT-REASSIGN] Matched to existing project via longest-prefix: id=\(match.project.id, privacy: .public) root=\(match.project.rootPath, privacy: .public)")
+        log.debug("[PROJECT-REASSIGN] Matched to existing project via longest-prefix: id=\(match.projectId, privacy: .public) root=\(match.rootPath, privacy: .public)")
       }
-      cache.cwdToProjectId[canonCwd] = match.project.id
-      return match.project.id
+      // Cache under the project root, not every subdirectory CWD (fix #3)
+      cache.projectRootToId[match.rootPath] = match.projectId
+      return match.projectId
     }
 
     // No containing project found - create new project for this CWD
@@ -372,15 +394,11 @@ public final class HooverEngine {
       log.info("[PROJECT-REASSIGN] Created new project for CWD: id=\(newProjectId, privacy: .public) path=\(canonCwd, privacy: .public)")
     }
 
-    // Update cache with new project
-    cache.cwdToProjectId[canonCwd] = newProjectId
-    if var projects = cache.allProjects {
-      // Add to cached list so subsequent entries can find it
-      if let newProject = try? projectRepo.get(id: newProjectId) {
-        projects.append(newProject)
-        cache.allProjects = projects
-      }
-    }
+    // Update cache with new project (fix #4: don't refetch, just update caches directly)
+    cache.canonicalRoots[newProjectId] = canonCwd
+    cache.projectRootToId[canonCwd] = newProjectId
+    // Note: Not updating cache.allProjects since it's only used for longest-prefix matching
+    // and the new project will be at canonCwd which is already the CWD we're resolving
 
     return newProjectId
   }
