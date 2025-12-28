@@ -284,19 +284,25 @@ public final class HooverEngine {
   /// - The transcript project's canonical rootPath (fetched once)
   /// - All projects (fetched once on first mismatch)
   /// - Canonical project roots (computed once per project, not per entry)
-  /// - projectRoot -> projectId mappings (normalized to project root, not every subdirectory)
+  /// - Sorted canonical roots for efficient longest-prefix matching (sorted by length descending)
   private struct ProjectResolutionCache {
     var transcriptProjectRootPath: String?
     var allProjects: [Project]?
     var canonicalRoots: [String: String] = [:]  // projectId -> canonical rootPath
-    var projectRootToId: [String: String] = [:]  // canonical root -> projectId (normalized cache key)
-    var loggedCwds: Set<String> = []  // Track which CWDs we've logged (P1: reduce log spam)
+    var sortedCanonicalRoots: [String] = []  // All canonical roots sorted by length descending for prefix matching
+    var projectRootToId: [String: String] = [:]  // canonical root -> projectId (fast reverse lookup)
+    var loggedRoots: Set<String> = []  // Track which resolved roots we've logged (P1: reduce log spam, keyed by root not cwd)
   }
 
   /// Look up or create a project based on the CWD from an entry.
-  /// Uses longest-prefix matching: finds the project whose rootPath is the longest prefix of canonCwd.
+  /// Uses longest-prefix matching with cached canonical roots: finds the project whose rootPath
+  /// is the longest prefix of canonCwd. Fast path checks cached roots before scanning allProjects.
   /// This handles subdirectory cwds correctly (e.g., cwd=/repo/app/src matches project /repo).
   /// Returns the project ID to use for the entry.
+  ///
+  /// IMPORTANT: ProjectRepositoryImpl methods (get/list/create) must be safe to call within
+  /// a transaction handle. Current implementation uses db.read/write internally which is safe,
+  /// but future refactors must maintain this transaction-safety property to avoid deadlocks.
   private func resolveProjectId(
     fromCwd cwd: String?,
     transcriptProjectId: String,
@@ -308,8 +314,16 @@ public final class HooverEngine {
       return transcriptProjectId
     }
 
-    // Canonicalize the CWD path and strip trailing slashes (fix #5)
+    // Canonicalize the CWD path and strip trailing slashes
     var canonCwd = PathUtils.canonicalizePath(entryCwd)
+
+    // Fix #7: Handle empty string from canonicalizePath (weird inputs like broken symlinks)
+    // Fall back to transcript project if canonicalization produces empty string
+    if canonCwd.isEmpty {
+      log.warning("[PROJECT-RESOLVE] canonicalizePath returned empty string for cwd=\(entryCwd, privacy: .public), falling back to transcript project")
+      return transcriptProjectId
+    }
+
     if canonCwd != "/" && canonCwd.hasSuffix("/") {
       canonCwd = String(canonCwd.dropLast())
     }
@@ -318,87 +332,97 @@ public final class HooverEngine {
     if cache.transcriptProjectRootPath == nil {
       if let transcriptProject = try projectRepo.get(id: transcriptProjectId) {
         var rootPath = PathUtils.canonicalizePath(transcriptProject.rootPath)
-        // Strip trailing slash from canonical root (fix #5)
+        // Strip trailing slash from canonical root
         if rootPath != "/" && rootPath.hasSuffix("/") {
           rootPath = String(rootPath.dropLast())
         }
         cache.transcriptProjectRootPath = rootPath
         cache.canonicalRoots[transcriptProjectId] = rootPath
+        cache.projectRootToId[rootPath] = transcriptProjectId
+        cache.sortedCanonicalRoots = [rootPath]  // Initial seed with transcript root
       }
     }
 
     // Check if CWD is within transcript's project (common case - no reassignment needed)
     if let transcriptRoot = cache.transcriptProjectRootPath {
       if canonCwd == transcriptRoot || canonCwd.hasPrefix(transcriptRoot + "/") {
-        // Cache under the project root, not every subdirectory CWD (fix #3)
-        cache.projectRootToId[transcriptRoot] = transcriptProjectId
         return transcriptProjectId
       }
     }
 
-    // CWD differs from transcript's project - need to find or create correct project
+    // Fix #1: FAST PATH - check cached roots before scanning allProjects
+    // Try exact match first (O(1) dictionary lookup)
+    if let cachedId = cache.projectRootToId[canonCwd] {
+      return cachedId
+    }
+
+    // Try prefix match on cached roots (uses sorted roots for efficient longest-prefix)
+    for cachedRoot in cache.sortedCanonicalRoots {
+      if canonCwd == cachedRoot || canonCwd.hasPrefix(cachedRoot + "/") {
+        // Found containing project in cache - return it
+        if let projectId = cache.projectRootToId[cachedRoot] {
+          return projectId
+        }
+      }
+    }
+
+    // SLOW PATH: Cache miss - need to scan all projects from database
     // Fetch all projects once per transcript (P0: single list fetch, reused for all mismatched entries)
     if cache.allProjects == nil {
       cache.allProjects = try projectRepo.list()
-    }
 
-    // Log once per unique CWD per transcript (P1: reduce log spam)
-    // Downgrade to .debug per code review feedback (fix #6)
-    let shouldLog = !cache.loggedCwds.contains(canonCwd)
-    if shouldLog {
-      cache.loggedCwds.insert(canonCwd)
-      log.debug("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
-    }
-
-    // P1: Use longest-prefix matching to find containing project
-    // This handles subdirectory cwds (e.g., cwd=/repo/app matches project /repo)
-    let projects = cache.allProjects ?? []
-    var bestMatch: (projectId: String, rootPath: String, pathLength: Int)?
-
-    for project in projects {
-      // Get canonical root from cache if available (fix #2: avoid recomputing)
-      let projectRoot: String
-      if let cached = cache.canonicalRoots[project.id] {
-        projectRoot = cached
-      } else {
+      // Fix #4: Build sorted roots list from all projects for fast prefix matching
+      var allRoots: [String] = []
+      for project in cache.allProjects ?? [] {
         var root = PathUtils.canonicalizePath(project.rootPath)
-        // Strip trailing slash (fix #5)
         if root != "/" && root.hasSuffix("/") {
           root = String(root.dropLast())
         }
         cache.canonicalRoots[project.id] = root
-        projectRoot = root
+        cache.projectRootToId[root] = project.id
+        allRoots.append(root)
       }
+      // Sort by length descending for efficient longest-prefix matching
+      cache.sortedCanonicalRoots = allRoots.sorted { $0.count > $1.count }
+    }
 
-      // Check if canonCwd is within this project (exact match or subdirectory)
+    // Use sorted roots for efficient longest-prefix matching
+    // Since roots are sorted by length (longest first), first match is the longest match
+    for projectRoot in cache.sortedCanonicalRoots {
       if canonCwd == projectRoot || canonCwd.hasPrefix(projectRoot + "/") {
-        if bestMatch == nil || projectRoot.count > bestMatch!.pathLength {
-          bestMatch = (project.id, projectRoot, projectRoot.count)
+        if let projectId = cache.projectRootToId[projectRoot] {
+          // Fix #5: Log once per resolved root, not per cwd (reduces noise in deep trees)
+          let shouldLog = !cache.loggedRoots.contains(projectRoot)
+          if shouldLog {
+            cache.loggedRoots.insert(projectRoot)
+            log.debug("[PROJECT-REASSIGN] Matched CWD to existing project: cwd=\(canonCwd, privacy: .public) root=\(projectRoot, privacy: .public) id=\(projectId, privacy: .public)")
+          }
+          return projectId
         }
       }
     }
 
-    if let match = bestMatch {
-      if shouldLog {
-        log.debug("[PROJECT-REASSIGN] Matched to existing project via longest-prefix: id=\(match.projectId, privacy: .public) root=\(match.rootPath, privacy: .public)")
-      }
-      // Cache under the project root, not every subdirectory CWD (fix #3)
-      cache.projectRootToId[match.rootPath] = match.projectId
-      return match.projectId
-    }
-
     // No containing project found - create new project for this CWD
-    // P0 fix: Store canonical path, not raw path, to prevent duplicate projects
+    // Store canonical path, not raw path, to prevent duplicate projects
     let newProjectId = try projectRepo.create(name: nil, rootPath: canonCwd, bookmark: nil)
+
+    let shouldLog = !cache.loggedRoots.contains(canonCwd)
     if shouldLog {
-      log.info("[PROJECT-REASSIGN] Created new project for CWD: id=\(newProjectId, privacy: .public) path=\(canonCwd, privacy: .public)")
+      cache.loggedRoots.insert(canonCwd)
+      log.info("[PROJECT-REASSIGN] Created new project: cwd=\(canonCwd, privacy: .public) id=\(newProjectId, privacy: .public)")
     }
 
-    // Update cache with new project (fix #4: don't refetch, just update caches directly)
+    // Fix #2: Update all cache structures with new project root
     cache.canonicalRoots[newProjectId] = canonCwd
     cache.projectRootToId[canonCwd] = newProjectId
-    // Note: Not updating cache.allProjects since it's only used for longest-prefix matching
-    // and the new project will be at canonCwd which is already the CWD we're resolving
+
+    // Fix #2: Add new root to sorted list (maintain sorted order)
+    // Insert at correct position to keep list sorted by length descending
+    var insertIndex = 0
+    while insertIndex < cache.sortedCanonicalRoots.count && cache.sortedCanonicalRoots[insertIndex].count > canonCwd.count {
+      insertIndex += 1
+    }
+    cache.sortedCanonicalRoots.insert(canonCwd, at: insertIndex)
 
     return newProjectId
   }
