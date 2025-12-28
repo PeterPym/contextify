@@ -844,9 +844,14 @@ enum DatabaseSchema {
       logger.info("[MIGRATION-v31] Adding pending_rehoover for lazy watchers")
 
       // Add column if missing (defensive for partially applied migrations)
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN pending_rehoover INTEGER DEFAULT 0
-      """)
+      if try !db.columnExists("pending_rehoover", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts ADD COLUMN pending_rehoover INTEGER DEFAULT 0
+        """)
+        logger.info("[MIGRATION-v31] Added pending_rehoover column")
+      } else {
+        logger.info("[MIGRATION-v31] pending_rehoover column already exists, skipping")
+      }
 
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_transcripts_pending_rehoover
@@ -854,7 +859,7 @@ enum DatabaseSchema {
         WHERE pending_rehoover = 1
       """)
 
-      logger.info("[MIGRATION-v31] pending_rehoover added with index")
+      logger.info("[MIGRATION-v31] Migration complete with index")
     }
 
     return migrator

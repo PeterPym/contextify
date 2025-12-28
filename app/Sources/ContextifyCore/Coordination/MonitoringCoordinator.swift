@@ -38,7 +38,14 @@ public actor MonitoringCoordinator {
 
     // Run rehoover in the background to avoid blocking activation.
     Task.detached(priority: .utility) { [orchestrator] in
-      _ = try? await orchestrator.rehooverDirtyTranscripts(projectId: projectId)
+      do {
+        let count = try await orchestrator.rehooverDirtyTranscripts(projectId: projectId)
+        if count > 0 {
+          log.info("[LAZY-WATCHER] Rehoovered \(count, privacy: .public) transcripts on activation")
+        }
+      } catch {
+        log.error("[LAZY-WATCHER] Rehoover failed: \(error.localizedDescription, privacy: .public)")
+      }
     }
   }
 

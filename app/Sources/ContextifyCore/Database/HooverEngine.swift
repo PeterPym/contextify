@@ -27,15 +27,10 @@ public enum MonitorConfig {
     ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_QUEUED"] != "0"
   }()
   public static let lazyWatchersEnabled: Bool = {
-    #if APPSTORE_BUILD
-    let defaultValue = false
-    #else
-    let defaultValue = true
-    #endif
     if let env = ProcessInfo.processInfo.environment["CONTEXTIFY_LAZY_WATCHERS"] {
       return env != "0"
     }
-    return defaultValue
+    return ContextifyConfig.shared.lazyWatchersEnabled
   }()
 }
 

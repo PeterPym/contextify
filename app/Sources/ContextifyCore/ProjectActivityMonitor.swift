@@ -686,6 +686,7 @@ public actor ProjectActivityMonitor {
       log.debug("FSEvents: sessionId=\(sessionId) projPath=\(projPath)")
 
       Task {
+        var resolvedTranscriptId: String?
         do {
           let result = try orchestrator.getOrCreateProject(
             name: URL(fileURLWithPath: projPath).lastPathComponent,
@@ -694,6 +695,7 @@ public actor ProjectActivityMonitor {
 
           // Resolve transcript if already known
           let transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
+          resolvedTranscriptId = transcriptId
           let isActiveProject = monitoringCoordinator == nil
             ? true
             : (await monitoringCoordinator?.isActiveProject(result.projectId) ?? false)
@@ -736,6 +738,10 @@ public actor ProjectActivityMonitor {
 
           log.info("✅ Emitted project event kind=\(eventKind.rawValue, privacy: .public) project=\(result.projectId, privacy: .public)")
         } catch {
+          if let resolvedTranscriptId {
+            try? await orchestrator.markPendingRehoover(transcriptId: resolvedTranscriptId)
+            log.info("[FSEVENTS-FAIL-PENDING] Marked pending rehoover for transcript \(resolvedTranscriptId.prefix(8), privacy: .public)")
+          }
           log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }
       }
