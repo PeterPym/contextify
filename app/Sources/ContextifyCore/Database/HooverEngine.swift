@@ -120,6 +120,27 @@ public struct EntryInsert {
     self.toolResultData = toolResultData
   }
 
+  /// Returns a copy with an updated projectId
+  public func withProjectId(_ newProjectId: String) -> EntryInsert {
+    EntryInsert(
+      id: id,
+      transcriptId: transcriptId,
+      projectId: newProjectId,
+      sessionId: sessionId,
+      provider: provider,
+      kind: kind,
+      timestamp: timestamp,
+      content: content,
+      contentSha256: contentSha256,
+      parentId: parentId,
+      gitBranch: gitBranch,
+      gitCommit: gitCommit,
+      cwd: cwd,
+      hasTextContent: hasTextContent,
+      isQueued: isQueued
+    )
+  }
+
   /// Convert to TranscriptEntry model
   public func toModel() -> TranscriptEntry {
     let now = Int(Date().timeIntervalSince1970)
@@ -256,9 +277,30 @@ public final class HooverEngine {
     self.metadataParser = metadataParser
   }
 
-  /// Look up or create a project based on the CWD from an entry
-  /// Returns the project ID to use for the entry
-  private func resolveProjectId(fromCwd cwd: String?, transcriptProjectId: String, transcriptId: String) throws -> String {
+  // MARK: - Project Resolution Cache (P0 fix: avoid per-entry DB lookups)
+
+  /// Cache for project resolution within a single hooverTranscript call.
+  /// Avoids O(N) DB lookups per entry by caching:
+  /// - The transcript project's canonical rootPath (fetched once)
+  /// - All projects (fetched once on first mismatch)
+  /// - canonCwd -> projectId mappings (reused across entries)
+  private struct ProjectResolutionCache {
+    var transcriptProjectRootPath: String?
+    var allProjects: [Project]?
+    var cwdToProjectId: [String: String] = [:]
+    var loggedCwds: Set<String> = []  // Track which CWDs we've logged (P1: reduce log spam)
+  }
+
+  /// Look up or create a project based on the CWD from an entry.
+  /// Uses longest-prefix matching: finds the project whose rootPath is the longest prefix of canonCwd.
+  /// This handles subdirectory cwds correctly (e.g., cwd=/repo/app/src matches project /repo).
+  /// Returns the project ID to use for the entry.
+  private func resolveProjectId(
+    fromCwd cwd: String?,
+    transcriptProjectId: String,
+    transcriptId: String,
+    cache: inout ProjectResolutionCache
+  ) throws -> String {
     // If no CWD, use the transcript's project
     guard let entryCwd = cwd, !entryCwd.isEmpty else {
       return transcriptProjectId
@@ -267,25 +309,79 @@ public final class HooverEngine {
     // Canonicalize the CWD path
     let canonCwd = PathUtils.canonicalizePath(entryCwd)
 
-    // Check if this matches the transcript's project
-    if let transcriptProject = try projectRepo.get(id: transcriptProjectId),
-       transcriptProject.rootPath == canonCwd {
-      // CWD matches transcript's project - no reassignment needed
-      return transcriptProjectId
+    // Check cache first (P0: avoid repeated lookups for same CWD)
+    if let cachedProjectId = cache.cwdToProjectId[canonCwd] {
+      return cachedProjectId
     }
 
-    // CWD differs - look up or create the correct project
-    log.info("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
-
-    // Try to find existing project with this CWD
-    if let existingProject = try projectRepo.list().first(where: { $0.rootPath == canonCwd }) {
-      log.info("[PROJECT-REASSIGN] Reassigning entry to existing project: id=\(existingProject.id, privacy: .public) path=\(canonCwd, privacy: .public)")
-      return existingProject.id
+    // Fetch transcript project's rootPath once per transcript (P0: single DB lookup)
+    if cache.transcriptProjectRootPath == nil {
+      if let transcriptProject = try projectRepo.get(id: transcriptProjectId) {
+        cache.transcriptProjectRootPath = PathUtils.canonicalizePath(transcriptProject.rootPath)
+      }
     }
 
-    // Create new project for this CWD
-    let newProjectId = try projectRepo.create(name: nil, rootPath: entryCwd, bookmark: nil)
-    log.info("[PROJECT-REASSIGN] Created new project for CWD: id=\(newProjectId, privacy: .public) path=\(canonCwd, privacy: .public)")
+    // Check if CWD is within transcript's project (common case - no reassignment needed)
+    if let transcriptRoot = cache.transcriptProjectRootPath {
+      if canonCwd == transcriptRoot || canonCwd.hasPrefix(transcriptRoot + "/") {
+        cache.cwdToProjectId[canonCwd] = transcriptProjectId
+        return transcriptProjectId
+      }
+    }
+
+    // CWD differs from transcript's project - need to find or create correct project
+    // Fetch all projects once per transcript (P0: single list fetch, reused for all mismatched entries)
+    if cache.allProjects == nil {
+      cache.allProjects = try projectRepo.list()
+    }
+
+    // Log once per unique CWD per transcript (P1: reduce log spam)
+    let shouldLog = !cache.loggedCwds.contains(canonCwd)
+    if shouldLog {
+      cache.loggedCwds.insert(canonCwd)
+      log.info("[PROJECT-REASSIGN] Entry CWD differs from transcript project: cwd=\(canonCwd, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+    }
+
+    // P1: Use longest-prefix matching to find containing project
+    // This handles subdirectory cwds (e.g., cwd=/repo/app matches project /repo)
+    let projects = cache.allProjects ?? []
+    var bestMatch: (project: Project, pathLength: Int)?
+
+    for project in projects {
+      let projectRoot = PathUtils.canonicalizePath(project.rootPath)
+      // Check if canonCwd is within this project (exact match or subdirectory)
+      if canonCwd == projectRoot || canonCwd.hasPrefix(projectRoot + "/") {
+        if bestMatch == nil || projectRoot.count > bestMatch!.pathLength {
+          bestMatch = (project, projectRoot.count)
+        }
+      }
+    }
+
+    if let match = bestMatch {
+      if shouldLog {
+        log.debug("[PROJECT-REASSIGN] Matched to existing project via longest-prefix: id=\(match.project.id, privacy: .public) root=\(match.project.rootPath, privacy: .public)")
+      }
+      cache.cwdToProjectId[canonCwd] = match.project.id
+      return match.project.id
+    }
+
+    // No containing project found - create new project for this CWD
+    // P0 fix: Store canonical path, not raw path, to prevent duplicate projects
+    let newProjectId = try projectRepo.create(name: nil, rootPath: canonCwd, bookmark: nil)
+    if shouldLog {
+      log.info("[PROJECT-REASSIGN] Created new project for CWD: id=\(newProjectId, privacy: .public) path=\(canonCwd, privacy: .public)")
+    }
+
+    // Update cache with new project
+    cache.cwdToProjectId[canonCwd] = newProjectId
+    if var projects = cache.allProjects {
+      // Add to cached list so subsequent entries can find it
+      if let newProject = try? projectRepo.get(id: newProjectId) {
+        projects.append(newProject)
+        cache.allProjects = projects
+      }
+    }
+
     return newProjectId
   }
 
@@ -380,6 +476,7 @@ public final class HooverEngine {
     var hitEOF = false
     var totalEntriesSkipped = 0  // Track skipEntry count
     var totalEntriesInserted = 0  // Track actual DB inserts
+    var projectCache = ProjectResolutionCache()  // P0 fix: cache project lookups per transcript
 
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
@@ -478,28 +575,13 @@ public final class HooverEngine {
           let correctProjectId = try resolveProjectId(
             fromCwd: entry.cwd,
             transcriptProjectId: transcript.projectId,
-            transcriptId: transcript.id
+            transcriptId: transcript.id,
+            cache: &projectCache
           )
 
-          // If project differs, create new entry with corrected project ID
+          // If project differs, use helper to create entry with corrected project ID
           if correctProjectId != entry.projectId {
-            entry = EntryInsert(
-              id: entry.id,
-              transcriptId: entry.transcriptId,
-              projectId: correctProjectId,
-              sessionId: entry.sessionId,
-              provider: entry.provider,
-              kind: entry.kind,
-              timestamp: entry.timestamp,
-              content: entry.content,
-              contentSha256: entry.contentSha256,
-              parentId: entry.parentId,
-              gitBranch: entry.gitBranch,
-              gitCommit: entry.gitCommit,
-              cwd: entry.cwd,
-              hasTextContent: entry.hasTextContent,
-              isQueued: entry.isQueued
-            )
+            entry = entry.withProjectId(correctProjectId)
           }
 
           batch.append(entry)
@@ -662,28 +744,13 @@ public final class HooverEngine {
           let correctProjectId = try resolveProjectId(
             fromCwd: entry.cwd,
             transcriptProjectId: transcript.projectId,
-            transcriptId: transcript.id
+            transcriptId: transcript.id,
+            cache: &projectCache
           )
 
-          // If project differs, create new entry with corrected project ID
+          // If project differs, use helper to create entry with corrected project ID
           if correctProjectId != entry.projectId {
-            entry = EntryInsert(
-              id: entry.id,
-              transcriptId: entry.transcriptId,
-              projectId: correctProjectId,
-              sessionId: entry.sessionId,
-              provider: entry.provider,
-              kind: entry.kind,
-              timestamp: entry.timestamp,
-              content: entry.content,
-              contentSha256: entry.contentSha256,
-              parentId: entry.parentId,
-              gitBranch: entry.gitBranch,
-              gitCommit: entry.gitCommit,
-              cwd: entry.cwd,
-              hasTextContent: entry.hasTextContent,
-              isQueued: entry.isQueued
-            )
+            entry = entry.withProjectId(correctProjectId)
           }
 
           batch.append(entry)
