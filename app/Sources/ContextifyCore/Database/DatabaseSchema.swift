@@ -3,14 +3,14 @@ import GRDB
 import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v30 (sidechain ingestion + tool invocations)
+/// Current version: v31 (lazy watchers pending_rehoover tracking)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 28
+  static let version = 31
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
 
   /// Create migrator for schema evolution
@@ -837,6 +837,24 @@ enum DatabaseSchema {
         WHERE provider = 'claude.code'
       """)
       logger.info("[MIGRATION-v30] Marked Claude Code transcripts for re-ingestion")
+    }
+
+    // v31: pending_rehoover flag for lazy watchers
+    migrator.registerMigration("v31") { db in
+      logger.info("[MIGRATION-v31] Adding pending_rehoover for lazy watchers")
+
+      // Add column if missing (defensive for partially applied migrations)
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN pending_rehoover INTEGER DEFAULT 0
+      """)
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_pending_rehoover
+        ON transcripts(pending_rehoover)
+        WHERE pending_rehoover = 1
+      """)
+
+      logger.info("[MIGRATION-v31] pending_rehoover added with index")
     }
 
     return migrator

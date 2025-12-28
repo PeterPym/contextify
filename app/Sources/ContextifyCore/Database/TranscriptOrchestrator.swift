@@ -1114,6 +1114,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   private func needsSecurityScope(provider: String) -> Bool {
+    guard Sandbox.isSandboxed else { return false }
     return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
   }
 
@@ -1145,7 +1146,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     projectId: String,
     transcriptFiles: [(url: URL, provider: String, sessionId: String?)],
     progress: IngestProgressSink? = nil,
-    concurrency: Int = 8
+    concurrency: Int = 8,
+    startWatching: Bool = true
   ) async throws {
     log.info("[BATCH-DISC-START] Starting parallel discovery for \(transcriptFiles.count, privacy: .public) transcripts in project: \(projectId, privacy: .public) (concurrency: \(concurrency, privacy: .public))")
 
@@ -1188,7 +1190,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             fileURL: file.url,
             provider: file.provider,
             providerSessionId: file.sessionId,
-            startWatching: true,
+            startWatching: startWatching,
             progress: nil
           )
 
@@ -2274,6 +2276,21 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     )
   }
 
+  /// Stop all watchers for a specific project (lazy watcher support)
+  public func stopAllWatchers(forProjectId projectId: String) throws {
+    let transcripts = try getTranscripts(forProject: projectId)
+    var stopped = 0
+
+    for transcript in transcripts where watcher.isWatching(transcriptId: transcript.id) {
+      watcher.stopWatching(transcriptId: transcript.id)
+      stopped += 1
+    }
+
+    if stopped > 0 {
+      log.info("[WATCHER-STOP-PROJECT] Stopped \(stopped, privacy: .public) watchers for project \(projectId, privacy: .public)")
+    }
+  }
+
   /// Manually trigger hoover for a transcript (for recovery/debugging)
   /// Bypasses watcher and directly ingests new content from file
   @discardableResult
@@ -2282,6 +2299,108 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       throw RepositoryError.notFound
     }
     return try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: NoOpProgressSink())
+  }
+
+  // MARK: - Lazy Watcher Support
+
+  /// Mark a transcript for rehoover after a deferred ingestion or failure
+  public func markPendingRehoover(transcriptId: String) async throws {
+    let pool = try dbManager.pool
+    try await pool.write { db in
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET pending_rehoover = 1,
+            updated_at = ?
+        WHERE id = ?
+      """, arguments: [
+        Int(Date().timeIntervalSince1970),
+        transcriptId
+      ])
+    }
+  }
+
+  /// Rehoover transcripts whose filesystem mtime or pending flag indicate missed changes
+  /// - Returns: Count of transcripts rehoovered
+  public func rehooverDirtyTranscripts(projectId: String) async throws -> Int {
+    let transcripts = try getTranscripts(forProject: projectId)
+    var rehoovered = 0
+
+    for transcript in transcripts {
+      let fileURL = URL(fileURLWithPath: transcript.filePath)
+      let currentMtimeMs: Int64
+      do {
+        currentMtimeMs = try fetchMtimeMs(fileURL: fileURL, provider: transcript.provider)
+      } catch {
+        log.warning("[LAZY-WATCHER] Skipping transcript \(transcript.id, privacy: .public) due to mtime fetch error: \(error.localizedDescription, privacy: .public)")
+        continue
+      }
+      let cachedMtimeMs = Int64(transcript.mtimeMs ?? 0)
+      let shouldRehoover = transcript.pendingRehoover == 1 || currentMtimeMs > cachedMtimeMs
+
+      guard shouldRehoover else { continue }
+
+      if needsSecurityScope(provider: transcript.provider), let accessProvider {
+        try accessProvider.withAccess(for: transcript.provider) { _ in
+          _ = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: NoOpProgressSink())
+        }
+      } else {
+        _ = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: NoOpProgressSink())
+      }
+
+      try updateTranscriptMtimeMs(transcriptId: transcript.id, mtimeMs: currentMtimeMs)
+      try clearPendingRehoover(transcriptId: transcript.id)
+      rehoovered += 1
+    }
+
+    return rehoovered
+  }
+
+  private func clearPendingRehoover(transcriptId: String) throws {
+    let pool = try dbManager.pool
+    try pool.write { db in
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET pending_rehoover = 0,
+            updated_at = ?
+        WHERE id = ?
+      """, arguments: [
+        Int(Date().timeIntervalSince1970),
+        transcriptId
+      ])
+    }
+  }
+
+  private func updateTranscriptMtimeMs(transcriptId: String, mtimeMs: Int64) throws {
+    let pool = try dbManager.pool
+    let lastModifiedSeconds = Int(TimeInterval(mtimeMs) / 1000.0)
+    try pool.write { db in
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET mtime_ms = ?,
+            last_modified = ?,
+            updated_at = ?
+        WHERE id = ?
+      """, arguments: [
+        mtimeMs,
+        lastModifiedSeconds,
+        Int(Date().timeIntervalSince1970),
+        transcriptId
+      ])
+    }
+  }
+
+  private func fetchMtimeMs(fileURL: URL, provider: String) throws -> Int64 {
+    if needsSecurityScope(provider: provider), let accessProvider {
+      return try accessProvider.withAccess(for: provider) { _ in
+        let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let modDate = (attrs[.modificationDate] as? Date) ?? .distantPast
+        return Int64(modDate.timeIntervalSince1970 * 1000)
+      }
+    }
+
+    let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    let modDate = (attrs[.modificationDate] as? Date) ?? .distantPast
+    return Int64(modDate.timeIntervalSince1970 * 1000)
   }
 
   // MARK: - Assistant Usage Reconciliation

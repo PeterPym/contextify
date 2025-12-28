@@ -48,6 +48,7 @@ public actor ProjectActivityMonitor {
 
   private var fsEventsMonitor: FSEventsMonitor?
   private var fsEventsTask: Task<Void, Never>?
+  private var monitoringCoordinator: MonitoringCoordinator?
 
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
@@ -58,6 +59,11 @@ public actor ProjectActivityMonitor {
   deinit {
     let monitorId = "\(ObjectIdentifier(self))"
     log.debug("ProjectActivity: monitor deallocated (id: \(monitorId))")
+  }
+
+  /// Attach a monitoring coordinator for lazy watcher mode
+  public func setMonitoringCoordinator(_ coordinator: MonitoringCoordinator?) {
+    monitoringCoordinator = coordinator
   }
 
   /// Start global monitoring (FSEvents + fallback polling)
@@ -77,18 +83,22 @@ public actor ProjectActivityMonitor {
     if !projects.isEmpty {
       log.info("[INIT-SKIP-DISCOVERY] Projects already ingested (count: \(projects.count, privacy: .public)) - skipping duplicate discovery")
 
-      // CRITICAL: Still need to start file watchers for existing transcripts
-      // Discovery starts watchers via hooverTranscript(..., startWatching: true)
-      // but when skipping discovery, watchers were never started
-      log.info("[INIT-ENSURE-WATCHERS] Ensuring watchers for \(projects.count, privacy: .public) existing projects")
-      for project in projects {
-        do {
-          let summary = try orchestrator.ensureProjectWatcher(projectId: project.id)
-          if summary.startedCount > 0 {
-            log.info("[INIT-WATCHER-STARTED] project=\(project.id, privacy: .public) started=\(summary.startedCount, privacy: .public)")
+      if MonitorConfig.lazyWatchersEnabled {
+        log.info("[INIT-LAZY-WATCHERS] Lazy watchers enabled - skipping global watcher start")
+      } else {
+        // CRITICAL: Still need to start file watchers for existing transcripts
+        // Discovery starts watchers via hooverTranscript(..., startWatching: true)
+        // but when skipping discovery, watchers were never started
+        log.info("[INIT-ENSURE-WATCHERS] Ensuring watchers for \(projects.count, privacy: .public) existing projects")
+        for project in projects {
+          do {
+            let summary = try orchestrator.ensureProjectWatcher(projectId: project.id)
+            if summary.startedCount > 0 {
+              log.info("[INIT-WATCHER-STARTED] project=\(project.id, privacy: .public) started=\(summary.startedCount, privacy: .public)")
+            }
+          } catch {
+            log.error("[INIT-WATCHER-FAILED] project=\(project.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
           }
-        } catch {
-          log.error("[INIT-WATCHER-FAILED] project=\(project.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
       }
     } else {
@@ -603,7 +613,7 @@ public actor ProjectActivityMonitor {
 
   /// Handle file system change from FSEvents
   /// Maps changed path → project ID → hoover → emit event
-  private func handleFileSystemChange(_ change: FSEventChange) {
+  private func handleFileSystemChange(_ change: FSEventChange) async {
     #if os(macOS)
     let path = change.path
     log.info("[FSEVENTS-CHANGE] File system change detected: \(path, privacy: .public)")
@@ -618,6 +628,9 @@ public actor ProjectActivityMonitor {
 
     let url = URL(fileURLWithPath: path)
     let comps = url.pathComponents
+    let flags = change.flags
+    let isRemoval = (flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)) != 0
+    let isRename = (flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)) != 0
 
     // Detect provider and marker
     enum Provider { case claude, codex }
@@ -672,19 +685,39 @@ public actor ProjectActivityMonitor {
 
       log.debug("FSEvents: sessionId=\(sessionId) projPath=\(projPath)")
 
-      // Hoover first, emit event only after completion
       Task {
         do {
           let result = try orchestrator.getOrCreateProject(
             name: URL(fileURLWithPath: projPath).lastPathComponent,
             rootPath: projPath
           )
+
+          // Resolve transcript if already known
+          let transcriptId = try orchestrator.resolveTranscriptId(fileURL: url, provider: providerString)
+          let isActiveProject = monitoringCoordinator == nil
+            ? true
+            : (await monitoringCoordinator?.isActiveProject(result.projectId) ?? false)
+
+          if (isRemoval || isRename), let transcriptId {
+            try await orchestrator.markPendingRehoover(transcriptId: transcriptId)
+            log.info("[FSEVENTS-REMOVE] Marked pending rehoover for \(transcriptId.prefix(8), privacy: .public)")
+            return
+          }
+
+          if isActiveProject,
+             let transcriptId,
+             orchestrator.isWatchingTranscript(transcriptId: transcriptId) {
+            log.debug("[FSEVENTS-SKIP] Active transcript already watched: \(transcriptId.prefix(8), privacy: .public)")
+            return
+          }
+
+          let shouldStartWatching = !MonitorConfig.lazyWatchersEnabled || isActiveProject
           try await orchestrator.discoverTranscript(
             projectId: result.projectId,
             fileURL: url,
             provider: providerString,
             providerSessionId: sessionId,
-            startWatching: true,
+            startWatching: shouldStartWatching,
             progress: nil
           )
           // Emit correct event based on whether project was newly created

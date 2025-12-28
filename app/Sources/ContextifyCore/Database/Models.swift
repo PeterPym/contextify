@@ -51,6 +51,8 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
   public var status: String
   public var ingestState: String
   public var lastError: String?
+  public var mtimeMs: Int?
+  public var pendingRehoover: Int?
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -72,6 +74,8 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
     case status
     case ingestState = "ingest_state"
     case lastError = "last_error"
+    case mtimeMs = "mtime_ms"
+    case pendingRehoover = "pending_rehoover"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }

@@ -35,6 +35,7 @@ public final class ProjectSwitcherState {
 
   private var orchestrator: TranscriptOrchestrator?
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
+  private var monitoringCoordinator: MonitoringCoordinator?
   private var fastPathCoordinator: FastPathIngestionCoordinator?
 
   // All discovered projects (Projects window + diagnostics)
@@ -177,6 +178,18 @@ public final class ProjectSwitcherState {
       log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
+    if ContextifyCore.MonitorConfig.lazyWatchersEnabled {
+      if monitoringCoordinator == nil {
+        monitoringCoordinator = MonitoringCoordinator(orchestrator: orchestrator)
+        log.info("✅ ProjectSwitcher: initialized MonitoringCoordinator for lazy watchers")
+      }
+      if let monitor = activityMonitor, let coordinator = monitoringCoordinator {
+        Task {
+          await monitor.setMonitoringCoordinator(coordinator)
+        }
+      }
+    }
+
     if fastPathCoordinator == nil {
       let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
       Task(priority: .background) {
@@ -304,6 +317,9 @@ public final class ProjectSwitcherState {
 
     Task {
       await activityMonitor?.stopAll()
+      if ContextifyCore.MonitorConfig.lazyWatchersEnabled {
+        await monitoringCoordinator?.deactivateAll()
+      }
     }
 
     log.info("ProjectSwitcherState stopped")
@@ -316,6 +332,12 @@ public final class ProjectSwitcherState {
 
     // Coordinator guarantees project exists in DB, so just set activeProjectId directly
     activeProjectId = context.id
+
+    if ContextifyCore.MonitorConfig.lazyWatchersEnabled, let coordinator = monitoringCoordinator {
+      Task.detached {
+        await coordinator.activateProject(context.id)
+      }
+    }
 
     // Clear unread count for newly active project (CXT-13)
     unreadCounts[context.id] = 0
