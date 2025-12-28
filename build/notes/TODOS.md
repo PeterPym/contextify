@@ -2714,7 +2714,6 @@ When a project not currently visible in the tab bar receives new messages:
 
 **Plan:** `build/notes/todo-support/TIMELINE-SUMMARY-HEIGHT.md`
 
-
 **Prerequisites:**
 - ConversationMonitor refactoring (see ROADMAP.md #CM-REFACTOR for history)
   - [x] Phase 1: HealthMonitoringCoordinator + ViewportTrackingCoordinator (complete)
