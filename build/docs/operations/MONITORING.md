@@ -37,6 +37,12 @@ Common markers:
 - `[WATCHER-STOP] transcript=<id> project=<id> reason=<eviction|plan>`
 - `[DEGRADED-MODE] enabled=1 reason=fd_exhaustion`
 
+Stop-all marker (emitted by `TranscriptOrchestrator` category):
+
+```bash
+log show --predicate 'subsystem == "dev.contextify" AND category == "TranscriptOrchestrator" AND message CONTAINS "WATCHER-STOP-ALL"' --info --last 5m
+```
+
 ## Activity Signals
 
 FSEvents should hoover inactive transcripts without starting per-file watchers.

@@ -1,531 +1,141 @@
-# Lazy Watchers Implementation: Architecture & Operational Guide
+# Smart Lazy Watchers v2: Architecture & Operational Guide
 
-**Status:** Complete (committed to feat/lazy-watchers, integrated with monitoring stack)
-**Last Updated:** 2025-12-27
-**Target Audience:** Developers maintaining the monitoring architecture
+**Status:** Active (WatcherBudgetCoordinator)
+**Last Updated:** 2025-12-28
+**Target Audience:** Developers maintaining transcript monitoring
 
-This document explains how file watchers have evolved with the lazy watchers feature, covering architecture changes, promotion mechanisms, and operational patterns.
-
----
-
-## OLD ARCHITECTURE: All Watchers All The Time
-
-### Overview
-
-Prior to lazy watchers, Contextify maintained DispatchSource file watchers for **every transcript in every project**:
-
-```
-Startup → Discover all projects → Hoover all transcripts → Start watchers for all → Monitor all
-           =====================================================================================================
-           Result: ~3,600 watchers, exhausting file descriptors (errno=24 EMFILE)
-```
-
-### Resource Impact
-
-- **~1,676 Claude transcripts** + **202 Codex** + **~1,800 agent sidechains** = **~3,678 open file descriptors**
-- Each watcher: 1 FD + DispatchSource overhead
-- macOS default ulimit: 256-1024 FDs per process
-- **Result:** 1,638 agent files failed to get watchers (55% data loss)
-
-### Architecture Diagram (OLD)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         STARTUP (EAGER WATCHERS)                        │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ProjectActivityMonitor.startGlobalMonitoring()                         │
-│  ├─ ensureProjectWatcher(projectId) for ALL projects                    │
-│  └─ discoverTranscripts(startWatching: true) for ALL transcripts        │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            ┌───────────┐   ┌───────────┐   ┌───────────┐
-            │ Project A │   │ Project B │   │ Project C │  ... (20+ projects)
-            │ 50 files  │   │ 120 files │   │ 80 files  │
-            │ 50 FDs    │   │ 120 FDs   │   │ 80 FDs    │
-            └───────────┘   └───────────┘   └───────────┘
-                    │               │               │
-                    ▼               ▼               ▼
-            ┌─────────────────────────────────────────────────────────────┐
-            │           TranscriptWatcher.watch() for EVERY file          │
-            │           open(fileURL.path, O_EVTONLY) × 3,678             │
-            │                                                             │
-            │           → errno=24 (EMFILE) after ~1,500 files ←          │
-            │           → 1,638 agent files FAIL to get watchers          │
-            └─────────────────────────────────────────────────────────────┘
-```
+This document describes the Smart Lazy Watchers v2 architecture: a budgeted plan → diff → apply system that keeps file descriptors bounded while preserving immediate activity signals.
 
 ---
 
-## NEW ARCHITECTURE: Two-Tier Monitoring
+## Overview
 
-### Overview
+Smart Lazy Watchers v2 uses a **three-tier budget model**:
 
-Lazy watchers implement a **two-tier strategy**: active project gets real-time per-file monitoring, inactive projects rely on FSEvents-driven detection with on-demand rehoovering.
+- **HOT**: active project (up to 20 transcripts watched)
+- **WARM**: up to 2 most recently activated projects (up to 10 transcripts each)
+- **COLD**: all remaining projects (0 watchers; FSEvents-only activity signals)
 
-### Architecture Diagram (NEW)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      STARTUP (LAZY WATCHERS)                            │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ProjectActivityMonitor + MonitoringCoordinator                         │
-│  ├─ FSEvents stream monitors ALL directories (0 FDs, 500ms latency)     │
-│  ├─ MonitoringCoordinator tracks activeProjectId                        │
-│  └─ Only active project gets per-file watchers                          │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-    ┌───────────────────────────┐   ┌───────────────────────────────────┐
-    │     ACTIVE PROJECT        │   │      INACTIVE PROJECTS            │
-    │    (User's current view)  │   │    (Everything else)              │
-    ├───────────────────────────┤   ├───────────────────────────────────┤
-    │                           │   │                                   │
-    │  ┌─────────────────────┐  │   │  ┌─────────────────────────────┐  │
-    │  │ MonitoringCoordinator│  │   │  │ FSEvents-only monitoring    │  │
-    │  │ orchestrates lifecycle│  │   │  │ (no per-file watchers)     │  │
-    │  └─────────────────────┘  │   │  └─────────────────────────────┘  │
-    │           │               │   │              │                    │
-    │           ▼               │   │              ▼                    │
-    │  ┌─────────────────────┐  │   │  ┌─────────────────────────────┐  │
-    │  │ TranscriptWatcher    │  │   │  │ pending_rehoover flag       │  │
-    │  │ DispatchSource × N   │  │   │  │ set in database             │  │
-    │  │ (N = transcripts)    │  │   │  │ (deferred ingestion)        │  │
-    │  └─────────────────────┘  │   │  └─────────────────────────────┘  │
-    │           │               │   │              │                    │
-    │           ▼               │   │              ▼                    │
-    │  ┌─────────────────────┐  │   │  ┌─────────────────────────────┐  │
-    │  │ <150ms latency      │  │   │  │ Hoover on next activation   │  │
-    │  │ Real-time updates   │  │   │  │ via mtime comparison        │  │
-    │  └─────────────────────┘  │   │  └─────────────────────────────┘  │
-    │                           │   │                                   │
-    │  FDs used: ~50-100        │   │  FDs used: 0                      │
-    └───────────────────────────┘   └───────────────────────────────────┘
-
-                        TOTAL FDs: <100 (down from ~3,600)
-```
+When FD exhaustion is detected, v2 enters **degraded mode** and drops to **hot-only** until restart.
 
 ---
 
-## PROJECT SWITCH FLOW
+## Core Components
 
-When user switches from Project A to Project B:
+- **WatcherBudgetCoordinator** (`app/Sources/ContextifyCore/Coordination/WatcherBudgetCoordinator.swift`)
+  - Single authority for watcher lifecycle.
+  - Maintains LRU activation order (max 3 projects).
+  - Computes plan → diff → apply with deterministic ordering.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  USER ACTION: Click on Project B in sidebar                             │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Step 1: MonitoringCoordinator.activateProject("B")                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ • Start watchers for Project B immediately                       │    │
-│  │ • Set activeProjectId = "B"                                      │    │
-│  │ • Set watchersReadyProjectId = "B"                               │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Step 2: Schedule teardown for Project A (5-second hysteresis)          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   t=0s                    t=5s                                          │
-│    │                       │                                            │
-│    ├───────────────────────┤                                            │
-│    │   CANCELLABLE WINDOW  │                                            │
-│    │                       │                                            │
-│    │  If user switches     │  If 5s passes:                             │
-│    │  back to A:           │  executeTeardown(A)                        │
-│    │  • Cancel teardown    │  • stopAllWatchers(A)                      │
-│    │  • A keeps watchers   │  • A has 0 FDs now                         │
-│    │                       │                                            │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Step 3: Background - rehooverDirtyTranscripts("B")                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  For each transcript in Project B:                                      │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  Check 1: pending_rehoover flag set?                             │    │
-│  │           (FSEvents detected change while B was inactive)        │    │
-│  │                                                                  │    │
-│  │  Check 2: filesystem mtime > cached mtimeMs?                     │    │
-│  │           (Offline changes while app was closed)                 │    │
-│  │                                                                  │    │
-│  │  If EITHER true → Hoover transcript, update mtimeMs, clear flag  │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  RESULT:                                                                │
-│  • Project B: Full real-time monitoring (<150ms latency)                │
-│  • Project A: Will catch up on next activation                          │
-│  • FD count: Only B's transcripts consuming FDs                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- **ProjectActivityMonitor** (`app/Sources/ContextifyCore/ProjectActivityMonitor.swift`)
+  - FSEvents listener for all transcript roots.
+  - Emits activity signals for cold/unwatched transcripts.
+  - Optional tail scan for unread approximation.
+
+- **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`)
+  - Starts/stops watchers, persists baselines, approximations, and activity timestamps.
+  - Performs activation catch-up rehoover (foreground + background).
+
+- **TranscriptTailScanner** (`app/Sources/ContextifyCore/Transcripts/TranscriptTailScanner.swift`)
+  - Bounded tail scan (64KB, 50ms) with confidence scoring.
 
 ---
 
-## PROMOTION MECHANISM: How Old Conversations Get Noticed
+## Budgeted Plan → Diff → Apply
 
-### The Problem
+### Tier assignment
 
-When a user switches away from a project, watchers are torn down to save FDs. If someone resumes an old conversation hours later, how do we detect it?
+LRU is updated **only on user activation**.
 
-### Three-Tier Detection System
+- `LRU[0]` → HOT
+- `LRU[1]`, `LRU[2]` → WARM
+- everything else → COLD
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    TIER 1: FSEvents (Online Changes)                    │
-│                    ─────────────────────────────────                    │
-│                                                                         │
-│  While app is running, FSEvents monitors ALL directories               │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  File changes on disk (inactive project)                          │   │
-│  │            │                                                      │   │
-│  │            ▼                                                      │   │
-│  │  FSEvents detects change (500ms latency)                          │   │
-│  │            │                                                      │   │
-│  │            ▼                                                      │   │
-│  │  ProjectActivityMonitor.handleFileSystemChange()                  │   │
-│  │            │                                                      │   │
-│  │            ▼                                                      │   │
-│  │  Is this the active project? ──NO──▶ markPendingRehoover()        │   │
-│  │            │                         (set flag in DB)             │   │
-│  │           YES                              │                      │   │
-│  │            │                               ▼                      │   │
-│  │            ▼                        Badge updates                 │   │
-│  │  DispatchSource handles it          ("2 new" appears)             │   │
-│  │  (already watching)                                               │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+### Transcript selection
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                 TIER 2: Mtime Comparison (Project Activation)           │
-│                 ─────────────────────────────────────────────           │
-│                                                                         │
-│  When user switches to a project, we check for missed changes          │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  User clicks Project X                                            │   │
-│  │            │                                                      │   │
-│  │            ▼                                                      │   │
-│  │  MonitoringCoordinator.activateProject("X")                       │   │
-│  │            │                                                      │   │
-│  │            ├──────────────────────────────────────────────────┐   │   │
-│  │            │                                                  │   │   │
-│  │            ▼                                                  ▼   │   │
-│  │  Start per-file watchers              rehooverDirtyTranscripts()  │   │
-│  │  for Project X                                │                   │   │
-│  │                                               ▼                   │   │
-│  │                              ┌────────────────────────────────┐   │   │
-│  │                              │  For each transcript:          │   │   │
-│  │                              │                                │   │   │
-│  │                              │  filesystem_mtime = stat(file) │   │   │
-│  │                              │  cached_mtime = transcript.    │   │   │
-│  │                              │                 mtimeMs        │   │   │
-│  │                              │                                │   │   │
-│  │                              │  if pending_rehoover = 1       │   │   │
-│  │                              │     OR filesystem > cached:    │   │   │
-│  │                              │                                │   │   │
-│  │                              │     → HOOVER transcript        │   │   │
-│  │                              │     → Update mtimeMs           │   │   │
-│  │                              │     → Clear pending flag       │   │   │
-│  │                              └────────────────────────────────┘   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+Per project, transcripts are ranked by:
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                 TIER 3: Offline Change Detection                        │
-│                 ────────────────────────────────                        │
-│                                                                         │
-│  Catches changes made while app was closed                             │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                                                                   │   │
-│  │  APP CLOSED ────────────────────────────────────────▶ APP OPENS   │   │
-│  │       │                                                   │       │   │
-│  │       ▼                                                   ▼       │   │
-│  │  Claude Code writes                              User activates   │   │
-│  │  to transcript                                   that project     │   │
-│  │       │                                                   │       │   │
-│  │       ▼                                                   ▼       │   │
-│  │  File mtime updated                        rehooverDirtyTranscripts│   │
-│  │  (no FSEvents fired -                              │              │   │
-│  │   app wasn't running)                              ▼              │   │
-│  │                                          filesystem > cached?     │   │
-│  │                                                   │               │   │
-│  │                                                  YES              │   │
-│  │                                                   │               │   │
-│  │                                                   ▼               │   │
-│  │                                          HOOVER new content       │   │
-│  │                                                                   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Key insight: pending_rehoover flag wasn't set (app was closed),       │
-│  but mtime comparison catches the change anyway.                        │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+1. `last_modified` (desc)
+2. `last_activity_detected_at` (desc)
+3. `transcript_id` (lexicographic)
 
-### Database Schema for Promotion
+Targets:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  transcripts table (Migration v31)                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────────┬────────────────────────────────────────────────┐ │
-│  │ Column            │ Purpose                                        │ │
-│  ├───────────────────┼────────────────────────────────────────────────┤ │
-│  │ pending_rehoover  │ Flag set by FSEvents for inactive projects    │ │
-│  │ (INTEGER, 0/1)    │ Indicates "needs catch-up on activation"      │ │
-│  ├───────────────────┼────────────────────────────────────────────────┤ │
-│  │ mtimeMs           │ Last known file modification time (ms)        │ │
-│  │ (INTEGER)         │ Compared against filesystem on activation     │ │
-│  └───────────────────┴────────────────────────────────────────────────┘ │
-│                                                                         │
-│  State transitions:                                                     │
-│                                                                         │
-│  ┌─────────────┐    FSEvents fires     ┌─────────────────────┐         │
-│  │ Clean       │ ────────────────────▶ │ pending_rehoover=1  │         │
-│  │ rehoover=0  │    (inactive proj)    │ mtimeMs unchanged   │         │
-│  └─────────────┘                       └─────────────────────┘         │
-│        ▲                                         │                      │
-│        │                                         │                      │
-│        │         User activates project          │                      │
-│        │         rehooverDirtyTranscripts()      │                      │
-│        │                    │                    │                      │
-│        └────────────────────┴────────────────────┘                      │
-│              Hoover, update mtimeMs, clear flag                         │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- HOT: top 20
+- WARM: top 10
+- COLD: none
+
+### Apply ordering
+
+- **Stop first** (evictions, demotions, intra-tier drops)
+- **Start next** (HOT first, then WARM in LRU order)
+
+Degraded mode bypasses residency gating to shed warm watchers immediately.
 
 ---
 
-## HYSTERESIS: Why 5 Seconds?
+## Activation Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  WITHOUT HYSTERESIS - Rapid switching causes watcher churn              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  User clicks: A → B → A (within 100ms)                                  │
-│                                                                         │
-│  t=0ms     t=50ms      t=100ms                                          │
-│    │         │            │                                             │
-│    ▼         ▼            ▼                                             │
-│  Stop A   Start B      Stop B                                           │
-│  watchers watchers     watchers                                         │
-│           Stop A       Start A                                          │
-│           watchers     watchers                                         │
-│                                                                         │
-│  = 4 filesystem operations, FD churn, potential race conditions         │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│  WITH 5-SECOND HYSTERESIS - Teardowns are deferred and cancellable      │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  User clicks: A → B → A (within 100ms)                                  │
-│                                                                         │
-│  t=0ms              t=50ms              t=100ms                         │
-│    │                  │                    │                            │
-│    ▼                  ▼                    ▼                            │
-│  Activate B        (B already         Activate A                        │
-│  Schedule A        active)            CANCEL scheduled                  │
-│  teardown                             teardown for A                    │
-│  in 5s                                (A's watchers still               │
-│    │                                   running!)                        │
-│    │                                                                    │
-│    │                                                                    │
-│    ▼                                                                    │
-│  5 seconds pass with no activity?                                       │
-│  THEN execute teardown                                                  │
-│                                                                         │
-│  Result: A's watchers never stopped! Zero thrashing.                    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+User activates project
+→ WatcherBudgetCoordinator.activateProject(projectId)
+→ Update LRU + tiers
+→ Compute plan → diff → apply
+→ Foreground catch-up: rehoover pending HOT transcripts
+→ Background catch-up: rehoover remaining pending transcripts
 ```
+
+Activation ordering uses generation tokens to prevent stale activations from winning.
 
 ---
 
-## FSEvents vs DispatchSource: Decision Matrix
+## Cold Activity Signals
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        MONITORING MECHANISMS                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────────┐   │
-│  │      DispatchSource         │  │         FSEvents                │   │
-│  │     (Active Project)        │  │        (All Projects)           │   │
-│  ├─────────────────────────────┤  ├─────────────────────────────────┤   │
-│  │ • One FD per file           │  │ • Zero FD cost                  │   │
-│  │ • ~100-150ms latency        │  │ • ~500ms latency (coalescing)   │   │
-│  │ • Per-file granularity      │  │ • Directory-level monitoring    │   │
-│  │ • Immediate write detection │  │ • Catches all changes           │   │
-│  │ • Only while app running    │  │ • Only while app running        │   │
-│  └─────────────────────────────┘  └─────────────────────────────────┘   │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                         DECISION MATRIX                                 │
-├───────────────────────┬───────────────────┬─────────────────────────────┤
-│ Scenario              │ Mechanism         │ Why                         │
-├───────────────────────┼───────────────────┼─────────────────────────────┤
-│ Active project,       │ DispatchSource    │ Need <200ms for responsive  │
-│ live editing          │                   │ real-time updates           │
-├───────────────────────┼───────────────────┼─────────────────────────────┤
-│ Inactive project,     │ FSEvents          │ Mark dirty, defer ingestion │
-│ file changes          │                   │ to save FDs                 │
-├───────────────────────┼───────────────────┼─────────────────────────────┤
-│ Offline changes       │ mtime comparison  │ FSEvents didn't fire;       │
-│ (app was closed)      │ on activation     │ mtime catches the gap       │
-├───────────────────────┼───────────────────┼─────────────────────────────┤
-│ New transcript        │ FSEvents          │ Triggers discovery flow     │
-│ appears               │                   │ regardless of project state │
-└───────────────────────┴───────────────────┴─────────────────────────────┘
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+When a cold/unwatched transcript changes:
+
+1. Set `transcripts.last_activity_detected_at`
+2. Set `projects.last_activity_detected_at`
+3. Set `pending_rehoover = 1`
+4. Emit `ProjectEvent.projectActivityDetected` (debounced 200ms per project)
+5. Optional tail scan for `~N` unread approximation
+
+UI shows:
+
+- accurate unread count → number
+- medium/high approximation → `~N`
+- activity signal only → dot
 
 ---
 
-## RESOURCE COMPARISON
+## Baselines + Approximation
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          BEFORE LAZY WATCHERS                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  User with typical usage:                                               │
-│  • 20 projects                                                          │
-│  • ~1,676 Claude transcripts                                            │
-│  • ~202 Codex transcripts                                               │
-│  • ~1,800 agent sidechains                                              │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  File descriptors:  ~3,678 (one per watcher)                    │    │
-│  │  macOS limit:       ~1,000 (typical)                            │    │
-│  │  Result:            errno=24 EMFILE for 1,638 files             │    │
-│  │  Data loss:         55% of agent sidechains not monitored       │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+Baselines are updated only after successful full ingestion:
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          AFTER LAZY WATCHERS                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Same user, viewing one project with ~50 transcripts:                   │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  Active project FDs:    ~50 (only what user is viewing)         │    │
-│  │  Inactive projects:     0 FDs (FSEvents-driven only)            │    │
-│  │  Total FDs:             <100                                    │    │
-│  │  Result:                No errno=24, all files can be watched   │    │
-│  │  Improvement:           93% reduction in FD usage               │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-│        ████████████████████████████████████████  3,678 FDs (before)     │
-│        ███                                       ~100 FDs (after)       │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- `known_last_entry_ts`
+- `known_file_size`
+
+Tail scan runs only if baseline exists and rate-limited (1s per transcript). Low confidence returns no approximation.
 
 ---
 
-## KEY COMPONENTS SUMMARY
+## Schema (v32)
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  MonitoringCoordinator (NEW)                                            │
-│  app/Sources/ContextifyCore/Coordination/MonitoringCoordinator.swift    │
-├─────────────────────────────────────────────────────────────────────────┤
-│  • Central state machine for watcher lifecycle                          │
-│  • Tracks activeProjectId and watchersReadyProjectId                    │
-│  • Manages 5-second hysteresis for teardowns                            │
-│  • Coordinates with ProjectActivityMonitor and TranscriptOrchestrator   │
-└─────────────────────────────────────────────────────────────────────────┘
+v32 adds baseline + activity + approximation fields:
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ProjectActivityMonitor (ENHANCED)                                      │
-│  app/Sources/ContextifyCore/Monitoring/ProjectActivityMonitor.swift     │
-├─────────────────────────────────────────────────────────────────────────┤
-│  • FSEvents stream for global directory monitoring                      │
-│  • Now queries MonitoringCoordinator.isActiveProjectWithWatchers()      │
-│  • Routes events: active → let watcher handle, inactive → mark dirty    │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│  TranscriptOrchestrator (EXTENDED)                                      │
-│  app/Sources/ContextifyCore/Transcripts/TranscriptOrchestrator.swift    │
-├─────────────────────────────────────────────────────────────────────────┤
-│  • markPendingRehoover() - flag transcript for catch-up                 │
-│  • rehooverDirtyTranscripts() - catch up on project activation          │
-│  • stopAllWatchers(forProjectId:) - teardown on project deactivation    │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│  TranscriptWatcher (UNCHANGED)                                          │
-│  app/Sources/ContextifyCore/Transcripts/TranscriptWatcher.swift         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  • Still manages per-file DispatchSource watchers                       │
-│  • Now only created for active project's transcripts                    │
-│  • Same API: watch(), stopWatching(), stopAll()                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- `transcripts.known_last_entry_ts`
+- `transcripts.known_file_size`
+- `transcripts.unread_approx_count`
+- `transcripts.unread_approx_confidence`
+- `transcripts.unread_approx_updated_at`
+- `transcripts.last_activity_detected_at`
+- `projects.last_activity_detected_at`
 
 ---
 
-## LOGGING TAGS FOR DIAGNOSTICS
+## Operational Notes
 
-```bash
-# All lazy watcher activity
-log show --predicate 'subsystem == "dev.contextify" AND message CONTAINS "LAZY-WATCHER"' --info --last 1h
+- Watcher count should remain well under FD limits (typically ≤ 40 in steady state).
+- Degraded mode is a safety fallback (hot-only) on FD exhaustion.
+- `deactivateAll()` stops all watchers via an orchestrator-level “stop all” hammer.
 
-# FSEvents routing decisions
-log show --predicate 'subsystem == "dev.contextify" AND message CONTAINS "FSEVENTS"' --info --last 1h
-
-# Watcher lifecycle
-log show --predicate 'subsystem == "dev.contextify" AND message CONTAINS "WATCHER"' --info --last 1h
-```
-
----
-
-## SUMMARY
-
-Lazy watchers transform Contextify from "monitor everything always" to "monitor what the user is looking at now, defer the rest":
-
-| Aspect | Before | After |
-|--------|--------|-------|
-| Active project | Per-file watchers | Per-file watchers (same) |
-| Inactive projects | Per-file watchers (wasteful) | FSEvents + deferred hoovering |
-| FD usage | ~3,678 | <100 |
-| Offline changes | Missed until manual refresh | Caught via mtime comparison |
-| Latency (active) | <150ms | <150ms (same) |
-| Latency (inactive→active) | N/A | ~500ms catch-up on switch |
-
-**The promotion mechanism ensures old conversations always catch up when resumed:**
-1. **Online changes** → FSEvents sets `pending_rehoover` flag → hoovered on activation
-2. **Offline changes** → mtime comparison catches them → hoovered on activation
-3. **Result** → User always sees current state when they switch to any project
+For operational commands and log filters, see `build/docs/operations/MONITORING.md`.
