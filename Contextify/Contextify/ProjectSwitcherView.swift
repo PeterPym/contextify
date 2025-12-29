@@ -245,17 +245,53 @@ struct ProjectSwitcherView: View {
     return index
   }
 
+  /// Compute gap width between groups.
+  /// Uses baseSpacing between solo groups to preserve Phase 2 visuals.
+  /// Uses wider GroupSeparator width when either side is a real multi-tab group.
+  private func gapWidthBetweenGroups(left: TabGroupInfo?, right: TabGroupInfo) -> CGFloat {
+    guard let left = left else { return 0 }
+    // If both groups are solo, use baseSpacing (preserves prior layout)
+    if left.isSoloTab && right.isSoloTab {
+      return baseSpacing
+    }
+    // Otherwise use wider separator for visual distinction
+    return GroupSeparator.width
+  }
+
   var body: some View {
+    // DEBUG invariant: tabProjects count must match sum of group project counts
+    #if DEBUG
+    let _ = {
+      let expectedCount = state.tabGroups.reduce(0) { $0 + $1.projects.count }
+      assert(state.tabProjects.count == expectedCount,
+             "tabProjects count (\(state.tabProjects.count)) != tabGroups sum (\(expectedCount))")
+    }()
+    #endif
+
     let _ = log.debug("[TABBAR-BODY] body recomputed, groups=\(state.tabGroups.count, privacy: .public), tabs=\(state.tabProjects.count, privacy: .public)")
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 0) {  // No global spacing - use explicit Gap/GroupSeparator views
           ForEach(Array(state.tabGroups.enumerated()), id: \.element.id) { groupIndex, group in
             let globalFlatIndex = flatIndexForGroup(at: groupIndex)
+            let prevGroup = groupIndex > 0 ? state.tabGroups[groupIndex - 1] : nil
 
-            // Group separator before this group (except first)
+            // Inter-group gap (before this group, except first)
             if groupIndex > 0 {
-              GroupSeparator()
+              Gap(width: gapWidthBetweenGroups(left: prevGroup, right: group))
+            }
+
+            // Boundary insertion indicator (insert before first tab of this group)
+            if let idx = insertionIndex, idx == globalFlatIndex, let dragging = draggingProject {
+              if globalFlatIndex > 0 {
+                Gap(width: baseSpacing)
+              }
+              InsertionIndicator(draggingProject: dragging)
+                .transition(.asymmetric(
+                  insertion: .scale(scale: 0.5).combined(with: .opacity),
+                  removal: .scale(scale: 0.5).combined(with: .opacity)
+                ))
+              Gap(width: baseSpacing)
             }
 
             TabGroupView(
@@ -554,11 +590,10 @@ private struct TabGroupView: View {
       ForEach(Array(group.projects.enumerated()), id: \.element.id) { localIndex, project in
         let flatIndex = globalFlatIndex + localIndex
 
-        // Insertion indicator before this tab (if applicable)
-        if insertionIndex == flatIndex, let dragging = draggingProject {
-          if localIndex > 0 || globalFlatIndex > 0 {
-            Gap(width: baseSpacing)
-          }
+        // Intra-group insertion indicator (between tabs within this group)
+        // Note: Boundary indicators (localIndex == 0) are handled at the group level
+        if localIndex > 0, insertionIndex == flatIndex, let dragging = draggingProject {
+          Gap(width: baseSpacing)
           InsertionIndicator(draggingProject: dragging)
             .transition(.asymmetric(
               insertion: .scale(scale: 0.5).combined(with: .opacity),
