@@ -128,6 +128,9 @@ public final class ProjectSwitcherState {
   // Use this for keyboard navigation and legacy code paths
   var tabProjects: [ProjectInfo] { _cachedFlatTabs }
 
+  // Phase 4: Track if initial auto-grouping has been done (prevents repeated calls)
+  private var hasPerformedInitialAutoGrouping = false
+
   // Alias for tabProjects (clearer name for new code)
   var flatTabs: [ProjectInfo] { _cachedFlatTabs }
 
@@ -331,6 +334,9 @@ public final class ProjectSwitcherState {
       Task { @MainActor [weak self] in
         guard let self else { return }
         log.info("[SWITCHER-NOTIFY-RECV] received .projectsDiscoveryComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
+        // Reset auto-grouping flag so newly discovered projects can be grouped
+        // This is bounded because discovery is infrequent (startup, manual refresh)
+        self.hasPerformedInitialAutoGrouping = false
         self.scheduleRefresh()
       }
     }
@@ -453,11 +459,20 @@ public final class ProjectSwitcherState {
     log.info("[SWITCHER-REFRESH] Starting refresh of project list")
 
     do {
-      // Phase 4: Auto-group worktrees before loading projects
-      // This ensures projects sharing a git root are grouped together
-      let groupsCreated = try orchestrator.autoGroupWorktrees()
-      if groupsCreated > 0 {
-        log.info("[SWITCHER-REFRESH] Auto-grouped \(groupsCreated, privacy: .public) worktree groups")
+      // Phase 4: Auto-group worktrees on first refresh only (P0.1 fix: debounce)
+      // Subsequent grouping happens via explicit user action or project discovery
+      // Flag is reset on .projectsDiscoveryComplete to handle newly discovered projects
+      if !hasPerformedInitialAutoGrouping {
+        do {
+          let groupsCreated = try orchestrator.autoGroupWorktrees()
+          hasPerformedInitialAutoGrouping = true  // Set after success (throw-safe)
+          if groupsCreated > 0 {
+            log.info("[SWITCHER-REFRESH] Auto-grouped \(groupsCreated, privacy: .public) worktree groups")
+          }
+        } catch {
+          // Allow retry on next refresh if auto-grouping fails
+          log.warning("[SWITCHER-REFRESH] Auto-grouping failed, will retry: \(error.localizedDescription, privacy: .public)")
+        }
       }
 
       // Query all projects sorted by activity (newest entry first)
@@ -996,6 +1011,14 @@ public final class ProjectSwitcherState {
       log.error("Failed to check worktree preference: \(error.localizedDescription, privacy: .public)")
     }
     return false
+  }
+
+  /// Check if a project is in a worktree group (vs manual group or solo).
+  /// Used by context menu to show appropriate options (P0.3 fix).
+  public func isInWorktreeGroup(_ project: ProjectInfo) -> Bool {
+    guard let groupId = project.groupId else { return false }
+    // Check if the group containing this project is a worktree group
+    return tabGroups.first(where: { $0.id == groupId })?.isWorktreeGroup ?? false
   }
 
   /// Reorder projects by updating display_order for all projects atomically

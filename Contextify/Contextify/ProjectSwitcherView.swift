@@ -520,8 +520,9 @@ struct ProjectTabView: View {
       if let gitRoot = project.gitRoot {
         Divider()
 
-        // Show "Ungroup Worktree" if project is in a worktree group
-        if project.groupId != nil {
+        // Show "Ungroup Worktree" only for worktree groups (P0.3 fix)
+        // Not shown for manual groups or solo tabs
+        if state.isInWorktreeGroup(project) {
           Button("Ungroup Worktree") {
             Task {
               await state.ungroupWorktree(gitRoot)
