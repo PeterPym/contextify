@@ -535,4 +535,63 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertTrue(model.debugRefWatcherActive)
     }
     #endif
+
+    // MARK: - Worktree Git Root Resolution (v33)
+
+    func testFindMainGitRootReturnsMainRepoForWorktrees() throws {
+        let fm = FileManager.default
+
+        // Create a main repo
+        let mainRepo = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: mainRepo, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: mainRepo) }
+
+        let mainGit = mainRepo.appendingPathComponent(".git", isDirectory: true)
+        try fm.createDirectory(at: mainGit, withIntermediateDirectories: true)
+        try "ref: refs/heads/main\n".write(to: mainGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        let mainHeads = mainGit.appendingPathComponent("refs/heads", isDirectory: true)
+        try fm.createDirectory(at: mainHeads, withIntermediateDirectories: true)
+        try "0123456789abcdef\n".write(to: mainHeads.appendingPathComponent("main"), atomically: true, encoding: .utf8)
+
+        // Create worktrees directory inside main .git
+        let worktreesDir = mainGit.appendingPathComponent("worktrees", isDirectory: true)
+        try fm.createDirectory(at: worktreesDir, withIntermediateDirectories: true)
+
+        // Create a worktree entry inside .git/worktrees/
+        let worktreeGitDir = worktreesDir.appendingPathComponent("test-worktree", isDirectory: true)
+        try fm.createDirectory(at: worktreeGitDir, withIntermediateDirectories: true)
+        try "ref: refs/heads/feature\n".write(to: worktreeGitDir.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+
+        // Create worktree directory with .git file pointing to worktree git dir
+        let worktreeDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-worktree", isDirectory: true)
+        try fm.createDirectory(at: worktreeDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: worktreeDir) }
+
+        let gitFile = worktreeDir.appendingPathComponent(".git")
+        try "gitdir: \(worktreeGitDir.path)\n".write(to: gitFile, atomically: true, encoding: .utf8)
+
+        // Test findGitRoot - should return the worktree directory
+        let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: worktreeDir)
+        XCTAssertEqual(gitRoot?.path, worktreeDir.resolvingSymlinksInPath().path,
+                       "findGitRoot should return the worktree directory itself")
+
+        // Test findMainGitRoot - should return the main repo
+        let mainGitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: worktreeDir)
+        XCTAssertEqual(mainGitRoot?.path, mainRepo.resolvingSymlinksInPath().path,
+                       "findMainGitRoot should return the main repository root for worktrees")
+    }
+
+    func testFindMainGitRootReturnsNormalRepoForNonWorktrees() throws {
+        let fm = FileManager.default
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        defer { try? fm.removeItem(at: repo) }
+
+        // For a regular repo (not a worktree), both functions should return the same path
+        let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: repo)
+        let mainGitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: repo)
+
+        XCTAssertEqual(gitRoot?.path, mainGitRoot?.path,
+                       "For non-worktree repos, findGitRoot and findMainGitRoot should return the same path")
+        XCTAssertEqual(mainGitRoot?.path, repo.resolvingSymlinksInPath().path)
+    }
 }

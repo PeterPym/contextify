@@ -45,8 +45,9 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
     self.groupId = groupId
     self.groupDisplayOrder = groupDisplayOrder
     // Cache gitRoot at init time to avoid repeated filesystem traversal during SwiftUI render
+    // Use findMainGitRoot to properly resolve worktrees to their main repository for consistent coloring
     let projectURL = URL(fileURLWithPath: rootPath)
-    self.gitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL)
+    self.gitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: projectURL)
   }
 }
 
@@ -927,7 +928,24 @@ public final class ProjectSwitcherState {
       // Update hidden state
       try orchestrator.setProjectHidden(projectId: projectId, hidden: true)
 
-      // Refresh project list to remove hidden project
+      // Optimistic UI removal: immediately remove from tabGroups for instant feedback
+      // This ensures the tab disappears even if isTabOrderFrozen is true
+      tabGroups = tabGroups.compactMap { group in
+        var mutableGroup = group
+        mutableGroup.projects.removeAll { $0.id == projectId }
+        // Remove solo groups (synthetic) that are now empty
+        // Keep real groups even if empty (they'll be cleaned up by DB operations)
+        if group.isSoloTab && mutableGroup.projects.isEmpty {
+          return nil
+        }
+        return mutableGroup.projects.isEmpty ? nil : mutableGroup
+      }
+
+      // Also update allProjects for consistency
+      allProjects.removeAll { $0.id == projectId }
+      hasHiddenProjects = true
+
+      // Refresh project list to sync with database
       await refreshProjects()
 
       log.info("Hidden project: \(projectId, privacy: .public)")

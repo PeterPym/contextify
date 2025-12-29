@@ -3001,10 +3001,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let projects = try projectRepo.list().filter { !$0.hidden && !$0.isOrphaned }
 
     // 2. Compute git roots for each project (Swift-side computation)
+    // Use findMainGitRoot to properly resolve worktrees to their main repository
     var projectsByGitRoot: [String: [Project]] = [:]
     for project in projects {
       let projectURL = URL(fileURLWithPath: project.rootPath)
-      if let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL) {
+      if let gitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: projectURL) {
         let key = gitRoot.path
         projectsByGitRoot[key, default: []].append(project)
       }
@@ -3086,10 +3087,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try worktreePreferenceRepo.setUngrouped(gitRoot, ungrouped: false)
 
     // 2. Find all projects with this git root
+    // Use findMainGitRoot to properly resolve worktrees to their main repository
     let allProjects = try projectRepo.list().filter { !$0.hidden && !$0.isOrphaned }
     let siblingProjects = allProjects.filter { project in
       let projectURL = URL(fileURLWithPath: project.rootPath)
-      if let projectGitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL) {
+      if let projectGitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: projectURL) {
         return projectGitRoot.path == gitRoot
       }
       return false
