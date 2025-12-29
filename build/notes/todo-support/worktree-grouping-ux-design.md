@@ -553,24 +553,30 @@ func colorForGitRoot(_ gitRoot: URL) -> Color {
 }
 ```
 
-**Color palette (10 semantic accent colors):**
+**Color palette (10 colors from Contextify design system):**
 
-Based on existing Contextify design system (`build/design/brand/colors.md`):
+Derived from `build/design/brand/colors.md` semantic and brand colors:
 
 ```swift
 let accentColors: [Color] = [
-  Color(hex: "#3B82F6"),  // Blue (trust, calm)
-  Color(hex: "#10B981"),  // Green (growth, success)
-  Color(hex: "#F59E0B"),  // Amber (energy, attention)
-  Color(hex: "#8B5CF6"),  // Purple (creativity)
-  Color(hex: "#EF4444"),  // Red (urgency, important)
-  Color(hex: "#06B6D4"),  // Cyan (clarity)
-  Color(hex: "#EC4899"),  // Pink (highlight)
-  Color(hex: "#F97316"),  // Orange (warmth)
-  Color(hex: "#6366F1"),  // Indigo (depth)
-  Color(hex: "#14B8A6"),  // Teal (balance)
+  Color(hex: "#4A7BA7"),  // primary (trust, calm)
+  Color(hex: "#51A86B"),  // success (growth)
+  Color(hex: "#D4A84E"),  // warning (energy, attention)
+  Color(hex: "#C74E4E"),  // error (urgency)
+  Color(hex: "#7C68A8"),  // accent (creativity)
+  Color(hex: "#F9B233"),  // brand-yellow (warmth)
+  Color(hex: "#4AC4E0"),  // brand-cyan (clarity)
+  Color(hex: "#8B5CF6"),  // brand-purple (depth)
+  Color(hex: "#9B8B7E"),  // secondary (neutral)
+  Color(hex: "#5A9BAA"),  // teal (derived: bridges primary and brand-cyan)
 ]
 ```
+
+**Color derivation notes:**
+- First 5: Semantic UI colors (primary, success, warning, error, accent)
+- Next 3: Brand gradient colors (yellow, cyan, purple)
+- secondary: Neutral taupe for low-contrast needs
+- teal: Derived by blending primary (#4A7BA7) and brand-cyan (#4AC4E0)
 
 **Application strategy:**
 - Background tint: 10% opacity of accent color
@@ -605,18 +611,18 @@ import CryptoKit
 
 public struct WorktreeColorUtility {
 
-  // Predefined 10-color accent palette
+  // Contextify design system colors (from build/design/brand/colors.md)
   private static let accentColors: [Color] = [
-    Color(hex: "#3B82F6"),  // Blue
-    Color(hex: "#10B981"),  // Green
-    Color(hex: "#F59E0B"),  // Amber
-    Color(hex: "#8B5CF6"),  // Purple
-    Color(hex: "#EF4444"),  // Red
-    Color(hex: "#06B6D4"),  // Cyan
-    Color(hex: "#EC4899"),  // Pink
-    Color(hex: "#F97316"),  // Orange
-    Color(hex: "#6366F1"),  // Indigo
-    Color(hex: "#14B8A6"),  // Teal
+    Color(hex: "#4A7BA7"),  // primary
+    Color(hex: "#51A86B"),  // success
+    Color(hex: "#D4A84E"),  // warning
+    Color(hex: "#C74E4E"),  // error
+    Color(hex: "#7C68A8"),  // accent
+    Color(hex: "#F9B233"),  // brand-yellow
+    Color(hex: "#4AC4E0"),  // brand-cyan
+    Color(hex: "#8B5CF6"),  // brand-purple
+    Color(hex: "#9B8B7E"),  // secondary
+    Color(hex: "#5A9BAA"),  // teal (derived)
   ]
 
   /// Computes a consistent color for a git root path
@@ -1434,23 +1440,30 @@ echo "  # Also remove from Contextify database via Projects window"
 ## Appendix A: Color Palette Visualization
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Proposed 10-Color Accent Palette                        │
-├─────────────────────────────────────────────────────────┤
-│ 1. Blue    #3B82F6  ████████  Trust, Calm              │
-│ 2. Green   #10B981  ████████  Growth, Success           │
-│ 3. Amber   #F59E0B  ████████  Energy, Attention         │
-│ 4. Purple  #8B5CF6  ████████  Creativity                │
-│ 5. Red     #EF4444  ████████  Urgency, Important        │
-│ 6. Cyan    #06B6D4  ████████  Clarity                   │
-│ 7. Pink    #EC4899  ████████  Highlight                 │
-│ 8. Orange  #F97316  ████████  Warmth                    │
-│ 9. Indigo  #6366F1  ████████  Depth                     │
-│ 10. Teal   #14B8A6  ████████  Balance                   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Contextify Design System - Worktree Accent Palette           │
+├──────────────────────────────────────────────────────────────┤
+│ SEMANTIC COLORS                                              │
+│ 1. primary      #4A7BA7  ████████  Trust, Calm              │
+│ 2. success      #51A86B  ████████  Growth                    │
+│ 3. warning      #D4A84E  ████████  Energy, Attention         │
+│ 4. error        #C74E4E  ████████  Urgency                   │
+│ 5. accent       #7C68A8  ████████  Creativity                │
+├──────────────────────────────────────────────────────────────┤
+│ BRAND COLORS                                                 │
+│ 6. brand-yellow #F9B233  ████████  Warmth                    │
+│ 7. brand-cyan   #4AC4E0  ████████  Clarity                   │
+│ 8. brand-purple #8B5CF6  ████████  Depth                     │
+├──────────────────────────────────────────────────────────────┤
+│ EXTENDED                                                     │
+│ 9. secondary    #9B8B7E  ████████  Neutral                   │
+│ 10. teal        #5A9BAA  ████████  Balance (derived)         │
+└──────────────────────────────────────────────────────────────┘
 
 Applied at 10% opacity for tab backgrounds.
 Applied at 50% opacity for active tab borders.
+
+Source: build/design/brand/colors.md
 ```
 
 ---
