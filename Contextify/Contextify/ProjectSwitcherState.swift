@@ -453,6 +453,13 @@ public final class ProjectSwitcherState {
     log.info("[SWITCHER-REFRESH] Starting refresh of project list")
 
     do {
+      // Phase 4: Auto-group worktrees before loading projects
+      // This ensures projects sharing a git root are grouped together
+      let groupsCreated = try orchestrator.autoGroupWorktrees()
+      if groupsCreated > 0 {
+        log.info("[SWITCHER-REFRESH] Auto-grouped \(groupsCreated, privacy: .public) worktree groups")
+      }
+
       // Query all projects sorted by activity (newest entry first)
       log.info("[SWITCHER-SORT-START] Querying projects sorted by activity")
       let projects = try orchestrator.listProjectsForSwitcher()
@@ -640,15 +647,78 @@ public final class ProjectSwitcherState {
   }
 
   /// Build TabGroupInfo array from projects.
-  /// In Phase 2, each project gets its own solo group.
-  /// Phase 4 will add worktree auto-grouping logic.
+  /// Groups projects by their database group_id, creating TabGroupInfo for each.
+  /// Solo tabs (no group_id) get synthetic solo groups.
   /// Note: Inherits @MainActor from class - no explicit annotation needed.
   private func buildTabGroups(from projects: [ProjectInfo]) -> [TabGroupInfo] {
-    // For now, create a solo group for each project
-    // This maintains flat display while preparing for grouping infrastructure
-    return projects.map { project in
-      TabGroupInfo.solo(project, color: .clear)
+    guard let orchestrator = ensureOrchestrator() else {
+      // Fallback: all solo groups
+      return projects.map { TabGroupInfo.solo($0, color: .clear) }
     }
+
+    // 1. Separate grouped and ungrouped projects
+    var groupedProjects: [String: [ProjectInfo]] = [:]  // groupId -> projects
+    var soloProjects: [ProjectInfo] = []
+
+    for project in projects {
+      if let groupId = project.groupId {
+        groupedProjects[groupId, default: []].append(project)
+      } else {
+        soloProjects.append(project)
+      }
+    }
+
+    // 2. Build TabGroupInfo for each database group
+    var result: [TabGroupInfo] = []
+
+    // Fetch database groups for metadata (name, color, gitRoot, etc.)
+    let dbGroups: [TabGroup]
+    do {
+      dbGroups = try orchestrator.listTabGroups()
+    } catch {
+      log.error("[SWITCHER-STATE] Failed to fetch tab groups: \(error, privacy: .public)")
+      // Fallback: all solo groups
+      return projects.map { TabGroupInfo.solo($0, color: .clear) }
+    }
+
+    // Note: dbGroups already contains all the metadata we need, no lookup needed
+
+    // 3. Build groups in display_order from database
+    for dbGroup in dbGroups.sorted(by: { $0.displayOrder < $1.displayOrder }) {
+      guard let groupProjects = groupedProjects[dbGroup.id], !groupProjects.isEmpty else {
+        continue  // Skip empty groups
+      }
+
+      // Sort projects by their groupDisplayOrder
+      let sortedProjects = groupProjects.sorted { ($0.groupDisplayOrder ?? 0) < ($1.groupDisplayOrder ?? 0) }
+
+      // Compute color from git root hash or use override
+      let color: Color
+      if let colorHex = dbGroup.colorHex, let parsedColor = Color.fromHex(colorHex) {
+        color = parsedColor
+      } else if let gitRoot = dbGroup.gitRoot {
+        color = WorktreeColorUtility.color(for: URL(fileURLWithPath: gitRoot))
+      } else {
+        color = .clear
+      }
+
+      let groupInfo = TabGroupInfo(
+        id: dbGroup.id,
+        name: dbGroup.name,
+        color: color,
+        isWorktreeGroup: dbGroup.isWorktreeGroup,
+        gitRoot: dbGroup.gitRoot.map { URL(fileURLWithPath: $0) },
+        projects: sortedProjects
+      )
+      result.append(groupInfo)
+    }
+
+    // 4. Add solo projects (maintain their original order from projects array)
+    for project in soloProjects {
+      result.append(TabGroupInfo.solo(project, color: .clear))
+    }
+
+    return result
   }
 
   /// Cycle to previous project (for keyboard shortcut)
@@ -883,6 +953,49 @@ public final class ProjectSwitcherState {
     } catch {
       log.error("Failed to restore hidden projects: \(error.localizedDescription)")
     }
+  }
+
+  // MARK: - Worktree Grouping (Phase 4)
+
+  /// Ungroup all projects from a worktree group.
+  /// Sets preference to prevent auto-regrouping.
+  public func ungroupWorktree(_ gitRoot: URL) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.ungroupWorktree(gitRoot: gitRoot.path)
+      await refreshProjects()
+      log.info("Ungrouped worktree: \(gitRoot.path, privacy: .public)")
+    } catch {
+      log.error("Failed to ungroup worktree: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Regroup projects that share a git root into a worktree group.
+  /// Clears the "ungrouped" preference.
+  public func regroupWorktree(_ gitRoot: URL) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.regroupWorktree(gitRoot: gitRoot.path)
+      await refreshProjects()
+      log.info("Regrouped worktree: \(gitRoot.path, privacy: .public)")
+    } catch {
+      log.error("Failed to regroup worktree: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Check if a git root has been explicitly ungrouped by the user.
+  public func isWorktreeUngrouped(_ gitRoot: URL) -> Bool {
+    guard let orchestrator = ensureOrchestrator() else { return false }
+    do {
+      if let pref = try orchestrator.getWorktreePreference(gitRoot.path) {
+        return pref.ungrouped
+      }
+    } catch {
+      log.error("Failed to check worktree preference: \(error.localizedDescription, privacy: .public)")
+    }
+    return false
   }
 
   /// Reorder projects by updating display_order for all projects atomically

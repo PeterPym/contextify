@@ -2989,6 +2989,133 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public func setWorktreeUngrouped(_ gitRoot: String, ungrouped: Bool) throws {
     try worktreePreferenceRepo.setUngrouped(gitRoot, ungrouped: ungrouped)
   }
+
+  // MARK: - Worktree Auto-Grouping (Phase 4)
+
+  /// Auto-group projects that share the same git root into worktree groups.
+  /// Called on startup and when new projects are discovered.
+  /// Returns number of groups created or updated.
+  @discardableResult
+  public func autoGroupWorktrees() throws -> Int {
+    // 1. Get all visible, non-orphaned projects
+    let projects = try projectRepo.list().filter { !$0.hidden && !$0.isOrphaned }
+
+    // 2. Compute git roots for each project (Swift-side computation)
+    var projectsByGitRoot: [String: [Project]] = [:]
+    for project in projects {
+      let projectURL = URL(fileURLWithPath: project.rootPath)
+      if let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL) {
+        let key = gitRoot.path
+        projectsByGitRoot[key, default: []].append(project)
+      }
+    }
+
+    // 3. Process each git root with 2+ projects
+    var groupsCreatedOrUpdated = 0
+    for (gitRootPath, siblingProjects) in projectsByGitRoot where siblingProjects.count >= 2 {
+      // Check if user has explicitly ungrouped this worktree
+      if let pref = try worktreePreferenceRepo.get(gitRootPath), pref.ungrouped {
+        log.debug("[WORKTREE-AUTOGROUP] Skipping ungrouped worktree: \(gitRootPath, privacy: .public)")
+        continue
+      }
+
+      // Check if worktree group already exists
+      var group: TabGroup
+      if let existingGroup = try tabGroupRepo.getByGitRoot(gitRootPath) {
+        group = existingGroup
+        log.debug("[WORKTREE-AUTOGROUP] Using existing group: \(group.id, privacy: .public) for \(gitRootPath, privacy: .public)")
+      } else {
+        // Create new worktree group
+        let repoName = URL(fileURLWithPath: gitRootPath).lastPathComponent
+        group = try tabGroupRepo.create(
+          name: repoName,
+          colorHex: nil,  // Auto-compute from git root hash
+          gitRoot: gitRootPath,
+          isWorktreeGroup: true
+        )
+        groupsCreatedOrUpdated += 1
+        log.info("[WORKTREE-AUTOGROUP] Created new worktree group: \(group.id, privacy: .public) for \(gitRootPath, privacy: .public)")
+      }
+
+      // Add all sibling projects to the group (if not already members)
+      for (order, project) in siblingProjects.enumerated() {
+        if project.groupId != group.id {
+          try projectRepo.setGroupMembership(id: project.id, groupId: group.id, groupDisplayOrder: order)
+          log.debug("[WORKTREE-AUTOGROUP] Added project \(project.id, privacy: .public) to group \(group.id, privacy: .public)")
+        }
+      }
+    }
+
+    if groupsCreatedOrUpdated > 0 {
+      log.info("[WORKTREE-AUTOGROUP] Auto-grouping complete: \(groupsCreatedOrUpdated, privacy: .public) groups created")
+    }
+
+    return groupsCreatedOrUpdated
+  }
+
+  /// Ungroup all projects from a worktree group and delete the group.
+  /// Sets worktree_preferences.ungrouped = true to prevent re-grouping.
+  public func ungroupWorktree(gitRoot: String) throws {
+    // 1. Find the worktree group
+    guard let group = try tabGroupRepo.getByGitRoot(gitRoot) else {
+      log.warning("[WORKTREE-UNGROUP] No worktree group found for: \(gitRoot, privacy: .public)")
+      return
+    }
+
+    // 2. Get all projects in this group
+    let projects = try projectRepo.list().filter { $0.groupId == group.id }
+
+    // 3. Remove all projects from the group
+    for project in projects {
+      try projectRepo.setGroupMembership(id: project.id, groupId: nil, groupDisplayOrder: nil)
+    }
+
+    // 4. Delete the empty group
+    try tabGroupRepo.delete(id: group.id)
+
+    // 5. Set preference to prevent re-grouping
+    try worktreePreferenceRepo.setUngrouped(gitRoot, ungrouped: true)
+
+    log.info("[WORKTREE-UNGROUP] Ungrouped \(projects.count, privacy: .public) projects from worktree: \(gitRoot, privacy: .public)")
+  }
+
+  /// Regroup projects that share a git root into a worktree group.
+  /// Clears worktree_preferences.ungrouped to allow grouping.
+  public func regroupWorktree(gitRoot: String) throws {
+    // 1. Clear the ungrouped preference
+    try worktreePreferenceRepo.setUngrouped(gitRoot, ungrouped: false)
+
+    // 2. Find all projects with this git root
+    let allProjects = try projectRepo.list().filter { !$0.hidden && !$0.isOrphaned }
+    let siblingProjects = allProjects.filter { project in
+      let projectURL = URL(fileURLWithPath: project.rootPath)
+      if let projectGitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL) {
+        return projectGitRoot.path == gitRoot
+      }
+      return false
+    }
+
+    guard siblingProjects.count >= 2 else {
+      log.info("[WORKTREE-REGROUP] Not enough siblings to regroup: \(siblingProjects.count, privacy: .public)")
+      return
+    }
+
+    // 3. Create new worktree group
+    let repoName = URL(fileURLWithPath: gitRoot).lastPathComponent
+    let group = try tabGroupRepo.create(
+      name: repoName,
+      colorHex: nil,
+      gitRoot: gitRoot,
+      isWorktreeGroup: true
+    )
+
+    // 4. Add all siblings to the group
+    for (order, project) in siblingProjects.enumerated() {
+      try projectRepo.setGroupMembership(id: project.id, groupId: group.id, groupDisplayOrder: order)
+    }
+
+    log.info("[WORKTREE-REGROUP] Regrouped \(siblingProjects.count, privacy: .public) projects into worktree: \(gitRoot, privacy: .public)")
+  }
 }
 
 // MARK: - Follow Policy Models

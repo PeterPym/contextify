@@ -73,3 +73,40 @@ public enum WorktreeColorUtility {
     color(for: gitRoot).opacity(0.45)
   }
 }
+
+// MARK: - Color Hex Extension
+
+extension Color {
+  /// Parse a hex color string into a Color.
+  /// Supports formats: "#RRGGBB", "RRGGBB", "#RRGGBBAA", "RRGGBBAA"
+  public static func fromHex(_ hex: String) -> Color? {
+    var hexString = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    if hexString.hasPrefix("#") {
+      hexString.removeFirst()
+    }
+
+    guard hexString.count == 6 || hexString.count == 8 else {
+      return nil
+    }
+
+    var rgbValue: UInt64 = 0
+    guard Scanner(string: hexString).scanHexInt64(&rgbValue) else {
+      return nil
+    }
+
+    if hexString.count == 8 {
+      // RRGGBBAA format
+      let r = Double((rgbValue & 0xFF000000) >> 24) / 255.0
+      let g = Double((rgbValue & 0x00FF0000) >> 16) / 255.0
+      let b = Double((rgbValue & 0x0000FF00) >> 8) / 255.0
+      let a = Double(rgbValue & 0x000000FF) / 255.0
+      return Color(.sRGB, red: r, green: g, blue: b, opacity: a)
+    } else {
+      // RRGGBB format
+      let r = Double((rgbValue & 0xFF0000) >> 16) / 255.0
+      let g = Double((rgbValue & 0x00FF00) >> 8) / 255.0
+      let b = Double(rgbValue & 0x0000FF) / 255.0
+      return Color(.sRGB, red: r, green: g, blue: b)
+    }
+  }
+}

@@ -516,6 +516,29 @@ struct ProjectTabView: View {
         }
       }
 
+      // Worktree grouping options (Phase 4)
+      if let gitRoot = project.gitRoot {
+        Divider()
+
+        // Show "Ungroup Worktree" if project is in a worktree group
+        if project.groupId != nil {
+          Button("Ungroup Worktree") {
+            Task {
+              await state.ungroupWorktree(gitRoot)
+            }
+          }
+        }
+
+        // Show "Regroup Worktree" if project was ungrouped
+        if project.groupId == nil && state.isWorktreeUngrouped(gitRoot) {
+          Button("Regroup Worktree") {
+            Task {
+              await state.regroupWorktree(gitRoot)
+            }
+          }
+        }
+      }
+
       if project.isOrphaned {
         Divider()
         Text("Directory Missing: \(project.rootPath)")
