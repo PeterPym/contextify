@@ -3116,6 +3116,24 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     log.info("[WORKTREE-REGROUP] Regrouped \(siblingProjects.count, privacy: .public) projects into worktree: \(gitRoot, privacy: .public)")
   }
+
+  // MARK: - Phase 5: Group/Tab Ordering Persistence
+
+  /// Reorder projects within a group by updating their group_display_order values.
+  /// The order is determined by position in the orderedProjectIds array.
+  public func reorderProjectsInGroup(groupId: String, orderedProjectIds: [String]) throws {
+    for (order, projectId) in orderedProjectIds.enumerated() {
+      try projectRepo.setGroupMembership(id: projectId, groupId: groupId, groupDisplayOrder: order)
+    }
+    log.info("[GROUP-REORDER] Reordered \(orderedProjectIds.count, privacy: .public) projects in group \(groupId, privacy: .public)")
+  }
+
+  /// Reorder tab groups by updating their display_order values.
+  /// The order is determined by position in the orderedGroupIds array.
+  public func reorderTabGroups(orderedGroupIds: [String]) throws {
+    try tabGroupRepo.reorderGroups(orderedGroupIds)
+    log.info("[GROUP-REORDER] Reordered \(orderedGroupIds.count, privacy: .public) tab groups")
+  }
 }
 
 // MARK: - Follow Policy Models

@@ -1091,6 +1091,18 @@ public final class ProjectSwitcherState {
       newGroups[groupIndex] = group
       tabGroups = newGroups
 
+      // Persist to database (P0 fix: within-group moves need persistence)
+      if let orchestrator = ensureOrchestrator() {
+        let orderedIds = group.projects.map(\.id)
+        Task {
+          do {
+            try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+          } catch {
+            log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+          }
+        }
+      }
+
       log.info("[TAB-MOVE] Moved tab left within group \(groupId, privacy: .public)")
     } else {
       // Solo: move globally in flat list
@@ -1122,6 +1134,18 @@ public final class ProjectSwitcherState {
       newGroups[groupIndex] = group
       tabGroups = newGroups
 
+      // Persist to database (P0 fix: within-group moves need persistence)
+      if let orchestrator = ensureOrchestrator() {
+        let orderedIds = group.projects.map(\.id)
+        Task {
+          do {
+            try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+          } catch {
+            log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+          }
+        }
+      }
+
       log.info("[TAB-MOVE] Moved tab right within group \(groupId, privacy: .public)")
     } else {
       // Solo: move globally in flat list
@@ -1146,6 +1170,18 @@ public final class ProjectSwitcherState {
     newGroups.swapAt(groupIndex, groupIndex - 1)
     tabGroups = newGroups
 
+    // Persist to database (P0 fix: group moves need persistence)
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
     log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) left")
   }
 
@@ -1161,6 +1197,18 @@ public final class ProjectSwitcherState {
     var newGroups = tabGroups
     newGroups.swapAt(groupIndex, groupIndex + 1)
     tabGroups = newGroups
+
+    // Persist to database (P0 fix: group moves need persistence)
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
 
     log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) right")
   }

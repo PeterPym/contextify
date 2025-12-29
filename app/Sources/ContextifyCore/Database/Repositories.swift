@@ -1192,6 +1192,7 @@ public protocol TabGroupRepository {
   func delete(id: String) throws
   func deleteIfEmpty(id: String) throws -> Bool
   func nextDisplayOrder() throws -> Int
+  func reorderGroups(_ orderedGroupIds: [String]) throws  // Phase 5: bulk reorder
 }
 
 public final class TabGroupRepositoryImpl: TabGroupRepository {
@@ -1343,6 +1344,20 @@ public final class TabGroupRepositoryImpl: TabGroupRepository {
     try db.read { db in
       let maxOrder = try Int.fetchOne(db, sql: "SELECT MAX(display_order) FROM tab_groups") ?? -1
       return maxOrder + 1
+    }
+  }
+
+  /// Bulk reorder groups by setting display_order based on array position (Phase 5)
+  public func reorderGroups(_ orderedGroupIds: [String]) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      for (order, groupId) in orderedGroupIds.enumerated() {
+        try db.execute(sql: """
+          UPDATE tab_groups SET display_order = ?, updated_at = ?
+          WHERE id = ?
+        """, arguments: [order, now, groupId])
+      }
     }
   }
 }
