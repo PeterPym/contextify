@@ -236,73 +236,49 @@ struct ProjectSwitcherView: View {
 
   private let baseSpacing: CGFloat = 8
 
-  /// Calculate gap width between two adjacent tabs
-  /// Collapses to 0 only on the LEFT side of the dragged tab (keeps right side normal)
-  private func gapWidth(betweenIndex i: Int) -> CGFloat {
-    guard let dragged = draggingProject else { return baseSpacing }
-    let right = state.tabProjects[i + 1].id
-    // Only collapse if the gap is immediately to the left of (before) the dragged tab
-    return (dragged.id == right) ? 0 : baseSpacing
+  /// Compute starting flat index for a group
+  private func flatIndexForGroup(at groupIndex: Int) -> Int {
+    var index = 0
+    for i in 0..<groupIndex {
+      index += state.tabGroups[i].projects.count
+    }
+    return index
   }
 
   var body: some View {
-    let _ = log.debug("[TABBAR-BODY] body recomputed, tabs=\(state.tabProjects.count, privacy: .public)")
+    let _ = log.debug("[TABBAR-BODY] body recomputed, groups=\(state.tabGroups.count, privacy: .public), tabs=\(state.tabProjects.count, privacy: .public)")
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 0) {  // No global spacing - use explicit Gap views
-          ForEach(Array(state.tabProjects.enumerated()), id: \.element.id) { index, project in
-            // Insertion indicator before this tab
-            if insertionIndex == index, let draggingProject {
-              // Gap before insertion indicator (unless at start)
-              if index > 0 {
-                Gap(width: baseSpacing)
-              }
+        HStack(spacing: 0) {  // No global spacing - use explicit Gap/GroupSeparator views
+          ForEach(Array(state.tabGroups.enumerated()), id: \.element.id) { groupIndex, group in
+            let globalFlatIndex = flatIndexForGroup(at: groupIndex)
 
-              InsertionIndicator(draggingProject: draggingProject)
-                .transition(.asymmetric(
-                  insertion: .scale(scale: 0.5).combined(with: .opacity),
-                  removal: .scale(scale: 0.5).combined(with: .opacity)
-                ))
-
-              // Gap after insertion indicator
-              Gap(width: baseSpacing)
+            // Group separator before this group (except first)
+            if groupIndex > 0 {
+              GroupSeparator()
             }
 
-            ProjectTabView(
-              project: project,
-              isActive: project.id == state.activeProjectId,
-              indicator: state.unreadIndicators[project.id],
-              isDragging: draggingProject?.id == project.id,
-              onDragStart: {
+            TabGroupView(
+              group: group,
+              isAnyTabActive: group.projects.contains { $0.id == state.activeProjectId },
+              activeProjectId: state.activeProjectId,
+              unreadIndicators: state.unreadIndicators,
+              draggingProject: draggingProject,
+              insertionIndex: insertionIndex,
+              globalFlatIndex: globalFlatIndex,
+              baseSpacing: baseSpacing,
+              onDragStart: { project in
                 self.draggingProject = project
                 return NSItemProvider(object: project.id as NSString)
               }
             )
-            .id(project.id)
-            .trackTabFrame(id: project.id)
-            .frame(
-              width: draggingProject?.id == project.id ? 0 : nil,
-              height: draggingProject?.id == project.id ? 0 : nil
-            )
-            .clipped()  // Clip content when frame is 0x0
-
-            // Pairwise gap - skip if insertion indicator will appear at next position
-            if index < state.tabProjects.count - 1 {
-              // Skip gap if insertion indicator will appear between this tab and next
-              let skipGap = insertionIndex == index + 1
-              if !skipGap {
-                Gap(width: gapWidth(betweenIndex: index))
-              }
-            }
           }
 
-          // Insertion indicator after last tab
+          // Insertion indicator after last tab (at end of last group)
           if let insertionIndex,
              insertionIndex == state.tabProjects.count,
              let draggingProject {
-            // Gap before insertion indicator
             Gap(width: baseSpacing)
-
             InsertionIndicator(draggingProject: draggingProject)
               .transition(.asymmetric(
                 insertion: .scale(scale: 0.5).combined(with: .opacity),
@@ -318,6 +294,7 @@ struct ProjectSwitcherView: View {
           tabPositions = v
         }
         // Container-level drop delegate (wide, stable)
+        // Uses flat tabProjects for drop index calculation
         .onDrop(
           of: [.text],
           delegate: ProjectTabsDropDelegate(
@@ -527,6 +504,100 @@ private struct Gap: View {
     Color.clear
       .frame(width: width, height: 1)
       .allowsHitTesting(false)
+  }
+}
+
+// MARK: - Group Separator
+
+/// Visual separator between tab groups
+/// Provides wider spacing than intra-group gaps for visual distinction
+private struct GroupSeparator: View {
+  static let width: CGFloat = 12
+
+  var body: some View {
+    Color.clear
+      .frame(width: Self.width, height: 1)
+      .allowsHitTesting(false)
+  }
+}
+
+// MARK: - Tab Group View
+
+/// Container for a group of related project tabs
+/// - Solo tabs (synthetic groups) render without background
+/// - Multi-tab groups get subtle background container
+private struct TabGroupView: View {
+  let group: TabGroupInfo
+  let isAnyTabActive: Bool
+  let activeProjectId: String?
+  let unreadIndicators: [String: UnreadIndicatorResult]
+  let draggingProject: ProjectInfo?
+  let insertionIndex: Int?
+  let globalFlatIndex: Int  // Starting index in flat tab list
+  let baseSpacing: CGFloat
+  let onDragStart: (ProjectInfo) -> NSItemProvider
+
+  private let intraGroupSpacing: CGFloat = 4  // Tighter spacing within groups
+
+  /// Background color for multi-tab groups (subtle tint from git root)
+  private var groupBackgroundColor: Color {
+    // Only show background for actual multi-tab groups (not solo)
+    guard !group.isSoloTab, group.projects.count > 1 else {
+      return .clear
+    }
+    // Use group color at low opacity for subtle grouping
+    return group.color.opacity(0.08)
+  }
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(Array(group.projects.enumerated()), id: \.element.id) { localIndex, project in
+        let flatIndex = globalFlatIndex + localIndex
+
+        // Insertion indicator before this tab (if applicable)
+        if insertionIndex == flatIndex, let dragging = draggingProject {
+          if localIndex > 0 || globalFlatIndex > 0 {
+            Gap(width: baseSpacing)
+          }
+          InsertionIndicator(draggingProject: dragging)
+            .transition(.asymmetric(
+              insertion: .scale(scale: 0.5).combined(with: .opacity),
+              removal: .scale(scale: 0.5).combined(with: .opacity)
+            ))
+          Gap(width: baseSpacing)
+        }
+
+        ProjectTabView(
+          project: project,
+          isActive: project.id == activeProjectId,
+          indicator: unreadIndicators[project.id],
+          isDragging: draggingProject?.id == project.id,
+          onDragStart: { onDragStart(project) }
+        )
+        .id(project.id)
+        .trackTabFrame(id: project.id)
+        .frame(
+          width: draggingProject?.id == project.id ? 0 : nil,
+          height: draggingProject?.id == project.id ? 0 : nil
+        )
+        .clipped()
+
+        // Intra-group gap (between tabs within same group)
+        if localIndex < group.projects.count - 1 {
+          let nextFlatIndex = flatIndex + 1
+          let skipGap = insertionIndex == nextFlatIndex
+          if !skipGap {
+            Gap(width: draggingProject?.id == group.projects[localIndex + 1].id ? 0 : intraGroupSpacing)
+          }
+        }
+      }
+    }
+    .padding(.horizontal, group.isSoloTab ? 0 : 4)
+    .padding(.vertical, group.isSoloTab ? 0 : 2)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(groupBackgroundColor)
+    )
   }
 }
 
