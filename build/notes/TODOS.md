@@ -870,6 +870,28 @@ Several settings panes (including the CLI tab) are functionally correct but visu
 
 ---
 
+## Claude Code Session Name Integration (1 item)
+
+**Status:** Not started
+**Priority:** P1 (feature gap)
+**Discovered:** 2025-12-29
+
+- [ ] #SESSION-NAME-DISPLAY: Display Claude Code session names in Contextify timeline
+
+**Background:**
+Claude Code v2.0.64+ supports named sessions via `/rename` command. Users can assign meaningful names like `auth-refactor` or `bugfix-123` to their sessions. Currently, Contextify displays sessions using auto-generated summaries or timestamps, missing this user-assigned context.
+
+**Requirements:**
+1. Parse Claude Code's SQLite database for session metadata
+2. Display user-assigned session name prominently in timeline when available
+3. Add session names to search index
+4. Fall back gracefully to auto-summary for unnamed sessions
+5. Investigate Codex CLI equivalent (if any)
+
+**Reference:** `build/notes/todo-support/session-name-integration.md`
+
+---
+
 # P2 (Medium Priority)
 
 ---
