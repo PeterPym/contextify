@@ -203,19 +203,50 @@ Background process that continuously watches conversation transcripts and uses A
 
 ## Cross-Platform Ingestion CLI (Linux/Windows)
 
-**Status:** Not started
+**Status:** In progress (Phases 1-2.5 complete, Phase 3 partial)
 **Priority:** P1
 
-- [ ] #CROSS-PLATFORM-INGESTION: Derisk and prototype a cross-platform ingestion engine
+- [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
 
-**Goal:** Build a Linux/Windows CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
+**Goal:** Build a Linux CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
 
-**Key tasks:**
-1. Lift SwiftPM macOS-only platform restriction and attempt Linux/Windows builds.
-2. Identify macOS-only APIs in ingestion path and isolate behind platform adapters.
-3. Decide on GRDB portability vs SQLite C fallback based on feasibility results.
-4. Prototype CLI ingestion run on Linux with fixture transcripts and validate parity.
+**Completed:**
+- [x] Phase 1: Platform adapters (CrossPlatformLock, CrossPlatformCrypto, CrossPlatformLogger, IngestionEventSink)
+- [x] Phase 2: Package.swift restructure (removed platforms stanza, conditional target exposure, swift-crypto)
+- [x] Phase 2.5a: ContextifyIngestionCore target created with portable files
+- [x] Phase 2.5b: Docker build environment working
+- [x] Phase 2.5c: Linux build succeeds in Docker
+- [x] Phase 2.5d: CLI stub builds on Linux
+- [x] Phase 2.5e: Basic CLI commands (schema, discover) working
+- [x] Phase 3 partial: CLI stub with basic commands only
 
+**P1 - Remaining (must complete):**
+- [ ] Full `ingest` command with TranscriptOrchestrator + HooverEngine wiring
+- [ ] FTS5 preflight check in DatabaseOpener (fail-fast on missing FTS5)
+- [ ] WAL mode check in `verify` command
+- [ ] FTS5 availability check in `verify` command
+- [ ] Quick integrity check in `verify` command
+- [ ] `ingestion_runs` metadata table migration (Phase 4)
+- [ ] GitHub Actions Linux release workflow (Phase 7)
+- [ ] Change detection script for cross-platform releases (Phase 7)
+- [ ] Pre-commit hook for migration warnings (Phase 7)
+
+**P2 - Should complete:**
+- [ ] `--full-rebuild` CLI option for ingest command
+- [ ] `--since <timestamp>` CLI option for ingest command
+- [ ] `--workers N` CLI option for parallel ingestion
+- [ ] JSONL event output via CLIEventSink
+- [ ] Multi-architecture Linux builds (x86_64 + arm64)
+- [ ] Golden fixture tests (macOS vs Linux comparison)
+
+**Remaining phases:**
+- Phase 3 (partial): Full ingest command wiring
+- Phase 4: Enhanced verify command + GRDB mitigations
+- Phase 5: Full Linux validation with fixtures
+- Phase 6: Tests and documentation
+- Phase 7: Release automation and change detection
+
+**Plan:** `/tmp/cross-platform-ingestion-plan.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
 ## Periodic Ingestion Check for Resilience
