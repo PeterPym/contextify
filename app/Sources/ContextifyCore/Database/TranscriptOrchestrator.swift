@@ -1,10 +1,20 @@
 import Foundation
-import Darwin
 import GRDB
+#if canImport(OSLog)
 import OSLog
-import CryptoKit
+#endif
 
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
+
+#if canImport(OSLog)
 private let log = Logger(subsystem: "dev.contextify", category: "TranscriptOrchestrator")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "TranscriptOrchestrator")
+#endif
 
 // MARK: - Public API Types
 
@@ -135,18 +145,18 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let validator: TranscriptValidator
   private let ingestionLockTTL: TimeInterval = 600
 
-  private struct PrimerStatus {
+  private struct PrimerStatus: Sendable {
     let target: Int
     let startedAt: Date
     var ready: Bool
   }
 
-  private struct PrimerTrackerState {
+  private struct PrimerTrackerState: Sendable {
     var statuses: [String: PrimerStatus] = [:]
     var readyCount: Int = 0
   }
 
-  private let primerStatusLock = OSAllocatedUnfairLock(initialState: PrimerTrackerState())
+  private let primerStatusLock = CrossPlatformLock(initialState: PrimerTrackerState())
 
   // Hoover scheduler for concurrency control
   private lazy var _hooverScheduler: HooverScheduler = HooverScheduler(
@@ -1196,8 +1206,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     progressSink.didStartProject(name: project.name ?? projectId, transcriptCount: transcriptFiles.count)
 
     let total = transcriptFiles.count
-    let completed = OSAllocatedUnfairLock(initialState: 0)
-    let hasNotified = OSAllocatedUnfairLock(initialState: false)  // Track if we've sent progress notification
+    let completed = CrossPlatformLock(initialState: 0)
+    let hasNotified = CrossPlatformLock(initialState: false)  // Track if we've sent progress notification
 
     try await withThrowingTaskGroup(of: Void.self) { group in
       var activeTaskCount = 0

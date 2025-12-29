@@ -1,6 +1,8 @@
 import Foundation
 import GRDB
+#if canImport(OSLog)
 import OSLog
+#endif
 
 /// SQLite schema for Contextify transcript storage
 /// Current version: v32 (smart lazy watchers v2 baselines + activity)
@@ -10,12 +12,17 @@ import OSLog
 /// - File modification (mtime_ms): Unix milliseconds (Int64) for precise file change detection
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
-enum DatabaseSchema {
-  static let version = 32
+public enum DatabaseSchema {
+  public static let version = 32
+  public static let currentVersion = version  // Alias for CLI access
+  #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
+  #else
+  private static let logger = CrossPlatformLogger(subsystem: "dev.contextify", category: "DatabaseMigration")
+  #endif
 
   /// Create migrator for schema evolution
-  static func createMigrator() -> DatabaseMigrator {
+  public static func createMigrator() -> DatabaseMigrator {
     var migrator = DatabaseMigrator()
 
     // v16: Collapsed schema (all previous migrations merged)
@@ -527,13 +534,13 @@ enum DatabaseSchema {
       }
 
 	      let projectIds = containerProjects.map { $0["id"] as! String }
-	      logger.info("[MIGRATION-v26] Removing \(containerProjects.count, privacy: .public) sandbox container path projects")
+	      logger.info("[MIGRATION-v26] Removing \(containerProjects.count) sandbox container path projects")
 	
 	      for row in containerProjects {
 	        let projectId = row["id"] as! String
 	        let rootPath = row["root_path"] as! String
 	        let name = row["name"] as! String
-	        logger.info("[MIGRATION-v26]   • \(name, privacy: .public) (\(projectId, privacy: .public)) at \(rootPath, privacy: .public)")
+	        logger.info("[MIGRATION-v26]   • \(name) (\(projectId)) at \(rootPath)")
 	      }
 
       // Cascade delete: transcripts, entries, preflight cache
@@ -563,7 +570,7 @@ enum DatabaseSchema {
         WHERE id IN (\(projectIds.map { "'\($0)'" }.joined(separator: ",")))
       """)
 
-      logger.info("[MIGRATION-v26] Cleanup complete - removed \(containerProjects.count, privacy: .public) projects")
+      logger.info("[MIGRATION-v26] Cleanup complete - removed \(containerProjects.count) projects")
     }
 
     // v27: Add is_queued column for queue-operation tracking
@@ -624,7 +631,7 @@ enum DatabaseSchema {
       """)
 
       let backfillCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries_fts") ?? 0
-      logger.info("[MIGRATION-v28] FTS index populated with \(backfillCount, privacy: .public) entries")
+      logger.info("[MIGRATION-v28] FTS index populated with \(backfillCount) entries")
 
       // AFTER INSERT trigger - sync new entries to FTS
       try db.execute(sql: """
@@ -688,7 +695,7 @@ enum DatabaseSchema {
       // Note: We skip logging to system_events here because it has a foreign key
       // constraint on transcript_id. The backfill count is logged via OSLog instead.
 
-      logger.info("[MIGRATION-v28] FTS5 search index created successfully with \(backfillCount, privacy: .public) entries")
+      logger.info("[MIGRATION-v28] FTS5 search index created successfully with \(backfillCount) entries")
     }
 
     // ========================================================================
@@ -769,7 +776,7 @@ enum DatabaseSchema {
 
       // Note: DELETE trigger doesn't need to change (it deletes by entry_id)
 
-      logger.info("[MIGRATION-v29] Added \(summaryCount, privacy: .public) summaries to FTS index")
+      logger.info("[MIGRATION-v29] Added \(summaryCount) summaries to FTS index")
     }
 
     // ========================================================================

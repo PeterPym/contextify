@@ -1,8 +1,13 @@
 import Foundation
+#if canImport(OSLog)
 import OSLog
-import os.lock
+#endif
 
+#if canImport(OSLog)
 private let parserLog = Logger(subsystem: "dev.contextify", category: "TranscriptParser")
+#else
+private let parserLog = CrossPlatformLogger(subsystem: "dev.contextify", category: "TranscriptParser")
+#endif
 private let metadataRecordTypes: Set<String> = [
   "file-history-snapshot",
   "summary",
@@ -76,7 +81,7 @@ public final class MultiProviderParser: TranscriptLineParser {
 // MARK: - Claude Code Parser
 
 public final class ClaudeCodeLineParser: TranscriptLineParser {
-  private let trackerLock = OSAllocatedUnfairLock(initialState: ToolCallTrackerState())
+  private let trackerLock = CrossPlatformLock(initialState: ToolCallTrackerState())
 
   public init() {}
 
@@ -620,7 +625,7 @@ private func extractToolResultText(from block: [String: Any]) -> String? {
 
 // MARK: - Tool Call Tracking
 
-private struct ToolCallTrackerState {
+private struct ToolCallTrackerState: Sendable {
   var toolUseBuffers: [String: ToolUseBuffer] = [:]
   var assistantBuffers: [String: [String: BufferedAssistantMessage]] = [:]
   var toolUseInfo: [String: [String: ToolUseInfo]] = [:]
@@ -639,7 +644,7 @@ private struct BufferedAssistantMessage: Sendable {
   let contentData: Data
 }
 
-private struct ToolUseBuffer {
+private struct ToolUseBuffer: Sendable {
   private var ids: Set<String> = []
   private var order: [String] = []
   private static let maxTrackedIds = 512
@@ -671,7 +676,7 @@ private struct ToolUseBuffer {
   }
 }
 
-private struct ParserMetrics {
+private struct ParserMetrics: Sendable {
   var toolResultValidated: Int = 0
   var toolResultMissing: Int = 0
   var stopReasonCoerced: Int = 0

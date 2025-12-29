@@ -1,8 +1,19 @@
 import Foundation
+#if canImport(OSLog)
 import OSLog
-import CryptoKit
+#endif
 
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
+
+#if canImport(OSLog)
 private let log = Logger(subsystem: "dev.contextify", category: "LightweightDiscovery")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "LightweightDiscovery")
+#endif
 
 /// Fast filesystem scanner that returns project metadata WITHOUT reading file contents or writing to DB
 /// Goal: <200ms for typical setup (19 projects, 663 transcripts)
@@ -54,8 +65,8 @@ public actor LightweightDiscoveryService {
     // Count transcript files per provider for startup diagnostics
     let claudeTranscriptCount = claudeProjects.reduce(0) { $0 + $1.transcriptCount }
     let codexTranscriptCount = codexProjects.reduce(0) { $0 + $1.transcriptCount }
-    log.info("[DISC-LIGHT] Filesystem transcripts: Claude=\(claudeTranscriptCount, privacy: .public), Codex=\(codexTranscriptCount, privacy: .public)")
-    log.debug("[DISC-LIGHT] Raw discoveries: \(rawProjects.count, privacy: .public) (Claude: \(claudeProjects.count, privacy: .public), Codex: \(codexProjects.count, privacy: .public))")
+    log.info("[DISC-LIGHT] Filesystem transcripts: Claude=\(claudeTranscriptCount), Codex=\(codexTranscriptCount)")
+    log.debug("[DISC-LIGHT] Raw discoveries: \(rawProjects.count) (Claude: \(claudeProjects.count), Codex: \(codexProjects.count))")
 
     // Merge projects with same canonical path (e.g., Claude + Codex for same directory)
     let merged = mergeByCanonicalPath(rawProjects)
@@ -64,7 +75,7 @@ public actor LightweightDiscoveryService {
     all.sort { $0.lastActivity > $1.lastActivity }
 
     let duration = Date().timeIntervalSince(start)
-    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration), privacy: .public)s. Found \(all.count, privacy: .public) projects (merged from \(rawProjects.count, privacy: .public) discoveries).")
+    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration))s. Found \(all.count) projects (merged from \(rawProjects.count) discoveries).")
 
     return all
   }
@@ -101,7 +112,7 @@ public actor LightweightDiscoveryService {
           cwd: existing.cwd ?? project.cwd,
           transcriptFiles: deduped
         )
-        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public)), deduped \(combinedFiles.count, privacy: .public) -> \(deduped.count, privacy: .public) files")
+        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName) (\(project.provider)) into existing (\(existing.provider)), deduped \(combinedFiles.count) -> \(deduped.count) files")
       } else {
         merged[key] = project
       }
@@ -125,7 +136,7 @@ public actor LightweightDiscoveryService {
   ) -> [LightweightProject] {
     guard !codexProjects.isEmpty else { return codexProjects }
     guard !claudeProjects.isEmpty else {
-      log.info("[CODEX-REMAP] No Claude projects found - keeping \(codexProjects.count, privacy: .public) Codex-only projects")
+      log.info("[CODEX-REMAP] No Claude projects found - keeping \(codexProjects.count) Codex-only projects")
       return codexProjects
     }
 
@@ -143,7 +154,7 @@ public actor LightweightDiscoveryService {
 
     for project in codexProjects {
       guard let cwd = project.cwd else {
-        log.debug("[CODEX-REMAP] Skipping project without cwd: \(project.displayName, privacy: .public)")
+        log.debug("[CODEX-REMAP] Skipping project without cwd: \(project.displayName)")
         remapped.append(project)
         continue
       }
@@ -183,7 +194,7 @@ public actor LightweightDiscoveryService {
         )
         remapped.append(remappedProject)
 
-        log.debug("[CODEX-REMAP] Remapped \(cwdNorm, privacy: .private) -> \(assignedRoot, privacy: .private) (\(isExact ? "exact" : "prefix", privacy: .public))")
+        log.debug("[CODEX-REMAP] Remapped \(cwdNorm) -> \(assignedRoot) (\(isExact ? "exact" : "prefix"))")
       } else {
         // No prefix match - keep as Codex-only project
         codexOnlyMatches += 1
@@ -192,11 +203,11 @@ public actor LightweightDiscoveryService {
         // Sanitize path for logging (SHA256 first 12 hex chars)
         let hash = SHA256.hash(data: Data(cwdNorm.utf8))
         let sanitized = hash.prefix(6).map { String(format: "%02x", $0) }.joined()
-        log.info("[CODEX-REMAP] Codex-only project: \(sanitized, privacy: .public) (no Claude root match)")
+        log.info("[CODEX-REMAP] Codex-only project: \(sanitized) (no Claude root match)")
       }
     }
 
-    log.info("[CODEX-REMAP] Match breakdown: exact=\(exactMatches, privacy: .public) prefix=\(prefixMatches, privacy: .public) codex-only=\(codexOnlyMatches, privacy: .public) total=\(codexProjects.count, privacy: .public)")
+    log.info("[CODEX-REMAP] Match breakdown: exact=\(exactMatches) prefix=\(prefixMatches) codex-only=\(codexOnlyMatches) total=\(codexProjects.count)")
 
     return remapped
   }
@@ -208,11 +219,11 @@ public actor LightweightDiscoveryService {
     if let provider = accessProvider {
       do {
         return try provider.withAccess(for: TranscriptProviderID.claude) { root in
-          log.debug("[DISC-LIGHT] Claude root URL from provider: \(root.path, privacy: .public)")
+          log.debug("[DISC-LIGHT] Claude root URL from provider: \(root.path)")
           return scanClaudeDirectory(at: root)
         }
       } catch {
-        log.debug("[DISC-LIGHT] No Claude access authorized: \(error.localizedDescription, privacy: .public)")
+        log.debug("[DISC-LIGHT] No Claude access authorized: \(error.localizedDescription)")
         return []
       }
     } else {
@@ -223,13 +234,13 @@ public actor LightweightDiscoveryService {
 
       let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
-      log.debug("[DISC-LIGHT] Claude root (no access provider - fallback): \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] Claude root (no access provider - fallback): \(root.path)")
       return scanClaudeDirectory(at: root)
     }
   }
 
   nonisolated private func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
-    log.debug("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path, privacy: .public)")
+    log.debug("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path)")
 
     let dirs: [URL]
     do {
@@ -238,14 +249,14 @@ public actor LightweightDiscoveryService {
         includingPropertiesForKeys: [.contentModificationDateKey],
         options: [.skipsHiddenFiles]
       )
-      log.info("[DISC-LIGHT] Found \(dirs.count, privacy: .public) entries in Claude directory")
+      log.info("[DISC-LIGHT] Found \(dirs.count) entries in Claude directory")
     } catch {
-      log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path): \(error.localizedDescription)")
       return []
     }
 
     guard !dirs.isEmpty else {
-      log.debug("[DISC-LIGHT] Claude directory is empty: \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] Claude directory is empty: \(root.path)")
       return []
     }
 
@@ -293,7 +304,7 @@ public actor LightweightDiscoveryService {
           return url
         }
       } catch {
-        log.debug("[DISC-LIGHT] No Codex access authorized: \(error.localizedDescription, privacy: .public)")
+        log.debug("[DISC-LIGHT] No Codex access authorized: \(error.localizedDescription)")
         return []
       }
     } else {
@@ -345,7 +356,7 @@ public actor LightweightDiscoveryService {
       includingPropertiesForKeys: [.contentModificationDateKey],
       options: [.skipsHiddenFiles]
     ) else {
-      log.debug("[DISC-LIGHT] No Codex sessions directory found at \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] No Codex sessions directory found at \(root.path)")
       return []
     }
 
@@ -357,7 +368,7 @@ public actor LightweightDiscoveryService {
       }
     }
 
-    log.debug("[DISC-LIGHT] Found \(files.count, privacy: .public) Codex transcripts")
+    log.debug("[DISC-LIGHT] Found \(files.count) Codex transcripts")
 
     // Track CWD extraction failures for aggregate reporting
     var cwdFailureCount = 0
@@ -394,7 +405,7 @@ public actor LightweightDiscoveryService {
             // CWD extraction failed - track for fallback bucket
             cwdFailureCount += 1
             cwdFailureFiles.append(url)
-            log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .private)")
+            log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent)")
           }
         }
       }
@@ -404,10 +415,10 @@ public actor LightweightDiscoveryService {
 
     // Log aggregate failure count at info level (not just per-file debug)
     if cwdFailureCount > 0 {
-      log.info("[DISC-LIGHT] CWD extraction failed for \(cwdFailureCount, privacy: .public) Codex transcripts")
+      log.info("[DISC-LIGHT] CWD extraction failed for \(cwdFailureCount) Codex transcripts")
     }
 
-    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts (failures: \(cwdFailureCount, privacy: .public))")
+    log.info("[DISC-LIGHT] Codex scan produced \(projects.count) projects from \(files.count) transcripts (failures: \(cwdFailureCount))")
 
     // Convert to LightweightProject array
     var result = projects.map { cwd, data in
@@ -450,7 +461,7 @@ public actor LightweightDiscoveryService {
         transcriptFiles: cwdFailureFiles
       )
       result.append(unknownProject)
-      log.info("[DISC-LIGHT] Created fallback bucket for \(cwdFailureFiles.count, privacy: .public) Codex transcripts with CWD extraction failures")
+      log.info("[DISC-LIGHT] Created fallback bucket for \(cwdFailureFiles.count) Codex transcripts with CWD extraction failures")
     }
 
     return result

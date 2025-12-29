@@ -1,8 +1,14 @@
 import Foundation
 import GRDB
+#if canImport(OSLog)
 import OSLog
+#endif
 
+#if canImport(OSLog)
 private let log = Logger(subsystem: "dev.contextify", category: "HooverEngine")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "HooverEngine")
+#endif
 
 // MARK: - Configuration
 
@@ -1368,6 +1374,7 @@ public final class HooverEngine {
 
         // Notify UI to refresh entries after queue operations
         // ConversationMonitor will re-read affected entries from DB to update badges
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         if !metadata.queueOperations.isEmpty {
           let projectId = try String.fetchOne(db, sql: "SELECT project_id FROM transcripts WHERE id = ?", arguments: [transcriptId])
           if let projectId {
@@ -1380,6 +1387,7 @@ public final class HooverEngine {
             }
           }
         }
+        #endif
       }
 
       // Insert errors (bulk insert)
