@@ -1169,7 +1169,9 @@ public protocol TabGroupRepository {
   func list() throws -> [TabGroup]
   func get(id: String) throws -> TabGroup?
   func getByGitRoot(_ gitRoot: String) throws -> TabGroup?
-  func update(id: String, name: String?, colorHex: String?, colorSource: String?) throws
+  func update(id: String, name: String?, colorHex: String?, colorSource: ColorSource?) throws
+  func setName(id: String, name: String?) throws  // Set or clear group name
+  func setColorOverride(id: String, colorHex: String?) throws  // Set color (or clear to auto)
   func setDisplayOrder(id: String, displayOrder: Int) throws
   func delete(id: String) throws
   func deleteIfEmpty(id: String) throws -> Bool
@@ -1192,7 +1194,7 @@ public final class TabGroupRepositoryImpl: TabGroupRepository {
       id: id,
       name: name,
       colorHex: colorHex,
-      colorSource: colorHex != nil ? "user" : "auto",
+      colorSource: colorHex != nil ? .user : .auto,
       gitRoot: gitRoot,
       isWorktreeGroup: isWorktreeGroup,
       displayOrder: displayOrder,
@@ -1229,7 +1231,7 @@ public final class TabGroupRepositoryImpl: TabGroupRepository {
     }
   }
 
-  public func update(id: String, name: String?, colorHex: String?, colorSource: String?) throws {
+  public func update(id: String, name: String?, colorHex: String?, colorSource: ColorSource?) throws {
     let now = Int(Date().timeIntervalSince1970)
 
     try db.write { db in
@@ -1245,6 +1247,35 @@ public final class TabGroupRepositoryImpl: TabGroupRepository {
       if let colorSource = colorSource {
         group.colorSource = colorSource
       }
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  /// Set or clear group name (nil clears)
+  public func setName(id: String, name: String?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      group.name = name  // Can set to nil to clear
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  /// Set color override (or clear to auto if nil)
+  public func setColorOverride(id: String, colorHex: String?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      group.colorHex = colorHex
+      group.colorSource = colorHex != nil ? .user : .auto
       group.updatedAt = now
       try group.update(db)
     }
@@ -1309,8 +1340,12 @@ public final class WorktreePreferenceRepositoryImpl: WorktreePreferenceRepositor
   }
 
   public func get(_ gitRoot: String) throws -> WorktreePreference? {
+    // Use explicit filter query instead of fetchOne(key:) for robustness
+    // (avoids relying on GRDB's primary key inference)
     try db.read { db in
-      try WorktreePreference.fetchOne(db, key: gitRoot)
+      try WorktreePreference
+        .filter(Column("git_root") == gitRoot)
+        .fetchOne(db)
     }
   }
 
@@ -1330,8 +1365,11 @@ public final class WorktreePreferenceRepositoryImpl: WorktreePreferenceRepositor
   }
 
   public func delete(_ gitRoot: String) throws {
+    // Use explicit filter for deletion (avoids relying on primary key inference)
     _ = try db.write { db in
-      try WorktreePreference.deleteOne(db, key: gitRoot)
+      try WorktreePreference
+        .filter(Column("git_root") == gitRoot)
+        .deleteAll(db)
     }
   }
 }

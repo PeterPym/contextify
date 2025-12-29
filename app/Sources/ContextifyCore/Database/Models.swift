@@ -41,13 +41,19 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
 
 // MARK: - Tab Group (v33)
 
+/// Source of a tab group's color
+public enum ColorSource: String, Codable, Sendable {
+  case auto   // Color derived from git root hash
+  case user   // User-specified color override
+}
+
 /// Tab grouping for project switcher
 /// Groups tabs together visually, with worktree auto-grouping built on top
 public struct TabGroup: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var id: String
   public var name: String?  // Optional display name (worktree groups default to repo name)
   public var colorHex: String?  // User override color (e.g., "#4A7BA7")
-  public var colorSource: String  // "auto" (from git root hash) or "user" (manual override)
+  public var colorSource: ColorSource  // How color is determined
   public var gitRoot: String?  // For worktree groups: the git repository root path
   public var isWorktreeGroup: Bool  // true if auto-created for worktrees
   public var displayOrder: Int  // Position in tab bar
@@ -58,7 +64,7 @@ public struct TabGroup: Codable, FetchableRecord, PersistableRecord, Sendable {
     id: String,
     name: String? = nil,
     colorHex: String? = nil,
-    colorSource: String = "auto",
+    colorSource: ColorSource = .auto,
     gitRoot: String? = nil,
     isWorktreeGroup: Bool = false,
     displayOrder: Int,

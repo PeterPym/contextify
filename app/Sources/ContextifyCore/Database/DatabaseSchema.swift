@@ -991,40 +991,7 @@ enum DatabaseSchema {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
-    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering, v20: added orphaned tracking, v33: added group_id and group_display_order)
-    try db.create(table: "projects", ifNotExists: true) { t in
-      t.column("id", .text).primaryKey()
-      t.column("name", .text)
-      t.column("root_path", .text).notNull()
-      t.column("root_bookmark", .blob)
-      t.column("last_viewed_ts", .double).notNull().defaults(to: 0.0)  // v12: epoch timestamp
-      t.column("hidden", .integer).notNull().defaults(to: 0)  // v18: project visibility
-      t.column("display_order", .integer)  // v19: custom project ordering
-      t.column("is_orphaned", .integer).notNull().defaults(to: 0)  // v20: orphaned tracking
-      t.column("orphaned_since", .integer)  // v20: when directory went missing
-      t.column("group_id", .text)  // v33: tab group membership
-      t.column("group_display_order", .integer)  // v33: order within group
-      t.column("created_at", .integer).notNull()
-      t.column("updated_at", .integer).notNull()
-    }
-    try db.create(index: "idx_projects_root_path", on: "projects", columns: ["root_path"], unique: true, ifNotExists: true)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_projects_hidden
-      ON projects(hidden)
-      WHERE hidden = 1
-    """)
-    try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_projects_orphaned
-      ON projects(is_orphaned, orphaned_since)
-      WHERE is_orphaned = 1
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_projects_group
-      ON projects(group_id, group_display_order)
-    """)
-
-    // Tab groups table (v33: tab grouping support)
+    // Tab groups table (v33: tab grouping support) - must be before projects due to FK
     try db.execute(sql: """
       CREATE TABLE IF NOT EXISTS tab_groups (
         id TEXT PRIMARY KEY,
@@ -1055,6 +1022,39 @@ enum DatabaseSchema {
         ungrouped INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       )
+    """)
+
+    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering, v20: added orphaned tracking, v33: added group_id and group_display_order)
+    try db.create(table: "projects", ifNotExists: true) { t in
+      t.column("id", .text).primaryKey()
+      t.column("name", .text)
+      t.column("root_path", .text).notNull()
+      t.column("root_bookmark", .blob)
+      t.column("last_viewed_ts", .double).notNull().defaults(to: 0.0)  // v12: epoch timestamp
+      t.column("hidden", .integer).notNull().defaults(to: 0)  // v18: project visibility
+      t.column("display_order", .integer)  // v19: custom project ordering
+      t.column("is_orphaned", .integer).notNull().defaults(to: 0)  // v20: orphaned tracking
+      t.column("orphaned_since", .integer)  // v20: when directory went missing
+      t.column("group_id", .text).references("tab_groups", onDelete: .setNull)  // v33: tab group membership
+      t.column("group_display_order", .integer)  // v33: order within group
+      t.column("created_at", .integer).notNull()
+      t.column("updated_at", .integer).notNull()
+    }
+    try db.create(index: "idx_projects_root_path", on: "projects", columns: ["root_path"], unique: true, ifNotExists: true)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_hidden
+      ON projects(hidden)
+      WHERE hidden = 1
+    """)
+    try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_orphaned
+      ON projects(is_orphaned, orphaned_since)
+      WHERE is_orphaned = 1
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_group
+      ON projects(group_id, group_display_order)
     """)
 
     // Transcripts table (v2: last_processed_entry_id, v3: identity fields, v3: unique indexes)

@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import OSLog
+import SwiftUI
 import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
@@ -54,7 +55,7 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
 public struct TabGroupInfo: Identifiable, Sendable {
   public let id: String  // Group ID (or synthetic ID for solo tabs)
   public let name: String?  // Display name (worktree groups default to repo name)
-  public let color: NSColor  // Group color for visual distinction
+  public let color: Color  // Group color for visual distinction (SwiftUI Color for direct use in views)
   public let isWorktreeGroup: Bool  // true if auto-created for git worktrees
   public let gitRoot: URL?  // For worktree groups: the git repository root
   public var projects: [ProjectInfo]  // Projects in this group, ordered by groupDisplayOrder
@@ -67,7 +68,7 @@ public struct TabGroupInfo: Identifiable, Sendable {
   public init(
     id: String,
     name: String?,
-    color: NSColor,
+    color: Color,
     isWorktreeGroup: Bool,
     gitRoot: URL? = nil,
     projects: [ProjectInfo]
@@ -81,13 +82,14 @@ public struct TabGroupInfo: Identifiable, Sendable {
   }
 
   /// Create a synthetic group for a solo (ungrouped) tab
-  public static func solo(_ project: ProjectInfo, color: NSColor) -> TabGroupInfo {
+  /// Note: gitRoot is nil for solo tabs - they don't get worktree coloring
+  public static func solo(_ project: ProjectInfo, color: Color) -> TabGroupInfo {
     TabGroupInfo(
       id: "solo-\(project.id)",
       name: nil,
       color: color,
       isWorktreeGroup: false,
-      gitRoot: project.gitRoot,
+      gitRoot: nil,  // Solo tabs don't participate in worktree grouping
       projects: [project]
     )
   }

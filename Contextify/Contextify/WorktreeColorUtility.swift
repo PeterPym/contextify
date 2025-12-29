@@ -20,17 +20,18 @@ public enum WorktreeColorUtility {
   /// - First 5: Semantic UI colors (primary, success, warning, error, accent)
   /// - Next 3: Brand gradient colors (yellow, cyan, purple)
   /// - Last 2: Extended palette (secondary, teal)
+  /// All colors explicitly use sRGB color space for consistent rendering.
   private static let accentColors: [Color] = [
-    Color(red: 0.290, green: 0.482, blue: 0.655),  // #4A7BA7 primary
-    Color(red: 0.318, green: 0.659, blue: 0.420),  // #51A86B success
-    Color(red: 0.831, green: 0.659, blue: 0.306),  // #D4A84E warning
-    Color(red: 0.780, green: 0.306, blue: 0.306),  // #C74E4E error
-    Color(red: 0.486, green: 0.408, blue: 0.659),  // #7C68A8 accent
-    Color(red: 0.976, green: 0.698, blue: 0.200),  // #F9B233 brand-yellow
-    Color(red: 0.290, green: 0.769, blue: 0.878),  // #4AC4E0 brand-cyan
-    Color(red: 0.545, green: 0.361, blue: 0.965),  // #8B5CF6 brand-purple
-    Color(red: 0.608, green: 0.545, blue: 0.494),  // #9B8B7E secondary
-    Color(red: 0.353, green: 0.608, blue: 0.667),  // #5A9BAA teal (derived)
+    Color(.sRGB, red: 0.290, green: 0.482, blue: 0.655),  // #4A7BA7 primary
+    Color(.sRGB, red: 0.318, green: 0.659, blue: 0.420),  // #51A86B success
+    Color(.sRGB, red: 0.831, green: 0.659, blue: 0.306),  // #D4A84E warning
+    Color(.sRGB, red: 0.780, green: 0.306, blue: 0.306),  // #C74E4E error
+    Color(.sRGB, red: 0.486, green: 0.408, blue: 0.659),  // #7C68A8 accent
+    Color(.sRGB, red: 0.976, green: 0.698, blue: 0.200),  // #F9B233 brand-yellow
+    Color(.sRGB, red: 0.290, green: 0.769, blue: 0.878),  // #4AC4E0 brand-cyan
+    Color(.sRGB, red: 0.545, green: 0.361, blue: 0.965),  // #8B5CF6 brand-purple
+    Color(.sRGB, red: 0.608, green: 0.545, blue: 0.494),  // #9B8B7E secondary
+    Color(.sRGB, red: 0.353, green: 0.608, blue: 0.667),  // #5A9BAA teal (derived)
   ]
 
   // MARK: - Public API
