@@ -19,16 +19,77 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
   /// Used for worktree color grouping in tab bar.
   public let gitRoot: URL?
 
-  public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil, isOrphaned: Bool = false) {
+  /// Tab group membership (v33). nil = solo tab, not in a group
+  public let groupId: String?
+
+  /// Order within group (v33). nil if not in a group
+  public let groupDisplayOrder: Int?
+
+  public init(
+    id: String,
+    name: String,
+    rootPath: String,
+    transcriptCount: Int,
+    lastViewedAt: Date? = nil,
+    isOrphaned: Bool = false,
+    groupId: String? = nil,
+    groupDisplayOrder: Int? = nil
+  ) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
     self.transcriptCount = transcriptCount
     self.lastViewedAt = lastViewedAt
     self.isOrphaned = isOrphaned
+    self.groupId = groupId
+    self.groupDisplayOrder = groupDisplayOrder
     // Cache gitRoot at init time to avoid repeated filesystem traversal during SwiftUI render
     let projectURL = URL(fileURLWithPath: rootPath)
     self.gitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL)
+  }
+}
+
+/// UI representation of a tab group (v33)
+/// Groups contain one or more projects that are displayed together in the tab bar
+public struct TabGroupInfo: Identifiable, Sendable {
+  public let id: String  // Group ID (or synthetic ID for solo tabs)
+  public let name: String?  // Display name (worktree groups default to repo name)
+  public let color: NSColor  // Group color for visual distinction
+  public let isWorktreeGroup: Bool  // true if auto-created for git worktrees
+  public let gitRoot: URL?  // For worktree groups: the git repository root
+  public var projects: [ProjectInfo]  // Projects in this group, ordered by groupDisplayOrder
+
+  /// True if this is a "synthetic" group for a solo (ungrouped) tab
+  public var isSoloTab: Bool {
+    projects.count == 1 && projects.first?.groupId == nil
+  }
+
+  public init(
+    id: String,
+    name: String?,
+    color: NSColor,
+    isWorktreeGroup: Bool,
+    gitRoot: URL? = nil,
+    projects: [ProjectInfo]
+  ) {
+    self.id = id
+    self.name = name
+    self.color = color
+    self.isWorktreeGroup = isWorktreeGroup
+    self.gitRoot = gitRoot
+    self.projects = projects
+  }
+
+  /// Create a synthetic group for a solo (ungrouped) tab
+  public static func solo(_ project: ProjectInfo, color: NSColor) -> TabGroupInfo {
+    TabGroupInfo(
+      id: "solo-\(project.id)",
+      name: nil,
+      color: color,
+      isWorktreeGroup: false,
+      gitRoot: project.gitRoot,
+      projects: [project]
+    )
   }
 }
 
@@ -444,7 +505,9 @@ public final class ProjectSwitcherState {
           name: displayName,
           rootPath: project.rootPath,
           transcriptCount: entryCount,
-          isOrphaned: isOrphaned
+          isOrphaned: isOrphaned,
+          groupId: project.groupId,
+          groupDisplayOrder: project.groupDisplayOrder
         )
       }
 
