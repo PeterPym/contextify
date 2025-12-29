@@ -112,16 +112,24 @@ public final class ProjectSwitcherState {
   private(set) var allProjects: [ProjectInfo] = []
 
   // Tab groups (v33): hierarchical grouping of tabs
-  private(set) var tabGroups: [TabGroupInfo] = []
-
-  // Flat list of tab-visible projects (computed from tabGroups for backward compatibility)
-  // Use this for keyboard navigation and legacy code paths
-  var tabProjects: [ProjectInfo] {
-    tabGroups.flatMap(\.projects)
+  private(set) var tabGroups: [TabGroupInfo] = [] {
+    didSet {
+      // Cache flattened list whenever tabGroups changes
+      _cachedFlatTabs = tabGroups.flatMap(\.projects)
+    }
   }
 
+  // Cached flat list of tab-visible projects (updated when tabGroups changes)
+  // Note: Both tabGroups and _cachedFlatTabs init to [], so they're consistent at init.
+  // TabGroupInfo is a struct, so any mutation requires reassignment which triggers didSet.
+  private var _cachedFlatTabs: [ProjectInfo] = []
+
+  // Flat list of tab-visible projects (cached, for backward compatibility)
+  // Use this for keyboard navigation and legacy code paths
+  var tabProjects: [ProjectInfo] { _cachedFlatTabs }
+
   // Alias for tabProjects (clearer name for new code)
-  var flatTabs: [ProjectInfo] { tabProjects }
+  var flatTabs: [ProjectInfo] { _cachedFlatTabs }
 
   // Currently active project ID
   private(set) var activeProjectId: String?
@@ -634,7 +642,7 @@ public final class ProjectSwitcherState {
   /// Build TabGroupInfo array from projects.
   /// In Phase 2, each project gets its own solo group.
   /// Phase 4 will add worktree auto-grouping logic.
-  @MainActor
+  /// Note: Inherits @MainActor from class - no explicit annotation needed.
   private func buildTabGroups(from projects: [ProjectInfo]) -> [TabGroupInfo] {
     // For now, create a solo group for each project
     // This maintains flat display while preparing for grouping infrastructure

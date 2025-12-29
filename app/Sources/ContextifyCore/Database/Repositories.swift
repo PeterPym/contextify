@@ -1312,7 +1312,14 @@ public final class TabGroupRepositoryImpl: TabGroupRepository {
 
   public func delete(id: String) throws {
     _ = try db.write { db in
-      // Note: Projects with this group_id will have it set to NULL (ON DELETE SET NULL)
+      // Clear both group_id and group_display_order for all members.
+      // ON DELETE SET NULL only clears group_id; we must clear group_display_order explicitly
+      // to avoid stale ordering values on regrouping.
+      try db.execute(sql: """
+        UPDATE projects SET group_id = NULL, group_display_order = NULL, updated_at = ?
+        WHERE group_id = ?
+      """, arguments: [Int(Date().timeIntervalSince1970), id])
+
       try TabGroup.deleteOne(db, key: id)
     }
   }
