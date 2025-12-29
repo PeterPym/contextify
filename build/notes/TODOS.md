@@ -2354,6 +2354,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 **Main deliverable:** Hash git root path to consistent color, apply as tab background tint.
 
 **Investigation:** `build/notes/todo-support/WORKTREE-investigation.md`
+**Design:** `build/notes/todo-support/worktree-grouping-ux-design.md`
 
 ---
 
