@@ -1069,6 +1069,102 @@ public final class ProjectSwitcherState {
     }
   }
 
+  // MARK: - Phase 5: Context-Aware Tab Movement
+
+  /// Move active tab left (context-aware: within group if grouped, global if solo)
+  public func moveActiveTabLeft() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }) else { return }
+
+    if let groupId = activeProject.groupId,
+       let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) {
+      // Grouped: move within the group
+      var group = tabGroups[groupIndex]
+      guard let localIdx = group.projects.firstIndex(where: { $0.id == activeId }),
+            localIdx > 0 else { return }
+
+      // Swap within group
+      group.projects.swapAt(localIdx, localIdx - 1)
+
+      // Update tabGroups (triggers UI refresh via didSet)
+      var newGroups = tabGroups
+      newGroups[groupIndex] = group
+      tabGroups = newGroups
+
+      log.info("[TAB-MOVE] Moved tab left within group \(groupId, privacy: .public)")
+    } else {
+      // Solo: move globally in flat list
+      guard let idx = tabProjects.firstIndex(where: { $0.id == activeId }),
+            idx > 0 else { return }
+      var newOrder = tabProjects.map(\.id)
+      newOrder.swapAt(idx, idx - 1)
+      await reorderProjects(newOrder)
+    }
+  }
+
+  /// Move active tab right (context-aware: within group if grouped, global if solo)
+  public func moveActiveTabRight() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }) else { return }
+
+    if let groupId = activeProject.groupId,
+       let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) {
+      // Grouped: move within the group
+      var group = tabGroups[groupIndex]
+      guard let localIdx = group.projects.firstIndex(where: { $0.id == activeId }),
+            localIdx < group.projects.count - 1 else { return }
+
+      // Swap within group
+      group.projects.swapAt(localIdx, localIdx + 1)
+
+      // Update tabGroups (triggers UI refresh via didSet)
+      var newGroups = tabGroups
+      newGroups[groupIndex] = group
+      tabGroups = newGroups
+
+      log.info("[TAB-MOVE] Moved tab right within group \(groupId, privacy: .public)")
+    } else {
+      // Solo: move globally in flat list
+      guard let idx = tabProjects.firstIndex(where: { $0.id == activeId }),
+            idx < tabProjects.count - 1 else { return }
+      var newOrder = tabProjects.map(\.id)
+      newOrder.swapAt(idx, idx + 1)
+      await reorderProjects(newOrder)
+    }
+  }
+
+  /// Move the active project's group left in the tab bar
+  public func moveActiveGroupLeft() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }),
+          let groupId = activeProject.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex > 0 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex - 1)
+    tabGroups = newGroups
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) left")
+  }
+
+  /// Move the active project's group right in the tab bar
+  public func moveActiveGroupRight() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }),
+          let groupId = activeProject.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex < tabGroups.count - 1 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex + 1)
+    tabGroups = newGroups
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) right")
+  }
+
   // MARK: - Private
 
   @MainActor
