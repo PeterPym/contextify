@@ -56,162 +56,6 @@ See tracking file for current branches in flight and review status.
 
 ---
 
-## Smart Lazy Watchers v2 (2 items)
-
-**Status:** Active (implementation complete; pending review/merge)
-**Priority:** P0 (launch critical)
-**Branch:** `feat/lazy-watchers`
-
-- [ ] #SMART-LAZY-WATCHERS-V2: Review and merge Smart Lazy Watchers v2 (no flags, v32 migration, watcher budgeting, unread approximation, cold activity signals)
-- [ ] #SMART-LAZY-WATCHERS-DELAY: Investigate and fix tap-to-switch delay regression (instrument logs, isolate root cause, verify fix). **Reference:** build/notes/todo-support/SMART-LAZY-WATCHERS-DELAY-reference.md
-
----
-## Background Indexing UI Blocking (1 item)
-
-**Status:** Active (log evidence collected)
-**Priority:** P0 (blocking UI responsiveness)
-
-- [ ] #INDEXING-UI-BLOCKING: Fix background indexing running on main thread during project switch (16.5s blocking operation observed). Move indexing to background threads via Task.detached. **Investigation:** build/notes/todo-support/p0-indexing-ui-blocking.md
-
----
-## Permission Fix for Dual-CLI Users (1 item)
-
-**Status:** Complete (verified 2025-12-11, E2E test backlogged)
-**Priority:** P0 (blocking v1.0.1 release)
-**Branch:** `fix/permission-discovery-logging`
-
-- [x] #PERMISSION-FIX-QA: Validate permission fix with regression tests
-
-**Background:**
-Dual-CLI users (both Claude Code and Codex) experience issues when granting a second
-transcript provider permission via Settings. Two bugs were fixed:
-1. Second permission ignored - discovery didn't see newly-authorized provider
-2. Watcher recovery using stale orchestrator - health checks used old access provider
-
-**Fixes Applied:**
-- NotificationCenter pattern for permission change notification (87bf979a)
-- Permission observer in AppLifecycleState singleton (not tied to window)
-- Onboarding guard to prevent racing with wizard flow
-- Health monitoring now uses current orchestrator (not captured at task start)
-
-**QA Requirements (both builds required):**
-
-**App Store build:**
-1. Clean install (delete app, run `make clean-db`)
-2. Launch app - onboarding wizard appears
-3. Grant Claude Code permission only, complete onboarding
-4. Verify Claude projects discovered
-5. Open Settings > Permissions, grant Codex
-6. Verify: Both Claude AND Codex projects now appear
-7. Check logs: No `WATCHER-RECOVERY-ERROR` with sandbox container paths
-8. Wait 60+ seconds, verify no recurring recovery errors
-
-**DMG build:**
-1. Build: `bash scripts/xc.sh build`
-2. Launch app
-3. Verify all projects discovered immediately
-4. No permission-related errors in logs
-5. Health checks run without errors
-
-**Reference:** `Contextify/Contextify/ContextifyApp.swift:100-143`, `Contextify/Contextify/ConversationMonitor.swift:3269-3367`
-
----
-
-## QA Review and Recent Feature Cleanup (4 items)
-
-**Status:** Complete
-**Priority:** P0 (code review debt from autonomous work)
-**Context:** QA Phase 2 left fixtures installed without cleanup docs. GIT-BRANCH and EXPANSION-STATE were merged without review during autonomous work.
-
-**Completed 2025-12-11:** All 4 tasks reviewed - no code issues found, documentation gaps filled.
-
-### Task 1: QA Documentation Audit
-**Branch:** `fix/qa-docs-audit`
-- [x] #QA-REVIEW-1: Find QA Phase 1/2 merge commits, inventory docs created
-  - Found: `bf02cfc9` (Phase 1), `d4cae01e` (Phase 2)
-  - Docs created: `scripts/qa/README.md`, fixture READMEs
-- [x] Identify gaps: Missing "cleanup after local QA" section
-- [x] Add missing docs to scripts/qa/README.md (cleanup section added)
-- [x] Update cross-references in AGENTS.md (QA suite now referenced in Quick Commands and Testing sections)
-
-### Task 2: Code Review - QA Phase 2
-**Branch:** `fix/qa-phase2-review`
-- [x] #QA-REVIEW-2: Generate /review-prep package, review implementation, address issues
-  - Reviewed 6 commits: fixture infrastructure, assertions, modified tests, new tests, CI
-  - No issues found - implementation is solid
-
-### Task 3: Code Review - GIT-BRANCH
-**Branch:** `fix/git-branch-review`
-- [x] #QA-REVIEW-3: Review transcript-based git branch (TranscriptOrchestrator, HUDCore, ContentView)
-  - Reviewed 2 commits: orchestrator methods, HUD fallback chain, ContentView UI
-  - Clean implementation with proper error handling and validation logging
-
-### Task 4: Code Review - EXPANSION-STATE
-**Branch:** `fix/expansion-state-review`
-- [x] #QA-REVIEW-4: Review timeline expansion persistence (ConversationTimelineView, TimelineEntryRow)
-  - Reviewed 1 commit: Set<UUID> tracking, binding pattern, project switch reset
-  - Clean implementation with efficient state management
-
----
-
-## Log Analysis Issues
-
-**Status:** Complete
-**Priority:** P0 (blocking quality release)
-
-- [x] #LOG-ISSUES: Fix issues identified in Dec 2025 log analysis ✅ DONE
-
-**Completed 2025-12-11:**
-
-1. **Transcript validation** - Skip summary lines in structural validation (was rejecting 108 transcripts)
-2. **Watcher recovery loop** - Added exponential backoff with 5-retry limit (was looping 96+ times)
-3. **Timeline refresh rate** - Added refresh coalescing (reduced 10+/5s to max 2 refreshes)
-4. **Codex getCWD** - Use JSONSerialization + scan 5 lines (fixed 3000+ failures)
-5. **AI cancellation noise** - Log at debug level instead of error (reduced 45+ warnings)
-
-**Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
-
----
-
-## Total Recall Plugin Distribution & Promotion
-
-**Status:** In progress (blog done, marketplace pending)
-**Priority:** P0 (namespace squatting risk)
-**Discovered:** 2025-12-23
-**Updated:** 2025-12-25
-
-- [ ] #PLUGIN-MARKETPLACE: Register total-recall in Claude Code plugin ecosystem
-- [ ] #BLOG-CLI-REPORTS: Blog post demonstrating CLI report generation
-- [ ] #SOCIAL-TOTAL-RECALL: Social post focusing on Total Recall feature
-
-**Done:**
-- [x] Blog post for Total Recall feature (contextify.sh/blog/total-recall-rag-search-claude-code-codex.html)
-- [x] Release notes 1.0.7 with Total Recall mention
-- [x] Website updated with feature highlights
-
-**Remaining:**
-
-### 1. Plugin Marketplace Namespace (URGENT)
-Claude Code uses decentralized plugin marketplaces. Need to secure "total-recall" namespace:
-- Create marketplace repo: `contextify/claude-plugins` or similar on GitHub
-- Add `.claude-plugin/marketplace.json` with total-recall skill
-- Submit PR to community marketplace: https://github.com/ccplugins/marketplace
-- Consider also: https://github.com/ananddtyagi/claude-code-marketplace
-
-### 2. Blog: CLI Report Generation Demo
-Show the contextify-query report generation capability:
-- Example queries and outputs
-- How reports are formatted
-- Integration with project workflows
-
-### 3. Social Announcement
-Focused post about Total Recall:
-- Twitter/X with demo GIF or screenshot
-- Reddit r/ClaudeAI
-- Consider Hacker News if substantial engagement expected
-
----
-
 ## Reduce/Eliminate AI Thinking Messages in Timeline (1 item)
 
 **Status:** Not started
@@ -235,33 +79,6 @@ brought back into the timeline view. This creates noise and clutter.
 - Find where thinking messages started appearing (side chain feature commits)
 - Identify the transcript record types being shown (thinking vs other)
 - Determine filtering logic needed in timeline data loading
-
----
-
-## Project Misattribution - Session ID Collision Across Directories (1 item)
-
-**Status:** Not started
-**Priority:** P0 (data integrity - user-visible)
-**Discovered:** 2025-12-27
-
-- [ ] #MISATTRIBUTION: Fix transcript entries appearing in wrong project timeline
-
-**Background:**
-When Claude Code session is resumed (e.g., via `/handoff`) from a different working directory,
-it reuses the same session ID but writes to a different project's transcript folder. This causes
-entries to be attributed to the wrong project in Contextify.
-
-**Root Cause:**
-1. User runs Claude in `/contextify` → transcript `84f46bc9...` created in `-Users-...-contextify/`
-2. User resumes session from `/contextify-worker-bee` with `/handoff`
-3. Claude writes to NEW file: `-Users-...-contextify-worker-bee/84f46bc9...` (same session ID)
-4. Contextify's file lookup/ingestion uses session ID match, associates with wrong project
-5. Entries appear in wrong project timeline
-
-**Recommended Fix:** CWD-based project assignment - use the `cwd` field from each transcript
-entry to determine correct project attribution.
-
-**Investigation:** `build/notes/todo-support/MISATTRIBUTION-investigation.md`
 
 ---
 
@@ -1127,6 +944,35 @@ Several settings panes (including the CLI tab) are functionally correct but visu
 ---
 
 # P2 (Medium Priority)
+
+---
+
+## Project Switch Delay - Verify Resolved (1 item)
+
+**Status:** Needs verification
+**Priority:** P2 (likely resolved)
+**Discovered:** 2025-12-27
+**Updated:** 2025-12-28
+
+- [ ] #SWITCH-DELAY-VERIFY: Verify project switch delay is resolved after lazy watchers merge
+
+**Background:**
+Two related issues were tracked as P0:
+1. **SMART-LAZY-WATCHERS-DELAY**: Tap-to-switch delay regression
+2. **INDEXING-UI-BLOCKING**: 16.5s main thread blocking during project switch
+
+Both may have been resolved by the Smart Lazy Watchers v2 merge (`cbdd9129`), which introduced
+watcher budgeting, background indexing improvements, and reduced main thread work.
+
+**Verification Steps:**
+1. Switch between projects rapidly - should feel instant
+2. Check logs for main thread blocking warnings
+3. Monitor for UI freezes during project switch
+4. If issues persist, reference original investigations:
+   - `build/notes/todo-support/SMART-LAZY-WATCHERS-DELAY-reference.md`
+   - `build/notes/todo-support/p0-indexing-ui-blocking.md`
+
+**Resolution:** If no issues observed after a week of normal use, close this item.
 
 ---
 
