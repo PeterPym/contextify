@@ -16,6 +16,7 @@ public protocol ProjectRepository {
   func markOrphaned(id: String, orphanedSince: Int) throws
   func markRestored(id: String) throws
   func delete(id: String) throws
+  func setGroupMembership(id: String, groupId: String?, groupDisplayOrder: Int?) throws  // v33: Tab grouping
 }
 
 public final class ProjectRepositoryImpl: ProjectRepository {
@@ -137,6 +138,21 @@ public final class ProjectRepositoryImpl: ProjectRepository {
   public func delete(id: String) throws {
     _ = try db.write { db in
       try Project.deleteOne(db, key: id)
+    }
+  }
+
+  /// Set a project's group membership (v33)
+  public func setGroupMembership(id: String, groupId: String?, groupDisplayOrder: Int?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.groupId = groupId
+      project.groupDisplayOrder = groupDisplayOrder
+      project.updatedAt = now
+      try project.update(db)
     }
   }
 }

@@ -129,6 +129,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let metadataRepo: MetadataRepository
   nonisolated(unsafe) private let cacheRepo: CacheRepository  // Thread-safe via GRDB pool
   private let projectVisitsRepo: ProjectVisitsRepository
+  private let tabGroupRepo: TabGroupRepository  // v33: Tab grouping
+  private let worktreePreferenceRepo: WorktreePreferenceRepository  // v33: Worktree preferences
 
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
@@ -183,6 +185,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     self.metadataRepo = MetadataRepositoryImpl(db: pool)
     self.cacheRepo = CacheRepositoryImpl(db: pool)
     self.projectVisitsRepo = ProjectVisitsRepositoryImpl(db: pool)
+    self.tabGroupRepo = TabGroupRepositoryImpl(db: pool)  // v33
+    self.worktreePreferenceRepo = WorktreePreferenceRepositoryImpl(db: pool)  // v33
 
     // v7: Initialize metadata repositories
     let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
@@ -2916,6 +2920,74 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   public func stopAllWatchers() {
     watcher.stopAll()
+  }
+
+  // MARK: - Tab Group Operations (v33)
+
+  /// List all tab groups
+  public func listTabGroups() throws -> [TabGroup] {
+    try tabGroupRepo.list()
+  }
+
+  /// Get a tab group by ID
+  public func getTabGroup(id: String) throws -> TabGroup? {
+    try tabGroupRepo.get(id: id)
+  }
+
+  /// Get the tab group for a git root (for worktree grouping)
+  public func getTabGroupByGitRoot(_ gitRoot: String) throws -> TabGroup? {
+    try tabGroupRepo.getByGitRoot(gitRoot)
+  }
+
+  /// Create a new tab group
+  public func createTabGroup(
+    name: String? = nil,
+    colorHex: String? = nil,
+    gitRoot: String? = nil,
+    isWorktreeGroup: Bool = false
+  ) throws -> TabGroup {
+    try tabGroupRepo.create(name: name, colorHex: colorHex, gitRoot: gitRoot, isWorktreeGroup: isWorktreeGroup)
+  }
+
+  /// Update a tab group's name
+  public func setTabGroupName(id: String, name: String?) throws {
+    try tabGroupRepo.setName(id: id, name: name)
+  }
+
+  /// Update a tab group's color (or clear to auto)
+  public func setTabGroupColor(id: String, colorHex: String?) throws {
+    try tabGroupRepo.setColorOverride(id: id, colorHex: colorHex)
+  }
+
+  /// Delete a tab group (projects will have group_id set to NULL)
+  public func deleteTabGroup(id: String) throws {
+    try tabGroupRepo.delete(id: id)
+  }
+
+  /// Delete a tab group if it has no members
+  public func deleteTabGroupIfEmpty(id: String) throws -> Bool {
+    try tabGroupRepo.deleteIfEmpty(id: id)
+  }
+
+  /// Add a project to a tab group
+  public func addProjectToGroup(projectId: String, groupId: String, displayOrder: Int? = nil) throws {
+    let order = try displayOrder ?? (projectRepo.get(id: projectId)?.displayOrder ?? 0)
+    try projectRepo.setGroupMembership(id: projectId, groupId: groupId, groupDisplayOrder: order)
+  }
+
+  /// Remove a project from its tab group (becomes solo tab)
+  public func removeProjectFromGroup(projectId: String) throws {
+    try projectRepo.setGroupMembership(id: projectId, groupId: nil, groupDisplayOrder: nil)
+  }
+
+  /// Get worktree preference for a git root
+  public func getWorktreePreference(_ gitRoot: String) throws -> WorktreePreference? {
+    try worktreePreferenceRepo.get(gitRoot)
+  }
+
+  /// Set worktree as ungrouped (prevents auto-grouping)
+  public func setWorktreeUngrouped(_ gitRoot: String, ungrouped: Bool) throws {
+    try worktreePreferenceRepo.setUngrouped(gitRoot, ungrouped: ungrouped)
   }
 }
 

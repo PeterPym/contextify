@@ -111,8 +111,17 @@ public final class ProjectSwitcherState {
   // All discovered projects (Projects window + diagnostics)
   private(set) var allProjects: [ProjectInfo] = []
 
-  // Tabs-visible projects (excludes orphaned paths)
-  private(set) var tabProjects: [ProjectInfo] = []
+  // Tab groups (v33): hierarchical grouping of tabs
+  private(set) var tabGroups: [TabGroupInfo] = []
+
+  // Flat list of tab-visible projects (computed from tabGroups for backward compatibility)
+  // Use this for keyboard navigation and legacy code paths
+  var tabProjects: [ProjectInfo] {
+    tabGroups.flatMap(\.projects)
+  }
+
+  // Alias for tabProjects (clearer name for new code)
+  var flatTabs: [ProjectInfo] { tabProjects }
 
   // Currently active project ID
   private(set) var activeProjectId: String?
@@ -616,8 +625,22 @@ public final class ProjectSwitcherState {
       log.info("[ORPHAN-TAB-HIDE] action=show project=\(id, privacy: .public)")
     }
 
-    tabProjects = projects
-    log.info("[SWITCHER-STATE] tabProjects updated: count=\(self.tabProjects.count, privacy: .public)")
+    // Build tabGroups from projects
+    // Phase 2: Each project is in its own solo group (worktree auto-grouping added in Phase 4)
+    tabGroups = buildTabGroups(from: projects)
+    log.info("[SWITCHER-STATE] tabGroups updated: count=\(self.tabGroups.count, privacy: .public), flatTabs=\(self.tabProjects.count, privacy: .public)")
+  }
+
+  /// Build TabGroupInfo array from projects.
+  /// In Phase 2, each project gets its own solo group.
+  /// Phase 4 will add worktree auto-grouping logic.
+  @MainActor
+  private func buildTabGroups(from projects: [ProjectInfo]) -> [TabGroupInfo] {
+    // For now, create a solo group for each project
+    // This maintains flat display while preparing for grouping infrastructure
+    return projects.map { project in
+      TabGroupInfo.solo(project, color: .clear)
+    }
   }
 
   /// Cycle to previous project (for keyboard shortcut)
