@@ -218,43 +218,6 @@ Background process that continuously watches conversation transcripts and uses A
 
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
-## ~~Missing 112 Transcripts - Never Ingested~~ FIXED
-
-**Status:** Complete (2025-12-17)
-**Priority:** P0 (data completeness)
-**Branch:** `fix/codex-discovery-parser-failures`
-
-- [x] #INGEST-GAP-REMAINING: Fixed - was Codex discovery issue
-
-**Root cause:** Codex sessions from nested project directories (e.g., `/repo/subdir`) couldn't find their Claude root (`/repo`) because discovery only did exact-match lookups.
-
-**Fix:** Implemented longest-prefix root assignment in `LightweightDiscoveryService.remapCodexToClaudeRoots()`. Runs automatically at startup.
-
-**Results:**
-- 180 Codex transcripts now discovered
-- Match breakdown: 7 exact, 10 prefix, 6 codex-only
-- Fallback bucket for CWD extraction failures (no silent data loss)
-
----
-
-## ~~Transcript Parser Bug - Content Without Entries~~ FIXED
-
-**Status:** Complete (2025-12-17)
-**Priority:** P0 (data completeness)
-**Branch:** `fix/codex-discovery-parser-failures`
-
-- [x] #INGEST-PARSER-BUG: Fixed - was tool_use block indexing issue
-
-**Root cause:** Claude Code transcripts with `tool_use` blocks weren't being indexed. Transcripts with only tool calls (no text) had 0 entries.
-
-**Fix:** Added tool_use block indexing in `TranscriptParsers.swift`.
-
-**Results:**
-- +25,352 entries recovered (+51.6% increase)
-- 79 previously zero-entry transcripts now have content
-
----
-
 ## Periodic Ingestion Check for Resilience
 
 **Status:** Not started
@@ -356,42 +319,6 @@ Add a periodic check (every 5-10 minutes) or event-driven trigger:
 **Acceptance Criteria (verified by log analysis fixes):**
 - ✅ Timeline refresh collapses N notifications into 1 refresh
 - ✅ Watcher recovery gives up after 5 failed attempts
-
----
-
-## QA Suite App Store Validation (1 item)
-
-**Status:** Ready for implementation
-**Priority:** P1 (required before Phase 2 QA)
-**Effort:** 1-2 hours
-
-- [x] #QA-APPSTORE-VALIDATION: Validate QA tests work correctly with App Store build ✅ DONE
-
-**Completed 2025-12-11:**
-- Added Enter key support to onboarding wizard (keyboard-driven flow)
-- QA-01c passes: clean install with full onboarding automation
-- Uses `click_group_button` helper for SwiftUI buttons that don't expose names
-- Validates via logs (user selects custom DB location during onboarding)
-
----
-
-## QA Suite Phase 2 Implementation (1 item)
-
-**Status:** Complete
-**Priority:** P1 (enables CI integration)
-**Effort:** 4-6 hours
-**Plan:** `build/notes/todo-support/QA-PHASE-2-plan.md`
-
-- [x] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration ✅ DONE
-
-**Completed 2025-12-11:**
-- Fixture infrastructure (QA_FIXTURE_MODE, seed helpers, TEST_PROJECT config)
-- Fixture-based transcript tests (QA-03, QA-04 work in fixture mode)
-- Search tests (QA-10 Quick Search, QA-11 Deep Search)
-- DB migration test (QA-09 with v16 and v25 schema fixtures)
-- CI workflow integration (GitHub Actions runs QA suite in fixture mode)
-
-**Note:** CI has pre-existing `swift test` failure (macOS 15 runner lacks macOS 26 SDK). QA tests pass locally.
 
 ---
 
@@ -1142,16 +1069,6 @@ Two users explicitly asked for macOS 15 support. Lite Mode is now shipped on mai
 1. Sort control (Date/Relevance/Both) - 2-3 hours
 2. Context pane multi-select (click, shift+click, cmd+click) - 2-3 hours
 3. Sticky date header - 1-2 hours
-
----
-
-## Query CLI Feedback Inbox (1 item)
-
-**Status:** Obsolete (integrated into #CONTEXT-REINJECTION spec)
-**Priority:** P2
-**Spec:** `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
-
-- [x] #QUERY-CLI-FEEDBACK: Obsolete (integrated into #CONTEXT-REINJECTION spec)
 
 ---
 
