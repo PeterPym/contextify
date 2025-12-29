@@ -68,6 +68,9 @@ struct IngestCommand: AsyncParsableCommand {
       }
     }
 
+    // Create repositories
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+
     // Discover transcripts
     let discovery = LightweightDiscoveryService()
     var projects = await discovery.discoverProjectsLightweight()
@@ -88,33 +91,107 @@ struct IngestCommand: AsyncParsableCommand {
     // Emit start event
     sink.ingestionStarted(runId: String(runId), transcriptCount: totalTranscripts)
 
-    // For now, report that this is a stub implementation
-    // Full implementation will use TranscriptOrchestrator.discoverTranscripts()
-    if format == .human {
-      print("")
-      print("NOTE: This is a stub implementation.")
-      print("Full ingestion logic using TranscriptOrchestrator is pending.")
-      print("")
-      print("Projects discovered:")
-      for project in projects {
-        print("  - \(project.displayName) (\(project.transcriptFiles.count) transcripts)")
+    // Track statistics
+    var totalErrors = 0
+    var transcriptsProcessed = 0
+    var projectsProcessed = 0
+
+    // Process each project
+    for project in projects {
+      let projectId: String
+      do {
+        // Get or create project using direct SQL
+        projectId = try await pool.write { db -> String in
+          // Check if project exists
+          if let existingId = try String.fetchOne(db, sql: """
+            SELECT id FROM projects WHERE root_path = ?
+          """, arguments: [project.canonicalRootPath]) {
+            return existingId
+          }
+
+          // Create new project
+          let newId = ProjectIdentity.computeProjectID(provider: project.provider, path: project.canonicalRootPath)
+          let now = Int(Date().timeIntervalSince1970)
+          try db.execute(sql: """
+            INSERT INTO projects (id, root_path, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+          """, arguments: [newId, project.canonicalRootPath, project.displayName, now, now])
+          return newId
+        }
+
+        if format == .human {
+          print("\nProcessing: \(project.displayName) (\(project.transcriptFiles.count) transcripts)")
+        }
+        projectsProcessed += 1
+      } catch {
+        sink.fileError(path: project.path.path, error: "Failed to create project: \(error.localizedDescription)")
+        totalErrors += 1
+        continue
+      }
+
+      // Process each transcript in the project
+      for fileURL in project.transcriptFiles {
+        do {
+          // Get file attributes
+          let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+          let lastModified = (attrs[.modificationDate] as? Date) ?? Date()
+          let fileSize = (attrs[.size] as? Int) ?? 0
+
+          // Derive provider from file path (project.provider might be "multi" for merged projects)
+          let transcriptProvider: String
+          if fileURL.path.contains(".claude/projects/") {
+            transcriptProvider = "claude.code"
+          } else if fileURL.path.contains(".codex/sessions/") {
+            transcriptProvider = "codex.cli"
+          } else {
+            transcriptProvider = "other"
+          }
+
+          // Upsert transcript record
+          _ = try transcriptRepo.upsert(
+            projectId: projectId,
+            fileURL: fileURL,
+            provider: transcriptProvider,
+            providerSessionId: nil,
+            lastModified: lastModified,
+            fileSize: fileSize
+          )
+
+          transcriptsProcessed += 1
+
+        } catch {
+          sink.fileError(path: fileURL.path, error: error.localizedDescription)
+          totalErrors += 1
+        }
       }
     }
 
     let duration = Date().timeIntervalSince(startTime)
+
+    // Note: Entry parsing not yet implemented - this creates the project/transcript skeleton
+    // Full entry ingestion will be added when HooverEngine wiring is complete
     let summary = IngestionSummary(
-      transcriptsProcessed: 0,
-      entriesInserted: 0,
+      transcriptsProcessed: transcriptsProcessed,
+      entriesInserted: 0,  // TODO: Wire HooverEngine for entry parsing
       entriesSkipped: 0,
-      errorsEncountered: 0,
+      errorsEncountered: totalErrors,
       durationSeconds: duration
     )
-    sink.ingestionCompleted(runId: String(runId), success: true, summary: summary)
+    sink.ingestionCompleted(runId: String(runId), success: totalErrors == 0, summary: summary)
 
     if format == .human {
       print("")
-      print("Database created at: \(db)")
+      print("Ingestion complete (skeleton only - entry parsing pending):")
+      print("  Projects created: \(projectsProcessed)")
+      print("  Transcripts registered: \(transcriptsProcessed)")
+      print("  Errors: \(totalErrors)")
+      print("  Duration: \(String(format: "%.2f", duration))s")
+      print("")
+      print("Database: \(db)")
       print("Use 'contextify-ingest verify --db \(db)' to verify the database.")
+      print("")
+      print("NOTE: Entry parsing (HooverEngine) not yet wired. Only project/transcript")
+      print("      records are created. Full ingestion will be added in a future update.")
     }
   }
 }
