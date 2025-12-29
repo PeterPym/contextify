@@ -15,6 +15,10 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
   public let lastViewedAt: Date?  // Last time this project was viewed
   public let isOrphaned: Bool  // Whether the project directory is missing
 
+  /// Git repository root for this project (cached for performance).
+  /// Used for worktree color grouping in tab bar.
+  public let gitRoot: URL?
+
   public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil, isOrphaned: Bool = false) {
     self.id = id
     self.name = name
@@ -22,6 +26,9 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
     self.transcriptCount = transcriptCount
     self.lastViewedAt = lastViewedAt
     self.isOrphaned = isOrphaned
+    // Cache gitRoot at init time to avoid repeated filesystem traversal during SwiftUI render
+    let projectURL = URL(fileURLWithPath: rootPath)
+    self.gitRoot = GitRepositoryResolver.findGitRoot(startingAt: projectURL)
   }
 }
 

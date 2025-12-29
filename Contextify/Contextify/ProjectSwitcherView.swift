@@ -371,12 +371,24 @@ struct ProjectTabView: View {
 
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
+  /// Background color for the tab.
+  /// Uses worktree color tint if project is in a git repo, otherwise falls back to default.
   private var tabBackgroundColor: Color {
-    isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear
+    if let gitRoot = project.gitRoot {
+      // Worktree color: always show tint, stronger when active
+      return WorktreeColorUtility.tintColor(for: gitRoot)
+    }
+    // Fallback for non-git projects
+    return isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear
   }
 
+  /// Border color for the tab.
+  /// Uses worktree color when active if project is in a git repo.
   private var tabBorderColor: Color {
-    isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
+    if isActive, let gitRoot = project.gitRoot {
+      return WorktreeColorUtility.borderColor(for: gitRoot)
+    }
+    return isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
   }
 
   private var accessibilityUnreadLabel: String {
