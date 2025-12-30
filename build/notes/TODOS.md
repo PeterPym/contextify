@@ -224,11 +224,11 @@ Background process that continuously watches conversation transcripts and uses A
 - [x] Phase 4: `ingestion_runs` metadata table migration (v33)
 - [x] Phase 7: GitHub Actions Linux build workflow (.github/workflows/linux-build.yml)
 - [x] Multi-architecture Linux builds (x86_64 + arm64 via workflow_dispatch)
+- [x] Phase 7: Change detection script (scripts/cross-platform-change-detect.sh)
+- [x] Phase 7: Pre-commit hook for migration warnings (.githooks/pre-commit)
 
 **P1 - Remaining (must complete):**
 - [ ] Wire HooverEngine for transcript entry parsing (Phase 3 completion) - complex, requires OSLog updates in Repositories.swift
-- [ ] Change detection script for cross-platform releases (Phase 7)
-- [ ] Pre-commit hook for migration warnings (Phase 7)
 
 **P2 - Should complete:**
 - [ ] Wire `--input` option to LightweightDiscoveryService (currently fails fast)
