@@ -68,9 +68,6 @@ struct IngestCommand: AsyncParsableCommand {
       }
     }
 
-    // Create repositories
-    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
-
     // Discover transcripts
     let discovery = LightweightDiscoveryService()
     var projects = await discovery.discoverProjectsLightweight()
@@ -147,15 +144,33 @@ struct IngestCommand: AsyncParsableCommand {
             transcriptProvider = "other"
           }
 
-          // Upsert transcript record
-          _ = try transcriptRepo.upsert(
-            projectId: projectId,
-            fileURL: fileURL,
-            provider: transcriptProvider,
-            providerSessionId: nil,
-            lastModified: lastModified,
-            fileSize: fileSize
-          )
+          // Upsert transcript record using direct SQL (cross-platform compatible)
+          let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+          let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
+          let now = Int(Date().timeIntervalSince1970)
+
+          try await pool.write { db in
+            // Check if transcript exists by (project_id, file_path)
+            if let existingId = try String.fetchOne(db, sql: """
+              SELECT id FROM transcripts WHERE project_id = ? AND file_path = ?
+            """, arguments: [projectId, filePath]) {
+              // Update existing
+              try db.execute(sql: """
+                UPDATE transcripts SET last_modified = ?, file_size = ?, updated_at = ?
+                WHERE id = ?
+              """, arguments: [lastModifiedInt, fileSize, now, existingId])
+            } else {
+              // Insert new
+              let id = UUID().uuidString
+              try db.execute(sql: """
+                INSERT INTO transcripts (
+                  id, project_id, file_path, provider, last_modified, file_size,
+                  line_count, last_processed_line, parser_version, status, ingest_state,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, 'active', 'partial', ?, ?)
+              """, arguments: [id, projectId, filePath, transcriptProvider, lastModifiedInt, fileSize, now, now])
+            }
+          }
 
           transcriptsProcessed += 1
 
