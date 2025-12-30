@@ -201,46 +201,133 @@ Background process that continuously watches conversation transcripts and uses A
 
 ---
 
-## Cross-Platform Ingestion CLI (Linux/Windows)
+## Cross-Platform Ingestion CLI (Linux)
 
-**Status:** In progress (skeleton complete, entry parsing pending)
+**Status:** Scaffolding complete, not yet usable (entry parsing + distribution missing)
 **Priority:** P1
+**Tag:** #LINUX-CLI
 
 - [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
 
-**Goal:** Build a Linux CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
+**Goal:** Linux CLI that ingests Claude Code/Codex transcripts into a Contextify-compatible, searchable database.
 
-**Completed:**
+**Current State:** CLI builds and creates project/transcript records, but does NOT parse entries. Users get an empty database shell. No distribution mechanism exists.
+
+---
+
+### Completed Work
+
 - [x] Phase 1: Platform adapters (CrossPlatformLock, CrossPlatformCrypto, CrossPlatformLogger, IngestionEventSink)
-- [x] Phase 2: Package.swift restructure (removed platforms stanza, conditional target exposure, swift-crypto)
-- [x] Phase 2.5a: ContextifyIngestionCore target created with portable files
-- [x] Phase 2.5b: Docker build environment working
-- [x] Phase 2.5c: Linux build succeeds in Docker
-- [x] Phase 2.5d: CLI stub builds on Linux
-- [x] Phase 2.5e: Basic CLI commands (schema, discover) working
-- [x] Phase 3 skeleton: Ingest creates project/transcript records (entry parsing pending)
-- [x] FTS5 preflight check in DatabaseOpener (fail-fast on missing FTS5)
-- [x] Verify command: WAL mode, FTS5, integrity checks all working
-- [x] Phase 4: `ingestion_runs` metadata table migration (v33)
-- [x] Phase 7: GitHub Actions Linux build workflow (.github/workflows/linux-build.yml)
-- [x] Multi-architecture Linux builds (x86_64 + arm64 via workflow_dispatch)
-- [x] Phase 7: Change detection script (scripts/cross-platform-change-detect.sh)
-- [x] Phase 7: Pre-commit hook for migration warnings (.githooks/pre-commit)
+- [x] Phase 2: Package.swift restructure (conditional targets, swift-crypto)
+- [x] Phase 2.5: Docker build environment, Linux build succeeds
+- [x] Phase 3 skeleton: CLI creates project/transcript records (no entries)
+- [x] Phase 4: `ingestion_runs` table migration (v33)
+- [x] Phase 7: GitHub Actions Linux CI (.github/workflows/linux-build.yml)
+- [x] Phase 7: Change detection script, pre-commit hook
 
-**P1 - Remaining (must complete):**
-- [ ] Wire HooverEngine for transcript entry parsing (Phase 3 completion) - complex, requires OSLog updates in Repositories.swift
+---
 
-**P2 - Should complete:**
-- [ ] Wire `--input` option to LightweightDiscoveryService (currently fails fast)
-- [ ] Transaction batching per-project for performance at scale (10-100k transcripts)
-- [ ] `--since <timestamp>` CLI option for incremental ingestion
-- [ ] `--workers N` CLI option for parallel ingestion
-- [ ] Golden fixture tests (macOS vs Linux comparison)
+### P0 - Core Functionality (blocks everything else)
 
-**Remaining phases:**
-- Phase 3 (entry parsing): Wire HooverEngine for transcript_entries (complex - 4000+ lines need OSLog updates)
-- Phase 5: Full Linux validation with fixtures
-- Phase 6: Tests and documentation
+These must be done before CLI is usable:
+
+- [ ] #LINUX-OSLOG: Add OSLog cross-platform wrapper to `Repositories.swift`
+  - 6-line change: `#if canImport(OSLog)` wrapper at top of file
+  - No privacy labels to update (already checked)
+
+- [ ] #LINUX-HOOVER-SOURCES: Add HooverEngine + dependencies to `linuxSources` in Package.swift
+  - `Database/Repositories.swift`
+  - `Database/HooverEngine.swift`
+  - `Database/TranscriptParsers.swift` (already cross-platform)
+
+- [ ] #LINUX-HOOVER-WIRE: Wire HooverEngine in IngestCommand
+  - Call `hooverTranscript()` for each transcript file
+  - Track entries_inserted in run stats
+
+- [ ] #LINUX-E2E-VERIFY: E2E verification - ingest produces searchable entries
+  - Ingest real transcript, query FTS5, confirm results
+
+---
+
+### P1 - Distribution (required for users to actually use it)
+
+- [ ] #LINUX-RELEASE-WORKFLOW: GitHub Releases workflow
+  - Build on tag push (v*.*.*)
+  - Publish .tar.gz artifacts (x86_64, arm64)
+  - Include version in binary (`contextify-ingest --version`)
+
+- [ ] #LINUX-INSTALL-SCRIPT: Install script
+  - `curl -sSL https://contextify.sh/install-cli.sh | sh`
+  - Detect architecture, download correct binary
+  - Install to ~/.local/bin or /usr/local/bin
+
+- [ ] #LINUX-VERSION-STRATEGY: Versioning strategy
+  - Decision: same version as app, or independent?
+  - Schema version compatibility checking
+
+---
+
+### P1 - Validation
+
+- [ ] #LINUX-FIXTURE-TEST: Golden fixture comparison
+  - Same input transcript → same DB output on macOS vs Linux
+  - Hash comparison of query results
+
+- [ ] #LINUX-DOCKER-TEST: Docker-based E2E test in CI
+  - Full ingest + query cycle in workflow
+
+---
+
+### P2 - CLI Features
+
+- [ ] #LINUX-INPUT-OPTION: Wire `--input` option to LightweightDiscoveryService
+  - Currently fails fast with error message
+
+- [ ] #LINUX-SINCE-OPTION: `--since <timestamp>` for incremental ingestion
+  - Skip transcripts not modified since timestamp
+
+- [ ] #LINUX-WORKERS-OPTION: `--workers N` for parallel ingestion
+  - Concurrent transcript processing
+
+- [ ] #LINUX-BATCH-TRANSACTIONS: Transaction batching per-project
+  - Performance at scale (10-100k transcripts)
+  - Batch writes using `db.inTransaction { ... }`
+
+---
+
+### P2 - Documentation
+
+- [ ] #LINUX-CLI-README: CLI README with usage examples
+  - Installation, basic usage, common workflows
+  - Located at `Sources/ContextifyIngestionCLI/README.md` or `docs/cli/`
+
+- [ ] #LINUX-INSTALL-GUIDE: Installation guide
+  - Per-platform instructions (Ubuntu, Debian, Fedora, Arch, macOS)
+  - Dependencies (none expected, but document)
+
+- [ ] #LINUX-WEBSITE-PAGE: Website /cli page
+  - contextify.sh/cli or contextify.sh/linux
+  - Installation, features, use cases
+
+- [ ] #LINUX-DB-SCHEMA-DOCS: Database query documentation
+  - What tables exist, what can you query
+  - Example SQL for common use cases
+  - FTS5 search syntax
+
+---
+
+### P3 - Polish
+
+- [ ] #LINUX-HOMEBREW: Homebrew tap for macOS CLI users
+  - `brew install contextify/tap/contextify-ingest`
+
+- [ ] #LINUX-APT-REPO: apt/deb packaging
+  - PPA or direct .deb download
+
+- [ ] #LINUX-DOCKER-IMAGE: Docker image for one-liner usage
+  - `docker run contextify/ingest -v ~/.claude:/data ...`
+
+---
 
 **Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
