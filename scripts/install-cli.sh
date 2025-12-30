@@ -9,7 +9,7 @@
 #   INSTALL_DIR - Installation directory (default: ~/.local/bin)
 #   VERSION     - Version to install (default: latest)
 
-set -e
+set -euo pipefail
 
 # Configuration
 REPO="banagale/contextify"

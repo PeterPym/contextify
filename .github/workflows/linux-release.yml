@@ -49,19 +49,37 @@ jobs:
               apt-get update -qq
               apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
 
-              # Build SQLite with ENABLE_SNAPSHOT
+              # Build SQLite with ENABLE_SNAPSHOT (static library only)
               cd /tmp
               curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${{ env.SQLITE_VERSION }}.tar.gz" | tar xz
               cd sqlite-autoconf-*
               CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
-                ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --quiet
+                ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
               make -j$(nproc) --quiet
               make install --quiet
               ldconfig
 
-              # Build CLI
+              # Generate Version.swift with resolved version
               cd /workspace
-              swift build -c release --product contextify-ingest
+              CLI_VERSION="${CLI_VERSION:-0.0.0}"
+              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
+// Generated at build time - do not edit
+let generatedCLIVersion = "$CLI_VERSION"
+VEOF
+
+              # Build CLI with static Swift stdlib and generated version flag
+              swift build -c release --product contextify-ingest \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
+
+              # Verify no dynamic SQLite dependency
+              echo "Verifying static linking..."
+              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-ingest
+                exit 1
+              fi
+              echo "Static linking verified - no dynamic SQLite dependency"
 
               # Create tarball
               mkdir -p dist
@@ -78,6 +96,7 @@ jobs:
 
   build-linux-arm64:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,19 +132,37 @@ jobs:
               apt-get update -qq
               apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
 
-              # Build SQLite with ENABLE_SNAPSHOT
+              # Build SQLite with ENABLE_SNAPSHOT (static library only)
               cd /tmp
               curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${{ env.SQLITE_VERSION }}.tar.gz" | tar xz
               cd sqlite-autoconf-*
               CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
-                ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu --quiet
+                ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu --disable-shared --quiet
               make -j$(nproc) --quiet
               make install --quiet
               ldconfig
 
-              # Build CLI
+              # Generate Version.swift with resolved version
               cd /workspace
-              swift build -c release --product contextify-ingest
+              CLI_VERSION="${CLI_VERSION:-0.0.0}"
+              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
+// Generated at build time - do not edit
+let generatedCLIVersion = "$CLI_VERSION"
+VEOF
+
+              # Build CLI with static Swift stdlib and generated version flag
+              swift build -c release --product contextify-ingest \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
+
+              # Verify no dynamic SQLite dependency
+              echo "Verifying static linking..."
+              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-ingest
+                exit 1
+              fi
+              echo "Static linking verified - no dynamic SQLite dependency"
 
               # Create tarball
               mkdir -p dist
@@ -193,9 +230,9 @@ jobs:
             contextify-ingest verify --db ~/contextify.db
             ```
 
-            ### Schema Version
+            ### Compatibility
 
-            This CLI requires database schema version ${{ env.SQLITE_VERSION }} or compatible.
+            Run `contextify-ingest --version` to see the embedded schema version.
           files: |
             artifacts/contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz
             artifacts/contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz

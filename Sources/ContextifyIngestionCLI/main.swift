@@ -5,8 +5,13 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
-/// CLI version - update on release
-let cliVersion = "1.0.0"
+/// CLI version - in CI builds, Version.generated.swift defines generatedCLIVersion
+/// For local development, fallback to dev version
+#if GENERATED_VERSION
+let cliVersion = generatedCLIVersion
+#else
+let cliVersion = "1.0.0-dev"
+#endif
 
 /// Cross-Platform Ingestion CLI for Contextify.
 ///
