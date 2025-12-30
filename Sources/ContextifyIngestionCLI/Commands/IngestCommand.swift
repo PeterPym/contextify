@@ -31,12 +31,55 @@ struct IngestCommand: AsyncParsableCommand {
   @Option(name: .long, help: "Output format: jsonl or human")
   var format: OutputFormat = .human
 
+  @Option(name: .long, help: "Only process transcripts modified after this time (ISO8601 or Unix timestamp)")
+  var since: String?
+
+  @Option(name: .long, help: "Number of parallel workers for transcript processing (default: 4)")
+  var workers: Int = 4
+
   enum ProviderOption: String, ExpressibleByArgument {
     case auto, claude, codex
   }
 
   enum OutputFormat: String, ExpressibleByArgument {
     case jsonl, human
+  }
+
+  /// Parse --since value as Date (supports ISO8601 or Unix timestamp)
+  private func parseSinceDate() throws -> Date? {
+    guard let sinceStr = since else { return nil }
+
+    // Try Unix timestamp first
+    if let ts = Double(sinceStr) {
+      return Date(timeIntervalSince1970: ts)
+    }
+
+    // Try ISO8601 formats
+    let formatters = [
+      ISO8601DateFormatter(),
+      { () -> DateFormatter in
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+      }(),
+      { () -> DateFormatter in
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+      }()
+    ]
+
+    for formatter in formatters {
+      if let f = formatter as? ISO8601DateFormatter {
+        if let date = f.date(from: sinceStr) { return date }
+      } else if let f = formatter as? DateFormatter {
+        if let date = f.date(from: sinceStr) { return date }
+      }
+    }
+
+    throw ValidationError("Invalid --since format. Use ISO8601 (e.g., 2024-01-15T10:30:00Z) or Unix timestamp")
   }
 
   mutating func run() async throws {
@@ -47,10 +90,11 @@ struct IngestCommand: AsyncParsableCommand {
     let sinkFormat: CLIEventSink.OutputFormat = format == .jsonl ? .jsonl : .human
     let sink = CLIEventSink(format: sinkFormat)
 
-    // Fail fast if --input is provided (not yet implemented)
-    if !input.isEmpty {
-      sink.fileError(path: input.joined(separator: ", "), error: "--input option is not yet implemented. Discovery uses default Claude/Codex locations.")
-      throw ExitCode.failure
+    // Parse --since date if provided
+    let sinceDate = try parseSinceDate()
+    if let since = sinceDate, format == .human {
+      let formatter = ISO8601DateFormatter()
+      print("Filtering: only transcripts modified after \(formatter.string(from: since))")
     }
 
     // Open database with FTS5 preflight
@@ -118,13 +162,53 @@ struct IngestCommand: AsyncParsableCommand {
     let progressSink = NoOpProgressSink()
 
     // Discover transcripts
-    let discovery = LightweightDiscoveryService()
-    var projects = await discovery.discoverProjectsLightweight()
+    var projects: [LightweightProject]
+    if !input.isEmpty {
+      // Use provided input paths
+      projects = discoverFromInputPaths(input)
+      if format == .human {
+        print("Scanning \(input.count) custom input path(s)...")
+      }
+    } else {
+      // Use default discovery
+      let discovery = LightweightDiscoveryService()
+      projects = await discovery.discoverProjectsLightweight()
+    }
 
     // Filter by provider if specified
     if provider != .auto {
       let providerFilter = provider == .claude ? "claude.code" : "codex.cli"
       projects = projects.filter { $0.provider == providerFilter }
+    }
+
+    // Filter transcripts by --since if provided
+    if let sinceDate = sinceDate {
+      let sinceTimestamp = sinceDate.timeIntervalSince1970
+      var filteredProjects: [LightweightProject] = []
+      for project in projects {
+        let filteredFiles = project.transcriptFiles.filter { url -> Bool in
+          guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                let mtime = attrs[.modificationDate] as? Date else {
+            return true  // Include if we can't determine mtime
+          }
+          return mtime.timeIntervalSince1970 >= sinceTimestamp
+        }
+        if !filteredFiles.isEmpty {
+          // Create new project with filtered files (struct is immutable)
+          let filtered = LightweightProject(
+            id: project.id,
+            path: project.path,
+            displayName: project.displayName,
+            transcriptCount: filteredFiles.count,
+            lastActivity: project.lastActivity,
+            provider: project.provider,
+            cwd: project.cwd,
+            transcriptFiles: filteredFiles
+          )
+          filteredProjects.append(filtered)
+        }
+      }
+      projects = filteredProjects
     }
 
     // Count total transcripts
@@ -289,6 +373,101 @@ struct IngestCommand: AsyncParsableCommand {
     // Exit with non-zero code if errors occurred (for CI/script usage)
     if totalErrors > 0 {
       throw ExitCode.failure
+    }
+  }
+
+  /// Discover transcripts from custom input paths
+  private func discoverFromInputPaths(_ paths: [String]) -> [LightweightProject] {
+    var projectMap: [String: LightweightProject] = [:]
+
+    for pathStr in paths {
+      let url = URL(fileURLWithPath: pathStr).standardizedFileURL
+      let fm = FileManager.default
+
+      // Check if path exists
+      var isDir: ObjCBool = false
+      guard fm.fileExists(atPath: url.path, isDirectory: &isDir) else {
+        continue
+      }
+
+      if isDir.boolValue {
+        // Directory: scan for .jsonl files
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
+          for case let fileURL as URL in enumerator {
+            if fileURL.pathExtension == "jsonl" {
+              addTranscriptToProjects(fileURL, into: &projectMap)
+            }
+          }
+        }
+      } else if url.pathExtension == "jsonl" {
+        // Single file
+        addTranscriptToProjects(url, into: &projectMap)
+      }
+    }
+
+    return Array(projectMap.values)
+  }
+
+  /// Add a transcript file to the appropriate project in the map
+  private func addTranscriptToProjects(_ fileURL: URL, into projectMap: inout [String: LightweightProject]) {
+    let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+
+    // Derive project root and provider from path
+    let (projectRoot, provider): (String, String)
+    if let claudeRange = filePath.range(of: "/.claude/projects/") {
+      // Claude: ~/.claude/projects/<project-name>/
+      let afterProjects = String(filePath[claudeRange.upperBound...])
+      let projectName = afterProjects.components(separatedBy: "/").first ?? "unknown"
+      projectRoot = filePath.components(separatedBy: "/.claude/projects/").first! + "/.claude/projects/" + projectName
+      provider = "claude.code"
+    } else if filePath.contains("/.codex/sessions/") {
+      // Codex: ~/.codex/sessions/ (flat structure, all in one "project")
+      projectRoot = filePath.components(separatedBy: "/.codex/sessions/").first! + "/.codex/sessions"
+      provider = "codex.cli"
+    } else {
+      // Unknown location: use parent directory as project root
+      projectRoot = fileURL.deletingLastPathComponent().path
+      provider = "other"
+    }
+
+    // Get or create project
+    if let existingProject = projectMap[projectRoot] {
+      // Create new project with added file (struct is immutable)
+      var updatedFiles = existingProject.transcriptFiles
+      updatedFiles.append(fileURL)
+      let updated = LightweightProject(
+        id: existingProject.id,
+        path: existingProject.path,
+        displayName: existingProject.displayName,
+        transcriptCount: updatedFiles.count,
+        lastActivity: existingProject.lastActivity,
+        provider: existingProject.provider,
+        cwd: existingProject.cwd,
+        transcriptFiles: updatedFiles
+      )
+      projectMap[projectRoot] = updated
+    } else {
+      let displayName = URL(fileURLWithPath: projectRoot).lastPathComponent
+      let projectURL = URL(fileURLWithPath: projectRoot)
+      // Get file modification time for lastActivity
+      let lastActivity: Date
+      if let attrs = try? FileManager.default.attributesOfItem(atPath: projectRoot),
+         let mtime = attrs[.modificationDate] as? Date {
+        lastActivity = mtime
+      } else {
+        lastActivity = Date()
+      }
+      let project = LightweightProject(
+        id: ProjectIdentity.computeProjectID(provider: provider, path: projectRoot),
+        path: projectURL,
+        displayName: displayName,
+        transcriptCount: 1,
+        lastActivity: lastActivity,
+        provider: provider,
+        cwd: nil,  // Will be derived from path
+        transcriptFiles: [fileURL]
+      )
+      projectMap[projectRoot] = project
     }
   }
 }
