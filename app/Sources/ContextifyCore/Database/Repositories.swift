@@ -1,8 +1,14 @@
 import Foundation
 import GRDB
+#if canImport(OSLog)
 import OSLog
+#endif
 
+#if canImport(OSLog)
 private let log = Logger(subsystem: "dev.contextify", category: "Repositories")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Repositories")
+#endif
 
 // MARK: - Project Repository
 
