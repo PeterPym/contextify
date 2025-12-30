@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// IngestCommand.swift - Main ingestion command
+// IngestCommand.swift - Main ingestion command with HooverEngine
 
 import ArgumentParser
 import Foundation
@@ -74,6 +74,40 @@ struct IngestCommand: AsyncParsableCommand {
       }
     }
 
+    // Create repositories for HooverEngine
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+    let errorRepo = ParseErrorRepositoryImpl(db: pool)
+    let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
+    let trackedFileRepo = TrackedFileRepositoryImpl(db: pool)
+    let transcriptSummaryRepo = TranscriptSummaryRepositoryImpl(db: pool)
+    let systemEventRepo = SystemEventRepositoryImpl(db: pool)
+    let assistantUsageRepo = AssistantUsageRepositoryImpl(db: pool)
+
+    // Create parser and metadata parser
+    let parser = MultiProviderParser()
+    let metadataParser = MultiProviderMetadataParser()
+
+    // Create HooverEngine
+    let hooverEngine = HooverEngine(
+      db: pool,
+      transcriptRepo: transcriptRepo,
+      entryRepo: entryRepo,
+      errorRepo: errorRepo,
+      projectRepo: projectRepo,
+      parser: parser,
+      fileSnapshotRepo: fileSnapshotRepo,
+      trackedFileRepo: trackedFileRepo,
+      transcriptSummaryRepo: transcriptSummaryRepo,
+      systemEventRepo: systemEventRepo,
+      assistantUsageRepo: assistantUsageRepo,
+      metadataParser: metadataParser
+    )
+
+    // Progress sink (no-op for CLI batch processing)
+    let progressSink = NoOpProgressSink()
+
     // Discover transcripts
     let discovery = LightweightDiscoveryService()
     var projects = await discovery.discoverProjectsLightweight()
@@ -98,6 +132,8 @@ struct IngestCommand: AsyncParsableCommand {
     var totalErrors = 0
     var transcriptsProcessed = 0
     var projectsProcessed = 0
+    var totalEntriesInserted = 0
+    var totalEntriesSkipped = 0
 
     // Run-level timestamp for created_at/updated_at bookkeeping
     let runNow = Int(Date().timeIntervalSince1970)
@@ -157,9 +193,8 @@ struct IngestCommand: AsyncParsableCommand {
             transcriptProvider = "other"
           }
 
-          // Upsert transcript record using direct SQL (cross-platform compatible)
-
-          try await pool.write { db in
+          // Upsert transcript record and get the transcript ID
+          let transcriptId: String = try await pool.write { db -> String in
             // Check if transcript exists by (project_id, file_path)
             if let existingId = try String.fetchOne(db, sql: """
               SELECT id FROM transcripts WHERE project_id = ? AND file_path = ?
@@ -169,6 +204,7 @@ struct IngestCommand: AsyncParsableCommand {
                 UPDATE transcripts SET last_modified = ?, file_size = ?, updated_at = ?
                 WHERE id = ?
               """, arguments: [lastModifiedInt, fileSize, runNow, existingId])
+              return existingId
             } else {
               // Insert new
               let id = UUID().uuidString
@@ -179,10 +215,35 @@ struct IngestCommand: AsyncParsableCommand {
                   created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, 'active', 'partial', ?, ?)
               """, arguments: [id, projectId, filePath, transcriptProvider, lastModifiedInt, fileSize, runNow, runNow])
+              return id
             }
           }
 
+          // Fetch the full Transcript model for HooverEngine
+          let transcript: Transcript? = try await pool.read { db in
+            try Transcript.fetchOne(db, sql: "SELECT * FROM transcripts WHERE id = ?", arguments: [transcriptId])
+          }
+
+          guard let transcript = transcript else {
+            sink.fileError(path: filePath, error: "Failed to fetch transcript after insert")
+            totalErrors += 1
+            continue
+          }
+
+          // Run HooverEngine to parse entries
+          let outcome = try hooverEngine.hooverTranscript(
+            transcript,
+            fileURL: fileURL,
+            progress: progressSink
+          )
+
+          totalEntriesInserted += outcome.entriesInserted
+          totalEntriesSkipped += outcome.entriesSkipped
           transcriptsProcessed += 1
+
+          if format == .human && outcome.entriesInserted > 0 {
+            print("  \(fileURL.lastPathComponent): \(outcome.entriesInserted) entries")
+          }
 
         } catch {
           sink.fileError(path: fileURL.path, error: error.localizedDescription)
@@ -193,12 +254,10 @@ struct IngestCommand: AsyncParsableCommand {
 
     let duration = Date().timeIntervalSince(startTime)
 
-    // Note: Entry parsing not yet implemented - this creates the project/transcript skeleton
-    // Full entry ingestion will be added when HooverEngine wiring is complete
     let summary = IngestionSummary(
       transcriptsProcessed: transcriptsProcessed,
-      entriesInserted: 0,  // TODO: Wire HooverEngine for entry parsing
-      entriesSkipped: 0,
+      entriesInserted: totalEntriesInserted,
+      entriesSkipped: totalEntriesSkipped,
       errorsEncountered: totalErrors,
       durationSeconds: duration
     )
@@ -206,17 +265,16 @@ struct IngestCommand: AsyncParsableCommand {
 
     if format == .human {
       print("")
-      print("Ingestion complete (skeleton only - entry parsing pending):")
+      print("Ingestion complete:")
       print("  Projects processed: \(projectsProcessed)")
-      print("  Transcripts registered: \(transcriptsProcessed)")
+      print("  Transcripts processed: \(transcriptsProcessed)")
+      print("  Entries inserted: \(totalEntriesInserted)")
+      print("  Entries skipped: \(totalEntriesSkipped)")
       print("  Errors: \(totalErrors)")
       print("  Duration: \(String(format: "%.2f", duration))s")
       print("")
       print("Database: \(db)")
       print("Use 'contextify-ingest verify --db \(db)' to verify the database.")
-      print("")
-      print("NOTE: Entry parsing (HooverEngine) not yet wired. Only project/transcript")
-      print("      records are created. Full ingestion will be added in a future update.")
     }
   }
 }
