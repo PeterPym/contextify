@@ -47,6 +47,12 @@ struct IngestCommand: AsyncParsableCommand {
     let sinkFormat: CLIEventSink.OutputFormat = format == .jsonl ? .jsonl : .human
     let sink = CLIEventSink(format: sinkFormat)
 
+    // Fail fast if --input is provided (not yet implemented)
+    if !input.isEmpty {
+      sink.fileError(path: input.joined(separator: ", "), error: "--input option is not yet implemented. Discovery uses default Claude/Codex locations.")
+      throw ExitCode.failure
+    }
+
     // Open database with FTS5 preflight
     let pool: DatabasePool
     do {
@@ -93,6 +99,9 @@ struct IngestCommand: AsyncParsableCommand {
     var transcriptsProcessed = 0
     var projectsProcessed = 0
 
+    // Run-level timestamp for created_at/updated_at bookkeeping
+    let runNow = Int(Date().timeIntervalSince1970)
+
     // Process each project
     for project in projects {
       let projectId: String
@@ -108,11 +117,10 @@ struct IngestCommand: AsyncParsableCommand {
 
           // Create new project
           let newId = ProjectIdentity.computeProjectID(provider: project.provider, path: project.canonicalRootPath)
-          let now = Int(Date().timeIntervalSince1970)
           try db.execute(sql: """
             INSERT INTO projects (id, root_path, name, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
-          """, arguments: [newId, project.canonicalRootPath, project.displayName, now, now])
+          """, arguments: [newId, project.canonicalRootPath, project.displayName, runNow, runNow])
           return newId
         }
 
@@ -134,20 +142,22 @@ struct IngestCommand: AsyncParsableCommand {
           let lastModified = (attrs[.modificationDate] as? Date) ?? Date()
           let fileSize = (attrs[.size] as? Int) ?? 0
 
-          // Derive provider from file path (project.provider might be "multi" for merged projects)
+          // Compute canonical path first (used for storage and provider derivation)
+          let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+          let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
+
+          // Derive provider from canonical path using anchored patterns
+          // (project.provider might be "multi" for merged projects)
           let transcriptProvider: String
-          if fileURL.path.contains(".claude/projects/") {
+          if filePath.contains("/.claude/projects/") {
             transcriptProvider = "claude.code"
-          } else if fileURL.path.contains(".codex/sessions/") {
+          } else if filePath.contains("/.codex/sessions/") {
             transcriptProvider = "codex.cli"
           } else {
             transcriptProvider = "other"
           }
 
           // Upsert transcript record using direct SQL (cross-platform compatible)
-          let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
-          let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
-          let now = Int(Date().timeIntervalSince1970)
 
           try await pool.write { db in
             // Check if transcript exists by (project_id, file_path)
@@ -158,7 +168,7 @@ struct IngestCommand: AsyncParsableCommand {
               try db.execute(sql: """
                 UPDATE transcripts SET last_modified = ?, file_size = ?, updated_at = ?
                 WHERE id = ?
-              """, arguments: [lastModifiedInt, fileSize, now, existingId])
+              """, arguments: [lastModifiedInt, fileSize, runNow, existingId])
             } else {
               // Insert new
               let id = UUID().uuidString
@@ -168,7 +178,7 @@ struct IngestCommand: AsyncParsableCommand {
                   line_count, last_processed_line, parser_version, status, ingest_state,
                   created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, 'active', 'partial', ?, ?)
-              """, arguments: [id, projectId, filePath, transcriptProvider, lastModifiedInt, fileSize, now, now])
+              """, arguments: [id, projectId, filePath, transcriptProvider, lastModifiedInt, fileSize, runNow, runNow])
             }
           }
 
@@ -197,7 +207,7 @@ struct IngestCommand: AsyncParsableCommand {
     if format == .human {
       print("")
       print("Ingestion complete (skeleton only - entry parsing pending):")
-      print("  Projects created: \(projectsProcessed)")
+      print("  Projects processed: \(projectsProcessed)")
       print("  Transcripts registered: \(transcriptsProcessed)")
       print("  Errors: \(totalErrors)")
       print("  Duration: \(String(format: "%.2f", duration))s")
