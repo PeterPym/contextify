@@ -68,9 +68,18 @@ struct IngestCommand: AsyncParsableCommand {
         print("Performing full rebuild - clearing existing data...")
       }
       try await pool.write { db in
+        // Delete in dependency order (child tables first, then parents)
+        // This ensures clean rebuild even if FK constraints are disabled
+        try db.execute(sql: "DELETE FROM tool_invocations")
+        try db.execute(sql: "DELETE FROM timeline_cache")
+        try db.execute(sql: "DELETE FROM assistant_usage")
+        try db.execute(sql: "DELETE FROM assistant_usage_pending")
+        try db.execute(sql: "DELETE FROM transcript_metadata")
+        try db.execute(sql: "DELETE FROM project_follow_policy")
         try db.execute(sql: "DELETE FROM transcript_entries")
         try db.execute(sql: "DELETE FROM transcripts")
         try db.execute(sql: "DELETE FROM projects")
+        try db.execute(sql: "DELETE FROM ingestion_runs")
       }
     }
 
@@ -275,6 +284,11 @@ struct IngestCommand: AsyncParsableCommand {
       print("")
       print("Database: \(db)")
       print("Use 'contextify-ingest verify --db \(db)' to verify the database.")
+    }
+
+    // Exit with non-zero code if errors occurred (for CI/script usage)
+    if totalErrors > 0 {
+      throw ExitCode.failure
     }
   }
 }
