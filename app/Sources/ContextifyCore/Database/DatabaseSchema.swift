@@ -111,6 +111,10 @@ public enum DatabaseSchema {
       // ASSISTANT_USAGE_PENDING REBUILD WITH COMPOSITE PK
       // ========================================================================
 
+      // Drop triggers FIRST - they reference assistant_usage_pending and block table operations
+      try db.execute(sql: "DROP TRIGGER IF EXISTS assistant_usage_before_insert")
+      try db.execute(sql: "DROP TRIGGER IF EXISTS trg_assistant_usage_stage")
+
       // Create new table with composite PK and DEFAULT created_at
       try db.execute(sql: """
         CREATE TABLE IF NOT EXISTS assistant_usage_pending_new (
@@ -164,12 +168,8 @@ public enum DatabaseSchema {
       """)
 
       // ========================================================================
-      // FIX TRIGGER (EXPLICIT DROP + CREATE)
+      // RECREATE TRIGGER (was dropped at start of table rebuild)
       // ========================================================================
-
-      // Drop any existing triggers to ensure clean slate
-      try db.execute(sql: "DROP TRIGGER IF EXISTS assistant_usage_before_insert")
-      try db.execute(sql: "DROP TRIGGER IF EXISTS trg_assistant_usage_stage")
 
       // Recreate with staging semantics (RAISE(IGNORE))
       try db.execute(sql: """
