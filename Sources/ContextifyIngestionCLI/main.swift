@@ -1,4 +1,12 @@
 import ArgumentParser
+#if os(macOS)
+import ContextifyCore
+#else
+import ContextifyIngestionCore
+#endif
+
+/// CLI version - update on release
+let cliVersion = "1.0.0"
 
 /// Cross-Platform Ingestion CLI for Contextify.
 ///
@@ -15,7 +23,7 @@ struct ContextifyIngest: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "contextify-ingest",
     abstract: "Ingest Claude Code/Codex transcripts into Contextify database",
-    version: "0.1.0",
+    version: "\(cliVersion) (schema v\(DatabaseSchema.currentVersion))",
     subcommands: [
       IngestCommand.self,
       VerifyCommand.self,
