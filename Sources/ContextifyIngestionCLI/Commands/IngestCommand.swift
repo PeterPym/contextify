@@ -49,37 +49,39 @@ struct IngestCommand: AsyncParsableCommand {
   private func parseSinceDate() throws -> Date? {
     guard let sinceStr = since else { return nil }
 
-    // Try Unix timestamp first
+    // Try Unix timestamp (seconds) - must be in valid range (year 2000-2100)
+    // This prevents date-like strings (e.g., "20251230") from being misinterpreted
     if let ts = Double(sinceStr) {
-      return Date(timeIntervalSince1970: ts)
+      let minValidTimestamp = 946684800.0  // 2000-01-01 00:00:00 UTC
+      let maxValidTimestamp = 4102444800.0 // 2100-01-01 00:00:00 UTC
+      if ts >= minValidTimestamp && ts <= maxValidTimestamp {
+        return Date(timeIntervalSince1970: ts)
+      }
+      // Check if it's milliseconds (13+ digits)
+      if ts >= minValidTimestamp * 1000 && ts <= maxValidTimestamp * 1000 {
+        return Date(timeIntervalSince1970: ts / 1000)
+      }
+      // Numeric but not in valid range - fall through to date parsing
     }
 
     // Try ISO8601 formats
-    let formatters = [
-      ISO8601DateFormatter(),
-      { () -> DateFormatter in
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-      }(),
-      { () -> DateFormatter in
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-      }()
-    ]
+    let iso8601 = ISO8601DateFormatter()
+    if let date = iso8601.date(from: sinceStr) { return date }
 
-    for formatter in formatters {
-      if let f = formatter as? ISO8601DateFormatter {
-        if let date = f.date(from: sinceStr) { return date }
-      } else if let f = formatter as? DateFormatter {
-        if let date = f.date(from: sinceStr) { return date }
-      }
-    }
+    // Try date-only format with timezone assumption (UTC)
+    let dateOnly = DateFormatter()
+    dateOnly.dateFormat = "yyyy-MM-dd"
+    dateOnly.timeZone = TimeZone(identifier: "UTC")
+    dateOnly.locale = Locale(identifier: "en_US_POSIX")
+    if let date = dateOnly.date(from: sinceStr) { return date }
 
-    throw ValidationError("Invalid --since format. Use ISO8601 (e.g., 2024-01-15T10:30:00Z) or Unix timestamp")
+    throw ValidationError("""
+      Invalid --since format: '\(sinceStr)'
+      Accepted formats:
+        - ISO8601: 2024-01-15T10:30:00Z
+        - Date only: 2024-01-15 (interpreted as UTC midnight)
+        - Unix timestamp (seconds): 1705312200
+      """)
   }
 
   mutating func run() async throws {
@@ -95,6 +97,11 @@ struct IngestCommand: AsyncParsableCommand {
     if let since = sinceDate, format == .human {
       let formatter = ISO8601DateFormatter()
       print("Filtering: only transcripts modified after \(formatter.string(from: since))")
+    }
+
+    // Warn about --workers not being implemented yet
+    if workers != 4 && format == .human {
+      print("Note: --workers is not yet implemented (parallel processing coming in a future release)")
     }
 
     // Open database with FTS5 preflight

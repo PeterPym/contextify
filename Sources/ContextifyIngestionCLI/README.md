@@ -77,7 +77,7 @@ contextify-ingest ingest --db ~/contextify.db --format jsonl
 | `--since DATE` | Only process transcripts modified after this time |
 | `--full-rebuild` | Clear existing data before ingesting |
 | `--format TYPE` | Output format: human or jsonl |
-| `--workers N` | Parallel workers (default: 4) |
+| `--workers N` | Parallel workers (default: 4, not yet implemented) |
 
 ## Database
 
