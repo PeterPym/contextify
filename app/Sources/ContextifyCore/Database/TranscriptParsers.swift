@@ -101,7 +101,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
     // Required fields - check type first
     guard let type = json["type"] as? String else {
-      parserLog.warning("[PARSER-WARN] Missing type field line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      parserLog.warning("[PARSER-WARN] Missing type field line=\(lineNumber) transcript=\(transcriptId) – skipping entry")
       throw ParserError.skipEntry
     }
 
@@ -128,7 +128,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
       let contentSha256 = SHA256Utils.hash(queueContent)
       let providerSessionId = json["sessionId"] as? String ?? sessionId
 
-      parserLog.info("[QUEUE-ENQUEUE] Creating synthetic entry id=\(queueUuid, privacy: .public) ts=\(timestampStr, privacy: .public) content=\"\(String(queueContent.prefix(40)), privacy: .public)\"")
+      parserLog.info("[QUEUE-ENQUEUE] Creating synthetic entry id=\(queueUuid) ts=\(timestampStr) content=\"\(String(queueContent.prefix(40)))\"")
 
       return EntryInsert(
         id: queueUuid,
@@ -215,7 +215,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             contentData: data
           )
         } else if type == "assistant" {
-          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) message_id=none – coercing to end_turn")
+          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber) uuid=\(uuid) message_id=none – coercing to end_turn")
         }
         throw ParserError.skipEntry
       }
@@ -250,7 +250,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             // If agentId is present, this is a Task tool result (agent output)
             if resultAgentId != nil {
               isAgentResult = true
-              parserLog.info("[AGENT-RESULT] Detected Task tool result line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) agentId=\(resultAgentId ?? "nil", privacy: .public)")
+              parserLog.info("[AGENT-RESULT] Detected Task tool result line=\(lineNumber) uuid=\(uuid) agentId=\(resultAgentId ?? "nil")")
             }
 
             toolResultData.append(ToolResultData(
@@ -300,7 +300,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
         let truncated = String(firstLine.prefix(300))
         content = "[\(subagentType)\(modelSuffix)] \(truncated)"
         hasTextContent = true
-        parserLog.info("[TASK-SPAWN] Extracted Task prompt uuid=\(uuid, privacy: .public) agent=\(subagentType, privacy: .public) model=\(model ?? "default", privacy: .public)")
+        parserLog.info("[TASK-SPAWN] Extracted Task prompt uuid=\(uuid) agent=\(subagentType) model=\(model ?? "default")")
       }
 
       if content.isEmpty && !toolResultTextParts.isEmpty {
@@ -325,7 +325,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
         throw ParserError.skipEntry
       }
     } else {
-      parserLog.warning("[PARSER-WARN] Missing message.content line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) – skipping entry")
+      parserLog.warning("[PARSER-WARN] Missing message.content line=\(lineNumber) uuid=\(uuid) – skipping entry")
       throw ParserError.skipEntry
     }
 
@@ -339,7 +339,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     // Map kind - agent results display as "assistant" for proper attribution
     let effectiveType = isAgentResult ? "assistant" : type
     if isAgentResult {
-      parserLog.info("[AGENT-ATTR] Reattributing entry as assistant uuid=\(uuid, privacy: .public) original_type=\(type, privacy: .public)")
+      parserLog.info("[AGENT-ATTR] Reattributing entry as assistant uuid=\(uuid) original_type=\(type)")
     }
     let kind = mapKind(effectiveType)
 
@@ -512,7 +512,7 @@ private func validateMessageIntegrity(
       if !missingIds.isEmpty {
         recordToolResultMissing(count: missingIds.count)
         let missingList = missingIds.joined(separator: ", ")
-        parserLog.warning("[PARSER-WARN] Orphaned tool_result detected line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) tool_use_id=\(missingList, privacy: .public) – continuing without throwing")
+        parserLog.warning("[PARSER-WARN] Orphaned tool_result detected line=\(lineNumber) uuid=\(uuid) tool_use_id=\(missingList) – continuing without throwing")
         return false
       }
 
@@ -537,7 +537,7 @@ private func validateMessageIntegrity(
           return true
         } else {
           let contentTypes = contentBlocks.compactMap { $0["type"] as? String }.joined(separator: ", ")
-          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) message_id=none stop_reason=tool_use content=[\(contentTypes)] – coercing to end_turn")
+          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber) uuid=\(uuid) message_id=none stop_reason=tool_use content=[\(contentTypes)] – coercing to end_turn")
           return false
         }
       }
@@ -787,7 +787,7 @@ private extension ClaudeCodeLineParser {
 
   func decodeBufferedContent(_ message: BufferedAssistantMessage) -> [[String: Any]]? {
     guard let json = try? JSONSerialization.jsonObject(with: message.contentData) as? [[String: Any]] else {
-      parserLog.warning("[PARSER-WARN] Failed to decode buffered assistant message id=\(message.messageId, privacy: .public)")
+      parserLog.warning("[PARSER-WARN] Failed to decode buffered assistant message id=\(message.messageId)")
       return nil
     }
     return json
@@ -842,17 +842,17 @@ public struct CodexLineParser: TranscriptLineParser {
     // Required fields
     guard let timestampStr = json["timestamp"] as? String,
           let timestamp = parseISO8601(timestampStr) else {
-      parserLog.warning("[PARSER-WARN] Codex line missing timestamp line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      parserLog.warning("[PARSER-WARN] Codex line missing timestamp line=\(lineNumber) transcript=\(transcriptId) – skipping entry")
       throw ParserError.skipEntry
     }
 
     guard let type = json["type"] as? String else {
-      parserLog.warning("[PARSER-WARN] Codex line missing type line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      parserLog.warning("[PARSER-WARN] Codex line missing type line=\(lineNumber) transcript=\(transcriptId)")
       throw ParserError.skipEntry
     }
 
     guard let payload = json["payload"] as? [String: Any] else {
-      parserLog.warning("[PARSER-WARN] Codex line missing payload line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      parserLog.warning("[PARSER-WARN] Codex line missing payload line=\(lineNumber) transcript=\(transcriptId)")
       throw ParserError.skipEntry
     }
 
@@ -878,7 +878,7 @@ public struct CodexLineParser: TranscriptLineParser {
     // Handle response_item records
     if type == "response_item" && payloadType == "message" {
       guard let role = payload["role"] as? String else {
-        parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+        parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber) transcript=\(transcriptId)")
         throw ParserError.skipEntry
       }
 
@@ -943,7 +943,7 @@ public struct CodexLineParser: TranscriptLineParser {
     sessionId: String?
   ) throws -> EntryInsert {
     guard let message = payload["message"] as? String else {
-      parserLog.warning("[PARSER-WARN] Codex event_msg missing message line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      parserLog.warning("[PARSER-WARN] Codex event_msg missing message line=\(lineNumber) transcript=\(transcriptId)")
       throw ParserError.skipEntry
     }
 
@@ -1125,7 +1125,7 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
       }
 
       guard let sessionId = json["sessionId"] as? String, !sessionId.isEmpty else {
-        parserLog.warning("[QUEUE-OP] queue-operation \(opString, privacy: .public) missing sessionId; skipping line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+        parserLog.warning("[QUEUE-OP] queue-operation \(opString) missing sessionId; skipping line=\(lineNumber) transcript=\(transcriptId)")
         return MetadataParseResult()
       }
 

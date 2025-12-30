@@ -81,9 +81,8 @@ let products: [Product] = [
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
 ]
 
-// Files included in Linux build - absolute minimal for Phase 2.5 validation
+// Files included in Linux build
 // Paths are relative to app/Sources/ContextifyCore/
-// Focus: Discovery + Schema only. Full parsing will be added in Phase 3b.
 let linuxSources: [String] = [
   // Platform abstractions (cross-platform)
   "Platform/CrossPlatformCrypto.swift",
@@ -91,12 +90,17 @@ let linuxSources: [String] = [
   "Platform/CrossPlatformLogger.swift",
   "Platform/IngestionEventSink.swift",
   "Platform/PlatformSandbox.swift",
-  // Database layer - minimal for schema only
+  // Database layer
   "Database/DatabaseSchema.swift",
   "Database/KeyGeneration.swift",
   "Database/Models.swift",
   "Database/PathNormalizer.swift",
-  // Discovery - uses only basic Foundation types
+  "Database/Repositories.swift",        // Repository protocols and implementations
+  "Database/HooverEngine.swift",        // Transcript parsing engine
+  "Database/TranscriptParsers.swift",   // Line parsers and metadata parsers
+  "Database/IngestProgress.swift",      // Progress reporting protocol
+  "Database/Utilities/TimeUnits.swift", // Time unit conversion helpers
+  // Discovery
   "Discovery/LightweightDiscoveryService.swift",
   // Core types
   "Clock.swift",

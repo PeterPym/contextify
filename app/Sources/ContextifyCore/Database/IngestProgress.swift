@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(OSLog)
 import OSLog
+#endif
 
 // MARK: - Progress Protocol
 
@@ -33,7 +35,8 @@ public final class NoOpProgressSink: IngestProgressSink, @unchecked Sendable {
 
 // MARK: - Logging Sink
 
-/// Progress sink that logs to OSLog
+#if canImport(OSLog)
+/// Progress sink that logs to OSLog (macOS only)
 public final class LoggingProgressSink: IngestProgressSink, @unchecked Sendable {
   private let log: Logger
 
@@ -73,3 +76,4 @@ public final class LoggingProgressSink: IngestProgressSink, @unchecked Sendable 
     log.info("Completed project: \(name)")
   }
 }
+#endif

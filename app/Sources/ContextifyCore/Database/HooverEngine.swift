@@ -453,7 +453,7 @@ public final class HooverEngine {
     if canonCwd.isEmpty {
       if !cache.warnedEmptyCwds.contains(entryCwd) {
         cache.warnedEmptyCwds.insert(entryCwd)
-        log.warning("[PROJECT-RESOLVE] canonicalizePath returned empty string for cwd=\(entryCwd, privacy: .public) transcript=\(transcriptId.prefix(8), privacy: .public), falling back to transcript project")
+        log.warning("[PROJECT-RESOLVE] canonicalizePath returned empty string for cwd=\(entryCwd) transcript=\(transcriptId.prefix(8)), falling back to transcript project")
       }
       return transcriptProjectId
     }
@@ -522,7 +522,7 @@ public final class HooverEngine {
 
         // Guard against empty rootPath (broken symlinks, etc.)
         if root.isEmpty {
-          log.warning("[PROJECT-RESOLVE] Skipping project \(project.id.prefix(8), privacy: .public) with empty canonical rootPath (raw: \(project.rootPath, privacy: .public))")
+          log.warning("[PROJECT-RESOLVE] Skipping project \(project.id.prefix(8)) with empty canonical rootPath (raw: \(project.rootPath))")
           continue
         }
 
@@ -562,7 +562,7 @@ public final class HooverEngine {
           let losers = loserPrefixesByRoot[root] ?? []
           let loserIds = losers.joined(separator: ", ")
           let suffix = count > (loserCap + 1) ? " (+\(count - loserCap - 1) more)" : ""  // 1 winner + cap shown losers
-          log.warning("[PROJECT-RESOLVE] Collision: root=\(root, privacy: .public) has \(count, privacy: .public) projects, keeping \(winner.id.prefix(8), privacy: .public) (earliest createdAt), ignoring: \(loserIds, privacy: .public)\(suffix, privacy: .public)")
+          log.warning("[PROJECT-RESOLVE] Collision: root=\(root) has \(count) projects, keeping \(winner.id.prefix(8)) (earliest createdAt), ignoring: \(loserIds)\(suffix)")
         }
 
         cache.projectRootToId[root] = winner.id
@@ -589,7 +589,7 @@ public final class HooverEngine {
       let shouldLog = !cache.loggedRoots.contains(projectRoot) && projectId != transcriptProjectId
       if shouldLog {
         cache.loggedRoots.insert(projectRoot)
-        log.debug("[PROJECT-REASSIGN] Entry reassigned: transcript=\(transcriptId.prefix(8), privacy: .public) transcriptProject=\(transcriptProjectId.prefix(8), privacy: .public) -> entryProject=\(projectId.prefix(8), privacy: .public) root=\(projectRoot, privacy: .public)")
+        log.debug("[PROJECT-REASSIGN] Entry reassigned: transcript=\(transcriptId.prefix(8)) transcriptProject=\(transcriptProjectId.prefix(8)) -> entryProject=\(projectId.prefix(8)) root=\(projectRoot)")
       }
       return projectId
     }
@@ -602,7 +602,7 @@ public final class HooverEngine {
     let shouldLog = !cache.loggedRoots.contains(canonCwd)
     if shouldLog {
       cache.loggedRoots.insert(canonCwd)
-      log.info("[PROJECT-REASSIGN] Created project: transcript=\(transcriptId.prefix(8), privacy: .public) transcriptProject=\(transcriptProjectId.prefix(8), privacy: .public) root=\(canonCwd, privacy: .public) id=\(newProjectId.prefix(8), privacy: .public)")
+      log.info("[PROJECT-REASSIGN] Created project: transcript=\(transcriptId.prefix(8)) transcriptProject=\(transcriptProjectId.prefix(8)) root=\(canonCwd) id=\(newProjectId.prefix(8))")
     }
 
     // Update cache structures with new project root
@@ -615,7 +615,7 @@ public final class HooverEngine {
     } else {
       // This shouldn't happen - we just created a project but root already exists
       let existingProjectId = cache.projectRootToId[canonCwd] ?? "nil"
-      log.warning("[PROJECT-RESOLVE] Unexpected: created project \(newProjectId.prefix(8), privacy: .public) but root \(canonCwd, privacy: .public) already mapped to \(existingProjectId, privacy: .public)")
+      log.warning("[PROJECT-RESOLVE] Unexpected: created project \(newProjectId.prefix(8)) but root \(canonCwd) already mapped to \(existingProjectId)")
     }
 
     return newProjectId
@@ -658,12 +658,12 @@ public final class HooverEngine {
 
       // Validate UPDATE succeeded
       let rowsAffected = db.changesCount
-      log.info("[HOOVER-UPDATE-ROWS] UPDATE affected \(rowsAffected, privacy: .public) rows for transcript: \(transcriptId, privacy: .public), checkpoint: \(lastProcessedLine, privacy: .public)")
+      log.info("[HOOVER-UPDATE-ROWS] UPDATE affected \(rowsAffected) rows for transcript: \(transcriptId), checkpoint: \(lastProcessedLine)")
 
       if rowsAffected == 0 {
-        log.error("[HOOVER-UPDATE-FAILED] UPDATE affected 0 rows! Transcript ID: \(transcriptId, privacy: .public)")
+        log.error("[HOOVER-UPDATE-FAILED] UPDATE affected 0 rows! Transcript ID: \(transcriptId)")
         if let existing = try? Transcript.fetchOne(db, key: transcriptId) {
-          log.error("[HOOVER-UPDATE-FAILED] Transcript EXISTS in database with checkpoint: \(existing.lastProcessedLine, privacy: .public)")
+          log.error("[HOOVER-UPDATE-FAILED] Transcript EXISTS in database with checkpoint: \(existing.lastProcessedLine)")
         } else {
           log.error("[HOOVER-UPDATE-FAILED] Transcript NOT FOUND in database (ID mismatch?)")
         }
@@ -679,12 +679,12 @@ public final class HooverEngine {
     progress: IngestProgressSink,
     limit: IngestLimit = .none
   ) throws -> HooverOutcome {
-    log.info("[HOOVER-START] Starting hoover for transcript: \(transcript.id, privacy: .public) from checkpoint: \(transcript.lastProcessedLine, privacy: .public)")
+    log.info("[HOOVER-START] Starting hoover for transcript: \(transcript.id) from checkpoint: \(transcript.lastProcessedLine)")
     let startTime = Date()
 
     // Verify file size before opening handle
     let fileSize = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 ?? 0
-    log.debug("[HOOVER-FILE-SIZE] File size: \(fileSize) bytes for transcript: \(transcript.id, privacy: .public)")
+    log.debug("[HOOVER-FILE-SIZE] File size: \(fileSize) bytes for transcript: \(transcript.id)")
 
     let handle = try FileHandle(forReadingFrom: fileURL)
     defer { try? handle.close() }
@@ -692,7 +692,7 @@ public final class HooverEngine {
     // Verify FileHandle can see the file content
     let endOffset = handle.seekToEndOfFile()
     handle.seek(toFileOffset: 0) // Reset to beginning
-    log.debug("[HOOVER-FILE-VERIFY] File handle opened, size: \(endOffset) bytes for transcript: \(transcript.id, privacy: .public)")
+    log.debug("[HOOVER-FILE-VERIFY] File handle opened, size: \(endOffset) bytes for transcript: \(transcript.id)")
 
     progress.didStartTranscript(name: fileURL.lastPathComponent, totalLines: transcript.lineCount)
 
@@ -837,9 +837,9 @@ public final class HooverEngine {
           if firstParseErrorReason == nil {
             firstParseErrorLine = lineNo
             firstParseErrorReason = error.localizedDescription
-            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) line=\(lineNo, privacy: .public) reason=\(error.localizedDescription, privacy: .public)")
+            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id) path=\(transcript.filePath) line=\(lineNo) reason=\(error.localizedDescription)")
           } else if !hasLoggedParseErrorOverflow && parseErrorCount == MonitorConfig.parseErrorLogLimit {
-            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) exceeding \(MonitorConfig.parseErrorLogLimit, privacy: .public) parse errors, suppressing additional logs")
+            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id) path=\(transcript.filePath) exceeding \(MonitorConfig.parseErrorLogLimit) parse errors, suppressing additional logs")
             hasLoggedParseErrorOverflow = true
           }
 
@@ -851,7 +851,7 @@ public final class HooverEngine {
           if !limitReached,
              parsedEntryCount == 0,
              parseErrorCount >= MonitorConfig.parseErrorAbortThreshold {
-            log.error("[HOOVER-PARSE-ABORT] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) aborting after \(parseErrorCount, privacy: .public) errors with no valid entries")
+            log.error("[HOOVER-PARSE-ABORT] transcript=\(transcript.id) path=\(transcript.filePath) aborting after \(parseErrorCount) errors with no valid entries")
             break outerLoop
           }
         }
@@ -874,7 +874,7 @@ public final class HooverEngine {
 
         if let maxEntries = limit.maxEntries, parsedEntryCount >= maxEntries {
           limitReached = true
-          log.info("[HOOVER-LIMIT] Reached ingest limit (\(maxEntries)) for transcript: \(transcript.id, privacy: .public)")
+          log.info("[HOOVER-LIMIT] Reached ingest limit (\(maxEntries)) for transcript: \(transcript.id)")
           break
         }
 
@@ -933,7 +933,7 @@ public final class HooverEngine {
       // READ MORE DATA - only after draining existing buffer
       let readStart = Date()
       guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
-        log.info("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public), outerLoops=\(outerLoopCount) for transcript: \(transcript.id, privacy: .public)")
+        log.info("[HOOVER-READ-EOF] Reached EOF at line \(lineNo), outerLoops=\(outerLoopCount) for transcript: \(transcript.id)")
         hitEOF = true
         break
       }
@@ -1054,7 +1054,7 @@ public final class HooverEngine {
     let lastErrorMessage = shouldMarkCorrupt ? firstParseErrorDescription : nil
 
     if shouldMarkCorrupt {
-      log.error("[HOOVER-CORRUPT] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) parse_errors=\(parseErrorCount, privacy: .public) reason=\(firstParseErrorDescription ?? "unknown", privacy: .public)")
+      log.error("[HOOVER-CORRUPT] transcript=\(transcript.id) path=\(transcript.filePath) parse_errors=\(parseErrorCount) reason=\(firstParseErrorDescription ?? "unknown")")
     }
 
     try updateCheckpoint(
@@ -1067,13 +1067,13 @@ public final class HooverEngine {
       lastError: lastErrorMessage
     )
 
-    log.info("[DB-UPDATE] transcript=\(transcript.id, privacy: .public) entries=\(parsedEntryCount, privacy: .public) state=\(ingestState, privacy: .public)")
+    log.info("[DB-UPDATE] transcript=\(transcript.id) entries=\(parsedEntryCount) state=\(ingestState)")
 
     // Verify checkpoint was updated correctly
     if let updatedTranscript = try? db.read({ db in try Transcript.fetchOne(db, key: transcript.id) }) {
-      log.debug("[HOOVER-CHECKPOINT-VERIFY] Checkpoint updated: \(transcript.lastProcessedLine, privacy: .public) → \(updatedTranscript.lastProcessedLine, privacy: .public)")
+      log.debug("[HOOVER-CHECKPOINT-VERIFY] Checkpoint updated: \(transcript.lastProcessedLine) → \(updatedTranscript.lastProcessedLine)")
       if updatedTranscript.lastProcessedLine != lineNo {
-        log.error("[HOOVER-CHECKPOINT-MISMATCH] ⚠️ Expected checkpoint \(lineNo, privacy: .public), but database has \(updatedTranscript.lastProcessedLine, privacy: .public)")
+        log.error("[HOOVER-CHECKPOINT-MISMATCH] ⚠️ Expected checkpoint \(lineNo), but database has \(updatedTranscript.lastProcessedLine)")
       }
     }
 
@@ -1090,7 +1090,7 @@ public final class HooverEngine {
 
     let linesPerSec = duration > 0 ? Int(Double(lineNo) / duration) : 0
     let newLines = lineNo - transcript.lastProcessedLine
-    log.info("[HOOVER-DONE] Hoovered transcript \(transcript.id, privacy: .public): \(newLines, privacy: .public) new lines (total: \(lineNo, privacy: .public)) in \(Int(duration * 1000), privacy: .public)ms (\(linesPerSec, privacy: .public)/s). ingest_state=\(ingestState, privacy: .public)")
+    log.info("[HOOVER-DONE] Hoovered transcript \(transcript.id): \(newLines) new lines (total: \(lineNo)) in \(Int(duration * 1000))ms (\(linesPerSec)/s). ingest_state=\(ingestState)")
 
     return HooverOutcome(
       processedLines: lineNo,
@@ -1160,9 +1160,9 @@ public final class HooverEngine {
           } else {
             // Entry silently ignored (likely duplicate ID from re-ingestion) - expected during database rebuilds
             log.debug("Entry silently ignored (duplicate constraint?)")
-            log.debug("   Entry ID: \(model.id, privacy: .public)")
-            log.debug("   Kind: \(model.kind, privacy: .public)")
-            log.debug("   Content preview: \(String(model.content.prefix(80)), privacy: .public)")
+            log.debug("   Entry ID: \(model.id)")
+            log.debug("   Kind: \(model.kind)")
+            log.debug("   Content preview: \(String(model.content.prefix(80)))")
           }
         } catch {
           // Log detailed FK error info
@@ -1264,7 +1264,7 @@ public final class HooverEngine {
 
         let deletedCount = db.changesCount
         if deletedCount > 0 {
-          log.debug("[QUEUE-HEURISTIC] Deleted \(deletedCount) synthetic queue entry (real message appeared) content_sha256=\(entry.contentSha256.prefix(8), privacy: .public)")
+          log.debug("[QUEUE-HEURISTIC] Deleted \(deletedCount) synthetic queue entry (real message appeared) content_sha256=\(entry.contentSha256.prefix(8))")
         }
       }
 
@@ -1335,7 +1335,7 @@ public final class HooverEngine {
       if !metadata.queueOperations.isEmpty {
         for op in metadata.queueOperations {
           guard !op.sessionId.isEmpty else {
-            log.warning("[QUEUE-OP] Skipping queue operation with empty sessionId for transcript \(op.transcriptId, privacy: .public)")
+            log.warning("[QUEUE-OP] Skipping queue operation with empty sessionId for transcript \(op.transcriptId)")
             continue
           }
 
@@ -1350,7 +1350,7 @@ public final class HooverEngine {
 
             let changes = db.changesCount
             let elapsed = Date().timeIntervalSince(op.timestamp)
-            log.info("[QUEUE-OP-CLEAR] \(op.kind.rawValue, privacy: .public) cleared \(changes, privacy: .public) entries after \(String(format: "%.1f", elapsed), privacy: .public)s transcript=\(op.transcriptId.prefix(8), privacy: .public)")
+            log.info("[QUEUE-OP-CLEAR] \(op.kind.rawValue) cleared \(changes) entries after \(String(format: "%.1f", elapsed))s transcript=\(op.transcriptId.prefix(8))")
 
           case .remove:
             // FIFO: clear oldest queued entry for this session
@@ -1368,7 +1368,7 @@ public final class HooverEngine {
 
             let changes = db.changesCount
             let elapsed = Date().timeIntervalSince(op.timestamp)
-            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes, privacy: .public) entries (FIFO) after \(String(format: "%.1f", elapsed), privacy: .public)s transcript=\(op.transcriptId.prefix(8), privacy: .public)")
+            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes) entries (FIFO) after \(String(format: "%.1f", elapsed))s transcript=\(op.transcriptId.prefix(8))")
           }
         }
 
