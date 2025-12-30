@@ -203,7 +203,7 @@ Background process that continuously watches conversation transcripts and uses A
 
 ## Cross-Platform Ingestion CLI (Linux/Windows)
 
-**Status:** In progress (Phases 1-2.5 complete, Phase 3 partial)
+**Status:** In progress (Phases 1-3 skeleton complete, entry parsing pending)
 **Priority:** P1
 
 - [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
@@ -218,35 +218,33 @@ Background process that continuously watches conversation transcripts and uses A
 - [x] Phase 2.5c: Linux build succeeds in Docker
 - [x] Phase 2.5d: CLI stub builds on Linux
 - [x] Phase 2.5e: Basic CLI commands (schema, discover) working
-- [x] Phase 3 partial: CLI stub with basic commands only
+- [x] Phase 3 skeleton: Ingest creates project/transcript records (entry parsing pending)
+- [x] FTS5 preflight check in DatabaseOpener (fail-fast on missing FTS5)
+- [x] Verify command: WAL mode, FTS5, integrity checks all working
 
 **P1 - Remaining (must complete):**
-- [ ] Full `ingest` command with TranscriptOrchestrator + HooverEngine wiring
-- [ ] FTS5 preflight check in DatabaseOpener (fail-fast on missing FTS5)
-- [ ] WAL mode check in `verify` command
-- [ ] FTS5 availability check in `verify` command
-- [ ] Quick integrity check in `verify` command
+- [ ] Wire HooverEngine for transcript entry parsing (Phase 3 completion)
 - [ ] `ingestion_runs` metadata table migration (Phase 4)
 - [ ] GitHub Actions Linux release workflow (Phase 7)
 - [ ] Change detection script for cross-platform releases (Phase 7)
 - [ ] Pre-commit hook for migration warnings (Phase 7)
 
 **P2 - Should complete:**
-- [ ] `--full-rebuild` CLI option for ingest command
-- [ ] `--since <timestamp>` CLI option for ingest command
+- [ ] Wire `--input` option to LightweightDiscoveryService (currently fails fast)
+- [ ] Transaction batching per-project for performance at scale (10-100k transcripts)
+- [ ] `--since <timestamp>` CLI option for incremental ingestion
 - [ ] `--workers N` CLI option for parallel ingestion
-- [ ] JSONL event output via CLIEventSink
 - [ ] Multi-architecture Linux builds (x86_64 + arm64)
 - [ ] Golden fixture tests (macOS vs Linux comparison)
 
 **Remaining phases:**
-- Phase 3 (partial): Full ingest command wiring
-- Phase 4: Enhanced verify command + GRDB mitigations
+- Phase 3 (entry parsing): Wire HooverEngine for transcript_entries
+- Phase 4: ingestion_runs table + run tracking
 - Phase 5: Full Linux validation with fixtures
 - Phase 6: Tests and documentation
 - Phase 7: Release automation and change detection
 
-**Plan:** `/tmp/cross-platform-ingestion-plan.md`
+**Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
 ## Periodic Ingestion Check for Resilience
