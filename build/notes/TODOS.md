@@ -203,7 +203,7 @@ Background process that continuously watches conversation transcripts and uses A
 
 ## Cross-Platform Ingestion CLI (Linux/Windows)
 
-**Status:** In progress (Phases 1-3 skeleton complete, entry parsing pending)
+**Status:** In progress (skeleton complete, entry parsing pending)
 **Priority:** P1
 
 - [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
@@ -221,11 +221,12 @@ Background process that continuously watches conversation transcripts and uses A
 - [x] Phase 3 skeleton: Ingest creates project/transcript records (entry parsing pending)
 - [x] FTS5 preflight check in DatabaseOpener (fail-fast on missing FTS5)
 - [x] Verify command: WAL mode, FTS5, integrity checks all working
+- [x] Phase 4: `ingestion_runs` metadata table migration (v33)
+- [x] Phase 7: GitHub Actions Linux build workflow (.github/workflows/linux-build.yml)
+- [x] Multi-architecture Linux builds (x86_64 + arm64 via workflow_dispatch)
 
 **P1 - Remaining (must complete):**
-- [ ] Wire HooverEngine for transcript entry parsing (Phase 3 completion)
-- [ ] `ingestion_runs` metadata table migration (Phase 4)
-- [ ] GitHub Actions Linux release workflow (Phase 7)
+- [ ] Wire HooverEngine for transcript entry parsing (Phase 3 completion) - complex, requires OSLog updates in Repositories.swift
 - [ ] Change detection script for cross-platform releases (Phase 7)
 - [ ] Pre-commit hook for migration warnings (Phase 7)
 
@@ -234,15 +235,12 @@ Background process that continuously watches conversation transcripts and uses A
 - [ ] Transaction batching per-project for performance at scale (10-100k transcripts)
 - [ ] `--since <timestamp>` CLI option for incremental ingestion
 - [ ] `--workers N` CLI option for parallel ingestion
-- [ ] Multi-architecture Linux builds (x86_64 + arm64)
 - [ ] Golden fixture tests (macOS vs Linux comparison)
 
 **Remaining phases:**
-- Phase 3 (entry parsing): Wire HooverEngine for transcript_entries
-- Phase 4: ingestion_runs table + run tracking
+- Phase 3 (entry parsing): Wire HooverEngine for transcript_entries (complex - 4000+ lines need OSLog updates)
 - Phase 5: Full Linux validation with fixtures
 - Phase 6: Tests and documentation
-- Phase 7: Release automation and change detection
 
 **Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
