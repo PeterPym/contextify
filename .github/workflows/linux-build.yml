@@ -104,7 +104,40 @@ jobs:
           .build/debug/contextify-ingest discover --help
           .build/debug/contextify-ingest ingest --help
           .build/debug/contextify-ingest verify --help
+          .build/debug/contextify-ingest --version
           echo "CLI verification passed!"
+
+      - name: E2E ingest test
+        run: |
+          # Create test fixture directory
+          mkdir -p ~/.claude/projects/ci-test-project
+
+          # Create a minimal Claude Code transcript
+          cat > ~/.claude/projects/ci-test-project/ci-test-session.jsonl << 'EOF'
+          {"type":"queue-operation","operation":"dequeue","timestamp":"2025-12-01T00:00:00.000Z","sessionId":"ci-test-session"}
+          {"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","type":"user","message":{"role":"user","content":"CI test message for E2E verification"},"uuid":"ci-user-msg","timestamp":"2025-12-01T00:00:01.000Z"}
+          {"parentUuid":"ci-user-msg","isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","message":{"model":"claude-test","id":"msg_ci","type":"message","role":"assistant","content":[{"type":"text","text":"This is a CI test response for E2E verification."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":15}},"requestId":"req_ci","type":"assistant","uuid":"ci-assistant-msg","timestamp":"2025-12-01T00:00:02.000Z"}
+          EOF
+
+          # Run ingest
+          DB_PATH="/tmp/ci-e2e-test.db"
+          .build/debug/contextify-ingest ingest --db "$DB_PATH" --format human
+
+          # Verify database contents
+          PROJECT_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM projects;")
+          TRANSCRIPT_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcripts;")
+          ENTRY_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcript_entries;")
+
+          echo "E2E Results: $PROJECT_COUNT projects, $TRANSCRIPT_COUNT transcripts, $ENTRY_COUNT entries"
+
+          # Assert expected counts
+          if [ "$PROJECT_COUNT" -ge 1 ] && [ "$TRANSCRIPT_COUNT" -ge 1 ] && [ "$ENTRY_COUNT" -ge 2 ]; then
+            echo "E2E test PASSED!"
+          else
+            echo "E2E test FAILED!"
+            echo "Expected: >= 1 project, >= 1 transcript, >= 2 entries"
+            exit 1
+          fi
 
       - name: Build ContextifyIngestionCore library
         run: |
