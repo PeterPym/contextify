@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v32 (smart lazy watchers v2 baselines + activity)
+/// Current version: v33 (ingestion_runs table for CLI debugging/resumption)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 32
+  public static let version = 33
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -929,6 +929,41 @@ public enum DatabaseSchema {
       """)
 
       logger.info("[MIGRATION-v32] Migration complete")
+    }
+
+    // v33: ingestion_runs table for CLI debugging and resumption
+    migrator.registerMigration("v33_ingestion_runs") { db in
+      logger.info("[MIGRATION-v33] Creating ingestion_runs table")
+
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS ingestion_runs (
+          id TEXT PRIMARY KEY,
+          started_at INTEGER NOT NULL,
+          completed_at INTEGER,
+          transcripts_processed INTEGER NOT NULL DEFAULT 0,
+          entries_inserted INTEGER NOT NULL DEFAULT 0,
+          errors_encountered INTEGER NOT NULL DEFAULT 0,
+          duration_seconds REAL,
+          status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed')),
+          cli_version TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      """)
+
+      // Index for finding recent/active runs
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status
+        ON ingestion_runs(status, started_at DESC)
+      """)
+
+      // Index for time-based queries (cleanup, reporting)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_ingestion_runs_started_at
+        ON ingestion_runs(started_at DESC)
+      """)
+
+      logger.info("[MIGRATION-v33] ingestion_runs table created successfully")
     }
 
     return migrator
