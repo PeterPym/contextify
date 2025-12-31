@@ -36,7 +36,8 @@ public enum WorktreeColorUtility {
 
   /// Hex color codes corresponding to accentColors (for database storage).
   /// Used when assigning colors to manual groups.
-  public static let accentColorHexCodes: [String] = [
+  /// Internal visibility - only used by pickAvailableColor().
+  static let accentColorHexCodes: [String] = [
     "#4A7BA7",  // primary
     "#51A86B",  // success
     "#D4A84E",  // warning
@@ -93,17 +94,53 @@ public enum WorktreeColorUtility {
   /// If all colors are in use, picks randomly from the palette.
   ///
   /// - Parameter usedColorHexes: Set of hex codes already used by existing groups
-  /// - Returns: A hex color code from the palette
+  /// - Returns: A hex color code from the palette (with # prefix)
   public static func pickAvailableColor(excluding usedColorHexes: Set<String>) -> String {
-    // Normalize to uppercase for comparison
-    let normalizedUsed = Set(usedColorHexes.map { $0.uppercased() })
+    // Canonicalize used colors for robust comparison
+    let normalizedUsed = Set(usedColorHexes.compactMap { canonicalizeHex($0) })
+
+    // Canonicalize palette colors (they're already canonical, but be consistent)
+    let canonicalPalette = accentColorHexCodes.compactMap { canonicalizeHex($0) }
 
     // Find colors not in use
-    let available = accentColorHexCodes.filter { !normalizedUsed.contains($0.uppercased()) }
+    let available = zip(accentColorHexCodes, canonicalPalette)
+      .filter { !normalizedUsed.contains($0.1) }
+      .map { $0.0 }
 
     // Pick randomly from available, or from full palette if all used
     let palette = available.isEmpty ? accentColorHexCodes : available
     return palette.randomElement() ?? accentColorHexCodes[0]
+  }
+
+  // MARK: - Private Helpers
+
+  /// Canonicalizes a hex color string for comparison.
+  /// - Trims whitespace
+  /// - Strips leading # or 0x
+  /// - Uppercases
+  /// - Truncates to 6 chars (drops alpha if 8 chars)
+  /// - Returns nil if result is not exactly 6 hex chars
+  private static func canonicalizeHex(_ hex: String) -> String? {
+    var s = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+
+    // Strip common prefixes
+    if s.hasPrefix("#") {
+      s.removeFirst()
+    } else if s.hasPrefix("0X") {
+      s.removeFirst(2)
+    }
+
+    // Handle 8-char RRGGBBAA by dropping alpha
+    if s.count == 8 {
+      s = String(s.prefix(6))
+    }
+
+    // Validate: must be exactly 6 hex characters
+    guard s.count == 6, s.allSatisfy({ $0.isHexDigit }) else {
+      return nil
+    }
+
+    return s
   }
 }
 
