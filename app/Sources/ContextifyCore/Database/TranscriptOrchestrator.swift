@@ -3039,10 +3039,17 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
 
       // Add all sibling projects to the group (if not already members)
-      for (order, project) in siblingProjects.enumerated() {
+      // P0.1 fix: For existing groups, compute nextOrder from max existing group_display_order
+      // to avoid collisions with existing members
+      let existingMembers = try projectRepo.list().filter { $0.groupId == group.id }
+      let maxExistingOrder = existingMembers.compactMap(\.groupDisplayOrder).max() ?? -1
+      var nextOrder = maxExistingOrder + 1
+
+      for project in siblingProjects {
         if project.groupId != group.id {
-          try projectRepo.setGroupMembership(id: project.id, groupId: group.id, groupDisplayOrder: order)
-          log.debug("[WORKTREE-AUTOGROUP] Added project \(project.id, privacy: .public) to group \(group.id, privacy: .public)")
+          try projectRepo.setGroupMembership(id: project.id, groupId: group.id, groupDisplayOrder: nextOrder)
+          nextOrder += 1
+          log.debug("[WORKTREE-AUTOGROUP] Added project \(project.id, privacy: .public) to group \(group.id, privacy: .public) at order \(nextOrder - 1, privacy: .public)")
         }
       }
     }

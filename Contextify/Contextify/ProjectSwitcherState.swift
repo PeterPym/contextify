@@ -53,10 +53,11 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
 
 /// UI representation of a tab group (v33)
 /// Groups contain one or more projects that are displayed together in the tab bar
+/// P1.3 fix: Store colorHex instead of Color for Swift 6 Sendable compatibility
 public struct TabGroupInfo: Identifiable, Sendable {
   public let id: String  // Group ID (or synthetic ID for solo tabs)
   public let name: String?  // Display name (worktree groups default to repo name)
-  public let color: Color  // Group color for visual distinction (SwiftUI Color for direct use in views)
+  public let colorHex: String?  // User override color hex (e.g., "#4A7BA7"), nil = compute from gitRoot
   public let isWorktreeGroup: Bool  // true if auto-created for git worktrees
   public let gitRoot: URL?  // For worktree groups: the git repository root
   public var projects: [ProjectInfo]  // Projects in this group, ordered by groupDisplayOrder
@@ -66,17 +67,29 @@ public struct TabGroupInfo: Identifiable, Sendable {
     projects.count == 1 && projects.first?.groupId == nil
   }
 
+  /// Computed color for UI rendering (P1.3 fix: derive at render time, not storage)
+  /// Priority: colorHex override > gitRoot hash > clear
+  public var color: Color {
+    if let hex = colorHex, let parsed = Color.fromHex(hex) {
+      return parsed
+    }
+    if let gitRoot {
+      return WorktreeColorUtility.color(for: gitRoot)
+    }
+    return .clear
+  }
+
   public init(
     id: String,
     name: String?,
-    color: Color,
+    colorHex: String?,
     isWorktreeGroup: Bool,
     gitRoot: URL? = nil,
     projects: [ProjectInfo]
   ) {
     self.id = id
     self.name = name
-    self.color = color
+    self.colorHex = colorHex
     self.isWorktreeGroup = isWorktreeGroup
     self.gitRoot = gitRoot
     self.projects = projects
@@ -84,11 +97,11 @@ public struct TabGroupInfo: Identifiable, Sendable {
 
   /// Create a synthetic group for a solo (ungrouped) tab
   /// Note: gitRoot is nil for solo tabs - they don't get worktree coloring
-  public static func solo(_ project: ProjectInfo, color: Color) -> TabGroupInfo {
+  public static func solo(_ project: ProjectInfo) -> TabGroupInfo {
     TabGroupInfo(
-      id: "solo-\(project.id)",
+      id: "solo:\(project.id)",  // P2 fix: Use colon delimiter to avoid ID collisions
       name: nil,
-      color: color,
+      colorHex: nil,
       isWorktreeGroup: false,
       gitRoot: nil,  // Solo tabs don't participate in worktree grouping
       projects: [project]
@@ -166,6 +179,11 @@ public final class ProjectSwitcherState {
 
   // Generation token for activation ordering (P0.1 fix: prevents stale activations from racing)
   @ObservationIgnored private var activationGeneration: UInt64 = 0
+
+  // P0.2 fix: Mutation epoch to prevent stale refresh wins
+  // Incremented on each mutation, captured by persistence tasks
+  // Refresh only applies if epoch matches (latest wins)
+  @ObservationIgnored private var mutationEpoch: UInt64 = 0
 
   // Global refresh debounce (prevents spam from system events during discovery)
   @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
@@ -669,7 +687,7 @@ public final class ProjectSwitcherState {
   private func buildTabGroups(from projects: [ProjectInfo]) -> [TabGroupInfo] {
     guard let orchestrator = ensureOrchestrator() else {
       // Fallback: all solo groups
-      return projects.map { TabGroupInfo.solo($0, color: .clear) }
+      return projects.map { TabGroupInfo.solo($0) }
     }
 
     // 1. Separate grouped and ungrouped projects
@@ -694,7 +712,7 @@ public final class ProjectSwitcherState {
     } catch {
       log.error("[SWITCHER-STATE] Failed to fetch tab groups: \(error, privacy: .public)")
       // Fallback: all solo groups
-      return projects.map { TabGroupInfo.solo($0, color: .clear) }
+      return projects.map { TabGroupInfo.solo($0) }
     }
 
     // Note: dbGroups already contains all the metadata we need, no lookup needed
@@ -708,20 +726,12 @@ public final class ProjectSwitcherState {
       // Sort projects by their groupDisplayOrder
       let sortedProjects = groupProjects.sorted { ($0.groupDisplayOrder ?? 0) < ($1.groupDisplayOrder ?? 0) }
 
-      // Compute color from git root hash or use override
-      let color: Color
-      if let colorHex = dbGroup.colorHex, let parsedColor = Color.fromHex(colorHex) {
-        color = parsedColor
-      } else if let gitRoot = dbGroup.gitRoot {
-        color = WorktreeColorUtility.color(for: URL(fileURLWithPath: gitRoot))
-      } else {
-        color = .clear
-      }
-
+      // P1.3 fix: Pass colorHex instead of computed Color
+      // Color is now derived at render time via computed property
       let groupInfo = TabGroupInfo(
         id: dbGroup.id,
         name: dbGroup.name,
-        color: color,
+        colorHex: dbGroup.colorHex,  // Pass through DB value, compute color lazily
         isWorktreeGroup: dbGroup.isWorktreeGroup,
         gitRoot: dbGroup.gitRoot.map { URL(fileURLWithPath: $0) },
         projects: sortedProjects
@@ -731,7 +741,7 @@ public final class ProjectSwitcherState {
 
     // 4. Add solo projects (maintain their original order from projects array)
     for project in soloProjects {
-      result.append(TabGroupInfo.solo(project, color: .clear))
+      result.append(TabGroupInfo.solo(project))
     }
 
     return result
@@ -1132,6 +1142,10 @@ public final class ProjectSwitcherState {
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = ensureOrchestrator() else { return }
 
+    // P0.2 fix: Increment mutation epoch before optimistic update
+    mutationEpoch += 1
+    let capturedEpoch = mutationEpoch
+
     // OPTIMIZATION: Update UI immediately without waiting for DB/FS operations
     // Reorder visible tab projects first, then append any remaining (orphans)
     let reorderedTabs = orderedProjectIds.compactMap { id in
@@ -1170,7 +1184,15 @@ public final class ProjectSwitcherState {
         await MainActor.run {
           log.error("Failed to persist reorder: \(error.localizedDescription)")
         }
-        // Revert to DB state on error
+        // P0.2 fix: Only revert if no newer operation has started
+        // If epoch changed, a newer operation has superseded us - skip stale refresh
+        let currentEpoch = await MainActor.run { self.mutationEpoch }
+        guard currentEpoch == capturedEpoch else {
+          await MainActor.run {
+            log.info("[SWITCHER-ORDER-PERSIST] Skipping stale refresh (epoch \(capturedEpoch) != \(currentEpoch))")
+          }
+          return
+        }
         await self.refreshProjects()
       }
     }
