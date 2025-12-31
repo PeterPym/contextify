@@ -523,30 +523,38 @@ struct ProjectTabView: View {
   @State private var showColorPicker = false
   @State private var customColor = Color.blue
 
-  // Hover tooltip state
-  @State private var isHovering = false
-  @State private var showTooltip = false
-  @State private var hoverToken = 0  // Incremented on each hover to prevent stale timer callbacks
-
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
+  /// The group this tab belongs to (if any)
+  private var tabGroup: TabGroupInfo? {
+    guard let groupId = project.groupId else { return nil }
+    return state.tabGroups.first { $0.id == groupId }
+  }
+
+  /// Display name for the group (used in tooltip and context menu header)
+  private var groupDisplayName: String? {
+    guard let group = tabGroup, !group.isSoloTab else { return nil }
+    let trimmed = group.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return (trimmed?.isEmpty ?? true) ? "Unnamed Group" : trimmed
+  }
+
   /// Background color for the tab.
-  /// Uses worktree color tint only for grouped tabs (v33), solo tabs use default.
+  /// Uses group color (which respects colorHex override) for grouped tabs, default for solo.
   private var tabBackgroundColor: Color {
-    // Only use worktree colors for grouped tabs
-    if project.groupId != nil, let gitRoot = project.gitRoot {
-      return WorktreeColorUtility.tintColor(for: gitRoot)
+    // Use group's computed color (respects colorHex override > gitRoot hash)
+    if let group = tabGroup, !group.isSoloTab {
+      return group.color.opacity(0.15)
     }
     // Default for solo tabs and non-git projects
     return isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear
   }
 
   /// Border color for the tab.
-  /// Uses worktree color when active only for grouped tabs (v33).
+  /// Uses group color when active for grouped tabs.
   private var tabBorderColor: Color {
-    // Only use worktree colors for grouped tabs
-    if isActive, project.groupId != nil, let gitRoot = project.gitRoot {
-      return WorktreeColorUtility.borderColor(for: gitRoot)
+    // Use group's computed color (respects colorHex override)
+    if isActive, let group = tabGroup, !group.isSoloTab {
+      return group.color
     }
     return isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
   }
@@ -563,21 +571,6 @@ struct ProjectTabView: View {
       return "new activity"
     }
     return "no unread"
-  }
-
-  /// Tooltip info for grouped tabs showing group name and color
-  /// Returns nil for solo tabs
-  private var groupTooltipInfo: (text: String, color: Color)? {
-    guard let groupId = project.groupId,
-          let group = state.tabGroups.first(where: { $0.id == groupId }),
-          !group.isSoloTab else {
-      return nil
-    }
-    // P2.1 fix: treat whitespace-only names as unnamed
-    let trimmedName = group.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-    // Show group name directly without "Group: " prefix
-    let text = (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
-    return (text: text, color: group.color)
   }
 
   var body: some View {
@@ -636,43 +629,20 @@ struct ProjectTabView: View {
       )
     }
     .buttonStyle(ScrollViewButtonStyle())
-    // Custom hover tooltip for group names (faster than system tooltip)
-    .onHover { hovering in
-      isHovering = hovering
-      if hovering, groupTooltipInfo != nil {
-        // Increment token to invalidate any pending timer from previous hover
-        hoverToken += 1
-        let capturedToken = hoverToken
-        // Show tooltip after 350ms delay (faster than system ~1s)
-        // Token pattern prevents stale callbacks from showing tooltip after rapid hover/unhover
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [self] in
-          // Re-check all conditions: still hovering, same hover session, group still eligible
-          guard isHovering, hoverToken == capturedToken, groupTooltipInfo != nil else { return }
-          showTooltip = true
-        }
-      } else {
-        showTooltip = false
-      }
-    }
-    .overlay(alignment: .top) {
-      if showTooltip, let info = groupTooltipInfo {
-        GroupNameTooltipOverlay(text: info.text, groupColor: info.color)
-          .offset(y: -28)
-          .transition(.opacity.combined(with: .scale(scale: 0.95)))
-          .animation(.easeOut(duration: 0.15), value: showTooltip)
-          .allowsHitTesting(false)
-      }
-    }
-    // Reset tooltip when group membership changes while hovering
-    // Also invalidate pending timer by bumping token
-    .onChange(of: project.groupId) { _, _ in
-      hoverToken += 1  // Invalidate any pending asyncAfter
-      showTooltip = false
-    }
+    // Simple tooltip showing group name for grouped tabs
+    .help(groupDisplayName ?? "")
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
     .contextMenu {
+      // Group name header (non-selectable) for grouped tabs
+      if let groupName = groupDisplayName {
+        Text("Group: \(groupName)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        Divider()
+      }
+
       // Movement - context-aware based on grouping
       let projectIndex = state.tabProjects.firstIndex(where: { $0.id == project.id })
       let isGrouped = project.groupId != nil
@@ -979,34 +949,6 @@ private struct TabGroupView: View {
       RoundedRectangle(cornerRadius: 8)
         .fill(groupBackgroundColor)
     )
-  }
-}
-
-// MARK: - Group Name Tooltip Overlay
-
-/// Custom styled hover tooltip for group names
-/// Shows group name with faster appearance than system tooltip (~350ms vs ~1s)
-/// Styled with semibold text, dark background, and subtle shadow
-private struct GroupNameTooltipOverlay: View {
-  let text: String
-  let groupColor: Color
-
-  var body: some View {
-    Text(text)
-      .font(.caption)
-      .fontWeight(.semibold)
-      .foregroundStyle(.white)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .background(
-        RoundedRectangle(cornerRadius: 4)
-          .fill(Color(white: 0.15))
-          .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 4)
-          .strokeBorder(groupColor.opacity(0.5), lineWidth: 1)
-      )
   }
 }
 
