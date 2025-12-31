@@ -9,8 +9,8 @@ on:
       - 'Package.swift'
       - 'Package.resolved'
       - '.github/workflows/linux-build.yml'
-    paths-ignore:
-      - '**/*.md'
+      # Exclude markdown files from triggering builds
+      - '!**/*.md'
   pull_request:
     branches: [ main ]
     paths:
@@ -19,8 +19,8 @@ on:
       - 'Package.swift'
       - 'Package.resolved'
       - '.github/workflows/linux-build.yml'
-    paths-ignore:
-      - '**/*.md'
+      # Exclude markdown files from triggering builds
+      - '!**/*.md'
   workflow_dispatch:
     inputs:
       architecture:
