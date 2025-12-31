@@ -654,13 +654,29 @@ struct ProjectTabView: View {
         let canMoveLeftInGroup = localIndex.map { $0 > 0 } ?? false
         let canMoveRightInGroup = localIndex.map { $0 < (group?.projects.count ?? 1) - 1 } ?? false
 
-        Button("Move Left in Group") {
+        Button {
           Task { await state.moveTabLeftInGroup(projectId: project.id) }
+        } label: {
+          HStack {
+            Text("Move Left in Group")
+            Spacer()
+            Text("\u{2318}\u{21E7}\u{2325}[")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
         .disabled(!canMoveLeftInGroup)
 
-        Button("Move Right in Group") {
+        Button {
           Task { await state.moveTabRightInGroup(projectId: project.id) }
+        } label: {
+          HStack {
+            Text("Move Right in Group")
+            Spacer()
+            Text("\u{2318}\u{21E7}\u{2325}]")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
         .disabled(!canMoveRightInGroup)
 
@@ -671,13 +687,29 @@ struct ProjectTabView: View {
         let canMoveGroupLeft = groupIndex.map { $0 > 0 } ?? false
         let canMoveGroupRight = groupIndex.map { $0 < state.tabGroups.count - 1 } ?? false
 
-        Button("Move Group Left") {
+        Button {
           Task { await state.moveGroupLeft(groupId: groupId) }
+        } label: {
+          HStack {
+            Text("Move Group Left")
+            Spacer()
+            Text("\u{2318}\u{21E7}\u{2303}[")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
         .disabled(!canMoveGroupLeft)
 
-        Button("Move Group Right") {
+        Button {
           Task { await state.moveGroupRight(groupId: groupId) }
+        } label: {
+          HStack {
+            Text("Move Group Right")
+            Spacer()
+            Text("\u{2318}\u{21E7}\u{2303}]")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
         .disabled(!canMoveGroupRight)
 
@@ -691,6 +723,15 @@ struct ProjectTabView: View {
         }
 
         Menu("Change Group Color...") {
+          // Automatic option - reset to auto-computed color
+          Button {
+            Task { await state.setGroupColor(groupId: groupId, hexColor: nil) }
+          } label: {
+            Label("Automatic", systemImage: "wand.and.stars")
+          }
+
+          Divider()
+
           // Palette colors
           ForEach(WorktreeColorUtility.namedPalette) { namedColor in
             Button {
