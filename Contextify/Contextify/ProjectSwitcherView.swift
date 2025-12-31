@@ -578,8 +578,10 @@ struct ProjectTabView: View {
       isHovering = hovering
       if hovering, groupTooltipInfo != nil {
         // Show tooltip after 350ms delay (faster than system ~1s)
+        // P1 fix: Re-check groupTooltipInfo in delayed closure to prevent
+        // "armed state" bug where showTooltip stays true after group changes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-          if isHovering { showTooltip = true }
+          if isHovering, groupTooltipInfo != nil { showTooltip = true }
         }
       } else {
         showTooltip = false
