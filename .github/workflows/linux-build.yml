@@ -111,13 +111,10 @@ jobs:
           FIXTURE_DIR="$HOME/.claude/projects/-ci-test-project"
           mkdir -p "$FIXTURE_DIR"
 
-          # Create a minimal Claude Code transcript
-          # Note: no leading whitespace in JSONL - each line must be valid JSON
-          cat > "$FIXTURE_DIR/ci-test-session.jsonl" << 'EOF'
-{"type":"queue-operation","operation":"dequeue","timestamp":"2025-12-01T00:00:00.000Z","sessionId":"ci-test-session"}
-{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","type":"user","message":{"role":"user","content":"CI test message for E2E verification"},"uuid":"ci-user-msg","timestamp":"2025-12-01T00:00:01.000Z"}
-{"parentUuid":"ci-user-msg","isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","message":{"model":"claude-test","id":"msg_ci","type":"message","role":"assistant","content":[{"type":"text","text":"This is a CI test response for E2E verification."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":15}},"requestId":"req_ci","type":"assistant","uuid":"ci-assistant-msg","timestamp":"2025-12-01T00:00:02.000Z"}
-EOF
+          # Create a minimal Claude Code transcript using base64 to avoid YAML parsing issues
+          # The JSONL contains colons which confuse GitHub Actions' YAML parser
+          FIXTURE_B64="eyJ0eXBlIjoicXVldWUtb3BlcmF0aW9uIiwib3BlcmF0aW9uIjoiZGVxdWV1ZSIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDAuMDAwWiIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiJ9CnsicGFyZW50VXVpZCI6bnVsbCwiaXNTaWRlY2hhaW4iOmZhbHNlLCJ1c2VyVHlwZSI6ImV4dGVybmFsIiwiY3dkIjoiL2NpL3Rlc3QvcHJvamVjdCIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiIsInZlcnNpb24iOiIyLjAuMCIsImdpdEJyYW5jaCI6Im1haW4iLCJ0eXBlIjoidXNlciIsIm1lc3NhZ2UiOnsicm9sZSI6InVzZXIiLCJjb250ZW50IjoiQ0kgdGVzdCBtZXNzYWdlIGZvciBFMkUgdmVyaWZpY2F0aW9uIn0sInV1aWQiOiJjaS11c2VyLW1zZyIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDEuMDAwWiJ9CnsicGFyZW50VXVpZCI6ImNpLXVzZXItbXNnIiwiaXNTaWRlY2hhaW4iOmZhbHNlLCJ1c2VyVHlwZSI6ImV4dGVybmFsIiwiY3dkIjoiL2NpL3Rlc3QvcHJvamVjdCIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiIsInZlcnNpb24iOiIyLjAuMCIsImdpdEJyYW5jaCI6Im1haW4iLCJtZXNzYWdlIjp7Im1vZGVsIjoiY2xhdWRlLXRlc3QiLCJpZCI6Im1zZ19jaSIsInR5cGUiOiJtZXNzYWdlIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IlRoaXMgaXMgYSBDSSB0ZXN0IHJlc3BvbnNlIGZvciBFMkUgdmVyaWZpY2F0aW9uLiJ9XSwic3RvcF9yZWFzb24iOiJlbmRfdHVybiIsInVzYWdlIjp7ImlucHV0X3Rva2VucyI6MTAsIm91dHB1dF90b2tlbnMiOjE1fX0sInJlcXVlc3RJZCI6InJlcV9jaSIsInR5cGUiOiJhc3Npc3RhbnQiLCJ1dWlkIjoiY2ktYXNzaXN0YW50LW1zZyIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDIuMDAwWiJ9Cg=="
+          echo "$FIXTURE_B64" | base64 -d > "$FIXTURE_DIR/ci-test-session.jsonl"
 
           # Run ingest with explicit input path (bypasses discovery which expects full path structure)
           DB_PATH="/tmp/ci-e2e-test.db"
