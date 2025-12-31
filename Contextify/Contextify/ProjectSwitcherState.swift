@@ -1011,10 +1011,17 @@ public final class ProjectSwitcherState {
     guard let orchestrator = ensureOrchestrator() else { return nil }
 
     do {
+      // Collect colors already used by existing groups
+      let existingGroups = try orchestrator.listTabGroups()
+      let usedColors = Set(existingGroups.compactMap { $0.colorHex })
+
+      // Pick an available color from the palette
+      let colorHex = WorktreeColorUtility.pickAvailableColor(excluding: usedColors)
+
       // Create manual group (not a worktree group)
       let group = try orchestrator.createTabGroup(
         name: name,
-        colorHex: nil,  // Auto-assigned
+        colorHex: colorHex,  // Assign color from palette
         gitRoot: nil,   // Manual groups don't have git root
         isWorktreeGroup: false
       )

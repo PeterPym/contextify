@@ -34,6 +34,21 @@ public enum WorktreeColorUtility {
     Color(.sRGB, red: 0.353, green: 0.608, blue: 0.667),  // #5A9BAA teal (derived)
   ]
 
+  /// Hex color codes corresponding to accentColors (for database storage).
+  /// Used when assigning colors to manual groups.
+  public static let accentColorHexCodes: [String] = [
+    "#4A7BA7",  // primary
+    "#51A86B",  // success
+    "#D4A84E",  // warning
+    "#C74E4E",  // error
+    "#7C68A8",  // accent
+    "#F9B233",  // brand-yellow
+    "#4AC4E0",  // brand-cyan
+    "#8B5CF6",  // brand-purple
+    "#9B8B7E",  // secondary
+    "#5A9BAA",  // teal
+  ]
+
   // MARK: - Public API
 
   /// Computes a consistent color for a git root path.
@@ -71,6 +86,24 @@ public enum WorktreeColorUtility {
   /// - Returns: A semi-transparent color suitable for borders
   public static func borderColor(for gitRoot: URL) -> Color {
     color(for: gitRoot).opacity(0.45)
+  }
+
+  /// Picks an available color from the palette for a new manual group.
+  /// Excludes colors already in use by existing groups.
+  /// If all colors are in use, picks randomly from the palette.
+  ///
+  /// - Parameter usedColorHexes: Set of hex codes already used by existing groups
+  /// - Returns: A hex color code from the palette
+  public static func pickAvailableColor(excluding usedColorHexes: Set<String>) -> String {
+    // Normalize to uppercase for comparison
+    let normalizedUsed = Set(usedColorHexes.map { $0.uppercased() })
+
+    // Find colors not in use
+    let available = accentColorHexCodes.filter { !normalizedUsed.contains($0.uppercased()) }
+
+    // Pick randomly from available, or from full palette if all used
+    let palette = available.isEmpty ? accentColorHexCodes : available
+    return palette.randomElement() ?? accentColorHexCodes[0]
   }
 }
 
