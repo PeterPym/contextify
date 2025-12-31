@@ -602,7 +602,9 @@ struct ProjectTabView: View {
       }
     }
     // Reset tooltip when group membership changes while hovering
+    // Also invalidate pending timer by bumping token
     .onChange(of: project.groupId) { _, _ in
+      hoverToken += 1  // Invalidate any pending asyncAfter
       showTooltip = false
     }
     .opacity(isDragging ? 0.0 : 1.0)
