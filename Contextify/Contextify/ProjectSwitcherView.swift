@@ -464,6 +464,7 @@ struct ProjectTabView: View {
   // Hover tooltip state
   @State private var isHovering = false
   @State private var showTooltip = false
+  @State private var hoverToken = 0  // Incremented on each hover to prevent stale timer callbacks
 
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
@@ -577,11 +578,15 @@ struct ProjectTabView: View {
     .onHover { hovering in
       isHovering = hovering
       if hovering, groupTooltipInfo != nil {
+        // Increment token to invalidate any pending timer from previous hover
+        hoverToken += 1
+        let capturedToken = hoverToken
         // Show tooltip after 350ms delay (faster than system ~1s)
-        // P1 fix: Re-check groupTooltipInfo in delayed closure to prevent
-        // "armed state" bug where showTooltip stays true after group changes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-          if isHovering, groupTooltipInfo != nil { showTooltip = true }
+        // Token pattern prevents stale callbacks from showing tooltip after rapid hover/unhover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [self] in
+          // Re-check all conditions: still hovering, same hover session, group still eligible
+          guard isHovering, hoverToken == capturedToken, groupTooltipInfo != nil else { return }
+          showTooltip = true
         }
       } else {
         showTooltip = false
@@ -595,6 +600,10 @@ struct ProjectTabView: View {
           .animation(.easeOut(duration: 0.15), value: showTooltip)
           .allowsHitTesting(false)
       }
+    }
+    // Reset tooltip when group membership changes while hovering
+    .onChange(of: project.groupId) { _, _ in
+      showTooltip = false
     }
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
