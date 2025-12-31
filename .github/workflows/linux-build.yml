@@ -109,19 +109,22 @@ jobs:
 
       - name: E2E ingest test
         run: |
-          # Create test fixture directory
-          mkdir -p ~/.claude/projects/ci-test-project
+          # Create test fixture directory using Claude Code's hash-based naming
+          # Claude Code stores transcripts in ~/.claude/projects/-path-to-project/
+          FIXTURE_DIR="$HOME/.claude/projects/-ci-test-project"
+          mkdir -p "$FIXTURE_DIR"
 
           # Create a minimal Claude Code transcript
-          cat > ~/.claude/projects/ci-test-project/ci-test-session.jsonl << 'EOF'
-          {"type":"queue-operation","operation":"dequeue","timestamp":"2025-12-01T00:00:00.000Z","sessionId":"ci-test-session"}
-          {"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","type":"user","message":{"role":"user","content":"CI test message for E2E verification"},"uuid":"ci-user-msg","timestamp":"2025-12-01T00:00:01.000Z"}
-          {"parentUuid":"ci-user-msg","isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","message":{"model":"claude-test","id":"msg_ci","type":"message","role":"assistant","content":[{"type":"text","text":"This is a CI test response for E2E verification."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":15}},"requestId":"req_ci","type":"assistant","uuid":"ci-assistant-msg","timestamp":"2025-12-01T00:00:02.000Z"}
-          EOF
+          # Note: no leading whitespace in JSONL - each line must be valid JSON
+          cat > "$FIXTURE_DIR/ci-test-session.jsonl" << 'EOF'
+{"type":"queue-operation","operation":"dequeue","timestamp":"2025-12-01T00:00:00.000Z","sessionId":"ci-test-session"}
+{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","type":"user","message":{"role":"user","content":"CI test message for E2E verification"},"uuid":"ci-user-msg","timestamp":"2025-12-01T00:00:01.000Z"}
+{"parentUuid":"ci-user-msg","isSidechain":false,"userType":"external","cwd":"/ci/test/project","sessionId":"ci-test-session","version":"2.0.0","gitBranch":"main","message":{"model":"claude-test","id":"msg_ci","type":"message","role":"assistant","content":[{"type":"text","text":"This is a CI test response for E2E verification."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":15}},"requestId":"req_ci","type":"assistant","uuid":"ci-assistant-msg","timestamp":"2025-12-01T00:00:02.000Z"}
+EOF
 
-          # Run ingest
+          # Run ingest with explicit input path (bypasses discovery which expects full path structure)
           DB_PATH="/tmp/ci-e2e-test.db"
-          .build/debug/contextify-ingest ingest --db "$DB_PATH" --format human
+          .build/debug/contextify-ingest ingest --db "$DB_PATH" --input "$FIXTURE_DIR" --format human
 
           # Verify database contents
           PROJECT_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM projects;")
