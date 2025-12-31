@@ -426,7 +426,11 @@ struct GroupRenamePopover: View {
         .onSubmit { commitRename() }
 
       HStack {
-        Button("Cancel", role: .cancel) { onCancel() }
+        Button("Cancel", role: .cancel) {
+          // Clear focus before dismissing to prevent focus from jumping to search field
+          isNameFocused = false
+          onCancel()
+        }
           .keyboardShortcut(.escape, modifiers: [])
 
         Spacer()
@@ -448,6 +452,8 @@ struct GroupRenamePopover: View {
 
   private func commitRename() {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Clear focus before dismissing to prevent focus from jumping to search field
+    isNameFocused = false
     onRename(trimmed.isEmpty ? nil : trimmed)
   }
 }
@@ -511,8 +517,8 @@ struct ProjectTabView: View {
     }
     // P2.1 fix: treat whitespace-only names as unnamed
     let trimmedName = group.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let groupName = (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
-    return "Group: \(groupName)"
+    // Show group name directly without "Group: " prefix
+    return (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
   }
 
   var body: some View {
