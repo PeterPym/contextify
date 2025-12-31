@@ -50,6 +50,28 @@ public enum WorktreeColorUtility {
     "#5A9BAA",  // teal
   ]
 
+  /// Named color entry for UI display (color picker menus, etc.)
+  public struct NamedColor: Identifiable {
+    public let id: String  // hex code
+    public let name: String
+    public let color: Color
+  }
+
+  /// Palette of named colors for UI display.
+  /// Used in "Change Group Color" context menu.
+  public static let namedPalette: [NamedColor] = [
+    NamedColor(id: "#4A7BA7", name: "Blue", color: accentColors[0]),
+    NamedColor(id: "#51A86B", name: "Green", color: accentColors[1]),
+    NamedColor(id: "#D4A84E", name: "Orange", color: accentColors[2]),
+    NamedColor(id: "#C74E4E", name: "Red", color: accentColors[3]),
+    NamedColor(id: "#7C68A8", name: "Purple", color: accentColors[4]),
+    NamedColor(id: "#F9B233", name: "Yellow", color: accentColors[5]),
+    NamedColor(id: "#4AC4E0", name: "Cyan", color: accentColors[6]),
+    NamedColor(id: "#8B5CF6", name: "Violet", color: accentColors[7]),
+    NamedColor(id: "#9B8B7E", name: "Brown", color: accentColors[8]),
+    NamedColor(id: "#5A9BAA", name: "Teal", color: accentColors[9]),
+  ]
+
   // MARK: - Public API
 
   /// Computes a consistent color for a git root path.

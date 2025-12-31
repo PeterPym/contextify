@@ -1199,6 +1199,22 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Set a tab group's color
+  /// - Parameters:
+  ///   - groupId: The group ID to update
+  ///   - hexColor: The hex color string (e.g., "#4A7BA7"), or nil to reset to auto
+  public func setGroupColor(groupId: String, hexColor: String?) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.setTabGroupColor(id: groupId, colorHex: hexColor)
+      await refreshProjects()
+      log.info("[GROUP-COLOR] Set group \(groupId, privacy: .public) color to '\(hexColor ?? "auto", privacy: .public)'")
+    } catch {
+      log.error("[GROUP-COLOR] Failed to set group color: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   /// Reorder projects by updating display_order for all projects atomically
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = ensureOrchestrator() else { return }

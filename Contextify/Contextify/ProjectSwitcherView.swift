@@ -448,6 +448,64 @@ struct GroupRenamePopover: View {
   }
 }
 
+/// Popover for selecting a custom group color
+struct GroupColorPickerPopover: View {
+  let initialColor: Color
+  let onApply: (Color) -> Void
+  let onCancel: () -> Void
+
+  @State private var selectedColor: Color = .blue
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Custom Color")
+        .font(.headline)
+
+      ColorPicker("", selection: $selectedColor, supportsOpacity: false)
+        .labelsHidden()
+        .frame(height: 80)
+
+      HStack {
+        Button("Cancel", role: .cancel) {
+          onCancel()
+        }
+        .keyboardShortcut(.escape, modifiers: [])
+
+        Spacer()
+
+        Button("Apply") {
+          onApply(selectedColor)
+        }
+        .keyboardShortcut(.defaultAction)
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding()
+    .frame(width: 200)
+    .onAppear {
+      selectedColor = initialColor
+    }
+  }
+}
+
+// MARK: - Color to Hex Extension
+
+private extension Color {
+  /// Convert a SwiftUI Color to a hex string (e.g., "#4A7BA7")
+  func toHexString() -> String {
+    // Convert to NSColor first to get RGB components
+    guard let nsColor = NSColor(self).usingColorSpace(.sRGB) else {
+      return "#000000"
+    }
+
+    let r = Int(nsColor.redComponent * 255)
+    let g = Int(nsColor.greenComponent * 255)
+    let b = Int(nsColor.blueComponent * 255)
+
+    return String(format: "#%02X%02X%02X", r, g, b)
+  }
+}
+
 /// Individual project tab component
 /// Uses Button+ButtonStyle for clicks (macOS 15 workaround) with onDrag for reordering.
 struct ProjectTabView: View {
@@ -460,6 +518,10 @@ struct ProjectTabView: View {
 
   @State private var showRenamePopover = false
   @State private var renameText = ""
+
+  // Color picker state
+  @State private var showColorPicker = false
+  @State private var customColor = Color.blue
 
   // Hover tooltip state
   @State private var isHovering = false
@@ -657,6 +719,33 @@ struct ProjectTabView: View {
           }
           showRenamePopover = true
         }
+
+        Menu("Change Group Color...") {
+          // Palette colors
+          ForEach(WorktreeColorUtility.namedPalette) { namedColor in
+            Button {
+              Task { await state.setGroupColor(groupId: groupId, hexColor: namedColor.id) }
+            } label: {
+              HStack {
+                Circle()
+                  .fill(namedColor.color)
+                  .frame(width: 12, height: 12)
+                Text(namedColor.name)
+              }
+            }
+          }
+
+          Divider()
+
+          // Custom color option
+          Button("Custom...") {
+            // Initialize with current group color
+            if let group = state.tabGroups.first(where: { $0.id == groupId }) {
+              customColor = group.color
+            }
+            showColorPicker = true
+          }
+        }
       } else {
         // Solo tab: global movement
         let canMoveLeft = projectIndex.map { $0 > 0 } ?? false
@@ -764,6 +853,19 @@ struct ProjectTabView: View {
             showRenamePopover = false
           },
           onCancel: { showRenamePopover = false }
+        )
+      }
+    }
+    .popover(isPresented: $showColorPicker) {
+      if let groupId = project.groupId {
+        GroupColorPickerPopover(
+          initialColor: customColor,
+          onApply: { color in
+            let hexColor = color.toHexString()
+            Task { await state.setGroupColor(groupId: groupId, hexColor: hexColor) }
+            showColorPicker = false
+          },
+          onCancel: { showColorPicker = false }
         )
       }
     }
