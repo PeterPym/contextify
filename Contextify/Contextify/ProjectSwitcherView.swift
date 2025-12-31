@@ -41,16 +41,6 @@ private extension View {
       }
     )
   }
-
-  /// Conditionally applies `.help()` only when text is non-nil, avoiding empty string tooltip issues.
-  @ViewBuilder
-  func helpIfPresent(_ text: String?) -> some View {
-    if let text {
-      self.help(text)
-    } else {
-      self
-    }
-  }
 }
 
 private extension CGRect {
@@ -471,6 +461,10 @@ struct ProjectTabView: View {
   @State private var showRenamePopover = false
   @State private var renameText = ""
 
+  // Hover tooltip state
+  @State private var isHovering = false
+  @State private var showTooltip = false
+
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
   /// Background color for the tab.
@@ -508,8 +502,9 @@ struct ProjectTabView: View {
     return "no unread"
   }
 
-  /// Tooltip text for grouped tabs showing group name
-  private var groupTooltipText: String? {
+  /// Tooltip info for grouped tabs showing group name and color
+  /// Returns nil for solo tabs
+  private var groupTooltipInfo: (text: String, color: Color)? {
     guard let groupId = project.groupId,
           let group = state.tabGroups.first(where: { $0.id == groupId }),
           !group.isSoloTab else {
@@ -518,7 +513,8 @@ struct ProjectTabView: View {
     // P2.1 fix: treat whitespace-only names as unnamed
     let trimmedName = group.name?.trimmingCharacters(in: .whitespacesAndNewlines)
     // Show group name directly without "Group: " prefix
-    return (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
+    let text = (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
+    return (text: text, color: group.color)
   }
 
   var body: some View {
@@ -577,7 +573,27 @@ struct ProjectTabView: View {
       )
     }
     .buttonStyle(ScrollViewButtonStyle())
-    .helpIfPresent(groupTooltipText)
+    // Custom hover tooltip for group names (faster than system tooltip)
+    .onHover { hovering in
+      isHovering = hovering
+      if hovering, groupTooltipInfo != nil {
+        // Show tooltip after 350ms delay (faster than system ~1s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+          if isHovering { showTooltip = true }
+        }
+      } else {
+        showTooltip = false
+      }
+    }
+    .overlay(alignment: .top) {
+      if showTooltip, let info = groupTooltipInfo {
+        GroupNameTooltipOverlay(text: info.text, groupColor: info.color)
+          .offset(y: -28)
+          .transition(.opacity.combined(with: .scale(scale: 0.95)))
+          .animation(.easeOut(duration: 0.15), value: showTooltip)
+          .allowsHitTesting(false)
+      }
+    }
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
@@ -848,6 +864,34 @@ private struct TabGroupView: View {
       RoundedRectangle(cornerRadius: 8)
         .fill(groupBackgroundColor)
     )
+  }
+}
+
+// MARK: - Group Name Tooltip Overlay
+
+/// Custom styled hover tooltip for group names
+/// Shows group name with faster appearance than system tooltip (~350ms vs ~1s)
+/// Styled with semibold text, dark background, and subtle shadow
+private struct GroupNameTooltipOverlay: View {
+  let text: String
+  let groupColor: Color
+
+  var body: some View {
+    Text(text)
+      .font(.caption)
+      .fontWeight(.semibold)
+      .foregroundStyle(.white)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(
+        RoundedRectangle(cornerRadius: 4)
+          .fill(Color(white: 0.15))
+          .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 4)
+          .strokeBorder(groupColor.opacity(0.5), lineWidth: 1)
+      )
   }
 }
 
