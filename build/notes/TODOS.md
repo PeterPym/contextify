@@ -170,6 +170,55 @@ Detect the user's active shell and provide the correct command:
 
 ---
 
+## App Store Worktree Grouping Support
+
+**Status:** Not started
+**Priority:** P1 (feature parity for App Store build)
+**Discovered:** 2025-12-29
+
+- [ ] #APPSTORE-WORKTREE-GROUPS: Enable worktree auto-grouping in sandboxed App Store build
+
+**Problem:**
+The worktree auto-grouping feature requires filesystem access to:
+1. Read `.git` files to detect if a project is a worktree
+2. Resolve `gitdir:` paths (absolute or relative) to find the main repository
+3. Compute shared git roots for grouping related projects
+
+In the sandboxed App Store build, without additional permissions, none of this works. Users would only have access to manual grouping (if implemented).
+
+**Current behavior (App Store):**
+- Transcript access requires onboarding wizard permission grant
+- Project folders themselves may not have read permission
+- Git detection functions will fail silently
+- No auto-grouping occurs
+
+**Solution options:**
+
+1. **Extend onboarding to request project folder access**
+   - Add step to grant access to common project locations (~/code, ~/projects, etc.)
+   - Store security-scoped bookmarks for these folders
+   - Wrap git detection in `accessProvider.withAccess()` calls
+
+2. **On-demand permission request**
+   - When a project is discovered, request access to its folder
+   - Show permission prompt explaining "Contextify needs access to detect git worktrees"
+   - Graceful fallback to ungrouped if denied
+
+3. **Manual grouping as fallback**
+   - Implement manual "Create Group" / "Add to Group" UI
+   - Works without any filesystem access (pure database state)
+   - Could be combined with option 1 or 2
+
+**Files to modify:**
+- `TranscriptAccessProvider` - extend to cover project folders
+- `HUDCore.swift` - wrap git detection in access blocks
+- Onboarding wizard (if option 1)
+- Settings/Preferences (if option 2)
+
+**Related:** See `build/docs/architecture/transcript-access-security.md` for security-scoped bookmark patterns.
+
+---
+
 ## Project Chronicle: Continuous Development Narrative Synthesis
 
 **Status:** Spec complete, ready for prototype
