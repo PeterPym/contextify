@@ -483,37 +483,37 @@ struct ProjectTabView: View {
       let projectIndex = state.tabProjects.firstIndex(where: { $0.id == project.id })
       let isGrouped = project.groupId != nil
 
-      if isGrouped {
-        // Grouped tab: move within group
-        let group = state.tabGroups.first { $0.id == project.groupId }
+      if isGrouped, let groupId = project.groupId {
+        // Grouped tab: move within group (P0.1 fix: use explicit IDs)
+        let group = state.tabGroups.first { $0.id == groupId }
         let localIndex = group?.projects.firstIndex { $0.id == project.id }
         let canMoveLeftInGroup = localIndex.map { $0 > 0 } ?? false
         let canMoveRightInGroup = localIndex.map { $0 < (group?.projects.count ?? 1) - 1 } ?? false
 
         Button("Move Left in Group") {
-          Task { await state.moveActiveTabLeft() }
+          Task { await state.moveTabLeftInGroup(projectId: project.id) }
         }
         .disabled(!canMoveLeftInGroup)
 
         Button("Move Right in Group") {
-          Task { await state.moveActiveTabRight() }
+          Task { await state.moveTabRightInGroup(projectId: project.id) }
         }
         .disabled(!canMoveRightInGroup)
 
         Divider()
 
-        // Group movement
-        let groupIndex = state.tabGroups.firstIndex { $0.id == project.groupId }
+        // Group movement (P0.1 fix: use explicit group ID)
+        let groupIndex = state.tabGroups.firstIndex { $0.id == groupId }
         let canMoveGroupLeft = groupIndex.map { $0 > 0 } ?? false
         let canMoveGroupRight = groupIndex.map { $0 < state.tabGroups.count - 1 } ?? false
 
         Button("Move Group Left") {
-          Task { await state.moveActiveGroupLeft() }
+          Task { await state.moveGroupLeft(groupId: groupId) }
         }
         .disabled(!canMoveGroupLeft)
 
         Button("Move Group Right") {
-          Task { await state.moveActiveGroupRight() }
+          Task { await state.moveGroupRight(groupId: groupId) }
         }
         .disabled(!canMoveGroupRight)
       } else {

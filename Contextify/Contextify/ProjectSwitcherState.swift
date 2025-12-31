@@ -1005,7 +1005,14 @@ public final class ProjectSwitcherState {
       )
 
       // Add project to the new group
-      try orchestrator.addProjectToGroup(projectId: projectId, groupId: group.id)
+      do {
+        try orchestrator.addProjectToGroup(projectId: projectId, groupId: group.id)
+      } catch {
+        // P0.2 fix: Clean up the empty group on partial failure
+        log.error("[MANUAL-GROUP] Failed to add project to new group, cleaning up: \(error.localizedDescription, privacy: .public)")
+        _ = try? orchestrator.deleteTabGroup(id: group.id)
+        throw error
+      }
 
       await refreshProjects()
       log.info("[MANUAL-GROUP] Created group \(group.id, privacy: .public) with project \(projectId, privacy: .public)")
@@ -1170,6 +1177,122 @@ public final class ProjectSwitcherState {
   }
 
   // MARK: - Phase 5: Context-Aware Tab Movement
+
+  /// Move a specific tab left within its group (P0.1 fix: explicit ID for context menu)
+  public func moveTabLeftInGroup(projectId: String) async {
+    guard let project = tabProjects.first(where: { $0.id == projectId }),
+          let groupId = project.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) else { return }
+
+    var group = tabGroups[groupIndex]
+    guard let localIdx = group.projects.firstIndex(where: { $0.id == projectId }),
+          localIdx > 0 else { return }
+
+    // Swap within group
+    group.projects.swapAt(localIdx, localIdx - 1)
+
+    // Update tabGroups (triggers UI refresh via didSet)
+    var newGroups = tabGroups
+    newGroups[groupIndex] = group
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = group.projects.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+        } catch {
+          log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[TAB-MOVE] Moved tab \(projectId, privacy: .public) left within group")
+  }
+
+  /// Move a specific tab right within its group (P0.1 fix: explicit ID for context menu)
+  public func moveTabRightInGroup(projectId: String) async {
+    guard let project = tabProjects.first(where: { $0.id == projectId }),
+          let groupId = project.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) else { return }
+
+    var group = tabGroups[groupIndex]
+    guard let localIdx = group.projects.firstIndex(where: { $0.id == projectId }),
+          localIdx < group.projects.count - 1 else { return }
+
+    // Swap within group
+    group.projects.swapAt(localIdx, localIdx + 1)
+
+    // Update tabGroups (triggers UI refresh via didSet)
+    var newGroups = tabGroups
+    newGroups[groupIndex] = group
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = group.projects.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+        } catch {
+          log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[TAB-MOVE] Moved tab \(projectId, privacy: .public) right within group")
+  }
+
+  /// Move a specific group left in the tab bar (P0.1 fix: explicit ID for context menu)
+  public func moveGroupLeft(groupId: String) async {
+    guard let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex > 0 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex - 1)
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) left")
+  }
+
+  /// Move a specific group right in the tab bar (P0.1 fix: explicit ID for context menu)
+  public func moveGroupRight(groupId: String) async {
+    guard let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex < tabGroups.count - 1 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex + 1)
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) right")
+  }
 
   /// Move active tab left (context-aware: within group if grouped, global if solo)
   public func moveActiveTabLeft() async {
