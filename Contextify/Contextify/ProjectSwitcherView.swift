@@ -418,8 +418,11 @@ struct GroupRenamePopover: View {
       HStack {
         Button("Cancel", role: .cancel) {
           // Clear focus before dismissing to prevent focus from jumping to search field
+          // G6 fix: Use async dispatch to allow focus state to settle before popover dismisses
           isNameFocused = false
-          onCancel()
+          DispatchQueue.main.async {
+            onCancel()
+          }
         }
           .keyboardShortcut(.escape, modifiers: [])
 
@@ -633,7 +636,18 @@ struct ProjectTabView: View {
     .help(groupDisplayName ?? "")
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
-    .onDrag(onDragStart)
+    // B1-B7 fix: Disable drag for grouped tabs - use context menu "Move Group Left/Right" instead.
+    // The drop delegate operates on individual tabs, not groups, so dragging grouped tabs
+    // would break group integrity. Solo tabs can still be dragged freely.
+    .onDrag {
+      // Only allow drag for ungrouped (solo) tabs
+      if project.groupId == nil {
+        return onDragStart()
+      }
+      // Grouped tabs: return empty provider to disable drag
+      // (context menu movement still works via moveGroupLeft/Right)
+      return NSItemProvider()
+    }
     .contextMenu {
       // Group name header (non-selectable) for grouped tabs
       if let groupName = groupDisplayName {
