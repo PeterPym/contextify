@@ -59,11 +59,14 @@ jobs:
             -project Contextify/Contextify.xcodeproj \
             -scheme Contextify \
             -configuration Debug \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .derived-dmg \
             -skipPackagePluginValidation \
             -skipMacroValidation \
-            build | xcpretty || exit ${PIPESTATUS[0]}
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1
         env:
           NSUnbufferedIO: "YES"
 
