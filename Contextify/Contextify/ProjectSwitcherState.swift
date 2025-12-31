@@ -1175,13 +1175,18 @@ public final class ProjectSwitcherState {
   }
 
   /// Rename a tab group
+  /// P2.2 fix: Normalize name here (trim whitespace, empty -> nil) as a backstop
   public func renameGroup(groupId: String, name: String?) async {
     guard let orchestrator = ensureOrchestrator() else { return }
 
+    // Normalize: trim whitespace, treat empty as nil
+    let normalized = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let stored = (normalized?.isEmpty ?? true) ? nil : normalized
+
     do {
-      try orchestrator.setTabGroupName(id: groupId, name: name)
+      try orchestrator.setTabGroupName(id: groupId, name: stored)
       await refreshProjects()
-      log.info("[GROUP-RENAME] Renamed group \(groupId, privacy: .public) to '\(name ?? "nil", privacy: .public)'")
+      log.info("[GROUP-RENAME] Renamed group \(groupId, privacy: .public) to '\(stored ?? "nil", privacy: .public)'")
     } catch {
       log.error("[GROUP-RENAME] Failed to rename group: \(error.localizedDescription, privacy: .public)")
     }

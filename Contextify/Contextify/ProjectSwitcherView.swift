@@ -372,18 +372,23 @@ struct ProjectSwitcherView: View {
         guard let targetId else { return }
         log.info("[SCROLL-EXECUTE] Scrolling to project: \(targetId, privacy: .public)")
 
+        // P1.2 fix: Capture requestedId to avoid clearing a newer request
+        let requestedId = targetId
+
         // Double-call pattern for reliable scroll (documented quirk in swiftui-patterns.md)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-            proxy.scrollTo(targetId, anchor: .center)
+            proxy.scrollTo(requestedId, anchor: .center)
           }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-            proxy.scrollTo(targetId, anchor: .center)
+            proxy.scrollTo(requestedId, anchor: .center)
           }
-          // Clear signal after second scroll
-          state.clearScrollRequest()
+          // P1.2 fix: Only clear if this is still the active request
+          if state.scrollToProjectId == requestedId {
+            state.clearScrollRequest()
+          }
         }
       }
     }
@@ -391,22 +396,14 @@ struct ProjectSwitcherView: View {
 }
 
 /// Popover for renaming a tab group
+/// P1.1 fix: Reset state in onAppear to avoid stale text across opens
 struct GroupRenamePopover: View {
-  let groupId: String
   let initialName: String
   let onRename: (String?) -> Void
   let onCancel: () -> Void
 
-  @State private var name: String
+  @State private var name: String = ""
   @FocusState private var isNameFocused: Bool
-
-  init(groupId: String, initialName: String, onRename: @escaping (String?) -> Void, onCancel: @escaping () -> Void) {
-    self.groupId = groupId
-    self.initialName = initialName
-    self._name = State(initialValue: initialName)
-    self.onRename = onRename
-    self.onCancel = onCancel
-  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -424,14 +421,19 @@ struct GroupRenamePopover: View {
 
         Spacer()
 
+        // P2.1 fix: Use .defaultAction instead of .return to avoid double-submit with .onSubmit
         Button("Rename") { commitRename() }
-          .keyboardShortcut(.return, modifiers: [])
+          .keyboardShortcut(.defaultAction)
           .buttonStyle(.borderedProminent)
       }
     }
     .padding()
     .frame(width: 280)
-    .onAppear { isNameFocused = true }
+    .onAppear {
+      // P1.1 fix: Always reset to initialName on appear (not in init)
+      name = initialName
+      isNameFocused = true
+    }
   }
 
   private func commitRename() {
@@ -694,17 +696,17 @@ struct ProjectTabView: View {
       }
     }
     .popover(isPresented: $showRenamePopover) {
-      GroupRenamePopover(
-        groupId: project.groupId ?? "",
-        initialName: renameText,
-        onRename: { newName in
-          if let groupId = project.groupId {
+      // P3.2 fix: Only render popover if groupId exists (defensive)
+      if let groupId = project.groupId {
+        GroupRenamePopover(
+          initialName: renameText,
+          onRename: { newName in
             Task { await state.renameGroup(groupId: groupId, name: newName) }
-          }
-          showRenamePopover = false
-        },
-        onCancel: { showRenamePopover = false }
-      )
+            showRenamePopover = false
+          },
+          onCancel: { showRenamePopover = false }
+        )
+      }
     }
     .accessibilityLabel("Project \(project.name), \(accessibilityUnreadLabel)")
     .accessibilityHint("Activate to switch to this project")
