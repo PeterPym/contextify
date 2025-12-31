@@ -41,6 +41,16 @@ private extension View {
       }
     )
   }
+
+  /// Conditionally applies `.help()` only when text is non-nil, avoiding empty string tooltip issues.
+  @ViewBuilder
+  func helpIfPresent(_ text: String?) -> some View {
+    if let text {
+      self.help(text)
+    } else {
+      self
+    }
+  }
 }
 
 private extension CGRect {
@@ -499,7 +509,9 @@ struct ProjectTabView: View {
           !group.isSoloTab else {
       return nil
     }
-    let groupName = group.name ?? "Unnamed Group"
+    // P2.1 fix: treat whitespace-only names as unnamed
+    let trimmedName = group.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let groupName = (trimmedName?.isEmpty ?? true) ? "Unnamed Group" : trimmedName!
     return "Group: \(groupName)"
   }
 
@@ -559,7 +571,7 @@ struct ProjectTabView: View {
       )
     }
     .buttonStyle(ScrollViewButtonStyle())
-    .help(groupTooltipText ?? "")
+    .helpIfPresent(groupTooltipText)
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
