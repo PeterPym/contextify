@@ -368,7 +368,75 @@ struct ProjectSwitcherView: View {
           skipNextAutoScroll = false
         }
       }
+      .onChange(of: state.scrollToProjectId) { _, targetId in
+        guard let targetId else { return }
+        log.info("[SCROLL-EXECUTE] Scrolling to project: \(targetId, privacy: .public)")
+
+        // Double-call pattern for reliable scroll (documented quirk in swiftui-patterns.md)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+          withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+            proxy.scrollTo(targetId, anchor: .center)
+          }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+          withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+            proxy.scrollTo(targetId, anchor: .center)
+          }
+          // Clear signal after second scroll
+          state.clearScrollRequest()
+        }
+      }
     }
+  }
+}
+
+/// Popover for renaming a tab group
+struct GroupRenamePopover: View {
+  let groupId: String
+  let initialName: String
+  let onRename: (String?) -> Void
+  let onCancel: () -> Void
+
+  @State private var name: String
+  @FocusState private var isNameFocused: Bool
+
+  init(groupId: String, initialName: String, onRename: @escaping (String?) -> Void, onCancel: @escaping () -> Void) {
+    self.groupId = groupId
+    self.initialName = initialName
+    self._name = State(initialValue: initialName)
+    self.onRename = onRename
+    self.onCancel = onCancel
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Group Name")
+        .font(.headline)
+
+      TextField("Unnamed Group", text: $name)
+        .textFieldStyle(.roundedBorder)
+        .focused($isNameFocused)
+        .onSubmit { commitRename() }
+
+      HStack {
+        Button("Cancel", role: .cancel) { onCancel() }
+          .keyboardShortcut(.escape, modifiers: [])
+
+        Spacer()
+
+        Button("Rename") { commitRename() }
+          .keyboardShortcut(.return, modifiers: [])
+          .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding()
+    .frame(width: 280)
+    .onAppear { isNameFocused = true }
+  }
+
+  private func commitRename() {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    onRename(trimmed.isEmpty ? nil : trimmed)
   }
 }
 
@@ -381,6 +449,9 @@ struct ProjectTabView: View {
   let isDragging: Bool
   var onDragStart: () -> NSItemProvider
   @Environment(ProjectSwitcherState.self) private var state
+
+  @State private var showRenamePopover = false
+  @State private var renameText = ""
 
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
@@ -516,6 +587,15 @@ struct ProjectTabView: View {
           Task { await state.moveGroupRight(groupId: groupId) }
         }
         .disabled(!canMoveGroupRight)
+
+        Divider()
+
+        Button("Rename Group...") {
+          if let group = state.tabGroups.first(where: { $0.id == project.groupId }) {
+            renameText = group.name ?? ""
+          }
+          showRenamePopover = true
+        }
       } else {
         // Solo tab: global movement
         let canMoveLeft = projectIndex.map { $0 > 0 } ?? false
@@ -612,6 +692,19 @@ struct ProjectTabView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
       }
+    }
+    .popover(isPresented: $showRenamePopover) {
+      GroupRenamePopover(
+        groupId: project.groupId ?? "",
+        initialName: renameText,
+        onRename: { newName in
+          if let groupId = project.groupId {
+            Task { await state.renameGroup(groupId: groupId, name: newName) }
+          }
+          showRenamePopover = false
+        },
+        onCancel: { showRenamePopover = false }
+      )
     }
     .accessibilityLabel("Project \(project.name), \(accessibilityUnreadLabel)")
     .accessibilityHint("Activate to switch to this project")

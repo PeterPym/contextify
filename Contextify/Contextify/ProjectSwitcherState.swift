@@ -158,6 +158,11 @@ public final class ProjectSwitcherState {
   // Tracks whether any hidden projects exist
   private(set) var hasHiddenProjects: Bool = false
 
+  /// Scroll target for programmatic scroll requests.
+  /// Set by methods that need to scroll the tab bar to a specific project.
+  /// View observes this and clears after scrolling.
+  private(set) var scrollToProjectId: String?
+
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
   // IMPORTANT: nonisolated(unsafe) is REQUIRED for observer tokens.
@@ -1025,6 +1030,10 @@ public final class ProjectSwitcherState {
       }
 
       await refreshProjects()
+
+      // Scroll to the grouped project so user can see result
+      requestScrollTo(projectId: projectId)
+
       log.info("[MANUAL-GROUP] Created group \(group.id, privacy: .public) with project \(projectId, privacy: .public)")
       return group.id
     } catch {
@@ -1040,6 +1049,10 @@ public final class ProjectSwitcherState {
     do {
       try orchestrator.addProjectToGroup(projectId: projectId, groupId: groupId)
       await refreshProjects()
+
+      // Scroll to the added project so user can see result
+      requestScrollTo(projectId: projectId)
+
       log.info("[MANUAL-GROUP] Added \(projectId, privacy: .public) to group \(groupId, privacy: .public)")
     } catch {
       log.error("[MANUAL-GROUP] Failed to add to group: \(error.localizedDescription, privacy: .public)")
@@ -1111,6 +1124,12 @@ public final class ProjectSwitcherState {
     do {
       try orchestrator.regroupWorktree(gitRoot: gitRoot.path)
       await refreshProjects()
+
+      // Scroll to the first project in the regrouped worktree
+      if let firstProject = flatTabs.first(where: { $0.gitRoot == gitRoot }) {
+        requestScrollTo(projectId: firstProject.id)
+      }
+
       log.info("Regrouped worktree: \(gitRoot.path, privacy: .public)")
     } catch {
       log.error("Failed to regroup worktree: \(error.localizedDescription, privacy: .public)")
@@ -1136,6 +1155,36 @@ public final class ProjectSwitcherState {
     guard let groupId = project.groupId else { return false }
     // Check if the group containing this project is a worktree group
     return tabGroups.first(where: { $0.id == groupId })?.isWorktreeGroup ?? false
+  }
+
+  // MARK: - Programmatic Scroll
+
+  /// Request the tab bar to scroll to a specific project.
+  /// Does NOT activate the project, just scrolls it into view.
+  /// Use after operations that move tabs (grouping, reordering).
+  /// - Parameter projectId: The project ID to scroll to
+  public func requestScrollTo(projectId: String) {
+    guard flatTabs.count >= 2 else { return }  // No tab bar visible
+    scrollToProjectId = projectId
+    log.info("[SCROLL-REQUEST] Requesting scroll to project: \(projectId, privacy: .public)")
+  }
+
+  /// Clear the scroll request. Called by View after scrolling completes.
+  public func clearScrollRequest() {
+    scrollToProjectId = nil
+  }
+
+  /// Rename a tab group
+  public func renameGroup(groupId: String, name: String?) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.setTabGroupName(id: groupId, name: name)
+      await refreshProjects()
+      log.info("[GROUP-RENAME] Renamed group \(groupId, privacy: .public) to '\(name ?? "nil", privacy: .public)'")
+    } catch {
+      log.error("[GROUP-RENAME] Failed to rename group: \(error.localizedDescription, privacy: .public)")
+    }
   }
 
   /// Reorder projects by updating display_order for all projects atomically
