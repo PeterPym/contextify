@@ -4,27 +4,27 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'app/**'
-      - 'Contextify/**'
-      - 'Tests/**'
+      # Swift source files
+      - 'app/Sources/**/*.swift'
+      - 'Contextify/**/*.swift'
+      - 'Tests/**/*.swift'
+      # Package manifests
       - 'Package.swift'
       - 'Package.resolved'
+      # CI config and QA scripts
       - '.github/workflows/macos-build.yml'
-      - 'scripts/qa/**'
-    paths-ignore:
-      - '**/*.md'
+      - 'scripts/qa/**/*.sh'
   pull_request:
     branches: [ main ]
     paths:
-      - 'app/**'
-      - 'Contextify/**'
-      - 'Tests/**'
+      - 'app/Sources/**/*.swift'
+      - 'Contextify/**/*.swift'
+      - 'Tests/**/*.swift'
       - 'Package.swift'
       - 'Package.resolved'
       - '.github/workflows/macos-build.yml'
-      - 'scripts/qa/**'
-    paths-ignore:
-      - '**/*.md'
+      - 'scripts/qa/**/*.sh'
+  workflow_dispatch:
 
 jobs:
   build:
