@@ -492,6 +492,17 @@ struct ProjectTabView: View {
     return "no unread"
   }
 
+  /// Tooltip text for grouped tabs showing group name
+  private var groupTooltipText: String? {
+    guard let groupId = project.groupId,
+          let group = state.tabGroups.first(where: { $0.id == groupId }),
+          !group.isSoloTab else {
+      return nil
+    }
+    let groupName = group.name ?? "Unnamed Group"
+    return "Group: \(groupName)"
+  }
+
   var body: some View {
     // Using Button with custom ButtonStyle to work inside ScrollView on macOS 15
     // onDrag is attached to the Button for reordering support
@@ -548,6 +559,7 @@ struct ProjectTabView: View {
       )
     }
     .buttonStyle(ScrollViewButtonStyle())
+    .help(groupTooltipText ?? "")
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
