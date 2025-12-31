@@ -479,29 +479,94 @@ struct ProjectTabView: View {
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
     .contextMenu {
-      // Move Left/Right for reordering (works on all macOS versions)
+      // Movement - context-aware based on grouping
       let projectIndex = state.tabProjects.firstIndex(where: { $0.id == project.id })
-      let canMoveLeft = projectIndex.map { $0 > 0 } ?? false
-      let canMoveRight = projectIndex.map { $0 < state.tabProjects.count - 1 } ?? false
+      let isGrouped = project.groupId != nil
 
-      Button("Move Left") {
-        guard let idx = projectIndex, idx > 0 else { return }
-        var newOrder = state.tabProjects.map(\.id)
-        newOrder.swapAt(idx, idx - 1)
-        Task { await state.reorderProjects(newOrder) }
-      }
-      .disabled(!canMoveLeft)
+      if isGrouped {
+        // Grouped tab: move within group
+        let group = state.tabGroups.first { $0.id == project.groupId }
+        let localIndex = group?.projects.firstIndex { $0.id == project.id }
+        let canMoveLeftInGroup = localIndex.map { $0 > 0 } ?? false
+        let canMoveRightInGroup = localIndex.map { $0 < (group?.projects.count ?? 1) - 1 } ?? false
 
-      Button("Move Right") {
-        guard let idx = projectIndex, idx < state.tabProjects.count - 1 else { return }
-        var newOrder = state.tabProjects.map(\.id)
-        newOrder.swapAt(idx, idx + 1)
-        Task { await state.reorderProjects(newOrder) }
+        Button("Move Left in Group") {
+          Task { await state.moveActiveTabLeft() }
+        }
+        .disabled(!canMoveLeftInGroup)
+
+        Button("Move Right in Group") {
+          Task { await state.moveActiveTabRight() }
+        }
+        .disabled(!canMoveRightInGroup)
+
+        Divider()
+
+        // Group movement
+        let groupIndex = state.tabGroups.firstIndex { $0.id == project.groupId }
+        let canMoveGroupLeft = groupIndex.map { $0 > 0 } ?? false
+        let canMoveGroupRight = groupIndex.map { $0 < state.tabGroups.count - 1 } ?? false
+
+        Button("Move Group Left") {
+          Task { await state.moveActiveGroupLeft() }
+        }
+        .disabled(!canMoveGroupLeft)
+
+        Button("Move Group Right") {
+          Task { await state.moveActiveGroupRight() }
+        }
+        .disabled(!canMoveGroupRight)
+      } else {
+        // Solo tab: global movement
+        let canMoveLeft = projectIndex.map { $0 > 0 } ?? false
+        let canMoveRight = projectIndex.map { $0 < state.tabProjects.count - 1 } ?? false
+
+        Button("Move Left") {
+          guard let idx = projectIndex, idx > 0 else { return }
+          var newOrder = state.tabProjects.map(\.id)
+          newOrder.swapAt(idx, idx - 1)
+          Task { await state.reorderProjects(newOrder) }
+        }
+        .disabled(!canMoveLeft)
+
+        Button("Move Right") {
+          guard let idx = projectIndex, idx < state.tabProjects.count - 1 else { return }
+          var newOrder = state.tabProjects.map(\.id)
+          newOrder.swapAt(idx, idx + 1)
+          Task { await state.reorderProjects(newOrder) }
+        }
+        .disabled(!canMoveRight)
       }
-      .disabled(!canMoveRight)
 
       Divider()
 
+      // Manual grouping options
+      if !isGrouped {
+        // Solo tab options
+        Button("Create New Group") {
+          Task { _ = await state.createGroupWithProject(project.id) }
+        }
+
+        let availableGroups = state.getAvailableGroupsForProject(project.id)
+        if !availableGroups.isEmpty {
+          Menu("Add to Group...") {
+            ForEach(availableGroups) { group in
+              Button(group.name ?? "Unnamed Group") {
+                Task { await state.addToGroup(projectId: project.id, groupId: group.id) }
+              }
+            }
+          }
+        }
+      } else if state.isInManualGroup(project) {
+        // Manual group tab options
+        Button("Remove from Group") {
+          Task { await state.removeFromGroup(projectId: project.id) }
+        }
+      }
+
+      Divider()
+
+      // Hide options
       Button("Hide this Project") {
         Task {
           await state.hideProject(project.id)
@@ -516,7 +581,7 @@ struct ProjectTabView: View {
         }
       }
 
-      // Worktree grouping options (Phase 4)
+      // Worktree grouping options (Phase 4) - only for worktree scenarios
       if let gitRoot = project.gitRoot {
         Divider()
 
@@ -531,7 +596,7 @@ struct ProjectTabView: View {
         }
 
         // Show "Regroup Worktree" if project was ungrouped
-        if project.groupId == nil && state.isWorktreeUngrouped(gitRoot) {
+        if !isGrouped && state.isWorktreeUngrouped(gitRoot) {
           Button("Regroup Worktree") {
             Task {
               await state.regroupWorktree(gitRoot)
@@ -540,6 +605,7 @@ struct ProjectTabView: View {
         }
       }
 
+      // Orphan info
       if project.isOrphaned {
         Divider()
         Text("Directory Missing: \(project.rootPath)")

@@ -988,6 +988,88 @@ public final class ProjectSwitcherState {
     }
   }
 
+  // MARK: - Manual Grouping (Phase 7)
+
+  /// Create a new manual group containing the specified project.
+  /// Returns the new group ID.
+  public func createGroupWithProject(_ projectId: String, name: String? = nil) async -> String? {
+    guard let orchestrator = ensureOrchestrator() else { return nil }
+
+    do {
+      // Create manual group (not a worktree group)
+      let group = try orchestrator.createTabGroup(
+        name: name,
+        colorHex: nil,  // Auto-assigned
+        gitRoot: nil,   // Manual groups don't have git root
+        isWorktreeGroup: false
+      )
+
+      // Add project to the new group
+      try orchestrator.addProjectToGroup(projectId: projectId, groupId: group.id)
+
+      await refreshProjects()
+      log.info("[MANUAL-GROUP] Created group \(group.id, privacy: .public) with project \(projectId, privacy: .public)")
+      return group.id
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to create group: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  /// Add a project to an existing group.
+  public func addToGroup(projectId: String, groupId: String) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.addProjectToGroup(projectId: projectId, groupId: groupId)
+      await refreshProjects()
+      log.info("[MANUAL-GROUP] Added \(projectId, privacy: .public) to group \(groupId, privacy: .public)")
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to add to group: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Remove a project from its group (becomes solo tab).
+  /// If the group becomes empty, it is automatically deleted.
+  public func removeFromGroup(projectId: String) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    // Get current group ID before removal
+    let groupId = tabProjects.first(where: { $0.id == projectId })?.groupId
+
+    do {
+      try orchestrator.removeProjectFromGroup(projectId: projectId)
+
+      // Clean up empty groups
+      if let groupId {
+        _ = try? orchestrator.deleteTabGroupIfEmpty(id: groupId)
+      }
+
+      await refreshProjects()
+      log.info("[MANUAL-GROUP] Removed \(projectId, privacy: .public) from group")
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to remove from group: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Get list of available groups (for "Add to Group..." submenu).
+  /// Excludes worktree groups since those are managed automatically.
+  public func getAvailableGroupsForProject(_ projectId: String) -> [TabGroupInfo] {
+    // Return non-worktree groups that don't already contain this project
+    return tabGroups.filter { group in
+      !group.isWorktreeGroup &&
+      !group.isSoloTab &&
+      !group.projects.contains(where: { $0.id == projectId })
+    }
+  }
+
+  /// Check if a project is in a manual (non-worktree) group.
+  public func isInManualGroup(_ project: ProjectInfo) -> Bool {
+    guard let groupId = project.groupId else { return false }
+    guard let group = tabGroups.first(where: { $0.id == groupId }) else { return false }
+    return !group.isWorktreeGroup
+  }
+
   // MARK: - Worktree Grouping (Phase 4)
 
   /// Ungroup all projects from a worktree group.
