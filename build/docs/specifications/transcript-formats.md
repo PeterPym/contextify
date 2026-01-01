@@ -466,15 +466,15 @@ Declares session-level context at the start. **Contains project path in `payload
 
 #### `response_item` (Conversational Turns)
 
-Canonical conversation messages with structured content array.
+Canonical conversation messages, tool invocations, and reasoning records.
 
 **Fields:**
 - `timestamp` (ISO) — **MUST BE STRICTLY INCREASING**
 - `type` (string) — Always `"response_item"`
 - `payload` (object):
-  - `type` (string) — Always `"message"`
-  - `role` (string) — `"user"` or `"assistant"`
-  - `content` (array) — Array of content blocks (see Codex Content Types below)
+  - `type` (string) — `"message"`, `"function_call"`, `"function_call_output"`, or `"reasoning"`
+  - `role` (string) — `"user"` or `"assistant"` (for `type=message` only)
+  - `content` (array) — Array of content blocks (for `type=message` only, see Codex Content Types below)
 
 **Note:** Content uses `input_text` for user, `output_text` for assistant (vs Claude Code's `text` type).
 
