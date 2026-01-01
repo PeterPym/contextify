@@ -533,14 +533,19 @@ generator.queueMisses([miss])  // Async processing
 
 ## Testing
 
-**Integration Tests:** `ContextifyTests/IntegrationTests.swift`
-- Full hoover workflow (create project → discover → ingest)
+**Integration Tests:** `Contextify/ContextifyTests/IntegrationTests.swift`
+- Full hoover workflow (create project -> discover -> ingest)
 - Crash recovery (stop mid-ingestion, verify resume)
 - Window tracking correctness (verify prev1/prev2 linkage)
 
-**Load Tests:** `ContextifyTests/FeedLoadingDiagnosticTest.swift`
+**Load Tests:** `Contextify/ContextifyTests/FeedLoadingDiagnosticTest.swift`
 - Feed query performance with 50K entries
 - Cache lookup performance with 10K cached entries
+
+**Core Package Tests:** `Tests/ContextifyCoreTests/`
+- FastPathIngestionTests - ingestion state machine
+- ProjectIdentityTests - path canonicalization
+- SandboxEnforcementTests - security-scoped access
 
 ---
 
