@@ -476,6 +476,39 @@ try accessProvider.withAccess(for: "claude.code") { ... }  // Typo risk
 
 ---
 
+## Sandbox Container Path Filtering
+
+**File:** `app/Sources/ContextifyCore/Security/SandboxPathFilter.swift`
+
+When running in App Store sandbox, the app's home directory is virtualized to
+`~/Library/Containers/<bundle-id>/Data/`. If a project path inside this container
+is persisted, it causes "invalid root" modals on subsequent launches.
+
+```swift
+public enum SandboxPathFilter {
+  /// Returns true when the provided path resolves inside ANY app's sandbox container.
+  public static func isSandboxContainerPath(_ path: String) -> Bool {
+    let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard normalized.contains("/Library/Containers/") else { return false }
+    // Check for .../Containers/<bundle-id>/Data/... pattern
+    let components = normalized.split(separator: "/")
+    guard let containersIdx = components.firstIndex(of: "Containers") else { return false }
+    let dataIdx = containersIdx + 2
+    guard components.indices.contains(dataIdx) else { return false }
+    return components[dataIdx] == "Data"
+  }
+}
+```
+
+**Usage throughout codebase:**
+- `TranscriptWatcher.watch()` - Refuses to watch files in container paths
+- `HUDPreferences` - Skips persisting container paths
+- `StartupCoordinator` - Filters candidate paths during project resolution
+- `ProjectDiscoveryService` - Skips container path projects during discovery
+- `FastPathIngestionCoordinator` - Filters container paths in fast-path
+
+---
+
 ## Future Enhancements
 
 ### Long-Lived FSEvents in Sandbox
@@ -507,7 +540,16 @@ Just need to implement `TranscriptAccessProvider` for the new source.
 
 - Security-scoped bookmarks: https://developer.apple.com/documentation/foundation/nsurl/1417051-startaccessingsecurityscopedreso
 - App Sandbox: https://developer.apple.com/documentation/security/app_sandbox
-- Related code:
-  - `app/Sources/ContextifyCore/Projects/TranscriptAccessProvider.swift`
-  - `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
-  - `Contextify/Contextify/SandboxTranscriptAccessProvider.swift`
+
+**Related code:**
+- `app/Sources/ContextifyCore/Projects/TranscriptAccessProvider.swift` - Protocol + PassthroughAccessProvider
+- `app/Sources/ContextifyCore/Projects/TranscriptProviderID.swift` - Provider ID constants
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` - Security-scoped access wrapper
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` - Re-hoover callback pattern
+- `app/Sources/ContextifyCore/Security/FolderAccessController.swift` - Bookmark management + folder picker
+- `app/Sources/ContextifyCore/Security/BookmarkStore.swift` - Bookmark persistence
+- `app/Sources/ContextifyCore/Security/SourceAuthorization.swift` - SourceID enum + authorization state
+- `app/Sources/ContextifyCore/Security/SandboxPathFilter.swift` - Container path filtering
+- `app/Sources/ContextifyCore/HUDCore.swift` - Sandbox.isSandboxed runtime detection
+- `Contextify/Contextify/SandboxTranscriptAccessProvider.swift` - App Store provider implementation
+- `Contextify/Contextify/ContextifyApp.swift` - buildAndConfigureAccessProvider()
