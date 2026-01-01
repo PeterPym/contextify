@@ -249,28 +249,25 @@ Periodic capture of file backup states.
 **Fields:**
 - `type` (string) — Always `"file-history-snapshot"`
 - `messageId` (uuid) — Links to associated message
-- `timestamp` (ISO string)
+- `isSnapshotUpdate` (bool) — True if updating existing snapshot
 - `snapshot` (object):
   - `timestamp` (ISO string)
-  - `trackedFileBackups` (object) — Map of file paths to backup arrays
+  - `trackedFileBackups` (object) — Map of file paths to backup info
 
 **Example:**
 ```json
 {
   "type": "file-history-snapshot",
   "messageId": "a1b2c3d4-...",
-  "timestamp": "2025-11-11T10:30:00.000Z",
+  "isSnapshotUpdate": false,
   "snapshot": {
     "timestamp": "2025-11-11T10:30:00.000Z",
     "trackedFileBackups": {
-      "app/parser.ts": [
-        {
-          "path": "app/parser.ts",
-          "version": 1,
-          "timestamp": "2025-11-11T10:25:00.000Z",
-          "content": "export function parse() { ... }"
-        }
-      ]
+      "app/parser.ts": {
+        "backupFileName": "27928849ab545735@v1",
+        "version": 1,
+        "backupTime": "2025-11-11T10:25:00.000Z"
+      }
     }
   }
 }
