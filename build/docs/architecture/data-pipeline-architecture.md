@@ -242,7 +242,7 @@ graph TB
 - **Configuration:**
   - WAL mode: `PRAGMA journal_mode=WAL` (line 91)
   - Foreign keys: Enabled
-  - Schema: v26 (current)
+  - Schema: v33 (current)
 - **Location:** `~/Library/Application Support/Contextify/contextify.db`
 - **Custom Locations:** Supported (Dropbox, iCloud Drive, external drives)
 
