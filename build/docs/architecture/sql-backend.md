@@ -42,8 +42,9 @@ projects
 ├── hidden (INTEGER DEFAULT 0, v18+, hide from UI)
 ├── display_order (INTEGER, v19+, tab ordering)
 ├── is_orphaned (INTEGER DEFAULT 0, v20+, directory missing)
-├── orphaned_since (TEXT, v20+, ISO8601 timestamp)
-└── timestamps
+├── orphaned_since (INTEGER, v20+, epoch when directory went missing)
+├── last_activity_detected_at (INTEGER, v32+, for tiered watcher lifecycle)
+└── timestamps (created_at, updated_at)
 
 transcripts
 ├── id (PK)
