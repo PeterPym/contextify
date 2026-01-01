@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Contextify now groups projects from the same git repository automatically. Keep your worktrees organized with visual distinction and easy reordering.">
+    <title>Tab Grouping: Organize Projects by Worktree - Contextify Blog</title>
+
+    <!-- Open Graph -->
+    <meta property="og:url" content="https://contextify.sh/blog/tab-grouping-organize-projects-by-worktree.html">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Tab Grouping: Organize Projects by Worktree">
+    <meta property="og:description" content="Contextify now groups projects from the same git repository automatically. Keep your worktrees organized with visual distinction and easy reordering.">
+    <!-- TODO: Add OG image when available -->
+    <!-- <meta property="og:image" content="https://contextify.sh/assets/img/blog/tab-grouping-og.jpg"> -->
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Tab Grouping: Organize Projects by Worktree">
+    <meta name="twitter:description" content="Contextify now groups projects from the same git repository automatically. Keep your worktrees organized.">
+    <!-- TODO: Add Twitter image when available -->
+
+    <style>
+        :root {
+            /* Contextify Design System */
+            --bg: #F8FAFC;           /* slate-50 */
+            --bg-surface: #FFFFFF;
+            --text: #1E293B;         /* slate-800 */
+            --text-muted: #64748B;   /* slate-500 */
+            --accent: #4A7BA7;       /* contextify-primary */
+            --accent-hover: #3D6A94; /* contextify-primary-hover */
+            --border: #E2E8F0;       /* slate-200 */
+            --code-bg: #F1F5F9;      /* slate-100 */
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F172A;           /* slate-900 */
+                --bg-surface: #1E293B;   /* slate-800 */
+                --text: #F1F5F9;         /* slate-100 */
+                --text-muted: #94A3B8;   /* slate-400 */
+                --accent: #6A9BC7;       /* contextify-primary dark */
+                --accent-hover: #7AABDA; /* contextify-primary-hover dark */
+                --border: #334155;       /* slate-700 */
+                --code-bg: #334155;      /* slate-700 */
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+
+        .post-meta {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 35px 0 15px 0;
+        }
+
+        p {
+            margin-bottom: 18px;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        ul, ol {
+            margin: 0 0 18px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.9em;
+        }
+
+        kbd {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.85em;
+            border: 1px solid var(--border);
+        }
+
+        .highlight-box {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+        }
+
+        .highlight-box h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .cta-section {
+            background: var(--code-bg);
+            padding: 25px;
+            border-radius: 8px;
+            margin: 35px 0;
+            text-align: center;
+        }
+
+        .cta-section h3 {
+            margin-bottom: 10px;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: var(--accent);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        .cta-btn:hover {
+            background: #0052a3;
+            text-decoration: none;
+        }
+
+        footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            margin: 0 10px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.6rem;
+            }
+
+            body {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <p class="breadcrumb"><a href="/">Contextify</a> / <a href="/blog/">Blog</a></p>
+            <h1>Tab Grouping: Organize Projects by Worktree</h1>
+            <p class="post-meta"><!-- DATE PLACEHOLDER --></p>
+        </header>
+
+        <!-- TODO: Add hero image when available -->
+        <!-- <img src="../assets/img/blog/tab-grouping-og.jpg" alt="Tab grouping in Contextify" style="width: 100%; max-width: 900px; border-radius: 8px; margin: 20px 0;"> -->
+
+        <main>
+            <p>If you work with git worktrees, you know the pain: multiple checkouts of the same repository, each with their own Claude Code or Codex sessions. Your Contextify tab bar fills up with projects that look identical until you squint at the branch names.</p>
+
+            <p>The latest Contextify update solves this with automatic tab grouping. Projects from the same git repository are now grouped together with matching colors and clear visual boundaries. No configuration required.</p>
+
+            <h2>What's New</h2>
+
+            <ul>
+                <li><strong>Automatic worktree detection</strong> - Contextify identifies projects that share a git origin and groups them together automatically</li>
+                <li><strong>Color-coded groups</strong> - Each group gets a distinct background color, making it easy to identify related projects at a glance</li>
+                <li><strong>Group reordering</strong> - Move entire groups via context menu or keyboard shortcuts (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>[</kbd> / <kbd>]</kbd>)</li>
+                <li><strong>Customization</strong> - Change group colors and rename groups through the context menu</li>
+                <li><strong>Manual grouping</strong> - Create custom groups for projects that aren't worktrees but belong together logically</li>
+            </ul>
+
+            <h2>For Power Users</h2>
+
+            <p>Full keyboard navigation is available. Navigate between groups, reorder them, and manage membership without touching the mouse. Right-click any tab to access group options including color selection and renaming.</p>
+
+            <div class="highlight-box">
+                <h3>Keyboard Shortcuts</h3>
+                <ul style="margin-bottom: 0;">
+                    <li><kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>[</kbd> - Move group left</li>
+                    <li><kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>]</kbd> - Move group right</li>
+                </ul>
+            </div>
+
+            <p>Tab grouping works alongside all existing features. Your timeline, search, and Total Recall functionality remain unchanged. Groups persist across app restarts, so your organization stays in place.</p>
+
+            <div class="cta-section">
+                <h3>Try Tab Grouping</h3>
+                <p>Available now in the latest Contextify release.</p>
+                <a href="/download/" class="cta-btn">Download</a>
+            </div>
+
+            <p>Questions or feedback? <a href="mailto:support@contextify.sh">Email support</a> or <a href="https://github.com/PeterPym/contextify/issues">open an issue on GitHub</a>.</p>
+        </main>
+
+        <footer>
+            <p>
+                &copy; 2025 Contextify. All rights reserved.
+                <br>
+                <a href="/">Home</a>
+                <a href="/download/">Download</a>
+                <a href="/blog/">Blog</a>
+                <a href="/privacy/">Privacy</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
