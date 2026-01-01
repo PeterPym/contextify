@@ -482,7 +482,7 @@ public final class EntryRepositoryImpl: EntryRepository {
 
 ### ConversationMonitor Integration
 
-See: `technical-reference/conversation-monitor-state-architecture.md`
+See: `build/docs/architecture/conversation-monitor-state.md`
 
 ```swift
 // Initialize orchestrator (shared, nonisolated)
@@ -514,7 +514,7 @@ let feed = try orchestrator.getRecentFeed(
 
 ### Timeline Cache Integration
 
-See: `technical-reference/timeline-cache-llm-architecture.md`
+See: `build/docs/components/timeline-cache.md`
 
 ```swift
 // Cache lookup (nonisolated)
