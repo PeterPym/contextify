@@ -386,40 +386,31 @@ Swift overloads with defaulted parameters can cause "ambiguous use of 'activity'
 - [ ] Add debug logging for computed predicates
 - [ ] Add test for sidechain anchor context window (anchor returned, neighbors filtered)
 
-### Phase 3: Update UI Search Service ✅ PARTIAL (blocking issues fixed)
+### Phase 3: Update UI Search Service - MOSTLY COMPLETE
 
 **Files:**
 - `app/Sources/ContextifyCore/Search/ConversationSearchService.swift`
 
-**Implementation approach changed:** Instead of using `EntryFilter.search` in `getContext()`, we added `displayInTimeline` and `isSidechain` fields to `ConversationSearchHit`. This enables UI-layer filtering while keeping the search queries simple.
+**Implementation approach:** Added `displayInTimeline` and `isSidechain` fields to `ConversationSearchHit` with `isSelectable` computed property. This enables UI-layer filtering while keeping the search queries simple.
 
-| Function | Current Behavior | Decision | Implementation |
-|----------|-----------------|----------|----------------|
-| `search()` | Deep search (all FTS hits) | **Keep as-is** | Added `displayInTimeline`, `isSidechain` to hit model |
-| `getContext()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Doc comment updated to clarify behavior |
-| `getContextCounts()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Matches `getContext()` |
+| Function | Behavior | Implementation |
+|----------|----------|----------------|
+| `search()` | Deep search (all FTS hits) | Returns `displayInTimeline`, `isSidechain` for UI filtering |
+| `getContext()` | Filters to `display_in_timeline = 1` | Sidechains included; doc comment clarifies hidden hit behavior |
+| `getContextCounts()` | Filters to `display_in_timeline = 1` | Matches `getContext()` |
 
-**UI Hidden-Hit Policy: Filter at Display Time** ✅ PLUMBED (UI gating pending)
+**Completed:**
+- [x] `displayInTimeline` and `isSidechain` fields in `ConversationSearchHit`
+- [x] `isSelectable` computed property for UI gating
+- [x] `search()` SELECT includes visibility fields
+- [x] `getContext()` doc comment clarifies hidden hit behavior
+- [x] Hard-coded `is_sidechain = 0` removed from `getContext()` and `getContextCounts()`
+- [x] Unit tests for `isSelectable` (all 4 hit types) in `ConversationSearchServiceTests`
+- [x] Sidechain fixtures added to `ConversationSearchServiceTests`
+- [x] Regression test: `testGetContext_sidechainHit_returnsNonEmptyWindow`
 
-Deep search returns all FTS matches including hidden entries. `ConversationSearchHit` now includes `displayInTimeline` and `isSidechain` fields so the UI can filter before allowing interaction. Once the UI layer gates clicks on these flags, this ensures:
-- Hidden hits are not clickable
-- `getContext()` never receives hidden hit IDs (so no empty context windows)
-- Sidechains are visible and clickable (sidechain context retrieval works)
-
-**Commits:**
-- `4e48eebf fix(search): add displayInTimeline/isSidechain to ConversationSearchHit`
-
-**Completed tasks:**
-- [x] Add `displayInTimeline` and `isSidechain` to `ConversationSearchHit`
-- [x] Update `search()` SELECT to include `e.display_in_timeline`, `e.is_sidechain`
-- [x] Update `getContext()` doc comment to clarify hidden hits are excluded
-- [x] Remove hard-coded `is_sidechain = 0` from `getContext()` and `getContextCounts()` (prior commit)
-
-**Remaining tasks:**
-- [ ] Add sidechain fixtures to `ConversationSearchServiceTests.swift`
-- [ ] Add regression test: search finds sidechain entry, context retrieval includes neighbors
-- [ ] Add hidden-hit policy test: verify `displayInTimeline=false` hits are filtered in UI
-- [ ] Run `swift test` - all tests must pass
+**Remaining:**
+- [ ] UI layer should gate clicks using `isSelectable` (not verified in this audit)
 
 ### Phase 4: CLI Interface Updates (Optional)
 
