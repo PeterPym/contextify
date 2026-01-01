@@ -635,8 +635,8 @@ Codex CLI automatically injects context (AGENTS.md + environment) at conversatio
 | **Project grouping** | Directory per project | Global directory, `cwd` in `session_meta` |
 | **Message linking** | `uuid` + `parentUuid` (threading), `sessionId` | `call_id` for tools; conversation by file; `session_meta.payload.id` for session |
 | **CWD / Repo** | `cwd` per message; `gitBranch` at message-level | `session_meta.payload.cwd`; `payload.git.{commit_hash,branch,repository_url}` |
-| **Record taxonomy** | `file-history-snapshot`, `user`, `assistant`, `system`, `summary` | `session_meta`, `response_item`, `event_msg`, `function_call`, `function_call_output`, `reasoning` |
-| **Content envelope** | `message: { role, content }` (string for user, array for assistant) | `payload.message: { role, content: [ {type, text} ] }` (typed segments) |
+| **Record taxonomy** | `user`, `assistant`, `system`, `summary`, `file-history-snapshot`, `queue-operation`, `timeline-state`, `queue-operation-result` | `session_meta`, `response_item` (subtypes: `message`, `function_call`, `function_call_output`, `reasoning`), `event_msg`, `turn_context` |
+| **Content envelope** | `message: { role, content }` (string for user, array for assistant) | `payload: { type, role, content: [ {type, text} ] }` (typed segments) |
 | **Content block types** | `text`, `tool_use`, `tool_result`, `thinking`, `image` | `input_text` (user), `output_text` (assistant) |
 | **File snapshots** | Yes — `trackedFileBackups` per path with versions/timestamps | No equivalent (tool outputs/logs instead) |
 | **Internal thoughts** | `thinking` blocks in assistant messages | `reasoning` records with `encrypted_content` |
