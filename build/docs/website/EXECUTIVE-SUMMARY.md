@@ -99,7 +99,7 @@ open https://contextify.sh
 ### Privacy Policy Highlights
 - **No data collection** (everything local)
 - Clear explanation of what app does
-- On-device LLM processing (macOS 26)
+- On-device LLM processing (macOS 26 Tahoe)
 - User data control
 - Contact information
 - App Store compliant

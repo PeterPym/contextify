@@ -7,6 +7,8 @@
 
 **Purpose:** Consolidate findings from three parallel code smell investigations into a single actionable analysis
 
+> **Note (2025-12-31):** This is a historical analysis document. P0 bugs identified below were fixed in commit `ad190448` (display_in_timeline filters). See `build/notes/todo-support/CODE-QUALITY-spec.md` for current status and remaining work.
+
 ---
 
 ## Executive Summary

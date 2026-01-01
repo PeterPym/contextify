@@ -10,7 +10,7 @@
 **Changes:**
 - ✅ Created `Tests/ContextifyCoreTests/` directory
 - ✅ Added `.testTarget()` to `Package.swift`
-- ✅ Moved 5 platform-agnostic test files to SPM
+- ✅ Migrated platform-agnostic test files to SPM (32 test files as of 2025-12)
 - ✅ Created comprehensive documentation in `Tests/README.md`
 
 **Files changed:**
@@ -20,25 +20,17 @@
 
 ### 2. Test Migration
 
-**Moved to SPM (Platform-Agnostic):**
-1. ✅ `DatabaseTests.swift` (26KB) - Database schema, migrations, repositories
-2. ✅ `TranscriptParserTests.swift` (2.7KB) - Transcript parsing logic
-3. ✅ `ProjectIdentityTests.swift` (8.7KB) - Project ID resolution
-4. ✅ `MetadataParserTests.swift` (6.2KB) - Metadata extraction
-5. ✅ `TestHelpers.swift` (2.2KB) - Shared test utilities
+The test suite has grown significantly since the initial SPM migration. As of 2025-12, there are 32 test files in `Tests/ContextifyCoreTests/`.
 
-**Stayed in Xcode (Platform-Specific):**
-1. ❌ `FoundationLLMTests.swift` - macOS FoundationModels dependency
-2. ❌ `GitDetectionTests.swift` - macOS security APIs
-3. ❌ `MulticastStreamTests.swift` - Main app target dependency
-4. ❌ `FeedLoadingDiagnosticTest.swift` - Main app target dependency
-5. ❌ `LLMHealthCheckTests.swift` - Main app target dependency
-6. ❌ `IntegrationTests.swift` - Full app integration
-7. ❌ `ProjectDiscoveryTests.swift` - Needs verification
-8. ❌ `TimelineFixValidationTests.swift` - Needs verification
-9. ❌ `ContextifyTests.swift` - May have app dependencies
+Run `ls Tests/ContextifyCoreTests/*.swift | wc -l` to get the current count.
 
-**Summary:** Migrated ~38% of test files to SPM (5 of 13 tests, plus TestHelpers)
+**Platform-Specific tests remaining in Xcode:**
+- ❌ `FoundationLLMTests.swift` - macOS FoundationModels dependency
+- ❌ `GitDetectionTests.swift` - macOS security APIs
+- ❌ `MulticastStreamTests.swift` - Main app target dependency
+- ❌ `FeedLoadingDiagnosticTest.swift` - Main app target dependency
+- ❌ `LLMHealthCheckTests.swift` - Main app target dependency
+- ❌ `IntegrationTests.swift` - Full app integration
 
 ### 3. Package.swift Changes
 

@@ -225,8 +225,8 @@ let entries = try TranscriptEntry.forProject(projectId).fetchAll(db)
 ```
 
 **Pilot callsites:**
-1. `Repositories.swift:347` - recentByProject
-2. `Repositories.swift:400` - recentFeed (may need custom approach for joins)
+1. `Repositories.swift` - `recentByProject()` (line ~358)
+2. `Repositories.swift` - `recentFeed()` (line ~401, may need custom approach for joins)
 3. `ConversationMonitor.swift` - timeline loading
 
 **Evaluation criteria:**
