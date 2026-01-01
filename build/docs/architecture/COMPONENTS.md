@@ -238,21 +238,20 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 
 ## Core Components (Project Context)
 
-**HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`):
+**HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift#HUDViewModel`):
 - Main `@Observable` `@MainActor` view model
 - Manages:
   - Project root detection (environment → persisted → CWD → existing)
   - Git repository discovery and branch monitoring via file watchers
-  - File/URL ingestion with Markdown artifact generation
   - Session and checkpoint management
   - Security-scoped bookmarks for sandboxed access
 
-**GitRepositoryResolver** (`app/Sources/ContextifyCore/HUDCore.swift:142-368`):
+**GitRepositoryResolver** (`app/Sources/ContextifyCore/HUDCore.swift#GitRepositoryResolver`):
 - Git repository detection
 - Finds `.git` root, parses HEAD (handles detached state, worktrees)
 - Executes `git rev-parse` with timeout/fallback
 
-**HUDPreferences** (`app/Sources/ContextifyCore/HUDCore.swift:13-126`):
+**HUDPreferences** (`app/Sources/ContextifyCore/HUDCore.swift#HUDPreferences`):
 - Manages UserDefaults with suite fallback
 - Stores project root path and security-scoped bookmarks
 
@@ -281,7 +280,7 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 - Returns `LightweightProject` structs sorted by last activity
 - Actor-based for thread safety
 
-**LightweightProject** (struct in AppStateOrchestrator.swift):
+**LightweightProject** (`app/Sources/ContextifyCore/Projects/ProjectModels.swift#LightweightProject`):
 - Sendable, lightweight project metadata (no database required)
 - Contains: id, path, displayName, transcriptCount, lastActivity, provider, cwd, transcriptFiles
 - Used for initial UI display before full ingestion
@@ -295,8 +294,7 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 - Called by AppStateOrchestrator.selectProject()
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified observer view model (163 lines)
-- Observes AppStateOrchestrator state transitions
+- Observer view model for AppStateOrchestrator state transitions
 - Converts state to UI-compatible models (LightweightProject → DiscoveredProject)
 - Delegates all actions to AppStateOrchestrator (no direct discovery or ingestion)
 
@@ -401,13 +399,10 @@ for await context in StartupCoordinator.shared.updates {
 - `@Observable` state management for project list, active project, and unread counts
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified observer view model for Projects window (163 lines)
+- Observer view model for Projects window
 - Observes AppStateOrchestrator state transitions
 - Converts LightweightProject → DiscoveredProject for UI display
 - Delegates all actions (project selection, refresh) to AppStateOrchestrator
-
-**IngestDropZone** (`Contextify/Contextify/IngestDropZone.swift`):
-- Drag-and-drop target for files, uses SwiftUI `onDrop` with completion handlers and main actor marshaling
 
 ### Documentation
 
@@ -453,9 +448,6 @@ Key information in transcript-formats.md:
 
 **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`):
 - Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics)
-
-**SidecarMetadataStore** (`Contextify/Contextify/SidecarMetadataStore.swift`):
-- JSON sidecar file persistence for transcript metadata
 
 ---
 
