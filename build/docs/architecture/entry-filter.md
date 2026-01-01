@@ -19,37 +19,41 @@ The CLI query service (`ContextifyQueryService.swift`) has accumulated ad-hoc fi
 
 This coupling breaks CLI functionality: it's impossible to express "show hidden entries but not sidechains" or "show sidechains for debugging but not hidden entries."
 
-### Evidence
+### Evidence (Historical - Fixed in Phase 2a)
 
-| Function | Location | Issue |
-|----------|----------|-------|
-| `context()` | L714-718 | Couples `is_sidechain = 0` to `!includeHidden` |
-| `activity()` | L903 | Same coupling |
-| `recentActivity()` | L976 | Always filters sidechains, no override |
-| `projectStats()` | L1042 | Always filters sidechains, no override |
-| `search()` | L457 | Correctly does NOT filter sidechains |
+The following issues were present before Phase 2a and are now resolved:
 
-### UI Search Consistency Issue
+| Function | Issue (Now Fixed) |
+|----------|-------------------|
+| `context()` | Coupled `is_sidechain = 0` to `!includeHidden` |
+| `activity()` | Same coupling |
+| `recentActivity()` | Always filtered sidechains, no override - now accepts `filter: EntryFilter` |
+| `projectStats()` | Always filtered sidechains, no override - now accepts `filter: EntryFilter` |
+| `search()` | Correctly did NOT filter sidechains (unchanged) |
 
-The UI search path has a parallel problem:
+### UI Search Consistency Issue (Historical - Fixed)
 
-- `ConversationSearchService.search()` - Does NOT filter `is_sidechain` (can return sidechain hits)
-- `ConversationSearchService.getContext()` - Hard-codes `AND is_sidechain = 0` (L242, L252, L260)
-- `ConversationSearchService.getContextCounts()` - Same hard-coded filter (L306, L318)
+The UI search path had a parallel problem:
 
-**Result:** UI search can return sidechain hits, but context retrieval returns empty windows for those hits. This must be fixed as part of the same change set.
+- `ConversationSearchService.search()` - Did NOT filter `is_sidechain` (correct behavior, unchanged)
+- `ConversationSearchService.getContext()` - Hard-coded `AND is_sidechain = 0` (now removed)
+- `ConversationSearchService.getContextCounts()` - Same hard-coded filter (now removed)
 
-### Root Cause
+**Original issue:** UI search could return sidechain hits, but context retrieval returned empty windows for those hits. This has been fixed.
+
+### Root Cause (Historical)
 
 When sidechain ingestion was added, the `is_sidechain = 0` filter was expedient piggybacked onto `includeHidden`:
 
 ```swift
-// Current (problematic)
+// Before Phase 2a (problematic)
 if !includeHidden {
   filters.append("\(prefix).display_in_timeline = 1")
   filters.append("\(prefix).is_sidechain = 0")  // Incorrectly coupled
 }
 ```
+
+This has been fixed. See Phase 2a for the corrected implementation.
 
 ### Sidechain Storage Model
 
