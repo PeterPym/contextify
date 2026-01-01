@@ -318,19 +318,20 @@ CREATE UNIQUE INDEX idx_cache_entry_window
 ```swift
 // Project management
 func createProject(name: String?, rootPath: String, bookmark: Data?) throws -> String
-func getOrCreateProject(name: String?, rootPath: String) throws -> String
+func getOrCreateProject(name: String?, rootPath: String, bookmark: Data?) throws -> ProjectLookupResult
 
-// Discovery & ingestion
-func discoverTranscript(projectId: String, fileURL: URL, provider: String, ...) throws
-func discoverTranscripts(projectId: String, files: [(URL, String, String?)], ...) throws
+// Discovery & ingestion (async - routes through HooverScheduler)
+func discoverTranscript(projectId: String, fileURL: URL, provider: String, providerSessionId: String?, startWatching: Bool, ...) async throws
+func discoverTranscripts(projectId: String, transcriptFiles: [(url: URL, provider: String, sessionId: String?)], ...) async throws
 
 // Queries
-func getRecentFeed(forProject: String, limit: Int, generatorSignature: String)
+func getRecentFeed(forProject projectId: String, limit: Int, generatorSignature: String)
   throws -> [(TranscriptEntry, TimelineCache?)]
 
 // Cache (nonisolated - thread-safe via GRDB)
 nonisolated func getCachedTimeline(key: CacheKey) throws -> TimelineCache?
 nonisolated func saveCachedTimeline(_ cache: TimelineCache) throws
+nonisolated func saveCachedTimelineMany(_ caches: [TimelineCache]) throws
 ```
 
 **Design:** Sendable via `@unchecked` (GRDB handles thread safety). Can be called from background tasks.
