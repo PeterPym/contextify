@@ -263,7 +263,7 @@ func testLargeProjectLoadTime() {
 
 ## Database Performance
 
-### Schema: v26
+### Schema: v33
 
 **File:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 
