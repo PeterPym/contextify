@@ -274,14 +274,19 @@ watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
 
 **File:** `Contextify/Contextify/ContextifyApp.swift`
 
+Provider creation happens in `buildAndConfigureAccessProvider()`:
+
 ```swift
-private func initializeProjectsSystem() async {
-  let accessProvider: TranscriptAccessProvider
+@MainActor
+private func buildAndConfigureAccessProvider() async -> TranscriptAccessProvider {
+  // Return cached provider if already built
+  if let existing = sharedAccessProvider {
+    return existing
+  }
 
   #if APPSTORE_BUILD
-  // Resolve security-scoped URLs from FolderAccessController
   let claudeAuth = await folderAccessController.authorization(for: .claude)
-  let codexAuth = await folderAccessController.authorization(for: .codex)
+  let codexAuth  = await folderAccessController.authorization(for: .codex)
 
   var claudeURL: URL? = nil
   if let auth = claudeAuth, auth.status == .authorized {
@@ -293,22 +298,48 @@ private func initializeProjectsSystem() async {
     codexURL = try? await folderAccessController.resolve(auth).url
   }
 
-  accessProvider = SandboxTranscriptAccessProvider(
+  let provider = SandboxTranscriptAccessProvider(
     claudeRoot: claudeURL,
     codexRoot: codexURL
   )
   #else
-  accessProvider = PassthroughAccessProvider()
+  let provider = PassthroughAccessProvider()
   #endif
 
-  orchestrator = try TranscriptOrchestrator(
-    dbManager: dbManager,
-    accessProvider: accessProvider
-  )
+  await AppStateOrchestrator.shared.configureAccessProvider(provider)
+  await ImageExtractor.shared.configure(accessProvider: provider)
+  sharedAccessProvider = provider
+  return provider
 }
 ```
 
-**Built once, used everywhere:** The provider is created at app startup and injected into `TranscriptOrchestrator`. All subsequent file access goes through it.
+The provider is then used in `initializeProjectsSystem()`:
+
+```swift
+private func initializeProjectsSystem(existingProvider: TranscriptAccessProvider? = nil) async {
+  // Reuse existing provider, or cached provider, or build new one
+  let accessProvider: TranscriptAccessProvider
+  if let existing = existingProvider {
+    accessProvider = existing
+  } else if let cached = sharedAccessProvider {
+    accessProvider = cached
+  } else {
+    accessProvider = await buildAndConfigureAccessProvider()
+  }
+
+  // Initialize orchestrator with access provider
+  let orchestrator = try TranscriptOrchestrator(
+    dbManager: .shared,
+    accessProvider: accessProvider
+  )
+  // ... configure other components
+}
+```
+
+**Key points:**
+- Provider is built once via `buildAndConfigureAccessProvider()` and cached in `sharedAccessProvider`
+- `initializeProjectsSystem()` reuses the cached provider to avoid reconstruction
+- Mid-session permission grants use separate `reconfigureAccessProvider()` method (see ContextifyApp.swift)
 
 ---
 
