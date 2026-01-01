@@ -259,6 +259,12 @@ struct ContextifyQueryCLI {
           options.limit = n
         case "--json":
           options.jsonOutput = true
+        case "--this-worktree":
+          options.thisWorktreeOnly = true
+        case "--exclude":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude", exitCode: .invalidArgs) }
+          options.exclude = args[index]
         case "--help", "-h":
           usage(nil)
         default:
@@ -1389,6 +1395,89 @@ private func resolveProjectId(
       )
     }
   }
+}
+
+private func resolveProjectScope(
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService
+) throws -> ProjectScope {
+  // 1. Resolve base path
+  let basePath: String
+  if let project = options.project {
+    basePath = (project == "." || project == "current")
+      ? FileManager.default.currentDirectoryPath
+      : project
+  } else {
+    return ProjectScope(projectIds: [], displayNames: [],
+                       unresolvedSiblings: [], excluded: [],
+                       expansionApplied: false)
+  }
+
+  // 2. Check for worktree expansion disabled
+  if options.thisWorktreeOnly {
+    if let id = try? service.resolveProjectId(forPath: basePath) {
+      return ProjectScope(projectIds: [id],
+                         displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
+                         unresolvedSiblings: [], excluded: [],
+                         expansionApplied: false)
+    }
+    throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
+  }
+
+  // 3. Detect worktree group
+  guard let group = WorktreeDetector.findWorktreeGroup(from: URL(fileURLWithPath: basePath)) else {
+    // Not a worktree group, single project
+    if let id = try? service.resolveProjectId(forPath: basePath) {
+      return ProjectScope(projectIds: [id],
+                         displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
+                         unresolvedSiblings: [], excluded: [],
+                         expansionApplied: false)
+    }
+    throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
+  }
+
+  // 4. Load config for archived/names
+  let config = loadWorktreeConfig(gitRoot: group.commonGitDir.deletingLastPathComponent())
+  let excludeList = options.exclude?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? []
+
+  // 5. Resolve each sibling
+  var projectIds: [String] = []
+  var displayNames: [String] = []
+  var unresolvedSiblings: [String] = []
+  var excluded: [String] = []
+
+  for worktree in group.worktrees {
+    let pathString = worktree.path
+    let displayName = config?.nameFor(path: pathString) ?? worktree.lastPathComponent
+
+    // Check if archived
+    if config?.isArchived(path: pathString) == true {
+      excluded.append(displayName)
+      continue
+    }
+
+    // Check if user-excluded
+    if excludeList.contains(displayName) || excludeList.contains(worktree.lastPathComponent) {
+      excluded.append(displayName)
+      continue
+    }
+
+    // Resolve in database
+    if let id = try? service.resolveProjectId(forPath: pathString) {
+      projectIds.append(id)
+      displayNames.append(displayName)
+    } else {
+      unresolvedSiblings.append(displayName)
+    }
+  }
+
+  return ProjectScope(
+    projectIds: projectIds,
+    displayNames: displayNames,
+    unresolvedSiblings: unresolvedSiblings,
+    excluded: excluded,
+    expansionApplied: projectIds.count > 1
+  )
 }
 
 private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSuggestion) -> JSONValue {
