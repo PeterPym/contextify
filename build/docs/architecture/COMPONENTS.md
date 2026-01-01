@@ -101,7 +101,6 @@ This document provides detailed information about Contextify's architecture and 
 
 ### Documentation
 
-- Usage guide: `app/Sources/ContextifyCore/Database/README.md`
 - Architecture: `build/docs/architecture/sql-backend.md`
 - Database migration: `build/docs/components/database-migration.md`
 - Custom location feature: Shipped (see Settings > Database tab)
@@ -473,3 +472,35 @@ python3 scripts/transcript-repair/repair_transcript.py <transcript>
 - Full guide: `build/docs/operations/transcript-corruption-detection.md`
 - Script README: `scripts/transcript-repair/README.md`
 - Format spec: `build/docs/specifications/claude-code-transcript-format.md`
+
+---
+
+## Platform Abstractions (Cross-Platform Support)
+
+Contextify supports both macOS (full app) and Linux (ingestion CLI). Platform-specific APIs are wrapped in abstraction modules.
+
+**CrossPlatformLogger** (`app/Sources/ContextifyCore/Platform/CrossPlatformLogger.swift`):
+- Darwin: Wraps `OSLog.Logger` for system logging
+- Linux: Writes to stderr with timestamp/level prefixes
+
+**CrossPlatformCrypto** (`app/Sources/ContextifyCore/Platform/CrossPlatformCrypto.swift`):
+- Darwin: Uses `CryptoKit.SHA256`
+- Linux: Uses `Crypto.SHA256` from swift-crypto
+
+**CrossPlatformLock** (`app/Sources/ContextifyCore/Platform/CrossPlatformLock.swift`):
+- Darwin: Wraps `OSAllocatedUnfairLock<State>`
+- Linux: Uses `NSLock` with DEBUG reentrancy detection
+
+**PlatformSandbox** (`app/Sources/ContextifyCore/Platform/PlatformSandbox.swift`):
+- Darwin: Detects App Store sandbox
+- Linux: Always returns `false`
+
+**IngestionEventSink** (`app/Sources/ContextifyCore/Platform/IngestionEventSink.swift`):
+- Protocol for ingestion event reporting (progress, errors, completion)
+- CLI implements this with `CLIEventSink` for human/JSONL output
+
+### Documentation
+
+- **Architecture:** `build/docs/architecture/cross-platform-architecture.md`
+- **Development patterns:** `build/docs/guides/cross-platform-swift.md`
+- **CLI usage:** `Sources/ContextifyIngestionCLI/README.md`
