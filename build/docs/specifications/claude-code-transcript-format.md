@@ -785,16 +785,23 @@ class QueueStateTracker {
 - Extract: `content`, `timestamp`, `parentUuid`, `sessionId`, `provider`, `kind`, `gitBranch`, `gitCommit`, `cwd`
 - Tool-use-only entries are stored with tool markers (e.g., `[Tool: Bash]`) and `display_in_timeline = 0`
 
-**What we skip:**
-- `isMeta: true` - Meta/command wrappers
-- `summary` - Internal navigation metadata
-- `file-history-snapshot` - File tracking metadata
-- `system` - System events
+**What we skip (from transcript_entries):**
+- `isMeta: true` - Meta/command wrappers (skipped from entries, not metadata)
+- `timeline-state` - UI state snapshots (fully skipped)
+- `queue-operation-result` - Queue operation results (fully skipped)
 - Empty content - Messages with no displayable text or tool markers
 
-### Proposed Enhancements
+**What we parse into metadata tables:**
+- `summary` - Stored in `transcript_summaries` table
+- `file-history-snapshot` - Stored in `file_snapshots` + `tracked_files` tables
+- `system` - Stored in `system_events` table
+- `queue-operation` - Processed for queue state management
 
-**1. File-History-Snapshot Storage:**
+### Implemented Metadata Tables
+
+These tables are implemented in the current schema (v32):
+
+**1. File-History-Snapshot Storage (Implemented):**
 ```sql
 CREATE TABLE file_snapshots (
   id TEXT PRIMARY KEY,
@@ -826,7 +833,7 @@ CREATE INDEX idx_tracked_files_snapshot ON tracked_files(snapshot_id);
 - Correlate file changes with conversation
 - Session scope visualization ("Files Modified: 12")
 
-**2. Summary Storage:**
+**2. Summary Storage (Implemented):**
 ```sql
 CREATE TABLE transcript_summaries (
   id TEXT PRIMARY KEY,
@@ -844,7 +851,7 @@ CREATE TABLE transcript_summaries (
 - Cross-session navigation via leaf_uuid
 - Improve search relevance
 
-**3. System Event Storage:**
+**3. System Event Storage (Implemented):**
 ```sql
 CREATE TABLE system_events (
   id TEXT PRIMARY KEY,
@@ -870,7 +877,7 @@ CREATE INDEX idx_system_events_transcript ON system_events(transcript_id);
 - Session debugging (api_error events)
 - Compact mode analysis
 
-**4. Usage Metadata Storage:**
+**4. Usage Metadata Storage (Implemented):**
 ```sql
 -- Add to transcript_entries table:
 ALTER TABLE transcript_entries ADD COLUMN usage_metadata TEXT; -- JSON
