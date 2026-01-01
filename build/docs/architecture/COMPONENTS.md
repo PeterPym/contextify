@@ -30,7 +30,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v32** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v33** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -84,7 +84,9 @@ This document provides detailed information about Contextify's architecture and 
 - **v28**: FTS5 search index for conversation search
 - **v29**: include summaries in FTS
 - **v30**: sidechain ingestion (`transcript_entries.is_sidechain`) + `tool_invocations` table
+- **v31**: pending_rehoover for lazy watchers
 - **v32**: lazy watcher baseline tracking (`transcripts.known_last_entry_ts`, `known_file_size`, `unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`, `last_activity_detected_at`, `projects.last_activity_detected_at`)
+- **v33**: ingestion_runs table for CLI debugging
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
