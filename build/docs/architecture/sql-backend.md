@@ -110,7 +110,7 @@ transcript_metadata
 ├── confidence + hallucination_flags
 ├── generation_metadata
 │   ├── model, prompt_version, generator_version
-│   ├── strategy (full | bookends | heuristic)
+│   ├── strategy (full | adaptive | bookends | signalFirst | heuristic)
 │   └── transcript_sha256
 └── timestamps
 
