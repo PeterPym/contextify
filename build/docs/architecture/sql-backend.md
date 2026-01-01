@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v30 current)
+**Status:** Post-Implementation (v33 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 30 (latest: sidechain ingestion + tool invocations)
+**Schema Version:** 33 (latest: ingestion_runs table for CLI debugging)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v30 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v30).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v33 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v33).
 
 ---
 
@@ -548,7 +548,7 @@ generator.queueMisses([miss])  // Async processing
 - Purpose: Control whether timeline automatically follows active transcript or stays pinned to selected session
 - Default: Auto mode for all existing projects
 
-## Recent Migrations (v27-v30)
+## Recent Migrations (v27-v33)
 
 **v27: Queued Messages**
 - Add `transcript_entries.is_queued` with default 0
@@ -568,6 +568,23 @@ generator.queueMisses([miss])  // Async processing
 - Add `transcript_entries.is_sidechain` with default 0
 - Create `tool_invocations` table with linkage to tool_use/tool_result and sidechains
 - Re-ingest Claude Code transcripts to backfill tool metadata
+
+**v31: Pending Rehoover**
+- Add `transcripts.pending_rehoover` column for lazy watcher catch-up
+- Purpose: Mark transcripts needing re-ingestion after COLD→HOT tier promotion
+
+**v32: Lazy Watcher Baseline Tracking**
+- Add 7 columns to support watcher budget system and unread approximation:
+  - `transcripts.known_last_entry_ts`, `known_file_size`
+  - `transcripts.unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`
+  - `transcripts.last_activity_detected_at`
+  - `projects.last_activity_detected_at`
+- Purpose: Enable tiered watcher lifecycle (HOT/WARM/COLD) with efficient unread tracking
+
+**v33: Ingestion Runs**
+- Create `ingestion_runs` table for CLI debugging and diagnostics
+- Tracks ingestion performance metrics, errors, and outcomes per transcript
+- Purpose: Support debugging of ingestion issues and performance monitoring
 
 ---
 
