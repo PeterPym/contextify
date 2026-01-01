@@ -47,6 +47,15 @@ private struct CLIError: Error {
   }
 }
 
+/// Result of resolving project scope for worktree expansion
+private struct ProjectScope {
+  let projectIds: [String]
+  let displayNames: [String]
+  let unresolvedSiblings: [String]
+  let excluded: [String]
+  let expansionApplied: Bool
+}
+
 @main
 struct ContextifyQueryCLI {
   enum Command: String {
@@ -95,6 +104,10 @@ struct ContextifyQueryCLI {
     var all: Bool = false
     var force: Bool = false
     var edit: Bool = false
+
+    // Worktree options
+    var thisWorktreeOnly: Bool = false
+    var exclude: String?
   }
 
   struct StateSidecar: Decodable {
