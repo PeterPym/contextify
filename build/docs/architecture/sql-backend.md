@@ -622,7 +622,8 @@ generator.queueMisses([miss])  // Async processing
 
 ## Cross-References
 
-- **Usage Guide:** `app/Sources/ContextifyCore/Database/README.md`
 - **Timeline Integration:** `build/docs/components/timeline-cache.md`
 - **State Management:** `build/docs/architecture/conversation-monitor-state.md`
+- **Schema Source:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
+- **Repositories:** `app/Sources/ContextifyCore/Database/Repositories.swift`
 - **Planning Docs (Archive):** `build/docs/archive/completed-work/technical-brief-sql-migration-architecture.md`
