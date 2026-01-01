@@ -100,7 +100,7 @@ User-originated messages with metadata.
 - `version` (string, semver, e.g., `"2.0.26"`)
 - `gitBranch` (string) — Current git branch
 - `type` (string) — Always `"user"`
-- `message` (object) — `{ role: "user", content: "<string>" }` - **CONTENT MUST BE STRING, NOT ARRAY**
+- `message` (object) — `{ role: "user", content: "<string>" | ContentBlock[] }` - String for plain text, array for tool results
 - `uuid` (uuid) — Unique message identifier
 - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING**
 - `thinkingMetadata` (object) — `{ level: "none", disabled: true, triggers: [] }`
