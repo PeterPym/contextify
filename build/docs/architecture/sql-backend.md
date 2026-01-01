@@ -51,11 +51,23 @@ transcripts
 ├── file_path (UNIQUE per project)
 ├── provider (claude.code | codex.cli | other)
 ├── provider_session_id
+├── last_modified + file_size + line_count
+├── bookmark (security-scoped bookmark data)
 ├── ingestion_state
 │   ├── last_processed_line
 │   ├── last_processed_entry_id (v2+: resume checkpoint)
 │   ├── parser_version
-│   └── status (active | unavailable | error)
+│   ├── status (active | unavailable | error)
+│   ├── ingest_state (complete | partial, v24+)
+│   └── last_error
+├── identity_fields (v3+: path-based deduplication)
+│   ├── normalized_path + path_hash
+│   ├── content_length + mtime_ms + content_sha256
+├── lazy_watcher_fields (v31-v32)
+│   ├── pending_rehoover (v31+)
+│   ├── known_last_entry_ts + known_file_size (v32+)
+│   ├── unread_approx_count + unread_approx_confidence (v32+)
+│   └── last_activity_detected_at (v32+)
 └── timestamps
 
 transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
