@@ -316,12 +316,26 @@ struct ContextifyQueryCLI {
         let rawQuery = commandArgs.joined(separator: " ")
         let query = try buildSearchQuery(rawQuery)
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
-        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let scope = try resolveProjectScope(options: options, service: service)
+
+        // Print scope info to stderr
+        if scope.expansionApplied {
+          fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+          fputs("(use --this-worktree to search only current)\n", stderr)
+
+          if !scope.unresolvedSiblings.isEmpty {
+            fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
+          }
+          if !scope.excluded.isEmpty {
+            fputs("Excluded: \(scope.excluded.joined(separator: ", "))\n", stderr)
+          }
+        }
+
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
         let requestedLimit = options.limit
         let results = try service.search(
           query: query,
-          projectId: resolvedProjectId,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
           transcriptId: options.transcriptId,
           limit: requestedLimit + 1,
           includeHidden: options.includeHidden,
@@ -335,19 +349,55 @@ struct ContextifyQueryCLI {
           trimmedResults = Array(results.prefix(requestedLimit))
           hasMore = true
         }
-        let metadata: JSONValue = .object([
+
+        // Compute source counts by grouping results by projectId
+        let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
+          .mapValues { $0.count }
+          .sorted { $0.key < $1.key }
+          .reduce(into: [String: JSONValue]()) { dict, pair in
+            dict[pair.key] = .number(Double(pair.value))
+          }
+
+        var metadataDict: [String: JSONValue] = [
           "returned": .number(Double(trimmedResults.count)),
           "limit": .number(Double(requestedLimit)),
           "hasMore": .bool(hasMore)
-        ])
+        ]
+
+        // Add worktree expansion metadata
+        if scope.expansionApplied {
+          metadataDict["worktreeExpansion"] = .object([
+            "enabled": .bool(true),
+            "worktrees": .array(scope.displayNames.map { .string($0) }),
+            "excluded": .array(scope.excluded.map { .string($0) }),
+            "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
+          ])
+          metadataDict["sourceCounts"] = .object(sourceCounts)
+        }
+
+        let metadata: JSONValue = .object(metadataDict)
         try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
           printSearchHits(trimmedResults)
         }
 
       case .activity:
-        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let scope = try resolveProjectScope(options: options, service: service)
+
+        // Print scope info to stderr
+        if scope.expansionApplied {
+          fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+          fputs("(use --this-worktree to search only current)\n", stderr)
+
+          if !scope.unresolvedSiblings.isEmpty {
+            fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
+          }
+          if !scope.excluded.isEmpty {
+            fputs("Excluded: \(scope.excluded.joined(separator: ", "))\n", stderr)
+          }
+        }
+
         let results = try service.activity(
-          projectId: resolvedProjectId,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
           transcriptId: options.transcriptId,
           limit: options.limit,
           includeHidden: options.includeHidden,
