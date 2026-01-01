@@ -94,6 +94,7 @@ User-originated messages with metadata.
 **Fields:**
 - `parentUuid` (nullable string) — **REQUIRED FOR THREADING:** Links to previous assistant message UUID, or `null` for first message
 - `isSidechain` (bool) — `true` for subagent/sidechain messages and warmup/initialization contexts (see [Sidechain/Subagent Transcripts](#sidechainsubagent-transcripts))
+- `isMeta` (bool, optional) — `true` for meta/command wrapper messages (e.g., slash command instructions). Parser skips unless content contains `<command-name>` or `/clear`
 - `userType` (string, e.g., `"external"`)
 - `cwd` (string) — Current working directory
 - `sessionId` (uuid) — Session identifier
