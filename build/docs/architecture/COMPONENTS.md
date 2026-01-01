@@ -70,7 +70,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v30)
+- SQL schema definitions and versioned migrations (v1-v33)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -357,7 +357,7 @@ for await _ in NotificationCenter.default.notifications(named: .appStateDidChang
 }
 
 // Legacy components: Still use StartupCoordinator
-for await context in StartupCoordinator.shared.updates {
+for await context in StartupCoordinator.shared.updates() {
     self.activeProjectId = context.id
 }
 ```
@@ -381,7 +381,7 @@ for await context in StartupCoordinator.shared.updates {
 ## UI Layer
 
 **ContentView** (`Contextify/Contextify/ContentView.swift`):
-- Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications
+- Main UI with project switcher, project header, timeline view, quick search, and toast notifications
 
 **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`):
 - Timeline display UI with session filtering and real-time updates
