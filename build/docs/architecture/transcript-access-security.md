@@ -346,22 +346,32 @@ private func initializeProjectsSystem(existingProvider: TranscriptAccessProvider
 
 ## Build Configuration
 
-### APPSTORE_BUILD Flag
+### APPSTORE_BUILD Flag vs Sandbox.isSandboxed
 
-**Set via build script:** `scripts/xc.sh --dist=appstore`
+**Build flag:** `APPSTORE_BUILD` is set via `scripts/xc.sh --dist=appstore`
 
-**Effect:**
-- Core uses flag to disable global discovery and FSEvents in sandbox
-- App uses flag to choose `SandboxTranscriptAccessProvider` vs `PassthroughAccessProvider`
+**Usage patterns:**
 
-**In code:**
-```swift
-#if APPSTORE_BUILD
-// Sandboxed behavior
-#else
-// DMG behavior
-#endif
-```
+1. **App layer (`#if APPSTORE_BUILD`)** - Used for provider selection at compile time:
+   ```swift
+   #if APPSTORE_BUILD
+   let provider = SandboxTranscriptAccessProvider(...)
+   #else
+   let provider = PassthroughAccessProvider()
+   #endif
+   ```
+
+2. **Core layer (`Sandbox.isSandboxed`)** - Runtime check for sandbox detection:
+   ```swift
+   // In TranscriptOrchestrator.needsSecurityScope()
+   guard Sandbox.isSandboxed else { return false }
+   return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
+   ```
+
+**Why runtime check in Core?**
+The ContextifyCore Swift package does not receive the `APPSTORE_BUILD` compile-time flag.
+Instead, it uses `Sandbox.isSandboxed` (defined in `HUDCore.swift`) which detects sandbox
+at runtime via environment variables set by macOS for sandboxed apps.
 
 ---
 
