@@ -13,6 +13,8 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var displayOrder: Int?  // Custom project ordering (v19)
   public var isOrphaned: Bool  // Orphaned tracking - directory missing (v20)
   public var orphanedSince: Int?  // When directory went missing (v20)
+  public var groupId: String?  // Tab group membership (v33)
+  public var groupDisplayOrder: Int?  // Order within group (v33)
   public var lastActivityDetectedAt: Int?
   public var createdAt: Int
   public var updatedAt: Int
@@ -29,8 +31,92 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
     case displayOrder = "display_order"
     case isOrphaned = "is_orphaned"
     case orphanedSince = "orphaned_since"
+    case groupId = "group_id"
+    case groupDisplayOrder = "group_display_order"
     case lastActivityDetectedAt = "last_activity_detected_at"
     case createdAt = "created_at"
+    case updatedAt = "updated_at"
+  }
+}
+
+// MARK: - Tab Group (v33)
+
+/// Source of a tab group's color
+public enum ColorSource: String, Codable, Sendable {
+  case auto   // Color derived from git root hash
+  case user   // User-specified color override
+}
+
+/// Tab grouping for project switcher
+/// Groups tabs together visually, with worktree auto-grouping built on top
+public struct TabGroup: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var name: String?  // Optional display name (worktree groups default to repo name)
+  public var colorHex: String?  // User override color (e.g., "#4A7BA7")
+  public var colorSource: ColorSource  // How color is determined
+  public var gitRoot: String?  // For worktree groups: the git repository root path
+  public var isWorktreeGroup: Bool  // true if auto-created for worktrees
+  public var displayOrder: Int  // Position in tab bar
+  public var createdAt: Int
+  public var updatedAt: Int
+
+  public init(
+    id: String,
+    name: String? = nil,
+    colorHex: String? = nil,
+    colorSource: ColorSource = .auto,
+    gitRoot: String? = nil,
+    isWorktreeGroup: Bool = false,
+    displayOrder: Int,
+    createdAt: Int,
+    updatedAt: Int
+  ) {
+    self.id = id
+    self.name = name
+    self.colorHex = colorHex
+    self.colorSource = colorSource
+    self.gitRoot = gitRoot
+    self.isWorktreeGroup = isWorktreeGroup
+    self.displayOrder = displayOrder
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+  }
+
+  public static let databaseTableName = "tab_groups"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case colorHex = "color_hex"
+    case colorSource = "color_source"
+    case gitRoot = "git_root"
+    case isWorktreeGroup = "is_worktree_group"
+    case displayOrder = "display_order"
+    case createdAt = "created_at"
+    case updatedAt = "updated_at"
+  }
+}
+
+// MARK: - Worktree Preferences (v33)
+
+/// Persists user's worktree grouping preferences
+/// Used to remember when a user has ungrouped worktrees (prevents re-auto-grouping)
+public struct WorktreePreference: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var gitRoot: String  // Primary key: the git repository root path
+  public var ungrouped: Bool  // true if user explicitly ungrouped this worktree set
+  public var updatedAt: Int
+
+  public init(gitRoot: String, ungrouped: Bool, updatedAt: Int) {
+    self.gitRoot = gitRoot
+    self.ungrouped = ungrouped
+    self.updatedAt = updatedAt
+  }
+
+  public static let databaseTableName = "worktree_preferences"
+
+  enum CodingKeys: String, CodingKey {
+    case gitRoot = "git_root"
+    case ungrouped
     case updatedAt = "updated_at"
   }
 }

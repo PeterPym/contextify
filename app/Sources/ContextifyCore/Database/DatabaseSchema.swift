@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v33 (ingestion_runs table for CLI debugging/resumption)
+/// Current version: v34 (v33: ingestion_runs for CLI debugging, v34: tab grouping)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 33
+  public static let version = 34
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -966,6 +966,65 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v33] ingestion_runs table created successfully")
     }
 
+    // v34: Tab grouping system
+    // Enables grouping tabs together with worktree auto-grouping built on top
+    migrator.registerMigration("v34_tab_grouping") { db in
+      logger.info("[MIGRATION-v34] Adding tab grouping support")
+
+      // Create tab_groups table
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS tab_groups (
+          id TEXT PRIMARY KEY,
+          name TEXT,
+          color_hex TEXT,
+          color_source TEXT NOT NULL DEFAULT 'auto' CHECK (color_source IN ('auto', 'user')),
+          git_root TEXT,
+          is_worktree_group INTEGER NOT NULL DEFAULT 0,
+          display_order INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      """)
+
+      // Create worktree_preferences table for persisting ungroup choices
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS worktree_preferences (
+          git_root TEXT PRIMARY KEY,
+          ungrouped INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL
+        )
+      """)
+
+      // Add group columns to projects table
+      if try !db.columnExists("group_id", in: "projects") {
+        try db.execute(sql: """
+          ALTER TABLE projects ADD COLUMN group_id TEXT REFERENCES tab_groups(id) ON DELETE SET NULL
+        """)
+      }
+      if try !db.columnExists("group_display_order", in: "projects") {
+        try db.execute(sql: """
+          ALTER TABLE projects ADD COLUMN group_display_order INTEGER
+        """)
+      }
+
+      // Create indexes
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tab_groups_order
+        ON tab_groups(display_order)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tab_groups_git_root
+        ON tab_groups(git_root)
+        WHERE git_root IS NOT NULL
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_projects_group
+        ON projects(group_id, group_display_order)
+      """)
+
+      logger.info("[MIGRATION-v34] Tab grouping migration complete")
+    }
+
     return migrator
   }
 
@@ -974,7 +1033,40 @@ public enum DatabaseSchema {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
-    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering, v20: added orphaned tracking)
+    // Tab groups table (v33: tab grouping support) - must be before projects due to FK
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS tab_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        color_hex TEXT,
+        color_source TEXT NOT NULL DEFAULT 'auto' CHECK (color_source IN ('auto', 'user')),
+        git_root TEXT,
+        is_worktree_group INTEGER NOT NULL DEFAULT 0,
+        display_order INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_tab_groups_order
+      ON tab_groups(display_order)
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_tab_groups_git_root
+      ON tab_groups(git_root)
+      WHERE git_root IS NOT NULL
+    """)
+
+    // Worktree preferences table (v33: persists ungroup choices)
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS worktree_preferences (
+        git_root TEXT PRIMARY KEY,
+        ungrouped INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      )
+    """)
+
+    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering, v20: added orphaned tracking, v33: added group_id and group_display_order)
     try db.create(table: "projects", ifNotExists: true) { t in
       t.column("id", .text).primaryKey()
       t.column("name", .text)
@@ -985,6 +1077,8 @@ public enum DatabaseSchema {
       t.column("display_order", .integer)  // v19: custom project ordering
       t.column("is_orphaned", .integer).notNull().defaults(to: 0)  // v20: orphaned tracking
       t.column("orphaned_since", .integer)  // v20: when directory went missing
+      t.column("group_id", .text).references("tab_groups", onDelete: .setNull)  // v33: tab group membership
+      t.column("group_display_order", .integer)  // v33: order within group
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
     }
@@ -999,6 +1093,10 @@ public enum DatabaseSchema {
       CREATE INDEX IF NOT EXISTS idx_projects_orphaned
       ON projects(is_orphaned, orphaned_since)
       WHERE is_orphaned = 1
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_group
+      ON projects(group_id, group_display_order)
     """)
 
     // Transcripts table (v2: last_processed_entry_id, v3: identity fields, v3: unique indexes)
@@ -1363,6 +1461,31 @@ public enum DatabaseSchema {
       CREATE INDEX IF NOT EXISTS idx_projects_new
       ON projects(created_at DESC)
       WHERE last_viewed_ts = 0.0
+    """)
+
+    // v33: Ingestion runs table for CLI debugging
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS ingestion_runs (
+        id TEXT PRIMARY KEY,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        transcripts_processed INTEGER NOT NULL DEFAULT 0,
+        entries_inserted INTEGER NOT NULL DEFAULT 0,
+        errors_encountered INTEGER NOT NULL DEFAULT 0,
+        duration_seconds REAL,
+        status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed')),
+        cli_version TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status
+      ON ingestion_runs(status, started_at DESC)
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_ingestion_runs_started_at
+      ON ingestion_runs(started_at DESC)
     """)
 
     // Run ANALYZE to update statistics

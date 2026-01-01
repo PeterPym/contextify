@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import OSLog
+import SwiftUI
 import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
@@ -15,13 +16,96 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
   public let lastViewedAt: Date?  // Last time this project was viewed
   public let isOrphaned: Bool  // Whether the project directory is missing
 
-  public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil, isOrphaned: Bool = false) {
+  /// Git repository root for this project (cached for performance).
+  /// Used for worktree color grouping in tab bar.
+  public let gitRoot: URL?
+
+  /// Tab group membership (v33). nil = solo tab, not in a group
+  public let groupId: String?
+
+  /// Order within group (v33). nil if not in a group
+  public let groupDisplayOrder: Int?
+
+  public init(
+    id: String,
+    name: String,
+    rootPath: String,
+    transcriptCount: Int,
+    lastViewedAt: Date? = nil,
+    isOrphaned: Bool = false,
+    groupId: String? = nil,
+    groupDisplayOrder: Int? = nil
+  ) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
     self.transcriptCount = transcriptCount
     self.lastViewedAt = lastViewedAt
     self.isOrphaned = isOrphaned
+    self.groupId = groupId
+    self.groupDisplayOrder = groupDisplayOrder
+    // Cache gitRoot at init time to avoid repeated filesystem traversal during SwiftUI render
+    // Use findMainGitRoot to properly resolve worktrees to their main repository for consistent coloring
+    let projectURL = URL(fileURLWithPath: rootPath)
+    self.gitRoot = GitRepositoryResolver.findMainGitRoot(startingAt: projectURL)
+  }
+}
+
+/// UI representation of a tab group (v33)
+/// Groups contain one or more projects that are displayed together in the tab bar
+/// P1.3 fix: Store colorHex instead of Color for Swift 6 Sendable compatibility
+public struct TabGroupInfo: Identifiable, Sendable {
+  public let id: String  // Group ID (or synthetic ID for solo tabs)
+  public let name: String?  // Display name (worktree groups default to repo name)
+  public let colorHex: String?  // User override color hex (e.g., "#4A7BA7"), nil = compute from gitRoot
+  public let isWorktreeGroup: Bool  // true if auto-created for git worktrees
+  public let gitRoot: URL?  // For worktree groups: the git repository root
+  public var projects: [ProjectInfo]  // Projects in this group, ordered by groupDisplayOrder
+
+  /// True if this is a "synthetic" group for a solo (ungrouped) tab
+  public var isSoloTab: Bool {
+    projects.count == 1 && projects.first?.groupId == nil
+  }
+
+  /// Computed color for UI rendering (P1.3 fix: derive at render time, not storage)
+  /// Priority: colorHex override > gitRoot hash > clear
+  public var color: Color {
+    if let hex = colorHex, let parsed = Color.fromHex(hex) {
+      return parsed
+    }
+    if let gitRoot {
+      return WorktreeColorUtility.color(for: gitRoot)
+    }
+    return .clear
+  }
+
+  public init(
+    id: String,
+    name: String?,
+    colorHex: String?,
+    isWorktreeGroup: Bool,
+    gitRoot: URL? = nil,
+    projects: [ProjectInfo]
+  ) {
+    self.id = id
+    self.name = name
+    self.colorHex = colorHex
+    self.isWorktreeGroup = isWorktreeGroup
+    self.gitRoot = gitRoot
+    self.projects = projects
+  }
+
+  /// Create a synthetic group for a solo (ungrouped) tab
+  /// Note: gitRoot is nil for solo tabs - they don't get worktree coloring
+  public static func solo(_ project: ProjectInfo) -> TabGroupInfo {
+    TabGroupInfo(
+      id: "solo:\(project.id)",  // P2 fix: Use colon delimiter to avoid ID collisions
+      name: nil,
+      colorHex: nil,
+      isWorktreeGroup: false,
+      gitRoot: nil,  // Solo tabs don't participate in worktree grouping
+      projects: [project]
+    )
   }
 }
 
@@ -41,8 +125,28 @@ public final class ProjectSwitcherState {
   // All discovered projects (Projects window + diagnostics)
   private(set) var allProjects: [ProjectInfo] = []
 
-  // Tabs-visible projects (excludes orphaned paths)
-  private(set) var tabProjects: [ProjectInfo] = []
+  // Tab groups (v33): hierarchical grouping of tabs
+  private(set) var tabGroups: [TabGroupInfo] = [] {
+    didSet {
+      // Cache flattened list whenever tabGroups changes
+      _cachedFlatTabs = tabGroups.flatMap(\.projects)
+    }
+  }
+
+  // Cached flat list of tab-visible projects (updated when tabGroups changes)
+  // Note: Both tabGroups and _cachedFlatTabs init to [], so they're consistent at init.
+  // TabGroupInfo is a struct, so any mutation requires reassignment which triggers didSet.
+  private var _cachedFlatTabs: [ProjectInfo] = []
+
+  // Flat list of tab-visible projects (cached, for backward compatibility)
+  // Use this for keyboard navigation and legacy code paths
+  var tabProjects: [ProjectInfo] { _cachedFlatTabs }
+
+  // Phase 4: Track if initial auto-grouping has been done (prevents repeated calls)
+  private var hasPerformedInitialAutoGrouping = false
+
+  // Alias for tabProjects (clearer name for new code)
+  var flatTabs: [ProjectInfo] { _cachedFlatTabs }
 
   // Currently active project ID
   private(set) var activeProjectId: String?
@@ -53,6 +157,11 @@ public final class ProjectSwitcherState {
 
   // Tracks whether any hidden projects exist
   private(set) var hasHiddenProjects: Bool = false
+
+  /// Scroll target for programmatic scroll requests.
+  /// Set by methods that need to scroll the tab bar to a specific project.
+  /// View observes this and clears after scrolling.
+  private(set) var scrollToProjectId: String?
 
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
@@ -75,6 +184,11 @@ public final class ProjectSwitcherState {
 
   // Generation token for activation ordering (P0.1 fix: prevents stale activations from racing)
   @ObservationIgnored private var activationGeneration: UInt64 = 0
+
+  // P0.2 fix: Mutation epoch to prevent stale refresh wins
+  // Incremented on each mutation, captured by persistence tasks
+  // Refresh only applies if epoch matches (latest wins)
+  @ObservationIgnored private var mutationEpoch: UInt64 = 0
 
   // Global refresh debounce (prevents spam from system events during discovery)
   @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
@@ -244,6 +358,9 @@ public final class ProjectSwitcherState {
       Task { @MainActor [weak self] in
         guard let self else { return }
         log.info("[SWITCHER-NOTIFY-RECV] received .projectsDiscoveryComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
+        // Reset auto-grouping flag so newly discovered projects can be grouped
+        // This is bounded because discovery is infrequent (startup, manual refresh)
+        self.hasPerformedInitialAutoGrouping = false
         self.scheduleRefresh()
       }
     }
@@ -366,6 +483,22 @@ public final class ProjectSwitcherState {
     log.info("[SWITCHER-REFRESH] Starting refresh of project list")
 
     do {
+      // Phase 4: Auto-group worktrees on first refresh only (P0.1 fix: debounce)
+      // Subsequent grouping happens via explicit user action or project discovery
+      // Flag is reset on .projectsDiscoveryComplete to handle newly discovered projects
+      if !hasPerformedInitialAutoGrouping {
+        do {
+          let groupsCreated = try orchestrator.autoGroupWorktrees()
+          hasPerformedInitialAutoGrouping = true  // Set after success (throw-safe)
+          if groupsCreated > 0 {
+            log.info("[SWITCHER-REFRESH] Auto-grouped \(groupsCreated, privacy: .public) worktree groups")
+          }
+        } catch {
+          // Allow retry on next refresh if auto-grouping fails
+          log.warning("[SWITCHER-REFRESH] Auto-grouping failed, will retry: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+
       // Query all projects sorted by activity (newest entry first)
       log.info("[SWITCHER-SORT-START] Querying projects sorted by activity")
       let projects = try orchestrator.listProjectsForSwitcher()
@@ -437,7 +570,9 @@ public final class ProjectSwitcherState {
           name: displayName,
           rootPath: project.rootPath,
           transcriptCount: entryCount,
-          isOrphaned: isOrphaned
+          isOrphaned: isOrphaned,
+          groupId: project.groupId,
+          groupDisplayOrder: project.groupDisplayOrder
         )
       }
 
@@ -544,8 +679,77 @@ public final class ProjectSwitcherState {
       log.info("[ORPHAN-TAB-HIDE] action=show project=\(id, privacy: .public)")
     }
 
-    tabProjects = projects
-    log.info("[SWITCHER-STATE] tabProjects updated: count=\(self.tabProjects.count, privacy: .public)")
+    // Build tabGroups from projects
+    // Phase 2: Each project is in its own solo group (worktree auto-grouping added in Phase 4)
+    tabGroups = buildTabGroups(from: projects)
+    log.info("[SWITCHER-STATE] tabGroups updated: count=\(self.tabGroups.count, privacy: .public), flatTabs=\(self.tabProjects.count, privacy: .public)")
+  }
+
+  /// Build TabGroupInfo array from projects.
+  /// Groups projects by their database group_id, creating TabGroupInfo for each.
+  /// Solo tabs (no group_id) get synthetic solo groups.
+  /// Note: Inherits @MainActor from class - no explicit annotation needed.
+  private func buildTabGroups(from projects: [ProjectInfo]) -> [TabGroupInfo] {
+    guard let orchestrator = ensureOrchestrator() else {
+      // Fallback: all solo groups
+      return projects.map { TabGroupInfo.solo($0) }
+    }
+
+    // 1. Separate grouped and ungrouped projects
+    var groupedProjects: [String: [ProjectInfo]] = [:]  // groupId -> projects
+    var soloProjects: [ProjectInfo] = []
+
+    for project in projects {
+      if let groupId = project.groupId {
+        groupedProjects[groupId, default: []].append(project)
+      } else {
+        soloProjects.append(project)
+      }
+    }
+
+    // 2. Build TabGroupInfo for each database group
+    var result: [TabGroupInfo] = []
+
+    // Fetch database groups for metadata (name, color, gitRoot, etc.)
+    let dbGroups: [TabGroup]
+    do {
+      dbGroups = try orchestrator.listTabGroups()
+    } catch {
+      log.error("[SWITCHER-STATE] Failed to fetch tab groups: \(error, privacy: .public)")
+      // Fallback: all solo groups
+      return projects.map { TabGroupInfo.solo($0) }
+    }
+
+    // Note: dbGroups already contains all the metadata we need, no lookup needed
+
+    // 3. Build groups in display_order from database
+    for dbGroup in dbGroups.sorted(by: { $0.displayOrder < $1.displayOrder }) {
+      guard let groupProjects = groupedProjects[dbGroup.id], !groupProjects.isEmpty else {
+        continue  // Skip empty groups
+      }
+
+      // Sort projects by their groupDisplayOrder
+      let sortedProjects = groupProjects.sorted { ($0.groupDisplayOrder ?? 0) < ($1.groupDisplayOrder ?? 0) }
+
+      // P1.3 fix: Pass colorHex instead of computed Color
+      // Color is now derived at render time via computed property
+      let groupInfo = TabGroupInfo(
+        id: dbGroup.id,
+        name: dbGroup.name,
+        colorHex: dbGroup.colorHex,  // Pass through DB value, compute color lazily
+        isWorktreeGroup: dbGroup.isWorktreeGroup,
+        gitRoot: dbGroup.gitRoot.map { URL(fileURLWithPath: $0) },
+        projects: sortedProjects
+      )
+      result.append(groupInfo)
+    }
+
+    // 4. Add solo projects (maintain their original order from projects array)
+    for project in soloProjects {
+      result.append(TabGroupInfo.solo(project))
+    }
+
+    return result
   }
 
   /// Cycle to previous project (for keyboard shortcut)
@@ -739,7 +943,24 @@ public final class ProjectSwitcherState {
       // Update hidden state
       try orchestrator.setProjectHidden(projectId: projectId, hidden: true)
 
-      // Refresh project list to remove hidden project
+      // Optimistic UI removal: immediately remove from tabGroups for instant feedback
+      // This ensures the tab disappears even if isTabOrderFrozen is true
+      tabGroups = tabGroups.compactMap { group in
+        var mutableGroup = group
+        mutableGroup.projects.removeAll { $0.id == projectId }
+        // Remove solo groups (synthetic) that are now empty
+        // Keep real groups even if empty (they'll be cleaned up by DB operations)
+        if group.isSoloTab && mutableGroup.projects.isEmpty {
+          return nil
+        }
+        return mutableGroup.projects.isEmpty ? nil : mutableGroup
+      }
+
+      // Also update allProjects for consistency
+      allProjects.removeAll { $0.id == projectId }
+      hasHiddenProjects = true
+
+      // Refresh project list to sync with database
       await refreshProjects()
 
       log.info("Hidden project: \(projectId, privacy: .public)")
@@ -782,9 +1003,225 @@ public final class ProjectSwitcherState {
     }
   }
 
+  // MARK: - Manual Grouping (Phase 7)
+
+  /// Create a new manual group containing the specified project.
+  /// Returns the new group ID.
+  public func createGroupWithProject(_ projectId: String, name: String? = nil) async -> String? {
+    guard let orchestrator = ensureOrchestrator() else { return nil }
+
+    do {
+      // Collect colors already used by existing groups
+      let existingGroups = try orchestrator.listTabGroups()
+      let usedColors = Set(existingGroups.compactMap { $0.colorHex })
+
+      // Pick an available color from the palette
+      let colorHex = WorktreeColorUtility.pickAvailableColor(excluding: usedColors)
+
+      // Create manual group (not a worktree group)
+      let group = try orchestrator.createTabGroup(
+        name: name,
+        colorHex: colorHex,  // Assign color from palette
+        gitRoot: nil,   // Manual groups don't have git root
+        isWorktreeGroup: false
+      )
+
+      // Add project to the new group
+      do {
+        try orchestrator.addProjectToGroup(projectId: projectId, groupId: group.id)
+      } catch {
+        // P0.2 fix: Clean up the empty group on partial failure
+        log.error("[MANUAL-GROUP] Failed to add project to new group, cleaning up: \(error.localizedDescription, privacy: .public)")
+        _ = try? orchestrator.deleteTabGroup(id: group.id)
+        throw error
+      }
+
+      await refreshProjects()
+
+      // Scroll to the grouped project so user can see result
+      requestScrollTo(projectId: projectId)
+
+      log.info("[MANUAL-GROUP] Created group \(group.id, privacy: .public) with project \(projectId, privacy: .public)")
+      return group.id
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to create group: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  /// Add a project to an existing group.
+  public func addToGroup(projectId: String, groupId: String) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.addProjectToGroup(projectId: projectId, groupId: groupId)
+      await refreshProjects()
+
+      // Scroll to the added project so user can see result
+      requestScrollTo(projectId: projectId)
+
+      log.info("[MANUAL-GROUP] Added \(projectId, privacy: .public) to group \(groupId, privacy: .public)")
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to add to group: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Remove a project from its group (becomes solo tab).
+  /// If the group becomes empty, it is automatically deleted.
+  public func removeFromGroup(projectId: String) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    // Get current group ID before removal
+    let groupId = tabProjects.first(where: { $0.id == projectId })?.groupId
+
+    do {
+      try orchestrator.removeProjectFromGroup(projectId: projectId)
+
+      // Clean up empty groups
+      if let groupId {
+        _ = try? orchestrator.deleteTabGroupIfEmpty(id: groupId)
+      }
+
+      await refreshProjects()
+      log.info("[MANUAL-GROUP] Removed \(projectId, privacy: .public) from group")
+    } catch {
+      log.error("[MANUAL-GROUP] Failed to remove from group: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Get list of available groups (for "Add to Group..." submenu).
+  /// Excludes worktree groups since those are managed automatically.
+  public func getAvailableGroupsForProject(_ projectId: String) -> [TabGroupInfo] {
+    // Return non-worktree groups that don't already contain this project
+    return tabGroups.filter { group in
+      !group.isWorktreeGroup &&
+      !group.isSoloTab &&
+      !group.projects.contains(where: { $0.id == projectId })
+    }
+  }
+
+  /// Check if a project is in a manual (non-worktree) group.
+  public func isInManualGroup(_ project: ProjectInfo) -> Bool {
+    guard let groupId = project.groupId else { return false }
+    guard let group = tabGroups.first(where: { $0.id == groupId }) else { return false }
+    return !group.isWorktreeGroup
+  }
+
+  // MARK: - Worktree Grouping (Phase 4)
+
+  /// Ungroup all projects from a worktree group.
+  /// Sets preference to prevent auto-regrouping.
+  public func ungroupWorktree(_ gitRoot: URL) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.ungroupWorktree(gitRoot: gitRoot.path)
+      await refreshProjects()
+      log.info("Ungrouped worktree: \(gitRoot.path, privacy: .public)")
+    } catch {
+      log.error("Failed to ungroup worktree: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Regroup projects that share a git root into a worktree group.
+  /// Clears the "ungrouped" preference.
+  public func regroupWorktree(_ gitRoot: URL) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.regroupWorktree(gitRoot: gitRoot.path)
+      await refreshProjects()
+
+      // Scroll to the first project in the regrouped worktree
+      if let firstProject = flatTabs.first(where: { $0.gitRoot == gitRoot }) {
+        requestScrollTo(projectId: firstProject.id)
+      }
+
+      log.info("Regrouped worktree: \(gitRoot.path, privacy: .public)")
+    } catch {
+      log.error("Failed to regroup worktree: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Check if a git root has been explicitly ungrouped by the user.
+  public func isWorktreeUngrouped(_ gitRoot: URL) -> Bool {
+    guard let orchestrator = ensureOrchestrator() else { return false }
+    do {
+      if let pref = try orchestrator.getWorktreePreference(gitRoot.path) {
+        return pref.ungrouped
+      }
+    } catch {
+      log.error("Failed to check worktree preference: \(error.localizedDescription, privacy: .public)")
+    }
+    return false
+  }
+
+  /// Check if a project is in a worktree group (vs manual group or solo).
+  /// Used by context menu to show appropriate options (P0.3 fix).
+  public func isInWorktreeGroup(_ project: ProjectInfo) -> Bool {
+    guard let groupId = project.groupId else { return false }
+    // Check if the group containing this project is a worktree group
+    return tabGroups.first(where: { $0.id == groupId })?.isWorktreeGroup ?? false
+  }
+
+  // MARK: - Programmatic Scroll
+
+  /// Request the tab bar to scroll to a specific project.
+  /// Does NOT activate the project, just scrolls it into view.
+  /// Use after operations that move tabs (grouping, reordering).
+  /// - Parameter projectId: The project ID to scroll to
+  public func requestScrollTo(projectId: String) {
+    guard flatTabs.count >= 2 else { return }  // No tab bar visible
+    scrollToProjectId = projectId
+    log.info("[SCROLL-REQUEST] Requesting scroll to project: \(projectId, privacy: .public)")
+  }
+
+  /// Clear the scroll request. Called by View after scrolling completes.
+  public func clearScrollRequest() {
+    scrollToProjectId = nil
+  }
+
+  /// Rename a tab group
+  /// P2.2 fix: Normalize name here (trim whitespace, empty -> nil) as a backstop
+  public func renameGroup(groupId: String, name: String?) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    // Normalize: trim whitespace, treat empty as nil
+    let normalized = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let stored = (normalized?.isEmpty ?? true) ? nil : normalized
+
+    do {
+      try orchestrator.setTabGroupName(id: groupId, name: stored)
+      await refreshProjects()
+      log.info("[GROUP-RENAME] Renamed group \(groupId, privacy: .public) to '\(stored ?? "nil", privacy: .public)'")
+    } catch {
+      log.error("[GROUP-RENAME] Failed to rename group: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  /// Set a tab group's color
+  /// - Parameters:
+  ///   - groupId: The group ID to update
+  ///   - hexColor: The hex color string (e.g., "#4A7BA7"), or nil to reset to auto
+  public func setGroupColor(groupId: String, hexColor: String?) async {
+    guard let orchestrator = ensureOrchestrator() else { return }
+
+    do {
+      try orchestrator.setTabGroupColor(id: groupId, colorHex: hexColor)
+      await refreshProjects()
+      log.info("[GROUP-COLOR] Set group \(groupId, privacy: .public) color to '\(hexColor ?? "auto", privacy: .public)'")
+    } catch {
+      log.error("[GROUP-COLOR] Failed to set group color: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   /// Reorder projects by updating display_order for all projects atomically
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = ensureOrchestrator() else { return }
+
+    // P0.2 fix: Increment mutation epoch before optimistic update
+    mutationEpoch += 1
+    let capturedEpoch = mutationEpoch
 
     // OPTIMIZATION: Update UI immediately without waiting for DB/FS operations
     // Reorder visible tab projects first, then append any remaining (orphans)
@@ -824,10 +1261,278 @@ public final class ProjectSwitcherState {
         await MainActor.run {
           log.error("Failed to persist reorder: \(error.localizedDescription)")
         }
-        // Revert to DB state on error
+        // P0.2 fix: Only revert if no newer operation has started
+        // If epoch changed, a newer operation has superseded us - skip stale refresh
+        let currentEpoch = await MainActor.run { self.mutationEpoch }
+        guard currentEpoch == capturedEpoch else {
+          await MainActor.run {
+            log.info("[SWITCHER-ORDER-PERSIST] Skipping stale refresh (epoch \(capturedEpoch) != \(currentEpoch))")
+          }
+          return
+        }
         await self.refreshProjects()
       }
     }
+  }
+
+  // MARK: - Phase 5: Context-Aware Tab Movement
+
+  /// Move a specific tab left within its group (P0.1 fix: explicit ID for context menu)
+  public func moveTabLeftInGroup(projectId: String) async {
+    guard let project = tabProjects.first(where: { $0.id == projectId }),
+          let groupId = project.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) else { return }
+
+    var group = tabGroups[groupIndex]
+    guard let localIdx = group.projects.firstIndex(where: { $0.id == projectId }),
+          localIdx > 0 else { return }
+
+    // Swap within group
+    group.projects.swapAt(localIdx, localIdx - 1)
+
+    // Update tabGroups (triggers UI refresh via didSet)
+    var newGroups = tabGroups
+    newGroups[groupIndex] = group
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = group.projects.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+        } catch {
+          log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[TAB-MOVE] Moved tab \(projectId, privacy: .public) left within group")
+  }
+
+  /// Move a specific tab right within its group (P0.1 fix: explicit ID for context menu)
+  public func moveTabRightInGroup(projectId: String) async {
+    guard let project = tabProjects.first(where: { $0.id == projectId }),
+          let groupId = project.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) else { return }
+
+    var group = tabGroups[groupIndex]
+    guard let localIdx = group.projects.firstIndex(where: { $0.id == projectId }),
+          localIdx < group.projects.count - 1 else { return }
+
+    // Swap within group
+    group.projects.swapAt(localIdx, localIdx + 1)
+
+    // Update tabGroups (triggers UI refresh via didSet)
+    var newGroups = tabGroups
+    newGroups[groupIndex] = group
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = group.projects.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+        } catch {
+          log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[TAB-MOVE] Moved tab \(projectId, privacy: .public) right within group")
+  }
+
+  /// Move a specific group left in the tab bar (P0.1 fix: explicit ID for context menu)
+  public func moveGroupLeft(groupId: String) async {
+    guard let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex > 0 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex - 1)
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) left")
+  }
+
+  /// Move a specific group right in the tab bar (P0.1 fix: explicit ID for context menu)
+  public func moveGroupRight(groupId: String) async {
+    guard let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex < tabGroups.count - 1 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex + 1)
+    tabGroups = newGroups
+
+    // Persist to database
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) right")
+  }
+
+  /// Move active tab left (context-aware: within group if grouped, global if solo)
+  public func moveActiveTabLeft() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }) else { return }
+
+    if let groupId = activeProject.groupId,
+       let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) {
+      // Grouped: move within the group
+      var group = tabGroups[groupIndex]
+      guard let localIdx = group.projects.firstIndex(where: { $0.id == activeId }),
+            localIdx > 0 else { return }
+
+      // Swap within group
+      group.projects.swapAt(localIdx, localIdx - 1)
+
+      // Update tabGroups (triggers UI refresh via didSet)
+      var newGroups = tabGroups
+      newGroups[groupIndex] = group
+      tabGroups = newGroups
+
+      // Persist to database (P0 fix: within-group moves need persistence)
+      if let orchestrator = ensureOrchestrator() {
+        let orderedIds = group.projects.map(\.id)
+        Task {
+          do {
+            try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+          } catch {
+            log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+          }
+        }
+      }
+
+      log.info("[TAB-MOVE] Moved tab left within group \(groupId, privacy: .public)")
+    } else {
+      // Solo: move globally in flat list
+      guard let idx = tabProjects.firstIndex(where: { $0.id == activeId }),
+            idx > 0 else { return }
+      var newOrder = tabProjects.map(\.id)
+      newOrder.swapAt(idx, idx - 1)
+      await reorderProjects(newOrder)
+    }
+  }
+
+  /// Move active tab right (context-aware: within group if grouped, global if solo)
+  public func moveActiveTabRight() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }) else { return }
+
+    if let groupId = activeProject.groupId,
+       let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }) {
+      // Grouped: move within the group
+      var group = tabGroups[groupIndex]
+      guard let localIdx = group.projects.firstIndex(where: { $0.id == activeId }),
+            localIdx < group.projects.count - 1 else { return }
+
+      // Swap within group
+      group.projects.swapAt(localIdx, localIdx + 1)
+
+      // Update tabGroups (triggers UI refresh via didSet)
+      var newGroups = tabGroups
+      newGroups[groupIndex] = group
+      tabGroups = newGroups
+
+      // Persist to database (P0 fix: within-group moves need persistence)
+      if let orchestrator = ensureOrchestrator() {
+        let orderedIds = group.projects.map(\.id)
+        Task {
+          do {
+            try orchestrator.reorderProjectsInGroup(groupId: groupId, orderedProjectIds: orderedIds)
+          } catch {
+            log.error("[TAB-MOVE] Failed to persist within-group reorder: \(error.localizedDescription, privacy: .public)")
+          }
+        }
+      }
+
+      log.info("[TAB-MOVE] Moved tab right within group \(groupId, privacy: .public)")
+    } else {
+      // Solo: move globally in flat list
+      guard let idx = tabProjects.firstIndex(where: { $0.id == activeId }),
+            idx < tabProjects.count - 1 else { return }
+      var newOrder = tabProjects.map(\.id)
+      newOrder.swapAt(idx, idx + 1)
+      await reorderProjects(newOrder)
+    }
+  }
+
+  /// Move the active project's group left in the tab bar
+  public func moveActiveGroupLeft() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }),
+          let groupId = activeProject.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex > 0 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex - 1)
+    tabGroups = newGroups
+
+    // Persist to database (P0 fix: group moves need persistence)
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) left")
+  }
+
+  /// Move the active project's group right in the tab bar
+  public func moveActiveGroupRight() async {
+    guard let activeId = activeProjectId,
+          let activeProject = tabProjects.first(where: { $0.id == activeId }),
+          let groupId = activeProject.groupId,
+          let groupIndex = tabGroups.firstIndex(where: { $0.id == groupId }),
+          groupIndex < tabGroups.count - 1 else { return }
+
+    // Swap groups
+    var newGroups = tabGroups
+    newGroups.swapAt(groupIndex, groupIndex + 1)
+    tabGroups = newGroups
+
+    // Persist to database (P0 fix: group moves need persistence)
+    if let orchestrator = ensureOrchestrator() {
+      let orderedIds = newGroups.map(\.id)
+      Task {
+        do {
+          try orchestrator.reorderTabGroups(orderedGroupIds: orderedIds)
+        } catch {
+          log.error("[GROUP-MOVE] Failed to persist group reorder: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+    }
+
+    log.info("[GROUP-MOVE] Moved group \(groupId, privacy: .public) right")
   }
 
   // MARK: - Private

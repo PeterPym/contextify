@@ -597,6 +597,62 @@ public struct GitRepositoryResolver {
     return nil
   }
 
+  /// Find the main repository root for a directory, properly handling worktrees.
+  /// For regular repos: returns the same as findGitRoot
+  /// For worktrees: returns the main repository root (not the worktree directory)
+  ///
+  /// Example: If openai-wb1/.git contains "gitdir: /path/to/openai/.git/worktrees/openai-wb1"
+  /// then findMainGitRoot returns "/path/to/openai" (the main repo), not "/path/to/openai-wb1"
+  public static func findMainGitRoot(startingAt url: URL, maxDepth: Int = 64) -> URL? {
+    // First find the git root for this directory
+    guard let gitRoot = findGitRoot(startingAt: url, maxDepth: maxDepth) else {
+      return nil
+    }
+
+    // Check if this is a worktree by examining the .git file/directory
+    let dotGit = gitRoot.appendingPathComponent(".git")
+    let fm = FileManager.default
+    var isDir: ObjCBool = false
+
+    guard fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) else {
+      return gitRoot
+    }
+
+    // If .git is a directory, this is a regular repo (or the main worktree)
+    if isDir.boolValue {
+      return gitRoot
+    }
+
+    // .git is a file - this is a worktree
+    // Read the gitdir path from the file
+    guard let contents = try? String(contentsOf: dotGit, encoding: .utf8),
+          let range = contents.range(of: "gitdir:") else {
+      return gitRoot
+    }
+
+    let gitdirPath = contents[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Check if this is a worktree path (contains /worktrees/)
+    // Pattern: /path/to/main/.git/worktrees/worktree-name
+    if let worktreesRange = gitdirPath.range(of: "/worktrees/") {
+      // Extract the main .git directory path
+      let mainGitDir = String(gitdirPath[..<worktreesRange.lowerBound])
+
+      // The main repo root is the parent of the .git directory
+      let mainGitDirURL = URL(fileURLWithPath: mainGitDir, isDirectory: true)
+      let mainRepoRoot = mainGitDirURL.deletingLastPathComponent()
+
+      // Verify this is a valid git root
+      if fm.fileExists(atPath: mainRepoRoot.appendingPathComponent(".git").path, isDirectory: &isDir),
+         isDir.boolValue {
+        return mainRepoRoot
+      }
+    }
+
+    // Fallback: return the original git root
+    return gitRoot
+  }
+
   public static func runGitBranch(at dir: URL, timeout: TimeInterval = 2.0) -> String? {
     if Sandbox.isSandboxed {
       return parseHEAD(at: dir)
