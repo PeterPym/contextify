@@ -105,8 +105,8 @@ public struct EntryFilter: Sendable, Equatable {
 
   /// Filter by entry kind. Nil or empty means all kinds (no filter applied).
   /// Use EntryFilter.Kind constants to avoid typos.
-  /// Note: Uses array for ergonomic call sites; sorted internally for deterministic SQL.
-  public var kinds: [String]? = nil
+  /// Note: Canonicalized (deduped + sorted) at init for consistent Equatable behavior.
+  public let kinds: [String]?
 
   // MARK: - Presets
 
@@ -129,7 +129,12 @@ public struct EntryFilter: Sendable, Equatable {
   ) {
     self.includeHidden = includeHidden
     self.includeSidechains = includeSidechains
-    self.kinds = kinds
+    // Canonicalize kinds: dedupe + sort for consistent Equatable behavior
+    if let kinds, !kinds.isEmpty {
+      self.kinds = Array(Set(kinds)).sorted()
+    } else {
+      self.kinds = kinds
+    }
   }
 }
 
@@ -161,9 +166,7 @@ extension EntryFilter {
   ///
   /// Trade-off: New aliases require modifying this enum (coupling point).
   /// For a solo project, this is acceptable - add cases as needed.
-  /// If this becomes friction, consider a validated custom case:
-  ///   case custom(String)  // validated against ^[A-Za-z_][A-Za-z0-9_]*$
-  public enum TableAlias: String {
+  public enum TableAlias: String, Sendable {
     case e      // Standard: "transcript_entries e"
     case te     // Alternative: "transcript_entries te"
   }
@@ -171,10 +174,10 @@ extension EntryFilter {
   // MARK: - Internal
 
   /// Build filter clauses and args (shared implementation)
-  private func buildClauses(alias: TableAlias) -> (clauses: [String], args: [DatabaseValueConvertible]) {
+  private func buildClauses(alias: TableAlias) -> (clauses: [String], args: [any DatabaseValueConvertible]) {
     let prefix = alias.rawValue
     var clauses: [String] = []
-    var args: [DatabaseValueConvertible] = []
+    var args: [any DatabaseValueConvertible] = []
 
     if !includeHidden {
       clauses.append("\(prefix).display_in_timeline = 1")
@@ -183,13 +186,10 @@ extension EntryFilter {
       clauses.append("\(prefix).is_sidechain = 0")
     }
     if let kinds, !kinds.isEmpty {
-      // Dedupe and sort for deterministic SQL (order not preserved)
-      let sortedKinds = Array(Set(kinds)).sorted()
-      let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
+      // kinds is already canonicalized (deduped + sorted) at init
+      let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
       clauses.append("\(prefix).kind IN (\(placeholders))")
-      for k in sortedKinds {
-        args.append(k)
-      }
+      args.append(contentsOf: kinds)
     }
 
     return (clauses, args)
@@ -198,7 +198,8 @@ extension EntryFilter {
   /// Generate a SQL predicate for entry filtering.
   /// Returns a complete predicate (never empty - returns "1 = 1" if no filters).
   /// Use in: `WHERE (\(predicate))` or `ON ... AND (\(predicate))`
-  func sqlPredicate(alias: TableAlias = .e) -> (sql: String, args: [DatabaseValueConvertible]) {
+  /// Note: Kept internal until Phase 3 proves reuse value.
+  internal func sqlPredicate(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
     let (clauses, args) = buildClauses(alias: alias)
     let sql = clauses.isEmpty ? "1 = 1" : clauses.joined(separator: " AND ")
     return (sql, args)
@@ -207,7 +208,8 @@ extension EntryFilter {
   /// Generate a SQL fragment with leading " AND " for appending to existing WHERE.
   /// Returns empty string if no filters apply.
   /// Use in: `WHERE existing_condition\(andFragment)`
-  func sqlAndFragment(alias: TableAlias = .e) -> (sql: String, args: [DatabaseValueConvertible]) {
+  /// Note: Kept internal until Phase 3 proves reuse value.
+  internal func sqlAndFragment(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
     let (clauses, args) = buildClauses(alias: alias)
     if clauses.isEmpty {
       return ("", [])
