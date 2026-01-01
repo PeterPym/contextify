@@ -84,9 +84,9 @@ This directory contains high-level architectural documentation that explains:
 
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
-- Tables, migrations (v1-v26), repositories
+- Tables, migrations (v1-v33), repositories
 - GRDB integration
-- Current schema: v26
+- Current schema: v33
 
 ### [Sandbox & App Store Architecture](sandbox-appstore-architecture.md)
 **Topics:** Sandboxed vs unsandboxed builds, security-scoped bookmarks
