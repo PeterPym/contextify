@@ -1,225 +1,9 @@
 # ConversationMonitor State Management Architecture
 
-**Status:** Production (with known initialization issues - see Phase 2/3 refactor)
+**Status:** Production
 **Concurrency:** @MainActor (UI layer)
-**Pattern:** Observable + Cached Derived State
-**Known Issues:** Duplicate initialization paths, race conditions during startup
-
----
-
-## ⚠️ Known Initialization Issues (Phase 2/3 Refactor Needed)
-
-**Date Discovered:** 2025-11-07
-**Status:** Phase 1 tactical fix applied, architectural refactor pending
-
-### Problem Summary
-
-ConversationMonitor has evolved **two overlapping initialization paths** that cause duplicate work and race conditions:
-
-1. **Legacy Path** (`startMonitoring()` lines 355-542):
-   - Initializes orchestrator, diagnostics, background tasks
-   - Calls `loadFeedFromSQL()` at line 509
-
-2. **Coordinator Path** (`onProjectOrSessionChange()` lines 602-695):
-   - Loads policy, sessions, cursor, events
-   - Calls `loadFeedFromSQL()` at line 644
-
-### Root Causes Identified
-
-#### Issue 1: didSet Observer Cascade (FIXED in Phase 1)
-- `startMonitoring()` sets `currentProjectId` inside async Task
-- Triggers `didSet` observer → calls `onProjectOrSessionChange()`
-- Both paths call `loadFeedFromSQL()` → duplicate database queries
-
-**Fix Applied:** `isInitializing` flag (line 360) blocks `onProjectOrSessionChange()` during `startMonitoring()`
-
-#### Issue 2: Double startMonitoring() Calls (ATTEMPTED FIX FAILED)
-- **ContentView.task** (ContentView.swift:85) calls `startMonitoring()` on initial startup
-- **Coordinator subscription** (ConversationMonitor.swift:293) receives same initial context
-- Both receive same project ID → call `startMonitoring()` twice
-
-**Attempted Fix:** Synchronously set `isMonitoring`/`currentProjectId` before async Task
-**Result:** CRASH - violated Swift actor isolation (these are `@MainActor` properties)
-**Lesson:** Cannot set `@MainActor` properties synchronously from `@MainActor` context before async Task spawns
-
-#### Issue 3: Actor Isolation Violation
-```swift
-@MainActor
-func startMonitoring(projectId: String) {
-    isMonitoring = true        // This is @MainActor
-    currentProjectId = projectId  // This is @MainActor
-
-    Task { [weak self] in      // Task NOT isolated to MainActor
-        // Properties set above but Task can spawn before didSet completes
-        // External observers see torn state
-    }
-}
-```
-
-**Problem:** Properties are set on MainActor, but the Task is NOT MainActor-isolated (CXT-13: removed to prevent UI blocking). This creates a race window where:
-- Properties appear set to guards checking them
-- But async Task spawns and may access them before isolation completes
-- External calls to `onProjectOrSessionChange()` see inconsistent state
-
-### Implications of Double startMonitoring() Calls
-
-**Impact on Application Behavior:**
-
-1. **Database Queries Duplicated**
-   - `loadFeedFromSQL()` runs twice for same project
-   - ~50ms penalty per duplicate (100ms total wasted)
-   - Not catastrophic but inefficient
-
-2. **Background Tasks May Spawn Twice**
-   - Discovery loops, file watchers, health monitoring
-   - Second call hits `isMonitoring=true` guard and skips (line 354)
-   - **BUT** there's a race window before guard activates
-
-3. **Generator Shutdown/Creation Churn**
-   - First call shuts down old generator, creates new one
-   - Second call (if it passes guard) repeats shutdown
-   - Can cause generator to be in inconsistent state during transition
-
-4. **Notification Spam**
-   - `conversationMonitoringDidStart` notification fired twice
-   - Subscribers may react twice to same event
-   - Could cause UI flashing or double-loading
-
-5. **Resource Leaks (Potential)**
-   - If second call spawns Task before first completes
-   - Both Tasks create orchestrators, diagnostics servers
-   - Second one replaces first, but first's cleanup may not finish
-   - Diagnostic HTTP server might bind to port twice (should fail gracefully)
-
-6. **User-Visible Issues**
-   - Timeline may flash/reload unnecessarily
-   - Status bar shows "Starting..." twice
-   - Slightly slower startup (~100ms penalty)
-
-**Why It's Bad:**
-- **Not immediately breaking** but wastes resources
-- **Creates unpredictable timing** - race conditions
-- **Makes debugging harder** - which call succeeded?
-- **Violates single responsibility** - two systems trying to initialize same thing
-
-**Why It Hasn't Been Caught:**
-- Guard at line 354 catches most duplicate calls
-- Race window is small (~10ms)
-- Database queries are idempotent
-- Background tasks handle restart gracefully
-
-### Current Workarounds & Limitations
-
-**What Works:**
-- ✅ Single project startup (first call usually succeeds)
-- ✅ `isInitializing` flag prevents didSet cascade
-- ✅ App doesn't crash on startup
-- ✅ Guard at line 354 blocks most duplicates
-
-**What's Broken:**
-- ❌ Duplicate `startMonitoring()` calls still happen (logged at TIMELINE-START)
-- ❌ Small race window exists before guard activates
-- ❌ `onProjectOrSessionChange()` can be called from external sources (project discovery) with torn state
-- ❌ Resource waste and unpredictable timing
-
-### Architectural Debt
-
-The code has **six boolean flags** managing state transitions, creating a complex implicit state machine:
-
-```swift
-isMonitoring: Bool              // Actively monitoring project
-isInitializing: Bool            // Inside startMonitoring() Task
-isSwitchingProjects: Bool       // Suppress health monitoring
-isReadyForUpdates: Bool         // Gate incremental updates
-sessionsLoaded: Bool            // Gate policy reconciliation
-isCacheGeneratorActive: Bool    // Generator ready
-```
-
-**Problems:**
-1. **Implicit dependencies:** `isMonitoring=false` required before `loadFeed` succeeds
-2. **No formal invariants:** Can have `isMonitoring=true` but `currentProjectId=nil`
-3. **didSet side effects:** Setting one property triggers cascades
-4. **Race conditions:** Flags checked off MainActor, set on MainActor
-5. **2,634 line file:** God Object anti-pattern
-
-### Recommended Fix Approach (Phase 2/3)
-
-**Phase 2: Split Project vs Session Changes** (4-8 hours)
-```swift
-// Remove didSet observers entirely
-private var currentProjectId: String?  // No didSet
-private var currentSessionId: String?  // No didSet
-
-// Explicit methods instead
-func onProjectChange() {
-    // Full reset: policy, sessions, cursor, feed, events
-    Task {
-        await loadPolicyForCurrentProject()
-        await loadAllSessionsFromDatabase()
-        await reconcilePolicy()
-        await loadCursor()
-        await loadFeedFromSQL()
-        await replayEvents()
-        isReadyForUpdates = true
-    }
-}
-
-func onSessionChange() {
-    // Minimal reset: just reload feed for new session
-    Task {
-        await loadFeedFromSQL()
-    }
-}
-```
-
-**Benefits:**
-- No implicit cascades via didSet
-- Clear separation of concerns
-- Easier to test (call methods directly)
-- Predictable execution order
-
-**Phase 3: Extract Initialization Module** (2-3 days)
-```swift
-actor ConversationMonitorBootstrap {
-    func initialize(projectId: String) async throws -> MonitoringSession {
-        // All initialization logic here
-        // Returns immutable session descriptor
-    }
-}
-
-@MainActor @Observable
-class ConversationMonitor {
-    private var session: MonitoringSession?
-
-    func startMonitoring(projectId: String) async {
-        guard session?.projectId != projectId else { return }
-
-        do {
-            let newSession = try await bootstrap.initialize(projectId: projectId)
-            self.session = newSession
-            // Setup complete, start background tasks
-        } catch {
-            // Handle error
-        }
-    }
-}
-```
-
-**Benefits:**
-- Single initialization path (no legacy/coordinator split)
-- Actor isolation prevents concurrent initialization
-- Formal state machine (MonitoringSession type)
-- Testable in isolation
-- Foundation for multi-window support
-
-**Alternative: Remove ContentView's Direct Call**
-```swift
-// ContentView.swift line 85 - DELETE THIS:
-await TimelineIntegration.shared.startMonitoring(projectId: context.id)
-
-// Let ONLY the coordinator subscription handle initialization
-// This is the quickest fix but doesn't solve architectural issues
-```
+**Pattern:** Observable + Suffix-Based Visible State
+**File:** `Contextify/Contextify/ConversationMonitor.swift`
 
 ---
 
@@ -229,9 +13,9 @@ ConversationMonitor is the UI-facing singleton that manages timeline state, sess
 
 **Key Responsibilities:**
 - Maintain single source of truth (TimelineState)
-- Filter entries by session (visibleEntries)
-- Coordinate background tasks (discovery, file watching)
-- Handle incremental updates (keyset cursor)
+- Provide visible entries (suffix-limited, all sessions in one stream)
+- Coordinate background tasks (file watching, health monitoring)
+- Handle incremental updates via TimelineDataLoader
 - Debounce rapid file changes
 
 ---
@@ -244,24 +28,32 @@ ConversationMonitor is the UI-facing singleton that manages timeline state, sess
 │              Singleton, @Observable                   │
 ├───────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────┐ │
-│  │          TimelineState (nested)                  │ │
+│  │          TimelineState (nested class)            │ │
 │  │  - entries: [TimelineEntry]                      │ │
 │  │  - revision: UInt64                              │ │
-│  │  - indexByCacheKey: [CacheKey: Int] (computed)  │ │
+│  │  - _indexByCacheKey: [CacheKey: Int] (cached)   │ │
+│  │  - _byID: [UUID: TimelineEntry] (cached)        │ │
 │  └─────────────────────────────────────────────────┘ │
 │                                                        │
 │  ┌─────────────────────────────────────────────────┐ │
-│  │      Derived State (cached, invalidated)         │ │
-│  │  - visibleEntries: [TimelineEntry]               │ │
-│  │    → Filtered by currentSessionId                │ │
-│  │    → Cached until revision changes               │ │
+│  │      visibleEntries (suffix-limited)             │ │
+│  │  - Returns last N entries (visibleEntryLimit=25) │ │
+│  │  - All sessions shown in one stream (no filter)  │ │
 │  └─────────────────────────────────────────────────┘ │
 │                                                        │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │         Background Tasks (structured)            │ │
-│  │  - Discovery loop (find new transcripts)         │ │
 │  │  - File watcher (debounced updates)              │ │
+│  │  - Health monitoring (via coordinator)           │ │
 │  │  - Cache miss generator (LLM summaries)          │ │
+│  └─────────────────────────────────────────────────┘ │
+│                                                        │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │         Extracted Coordinators                   │ │
+│  │  - ViewportTrackingCoordinator (viewport state)  │ │
+│  │  - TimelineCacheCoordinator (cache misses)       │ │
+│  │  - HealthMonitoringCoordinator (health checks)   │ │
+│  │  - TimelineDataLoader (DB queries, cursor)       │ │
 │  └─────────────────────────────────────────────────┘ │
 └──────────────────┬────────────────────────────────────┘
                    │
@@ -271,7 +63,7 @@ ConversationMonitor is the UI-facing singleton that manages timeline state, sess
 │ Orchestrator     │   │ Notifications    │
 │ (nonisolated)    │   │ - Cache updated  │
 │ - SQL queries    │   │ - Project changed│
-│ - Cache lookups  │   │ - Transcript add │
+│ - Cache lookups  │   │ - Primer ready   │
 └──────────────────┘   └──────────────────┘
 ```
 
@@ -281,92 +73,85 @@ ConversationMonitor is the UI-facing singleton that manages timeline state, sess
 
 ### Single Source of Truth
 
+TimelineState is a nested `@Observable` class that owns the entries array and provides O(1) lookups:
+
 ```swift
 @MainActor
 @Observable
 final class TimelineState {
-  var entries: [TimelineEntry] = []
-  private(set) var revision: UInt64 = 0
+    var entries: [TimelineEntry] = []
+    private(set) var revision: UInt64 = 0
 
-  // Computed property (always in sync)
-  var indexByCacheKey: [CacheKey: Int] {
-    Dictionary(uniqueKeysWithValues: entries.enumerated().compactMap { i, e in
-      e.cacheKey.map { ($0, i) }
-    })
-  }
+    // Cached index maps (rebuilt on mutation)
+    @ObservationIgnored private var _indexByCacheKey: [CacheKey: Int] = [:]
+    @ObservationIgnored private var _byID: [UUID: TimelineEntry] = [:]
 
-  // Mutation methods (increment revision)
-  func replace(with entries: [TimelineEntry]) {
-    self.entries = entries
-    revision &+= 1
-  }
+    var indexByCacheKey: [CacheKey: Int] { _indexByCacheKey }
 
-  func append(_ e: TimelineEntry) {
-    entries.append(e)
-    revision &+= 1
-  }
+    func lookup(_ id: UUID) -> TimelineEntry? { _byID[id] }
 
-  func update(at index: Int, to newValue: TimelineEntry) {
-    entries[index] = newValue
-    revision &+= 1
-  }
+    func replace(with entries: [TimelineEntry]) {
+        self.entries = entries
+        revision &+= 1
+        rebuildCacheIndex()
+    }
+
+    func append(_ e: TimelineEntry) {
+        entries.append(e)
+        revision &+= 1
+        // Incremental index update (no full rebuild)
+        if let key = e.cacheKey { _indexByCacheKey[key] = entries.count - 1 }
+        _byID[e.id] = e
+    }
+
+    func update(at index: Int, to newValue: TimelineEntry) {
+        // Atomic cache index update: remove old key, add new
+        entries[index] = newValue
+        revision &+= 1
+        // Update index maps incrementally
+    }
 }
 ```
 
 **Design Rationale:**
-- **No duplicate state:** Index is computed from entries → impossible to desync
-- **Revision tracking:** Every mutation increments revision → derived caches know when to invalidate
+- **Cached index maps:** `_indexByCacheKey` and `_byID` enable O(1) lookup
+- **Incremental updates:** `append()` updates indexes without full rebuild
+- **Revision tracking:** Every mutation increments revision for SwiftUI reactivity
 - **Observable:** SwiftUI re-renders when entries/revision changes
 
 ---
 
-## Derived State Caching
+## visibleEntries (Suffix-Limited Display)
 
-### visibleEntries (Session Filtering)
+The timeline no longer filters by session. All sessions appear as one continuous chronological stream, limited to the most recent N entries for performance:
 
 ```swift
 @Observable
 @MainActor
 final class ConversationMonitor {
-  private let state = TimelineState()
+    private let state = TimelineState()
+    private let visibleEntryLimit = 25  // Tuneable (MonitorConfig.maxEntries)
 
-  // Observable (SwiftUI sees changes)
-  var entries: [TimelineEntry] { state.entries }
+    var entries: [TimelineEntry] { state.entries }
 
-  // Cached derived state
-  @ObservationIgnored private var cachedVisibleEntries: [TimelineEntry]?
-  @ObservationIgnored private var cachedForSessionId: String??
-  @ObservationIgnored private var cachedForRevision: UInt64 = .max
+    var visibleEntries: [TimelineEntry] {
+        // Force SwiftUI observation by reading revision counters
+        _ = entriesRevision
+        _ = stateRevision
 
-  var visibleEntries: [TimelineEntry] {
-    // Check cache validity (revision + session ID)
-    if let cached = cachedVisibleEntries,
-       cachedForSessionId == currentSessionId,
-       cachedForRevision == state.revision {
-      return cached
+        let n = max(visibleEntryLimit, 1)
+        return state.entries.count > n
+            ? Array(state.entries.suffix(n))
+            : state.entries
     }
-
-    // Recompute filter from state.entries
-    let filtered = currentSessionId.map { id in
-      state.entries.filter { $0.sessionId == id }
-    } ?? state.entries  // nil → show all
-
-    // Update cache keys: sessionId + state.revision
-    cachedVisibleEntries = filtered
-    cachedForSessionId = currentSessionId
-    cachedForRevision = state.revision
-
-    return filtered
-  }
 }
 ```
 
-**Why Cache?**
-- `visibleEntries` accessed frequently during SwiftUI view updates
-- Filtering 1000+ entries is O(n) → cache avoids re-filtering on every access
-- Cache invalidation is simple: revision mismatch → recompute
-
-**Trade-off:** Memory (store filtered array) vs CPU (recompute every time).
+**Design Notes:**
+- **No session filtering:** Timeline shows all sessions in one view
+- **Suffix-based limiting:** Only last 25 entries shown for performance
+- **Revision tracking:** Both `entriesRevision` and `stateRevision` force SwiftUI updates
+- **Configurable limit:** Controlled by `MonitorConfig.maxEntries` (default 25)
 
 ---
 
@@ -374,72 +159,43 @@ final class ConversationMonitor {
 
 ### startMonitoring() Flow
 
+The startup flow in `ConversationMonitor#startMonitoring` handles project initialization:
+
 ```swift
 @MainActor
-func startMonitoring() {
-  Task { @MainActor [weak self] in
-    guard let self else { return }
-
-    // 1. Get project root from HUD
-    guard let projectRoot = HUDViewModel.shared.projectRootURL else {
-      self.lastError = "No project root set"
-      return
+func startMonitoring(projectId: String) {
+    // Guard: Skip if already monitoring this project
+    if (isMonitoring && currentProjectId == projectId) ||
+       (currentProjectId == projectId && isInitializing) {
+        return
     }
 
-    // 2. Initialize SQL orchestrator (shared, nonisolated)
-    self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+    isInitializing = true
+    currentProjectId = projectId  // Set synchronously to prevent UI races
 
-    // 3. Create/get project in database (CRITICAL: wait for commit)
-    self.currentProjectId = try self.orchestrator.getOrCreateProject(
-      name: projectRoot.lastPathComponent,
-      rootPath: projectRoot.path
-    )
+    Task { [weak self] in
+        // 1. Reuse or create orchestrator
+        // 2. Verify project exists in database (non-fatal if not yet)
+        // 3. Shutdown old cache generator with chained handoff
+        // 4. Create new generator in background (non-blocking)
+        // 5. Initialize diagnostics service
+        // 6. Spawn background task group:
+        //    - watchForDebouncedTranscriptUpdates()
+        //    - healthMonitor.startMonitoring()
+        // 7. Load initial feed via loadFeedFromSQL()
+        // 8. Setup cache update notifications
+        // 9. Set isMonitoring = true, isInitializing = false
 
-    // Verify project exists (forces DB read, confirms commit)
-    guard let _ = try self.orchestrator.getProject(id: currentProjectId!) else {
-      self.lastError = "Failed to verify project creation"
-      return
+        NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
     }
-
-    // 4. Initialize cache miss generator
-    self.cacheMissGenerator = TimelineCacheMissGenerator(
-      orchestrator: self.orchestrator
-    )
-
-    // 5. Start background tasks (structured concurrency)
-    let projectId = self.currentProjectId!
-    let orchestrator = self.orchestrator!
-
-    self.backgroundTasks = Task { [weak self] in
-      await withTaskGroup(of: Void.self) { group in
-        // Task 1: Discovery loop
-        group.addTask {
-          try? await self?.discoverNewTranscripts(
-            projectId: projectId,
-            orchestrator: orchestrator
-          )
-        }
-
-        // Task 2: Debounced file watcher
-        group.addTask {
-          await self?.watchForDebouncedTranscriptUpdates()
-        }
-      }
-    }
-
-    // 6. Load initial feed from SQL
-    await self.loadFeedFromSQL()
-
-    // 7. Subscribe to notifications
-    self.setupCacheUpdateNotifications()
-    self.setupProjectChangeNotifications()
-
-    self.isMonitoring = true
-  }
 }
 ```
 
-**Critical Section:** Step 3 waits for project creation to commit before starting background tasks. Prevents FK constraint violations (entries referencing non-existent project).
+**Key Design Points:**
+- **Duplicate call prevention:** Guards on `isMonitoring` and `isInitializing`
+- **Chained generator shutdown:** Old generator awaits previous shutdown before cleanup
+- **Non-blocking generator init:** New generator created in background Task
+- **No discovery loop:** Transcript discovery handled by ProjectActivityMonitor via FSEvents
 
 ---
 
@@ -447,73 +203,56 @@ func startMonitoring() {
 
 ### Incremental Update Strategy
 
+Incremental updates use `TimelineDataLoader` (an actor) for cursor management and deduplication:
+
 ```swift
-// Keyset cursor for efficient pagination
-private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?
+// EntryCursor struct for keyset pagination
+@ObservationIgnored private var lastSeenCursor: EntryCursor?
 
-func processIncrementalUpdate() async {
-  // Single-flight guard (prevent concurrent updates)
-  guard !updateInFlight else {
-    updateDirty = true  // Mark dirty for retry
-    return
-  }
-  updateInFlight = true
-  defer {
-    updateInFlight = false
-    updateDrainItersRemaining = updateDrainMaxItersDefault  // Reset countdown for next call
-  }
+@MainActor
+private func processIncrementalUpdate() async {
+    // Single-flight guard
+    if updateInFlight { updateDirty = true; return }
+    updateInFlight = true
+    defer { updateInFlight = false }
 
-  // Drain loop (max 8 iterations to prevent starvation)
-  updateDrainItersRemaining = updateDrainMaxItersDefault
+    repeat {
+        updateDirty = false
 
-  while updateDirty && updateDrainItersRemaining > 0 {
-    updateDirty = false
-    updateDrainItersRemaining -= 1  // Countdown each iteration
+        guard let projectId = currentProjectId,
+              let loader = dataLoader else { return }
 
-    // Query new entries since last cursor
-    let newEntries = try? orchestrator.getEntriesAfter(
-      cursor: lastSeenCursor,
-      limit: 100
-    )
+        // Delegate to TimelineDataLoader for cursor/dedup
+        let result = try await loader.processIncremental(projectId: projectId)
 
-    guard let newEntries = newEntries, !newEntries.isEmpty else { break }
+        guard !result.newEntries.isEmpty else { break }
 
-    // Update cursor (stable max on composite key)
-    if let latest = newEntries.max(by: { a, b in
-      if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
-      if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-      return a.id < b.id
-    }) {
-      lastSeenCursor = (timestamp: latest.timestamp, createdAt: latest.createdAt, id: latest.id)
-    }
+        // Convert to TimelineEntry with cache lookup
+        for entry in result.newEntries {
+            let cache = lookupCache(for: entry)
+            appendEntry(toTimelineEntry(entry, cached: cache, ...))
+        }
 
-    // Deduplicate (track seen database entry IDs - String, not UUID)
-    let unseen = newEntries.filter { !seenEntryIDs.contains($0.id) }
-    unseen.forEach { seenEntryIDs.insert($0.id) }
+        // Queue cache misses via coordinator
+        let misses = cacheCoordinator.createMissesForUpdate(...)
+        await cacheMissGenerator?.queueMisses(misses)
 
-    // Append to state
-    for entry in unseen {
-      state.append(entry)
-    }
+        // Maintain order and bounds
+        sortEntriesChronologically()
+        trimEntries()  // Trims to MonitorConfig.maxEntries (25)
 
-    // Sort chronologically
-    state.sortChronologically()
+        // Sync cursor from loader
+        lastSeenCursor = await loader.lastSeenCursor
 
-    // Trim to max size (5000 entries)
-    state.trim(to: 5000)
-
-    // Queue cache misses
-    let misses = detectCacheMisses(unseen)
-    await cacheMissGenerator?.queueMisses(misses)
-  }
+    } while updateDirty && updateDrainItersRemaining > 0
 }
 ```
 
-**Keyset Cursor:** Avoids OFFSET pagination (O(n) on large tables). Uses `(timestamp, createdAt, id)` for stable ordering.
+**EntryCursor:** Uses struct with `(timestamp, createdAt, id)` for stable keyset pagination.
 
-**Deduplication:** `seenEntryIDs` prevents duplicates from file watcher + notification race conditions.
+**TimelineDataLoader:** Actor that owns cursor persistence and `seenEntryIDs` set.
 
-**Drain Loop:** If more updates arrive during processing (`updateDirty = true`), loop continues up to 8 iterations. Prevents starvation of main thread.
+**Drain Loop:** Max 8 iterations to prevent main thread starvation.
 
 ---
 
@@ -521,32 +260,34 @@ func processIncrementalUpdate() async {
 
 ### User-Initiated Switch
 
+Session switching in `switchToSessionFromUser` loads entries for a specific transcript:
+
 ```swift
+@MainActor
 func switchToSessionFromUser(_ session: TranscriptSession) async {
-  await switchToSession(session, reason: .userSelection)
-}
+    // Find transcript across all projects
+    let transcript = findTranscript(for: session)
 
-private func switchToSession(_ session: TranscriptSession, reason: SessionSwitchReason) async {
-  // Cancel previous session tasks
-  sessionEpoch = UUID()  // New epoch → old tasks check and exit
+    // Switch project if needed
+    if currentProjectId != transcript.projectId {
+        await ProjectSwitcherState.shared.switchToProject(transcript.projectId)
+    }
 
-  // Update current session
-  currentSessionId = session.providerSessionId
+    // Load entries for this transcript
+    let entries = orchestrator.getEntries(forTranscript: transcript.id, ...)
 
-  // Full reload from SQL (filtered by session)
-  await loadFeedFromSQL()
+    // Batch cache lookup + map to timeline entries
+    setEntries(transcriptTimelineEntries)
+    sortEntriesChronologically()
 
-  // Update active session
-  activeSession = session
+    // Update follow state via policy engine
+    await pinAndSwitch(session)
 
-  // Notify UI
-  lastUpdate = Date()
+    currentSessionId = session.identifier
 }
 ```
 
-**Session Filtering:** `visibleEntries` recomputes when `currentSessionId` changes (cache miss on session ID mismatch).
-
-**Full Reload:** Session switch clears state and loads fresh from SQL. Simpler than incremental merge.
+**Note:** Session switching loads a specific transcript's entries but the timeline still shows all sessions in the main view. The `currentSessionId` is used for inventory UI selection, not timeline filtering.
 
 ---
 
@@ -554,83 +295,52 @@ private func switchToSession(_ session: TranscriptSession, reason: SessionSwitch
 
 ### Structured Concurrency
 
+Background tasks are managed via a single parent Task with structured concurrency:
+
 ```swift
 self.backgroundTasks = Task { [weak self] in
-  await withTaskGroup(of: Void.self) { group in
-    group.addTask { /* Discovery */ }
-    group.addTask { /* File watcher */ }
-  }
-}
+    await withTaskGroup(of: Void.self) { group in
+        // Task 1: Debounced transcript updates
+        group.addTask { await self?.watchForDebouncedTranscriptUpdates() }
 
-// Cancellation
-func stopMonitoring() {
-  backgroundTasks?.cancel()
-  backgroundTasks = nil
-}
-```
-
-**Benefits:**
-- All background work in single parent task → one cancellation point
-- Structured concurrency → tasks auto-cancelled when parent cancelled
-- No orphaned tasks after stopMonitoring()
-
-### Discovery Loop
-
-```swift
-func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
-  while !Task.isCancelled {
-    let projectContext = ProjectContext.current()
-    let providers = [ClaudeTranscriptProvider(), CodexTranscriptProvider()]
-
-    for provider in providers {
-      let sessions = provider.sessions(for: projectContext)
-
-      for session in sessions {
-        try orchestrator.discoverTranscript(
-          projectId: projectId,
-          fileURL: session.fileURL,
-          provider: session.provider,
-          providerSessionId: session.providerSessionId,
-          startWatching: true
-        )
-      }
+        // Task 2: Health monitoring with auto-recovery
+        group.addTask { await self?.healthMonitor.startMonitoring(...) }
     }
+}
 
-    // Poll every 5 minutes
-    try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
-  }
+func stopMonitoring() {
+    backgroundTasks?.cancel()
+    backgroundTasks = nil
+    Task { await healthMonitor.stopMonitoring() }
 }
 ```
 
-**Purpose:** Find newly created transcripts without manual refresh.
-
-**Frequency:** 5 minutes (hardcoded). No UI to configure yet; future plan: 1/5/15 min intervals or manual trigger only.
+**Note:** Discovery loop was removed. Transcript discovery is now handled by `ProjectActivityMonitor` via FSEvents.
 
 ### File Watcher (Debounced)
 
 ```swift
-func watchForDebouncedTranscriptUpdates() async {
-  while !Task.isCancelled {
-    // Wait for notification
-    for await _ in NotificationCenter.default.notifications(
-      named: .transcriptFileUpdated
-    ) {
-      // Debounce: wait 150ms for more updates
-      debounceTask?.cancel()
-      debounceTask = Task { [weak self] in
-        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms (matches MonitorConfig.fileWatcherDebounce)
-        await self?.processIncrementalUpdate()
-      }
+private func watchForDebouncedTranscriptUpdates() async {
+    for await note in NotificationCenter.default.notifications(named: "TranscriptUpdated") {
+        if Task.isCancelled { break }
+
+        await MainActor.run {
+            // Only process if notification is for current project
+            if note.projectId == currentProjectId || note.projectId == nil {
+                debounceTask?.cancel()
+                debounceTask = Task {
+                    try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+                    await processIncrementalUpdate()
+                }
+            }
+        }
     }
-  }
 }
 ```
 
-**Debouncing:** Multiple rapid file writes → single incremental update after 150ms.
+**Debouncing:** Multiple rapid file writes coalesce to single update after 150ms.
 
-**macOS < 26.0 Note:** LLM work is skipped with fallback summaries (no errors).
-
-**Trade-off:** Latency (150ms delay) vs efficiency (fewer SQL queries).
+**Multi-project aware:** Filters notifications to current project only.
 
 ---
 
@@ -638,42 +348,54 @@ func watchForDebouncedTranscriptUpdates() async {
 
 ### Flow
 
-```swift
-// TimelineCacheMissGenerator posts notification after LLM generation
-NotificationCenter.default.post(
-  name: .timelineCacheUpdated,
-  object: cacheKey  // CacheKey struct
-)
+Cache updates are batched and debounced to prevent UI flood:
 
-// ConversationMonitor listens
-func setupCacheUpdateNotifications() {
-  cacheUpdateObserver = NotificationCenter.default.addObserver(
-    forName: .timelineCacheUpdated,
-    object: nil,
-    queue: .main
-  ) { [weak self] notification in
-    guard let cacheKey = notification.object as? CacheKey else { return }
-    self?.updateCacheForKey(cacheKey)
-  }
+```swift
+private func setupCacheUpdateNotifications() {
+    cacheUpdateObserver = NotificationCenter.default.addObserver(
+        forName: .timelineCacheUpdated,
+        object: nil,
+        queue: .main
+    ) { [weak self] note in
+        let keys = (note.userInfo?["keys"] as? [CacheKey]) ?? []
+
+        Task { @MainActor in
+            // Accumulate keys
+            self?.pendingCacheKeys.formUnion(keys)
+
+            // Debounce: 100ms
+            self?.cacheDebounceTask?.cancel()
+            self?.cacheDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                let keysToRefresh = Array(self?.pendingCacheKeys ?? [])
+                self?.pendingCacheKeys.removeAll()
+                await self?.refreshCachedEntries(keys: keysToRefresh)
+            }
+        }
+    }
 }
 
-func updateCacheForKey(_ key: CacheKey) {
-  // Find entry by cache key (O(1) via computed index)
-  guard let index = state.indexByCacheKey[key] else { return }
+private func refreshCachedEntries(keys: [CacheKey]) async {
+    // Batch fetch caches with signature verification
+    let cacheMap = try orchestrator.getCachedTimelineManyWithSignature(
+        keys: keys,
+        generatorSignature: generatorSignature()
+    )
 
-  // Query fresh cache from SQL (single fetch by composite key)
-  guard let cached = try? orchestrator.getCachedTimeline(key: key) else { return }
-
-  // Update entry in-place
-  var entry = state.entries[index]
-  entry.cachedSummary = cached.presentForm
-  state.update(at: index, to: entry)
-
-  // Revision increments → SwiftUI re-renders
+    // Update entries in-place using O(1) index lookup
+    for key in keys {
+        if let index = state.indexByCacheKey[key],
+           let cache = cacheMap[key] {
+            let old = entries[index]
+            updateEntry(at: index, with: old.copyWith(summary: cache.presentForm, ...))
+        }
+    }
 }
 ```
 
-**Efficiency:** O(1) lookup via `indexByCacheKey` (computed from entries), then single SQL fetch by composite PK `(content_sha256, window_sha256)`.
+**Batching:** Keys accumulated in `pendingCacheKeys` set, processed after 100ms debounce.
+
+**Efficiency:** Batch cache lookup via `getCachedTimelineManyWithSignature`, O(1) entry lookup via `indexByCacheKey`.
 
 ---
 
@@ -686,16 +408,16 @@ func updateCacheForKey(_ key: CacheKey) {
 @Environment(ConversationMonitor.self) private var monitor
 
 var body: some View {
-  List(monitor.visibleEntries, id: \.id) { entry in
-    TimelineEntryRow(entry: entry)
-  }
+    List(monitor.visibleEntries, id: \.id) { entry in
+        TimelineEntryRow(entry: entry)
+    }
 }
 ```
 
-**@Observable Magic:**
+**Observation mechanics:**
 - SwiftUI tracks access to `monitor.visibleEntries`
-- When `state.revision` increments → cache invalidates → `visibleEntries` recomputes
-- SwiftUI sees new value → re-renders List
+- `visibleEntries` reads `entriesRevision` and `stateRevision` to force observation
+- When revision increments, SwiftUI re-renders
 
 **Performance:** Only visible rows re-render (SwiftUI diffing).
 
@@ -705,35 +427,42 @@ var body: some View {
 
 ### Graceful Degradation
 
-```swift
-func loadFeedFromSQL() async {
-  do {
-    let feed = try orchestrator.getRecentFeed(
-      forProject: currentProjectId!,
-      limit: 50
-    )
+Feed loading uses explicit phase tracking for error handling:
 
-    let entries = feed.map { (entry, cache) in
-      TimelineEntry(
-        from: entry,
-        cachedSummary: cache?.presentForm ?? fallbackSummary(entry)
-      )
+```swift
+enum Phase: String {
+    case cold      // Not yet loaded
+    case loading   // SQL fetch in progress
+    case loaded    // Feed loaded successfully
+    case failed    // Load failed
+}
+
+private func loadFeedFromSQL() async -> Task<Void, Never>? {
+    guard phase != .loading else {
+        pendingRefreshAfterLoad = true  // Coalesce requests
+        return nil
     }
 
-    state.replace(with: entries)
+    phase = .loading
 
-    // Queue cache misses
-    let misses = detectCacheMisses(feed)
-    await cacheMissGenerator?.queueMisses(misses)
+    feedHydrationTask = Task {
+        do {
+            let result = try await dataLoader.loadFeed(projectId: projectId, ...)
+            // ... apply entries ...
+            phase = .loaded
+        } catch {
+            lastError = "Failed to load timeline: \(error.localizedDescription)"
+            phase = .failed
+        }
+    }
 
-  } catch {
-    lastError = "Failed to load timeline: \(error.localizedDescription)"
-    state.replace(with: [])  // Empty state
-  }
+    return feedHydrationTask
 }
 ```
 
-**Never crash:** Errors set `lastError` observable → UI shows error banner.
+**Phase tracking:** UI can show loading/error states based on `phase` property.
+
+**Re-entrancy guard:** Duplicate load requests are coalesced via `pendingRefreshAfterLoad`.
 
 ---
 
@@ -741,13 +470,12 @@ func loadFeedFromSQL() async {
 
 | Operation | Latency | Notes |
 |-----------|---------|-------|
-| Full reload | ~20ms | 50 entries + cache from SQL |
-| Incremental update | ~10ms | 100 new entries (keyset cursor) |
-| visibleEntries (cached) | <1ms | Return cached array |
-| visibleEntries (miss) | ~2ms | Filter 1000 entries |
-| Cache update (in-place) | ~3ms | O(1) lookup + SQL query |
+| Full reload | ~20-35ms | 25 entries + cache from SQL |
+| Incremental update | ~10ms | New entries via keyset cursor |
+| visibleEntries | <1ms | Suffix slice of array |
+| Cache update (batch) | ~3ms | O(1) lookup + batch SQL query |
 
-**Optimization:** Revision-based cache invalidation minimizes recomputation.
+**Optimization:** Revision-based observation, batch cache lookups, debounced notifications.
 
 ---
 
@@ -756,31 +484,31 @@ func loadFeedFromSQL() async {
 ### Limits
 
 ```swift
-// Max entries in memory
-state.trim(to: 5000)
+// Max entries in memory (configured via MonitorConfig)
+state.trim(to: config.maxEntries)  // Default: 25
 
-// Max pending cache misses
-cacheMissGenerator.maxQueueSize = 5000
+// seenEntryIDs pruning (managed by TimelineDataLoader)
+await loader.pruneSeenIDsIfNeeded(currentEntryIDs: ..., maxEntries: config.maxEntries)
 
-// Cleanup on session switch
+// Cleanup on project switch
 seenEntryIDs.removeAll(keepingCapacity: false)
 ```
 
-**Trade-off:** 5000 entries ≈ 2MB RAM. Trim older entries to cap memory.
+**Trade-off:** Small entry limit (25) keeps memory low. TimelineDataLoader manages deduplication set pruning.
 
 ---
 
 ## Testing
 
 **Manual Testing:**
-- Open two transcript sessions → switch between → verify filtering
-- Modify transcript file externally → verify debounced update
-- Delete cache table → verify regeneration + in-place update
+- Modify transcript file externally, verify debounced update
+- Delete cache table, verify regeneration with in-place update
+- Switch projects, verify timeline clears and reloads
 
 **Integration Tests:**
-- Full lifecycle: start → load feed → incremental update → stop
-- Session switching: verify full reload
-- Cache update: verify in-place mutation
+- Full lifecycle: start, load feed, incremental update, stop
+- Cache update: verify batch in-place mutation
+- Project switching: verify cleanup and reload
 
 ---
 
@@ -788,5 +516,8 @@ seenEntryIDs.removeAll(keepingCapacity: false)
 
 - **SQL Backend:** `build/docs/architecture/sql-backend.md`
 - **Cache + LLM:** `build/docs/components/timeline-cache.md`
+- **LLM Processing:** `build/docs/architecture/llm-processing.md`
 - **Implementation:** `Contextify/Contextify/ConversationMonitor.swift`
 - **Models:** `Contextify/Contextify/TimelineModels.swift`
+- **Viewport Tracking:** `Contextify/Contextify/ViewportTrackingCoordinator.swift`
+- **Data Loader:** `Contextify/Contextify/TimelineDataLoader.swift`
