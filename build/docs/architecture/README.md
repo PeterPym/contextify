@@ -95,6 +95,14 @@ This directory contains high-level architectural documentation that explains:
 - Testing procedures and permission management
 - **Critical for:** App Store builds, release testing
 
+### [Cross-Platform Architecture](cross-platform-architecture.md)
+**Topics:** macOS app vs Linux CLI, platform abstractions
+- Package structure (ContextifyCore vs ContextifyIngestionCore)
+- Platform abstractions (Logger, Crypto, Lock, Sandbox)
+- Feature parity matrix (what works where)
+- Database compatibility between platforms
+- **Critical for:** Linux CLI development, cross-platform work
+
 ### [Window System](window-system.md)
 **Topics:** 4-window macOS app architecture
 - Main HUD, Transcripts, Projects, Settings
