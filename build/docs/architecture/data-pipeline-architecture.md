@@ -63,7 +63,7 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 5. **StartupCoordinator (Legacy)** - Compatibility shim for ConversationMonitor
 6. **Streaming Ingestion** - HooverEngine processes 1000 lines at a time (memory efficient)
 7. **Dual Monitoring** - FSEvents (global) + DispatchSource (per-file) for reliability
-8. **SQL Backend** - GRDB with schema v26, WAL mode for concurrent access
+8. **SQL Backend** - GRDB with schema v33, WAL mode for concurrent access
 
 ---
 
@@ -785,7 +785,7 @@ struct TimelineCursor {
 - Scroll to top: Load next 50 older
 - Scroll to bottom: Auto-load new entries (if monitoring active)
 
-## Database Schema (v26)
+## Database Schema (v33)
 
 ### Core Tables
 
@@ -854,9 +854,16 @@ CREATE INDEX idx_timeline_cache_window ON timeline_cache(window_hash);
 
 ### Schema Evolution
 
-**Current Version:** v26
+**Current Version:** v33
 
 **Recent Changes:**
+- **v33:** Added `ingestion_runs` table for CLI debugging
+- **v32:** Lazy watcher baseline tracking (7 new columns)
+- **v31:** Added `pending_rehoover` for lazy watchers
+- **v30:** Sidechain ingestion + `tool_invocations` table
+- **v29:** FTS5 summaries indexing
+- **v28:** FTS5 search index for conversations
+- **v27:** Queued message tracking (`is_queued` column)
 - **v26:** Removed `sandbox_container_path` column (projects table)
 - **v25:** Added `display_order` to projects
 - **v24:** Added `timeline_cache` table for LLM summaries
