@@ -11,11 +11,11 @@ Claude Code uses `queue-operation` metadata records in transcripts to track mess
 
 ## Transcript Queue Operations
 
-Three operation types exist:
-- **enqueue**: User sent message while Claude was busy
-- **dequeue**: Message released into conversation (becomes permanent user record)
-- **remove**: Message discarded without permanent record (ephemeral)
-- **popAll**: Clear all queued messages for session
+Three operation types exist (see `QueueOperation.Kind` enum in TranscriptParsers.swift):
+- **enqueue**: User sent message while Claude was busy (creates synthetic entry)
+- **remove**: Message discarded without permanent record (clears via FIFO matching)
+- **dequeue**: Message released into conversation (clears entire session queue)
+- **popAll**: Clear all queued messages for session (same behavior as dequeue)
 
 ## Version Comparison
 
@@ -57,42 +57,50 @@ Queue operations are metadata, not conversation entries. Without synthetic entri
 
 ### Solution: Dual Mechanism
 
-**1. Synthetic Queue Entries** (TranscriptParsers.swift:103-137)
+**1. Synthetic Queue Entries** (ClaudeCodeLineParser#parse)
 ```swift
 if type == "queue-operation" && operation == "enqueue" {
-  // Create synthetic entry: queue-{hash}-{hash}
+  // Create synthetic entry: queue-{timestampHash}-{contentHash}
   // Set is_queued=true → shows "QUEUED" badge in UI
 }
 ```
 
-**2. Queue Operation Handler** (HooverEngine.swift:811-857)
+**2. Queue Operation Handler** (HooverEngine#commitBatch)
 ```swift
 case .remove:
+  // FIFO: clear oldest queued entry for this session
+  // Claude Code's remove doesn't include content, so we match by order
   UPDATE transcript_entries SET is_queued = 0
-  WHERE content_sha256 = ? AND is_queued = 1
-  // Clears badge on synthetic entry
+  WHERE id = (SELECT id FROM transcript_entries
+              WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
+              ORDER BY timestamp ASC LIMIT 1)
 
 case .dequeue, .popAll:
   UPDATE transcript_entries SET is_queued = 0
-  WHERE session_id = ? AND is_queued = 1
+  WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
   // Clears all queued entries for session
 ```
 
-**3. Content-Matching Heuristic** (HooverEngine.swift:728-746)
+**3. Content-Matching Heuristic** (HooverEngine#commitBatch)
 ```swift
 // Defensive fallback for v2.0.37-style DEQUEUE
-for entry in entries where entry.kind == "user" {
+for entry in entries where entry.kind == "user" && !entry.id.hasPrefix("queue-") {
   DELETE FROM transcript_entries
-  WHERE content_sha256 = ? AND id LIKE 'queue-%'
+  WHERE transcript_id = ? AND content_sha256 = ?
+    AND id LIKE 'queue-%' AND is_queued = 1
   // Remove synthetic when real message supersedes it
 }
 ```
 
-**4. UI Refresh** (HooverEngine.swift:858-871)
+**4. UI Refresh** (HooverEngine#commitBatch)
 ```swift
-// Post notification after queue operations
-NotificationCenter.post("QueueOperationsProcessed")
-// ConversationMonitor reloads feed to show updated is_queued values
+// Post notification after queue operations with project context
+NotificationCenter.default.post(
+  name: Notification.Name("QueueOperationsProcessed"),
+  object: nil,
+  userInfo: ["projectId": projectId, "transcriptId": transcriptId]
+)
+// ConversationMonitor#handleQueueOperationsProcessed reloads feed via loadFeedFromSQL
 ```
 
 ### Mechanism Priority
@@ -127,16 +135,22 @@ Provides useful activity awareness - user sees "message waiting" indicator durin
 ```sql
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,
+  transcript_id TEXT NOT NULL,
+  session_id TEXT,  -- Used for session-scoped queue operations
   -- ... other fields ...
-  is_queued INTEGER DEFAULT 0,  -- 1=waiting, 0=processed/normal
+  is_queued INTEGER NOT NULL DEFAULT 0,  -- 1=waiting, 0=processed/normal
   content_sha256 TEXT  -- Used for matching queue-XX to real messages
 );
+
+-- Index for queue operation queries (see DatabaseSchema.swift migration v27)
+CREATE INDEX idx_entries_queue_ops
+  ON transcript_entries (transcript_id, session_id, is_queued, content_sha256);
 ```
 
 Synthetic queue entries:
-- ID format: `queue-{timestamp_hash}-{content_hash}`
+- ID format: `queue-{abs(timestampStr.hashValue)}-{abs(content.hashValue)}`
 - `is_queued=1` initially
-- Set to `0` when processed, or entry deleted entirely
+- Set to `0` when processed (via queue ops), or entry deleted entirely (via heuristic)
 
 ## Configuration
 
@@ -162,15 +176,17 @@ unset CONTEXTIFY_SHOW_QUEUED     # Show queue badges (default)
 
 ```
 [QUEUE-ENQUEUE] Creating synthetic entry id=queue-XXX ts=2025-11-22T06:57:55.809Z content="reply acki"
-[QUEUE-OP-CLEAR] remove cleared 1 entries after 3.5s content_sha256=21cc882e
+[QUEUE-OP-CLEAR] remove cleared 1 entries (FIFO) after 3.5s transcript=abc12345
+[QUEUE-OP-CLEAR] dequeue cleared 2 entries after 1.2s transcript=abc12345
+[QUEUE-HEURISTIC] Deleted 1 synthetic queue entry (real message appeared) content_sha256=21cc882e
 [QUEUE-REFRESH] Queue operations processed, refreshing entries
 ```
 
 Reveals:
-- When messages queued
-- How long they waited
-- Which mechanism processed them
-- Whether queued indicator provides UX value
+- When messages queued (QUEUE-ENQUEUE)
+- How long they waited and which mechanism processed them (QUEUE-OP-CLEAR)
+- When heuristic deletes synthetic entries (QUEUE-HEURISTIC)
+- When UI refresh triggered (QUEUE-REFRESH)
 
 ## Summary
 

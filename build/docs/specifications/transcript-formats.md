@@ -278,13 +278,20 @@ Periodic capture of file backup states.
 
 #### `system` (System Events)
 
-System-level events like command execution.
+System-level events like command execution, API errors, and compact mode boundaries.
 
 **Fields:**
 - `type` (string) — Always `"system"`
 - `timestamp` (ISO string)
-- `systemType` (string) — Event type (e.g., `"command"`)
-- `data` (object) — Event-specific data
+- `subtype` (string) — Event type (e.g., `"local_command"`, `"api_error"`, `"compact_boundary"`)
+- `level` (string) — `"info"` or `"error"` (defaults to `"info"`)
+- `error` (string, optional) — Error message for api_error subtype
+- `retryAttempt` (int, optional) — Retry attempt number
+- `maxRetries` (int, optional) — Maximum retry attempts
+- `retryInMs` (int, optional) — Retry delay in milliseconds
+- `parentUuid` (string, optional) — Parent message UUID
+- `logicalParentUuid` (string, optional) — Logical parent for compact mode threading
+- `compactMetadata` (string, optional) — Compact mode metadata
 
 #### `summary` (Session Summaries)
 
