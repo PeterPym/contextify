@@ -119,6 +119,39 @@ parse_errors
 ├── transcript_id (FK → transcripts, CASCADE)
 ├── line_number + raw_line + error_message
 └── created_at
+
+database_access_metadata (v21+)
+├── machine_id (PK)
+├── machine_name
+├── last_access
+└── app_version
+
+project_follow_policy (v23+)
+├── project_id (UNIQUE, FK → projects, CASCADE)
+├── mode (0=auto, 1=manual)
+├── pinned_session_id + pinned_provider
+└── updated_at
+
+ingestion_locks (v24+)
+├── transcript_id (PK, FK → transcripts, CASCADE)
+└── locked_at
+
+transcript_preflight_cache (v25+, WITHOUT ROWID)
+├── file_path + provider (COMPOSITE PK)
+├── mtime + status (passed|failed) + error
+└── checked_at
+
+transcript_entries_fts (v28+, FTS5 virtual table)
+├── content (indexed)
+├── entry_id, project_id, role, created_at (UNINDEXED metadata)
+└── Triggers: fts_insert, fts_update, fts_delete
+
+ingestion_runs (v33+)
+├── id (PK)
+├── started_at + completed_at
+├── transcripts_processed + entries_inserted + errors_encountered
+├── duration_seconds + status (running|completed|failed)
+└── cli_version + timestamps
 ```
 
 ### Schema Evolution
