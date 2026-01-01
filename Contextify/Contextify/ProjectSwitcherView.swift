@@ -19,6 +19,29 @@ private struct ScrollViewButtonStyle: ButtonStyle {
   }
 }
 
+// MARK: - Conditional drag modifier (P1: avoid empty drag sessions)
+// Only applies .onDrag for solo tabs; grouped tabs get no drag at all,
+// preventing any drag cursor/ghost from appearing.
+
+private struct ConditionalDragModifier: ViewModifier {
+  let enabled: Bool
+  let onDragStart: () -> NSItemProvider
+
+  func body(content: Content) -> some View {
+    if enabled {
+      content.onDrag(onDragStart)
+    } else {
+      content
+    }
+  }
+}
+
+private extension View {
+  func conditionalDrag(enabled: Bool, onDragStart: @escaping () -> NSItemProvider) -> some View {
+    modifier(ConditionalDragModifier(enabled: enabled, onDragStart: onDragStart))
+  }
+}
+
 // MARK: - Tab frame measurement
 
 private struct TabPositionPreferenceKey: PreferenceKey {
@@ -636,18 +659,9 @@ struct ProjectTabView: View {
     .help(groupDisplayName ?? "")
     .opacity(isDragging ? 0.0 : 1.0)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
-    // B1-B7 fix: Disable drag for grouped tabs - use context menu "Move Group Left/Right" instead.
-    // The drop delegate operates on individual tabs, not groups, so dragging grouped tabs
-    // would break group integrity. Solo tabs can still be dragged freely.
-    .onDrag {
-      // Only allow drag for ungrouped (solo) tabs
-      if project.groupId == nil {
-        return onDragStart()
-      }
-      // Grouped tabs: return empty provider to disable drag
-      // (context menu movement still works via moveGroupLeft/Right)
-      return NSItemProvider()
-    }
+    // B1-B7 fix: Only apply drag for solo tabs. Grouped tabs use context menu movement
+    // (Move Group Left/Right). This prevents drag cursor/ghost for grouped tabs entirely.
+    .conditionalDrag(enabled: project.groupId == nil, onDragStart: onDragStart)
     .contextMenu {
       // Group name header (non-selectable) for grouped tabs
       if let groupName = groupDisplayName {
@@ -677,6 +691,7 @@ struct ProjectTabView: View {
             Text("\u{2318}\u{21E7}\u{2325}[")
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityHidden(true)
           }
         }
         .disabled(!canMoveLeftInGroup)
@@ -690,6 +705,7 @@ struct ProjectTabView: View {
             Text("\u{2318}\u{21E7}\u{2325}]")
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityHidden(true)
           }
         }
         .disabled(!canMoveRightInGroup)
@@ -710,6 +726,7 @@ struct ProjectTabView: View {
             Text("\u{2318}\u{21E7}\u{2303}[")
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityHidden(true)
           }
         }
         .disabled(!canMoveGroupLeft)
@@ -723,6 +740,7 @@ struct ProjectTabView: View {
             Text("\u{2318}\u{21E7}\u{2303}]")
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityHidden(true)
           }
         }
         .disabled(!canMoveGroupRight)
