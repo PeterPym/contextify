@@ -251,22 +251,23 @@ public final class TranscriptWatcher {
 }
 ```
 
-**In TranscriptOrchestrator:**
+**In TranscriptOrchestrator (init):**
 
 ```swift
+// Set re-hoover callback to route through discoverTranscriptInternal (synchronous)
 watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
-  try self?.discoverTranscript(
+  try self?.discoverTranscriptInternal(
     projectId: projectId,
     fileURL: fileURL,
     provider: provider,
     providerSessionId: sessionId,
     startWatching: false,  // Already watching
-    progress: nil
+    bypassScheduler: true
   )
 }
 ```
 
-**Effect:** All re-ingestion routes through `discoverTranscript()`, which applies security scoping consistently.
+**Effect:** All re-ingestion routes through `discoverTranscriptInternal()`, which applies security scoping via `accessProvider.withAccess()` for sandbox builds.
 
 ---
 
