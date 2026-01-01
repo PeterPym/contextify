@@ -579,6 +579,30 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // Backward compatibility overload for old single projectId parameter
+  public func search(
+    query: String,
+    projectId: String? = nil,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    kinds: [String]? = nil,
+    treatAsFTS: Bool = false
+  ) throws -> [SearchHit] {
+    let projectIds = projectId.map { [$0] }
+    return try search(
+      query: query,
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      limit: limit,
+      includeHidden: includeHidden,
+      timeRange: timeRange,
+      kinds: kinds,
+      treatAsFTS: treatAsFTS
+    )
+  }
+
   public func entry(
     entryId: String,
     includeContent: Bool = true,
@@ -881,6 +905,32 @@ public struct ContextifyQueryService: Sendable {
       projectIds: projectIds,
       transcriptId: transcriptId,
       limit: limit,
+      timeRange: timeRange,
+      includeContent: includeContent,
+      fullContent: fullContent,
+      maxContentBytes: maxContentBytes
+    )
+  }
+
+  // Backward compatibility overload for old single projectId parameter
+  public func activity(
+    projectId: String? = nil,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    includeSidechains: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> [ActivityItem] {
+    let projectIds = projectId.map { [$0] }
+    return try activity(
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      limit: limit,
+      includeHidden: includeHidden,
+      includeSidechains: includeSidechains,
       timeRange: timeRange,
       includeContent: includeContent,
       fullContent: fullContent,
