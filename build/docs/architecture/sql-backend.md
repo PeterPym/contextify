@@ -63,21 +63,24 @@ transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
 ├── transcript_id (FK → transcripts, CASCADE)
 ├── project_id (FK → projects, CASCADE, DENORMALIZED for query performance)
 ├── session_id
+├── provider (claude.code | codex.cli | other)
 ├── kind (user | assistant | system)
 ├── timestamp
 ├── content + content_sha256
+├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── parent_id (FK → transcript_entries, SET NULL)
+├── git_context (git_branch, git_commit, cwd)
 ├── window_tracking (v2+)
 │   ├── prev1_id
 │   ├── prev2_id
 │   └── window_sha256 (for cache key computation)
-├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── embedding (BLOB, optional for RAG features)
 ├── created_ts (REAL, v12+, millisecond-precision epoch for unread queries)
 ├── is_queued (INTEGER, v27+, transient queued message tracking)
 ├── is_sidechain (INTEGER, v30+, agent sidechain marker)
-├── git_context (branch, commit, cwd)
-└── embedding (BLOB, optional for RAG features)
-    └── v6 REMOVED: summary, disposition, is_completion, is_directive
-                   (all moved to timeline_cache - see "Schema Evolution" below)
+└── timestamps (created_at, updated_at)
+    Note: v6 REMOVED: summary, disposition, is_completion, is_directive
+          (all moved to timeline_cache - see "Schema Evolution" below)
 
 timeline_cache (WITHOUT ROWID - DERIVED/COMPUTED DATA)
 ├── content_sha256 + window_sha256 (COMPOSITE PK, NO generator_signature)
