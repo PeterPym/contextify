@@ -139,16 +139,12 @@ Removed denormalized fields from `transcript_entries` that violated data archite
 
 **UI Flag Derivation (post-v6):**
 ```swift
-// ConversationMonitor.swift:513-517
-let cached = try? orchestrator.getCachedTimeline(
-  contentSha256: entry.contentSha256,
-  windowSha256: entry.windowSha256 ?? ""
-)
-let isCompletion = cached?.disposition == "completion"
-let isDirective: Bool = {
-  guard let disp = cached?.disposition else { return false }
-  return ["directive", "affirmative", "negative"].contains(disp)
-}()
+// ConversationMonitor.swift#makeTimelineItem (within the function body)
+isCompletion: cached?.disposition == "completion",
+isDirective: {
+    guard let disp = cached?.disposition else { return false }
+    return ["directive", "affirmative", "negative"].contains(disp)
+}(),
 ```
 
 **Migration Strategy:**
