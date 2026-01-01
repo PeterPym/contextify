@@ -49,11 +49,11 @@ The **Startup Coordinator** provides a single source of truth for project identi
 │  │  - displayName, branch, bookmark                     │ │
 │  └───────────────────────────────────────────────────────┘ │
 │                                                              │
-│  Published via AsyncStream<ActiveProjectContext>            │
+│  Published via updates() -> AsyncStream<ActiveProjectContext>│
 └─────────────────────────────────────────────────────────────┘
                               │
                               ├──→ ConversationMonitor (starts monitoring with projectId)
-                              └──→ Other legacy subscribers using StartupCoordinator.shared.updates
+                              └──→ Other legacy subscribers using StartupCoordinator.shared.updates()
 ```
 
 ### Integration with AppStateOrchestrator
@@ -63,21 +63,22 @@ sequenceDiagram
     participant User
     participant ASO as AppStateOrchestrator
     participant SC as StartupCoordinator
+    participant NC as NotificationCenter
     participant CM as ConversationMonitor
     participant TO as TranscriptOrchestrator
 
     User->>ASO: selectProject(id: "ABC123")
     ASO->>ASO: JIT ingestion...
-    ASO->>TO: getProject(id: "ABC123")
-    TO-->>ASO: Project(id, path, name)
+    ASO->>TO: getOrCreateProject(name, rootPath)
+    TO-->>ASO: projectId
 
-    ASO->>SC: handleExternalProjectSwitch(id: "ABC123", path: "/path/to/repo")
-    Note over SC: Legacy compatibility shim
+    ASO->>SC: handleExternalProjectSwitch(id, path)
+    Note over SC: Resolve git branch, create bookmark
 
-    SC->>SC: Create ActiveProjectContext
-    SC->>SC: Publish via AsyncStream
-    SC->>CM: updates.yield(context)
-    CM->>CM: startMonitoring(projectId: context.id)
+    SC->>SC: publishContext(context)
+    SC->>NC: post(.activeProjectContextDidChange)
+    NC-->>CM: updates() stream yields context
+    CM->>CM: handleContextUpdate(context)
 
     Note over CM: Legacy component still uses StartupCoordinator
     Note over ASO: New components use AppStateOrchestrator directly
@@ -88,19 +89,28 @@ sequenceDiagram
 Bridge method that allows AppStateOrchestrator to notify StartupCoordinator of project changes:
 
 ```swift
-// StartupCoordinator.swift
+// StartupCoordinator#handleExternalProjectSwitch
 public func handleExternalProjectSwitch(id: String, path: String) async throws {
-  // Create ActiveProjectContext from AppStateOrchestrator notification
+  // Resolve git branch for the project
+  let branch = await resolveGitBranch(path: path)
+
+  // Create security-scoped bookmark (required for sandboxed builds)
+  let bookmark = await Task.detached {
+    let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+    return try? url.bookmarkData(options: [.withSecurityScope], ...)
+  }.value
+
+  // Create context with bookmark
   let context = ActiveProjectContext(
     id: id,
     path: path,
     displayName: URL(fileURLWithPath: path).lastPathComponent,
-    branch: nil, // Git detection handled separately
-    bookmark: nil
+    branch: branch,
+    bookmark: bookmark
   )
 
-  // Notify legacy subscribers
-  updates.yield(context)
+  // Publish via standard flow for deduplication
+  await publishContext(context)
 }
 ```
 
@@ -153,21 +163,26 @@ public func handleExternalProjectSwitch(id: String, path: String) async throws {
 - No race conditions from path-dependent lookups
 - Single source of truth for project identity
 
-### 2. AsyncStream Instead of NotificationCenter
+### 2. Multicast AsyncStream via Method
 
 **Implementation:**
 ```swift
-// Typed stream with guaranteed ordering
-for await context in StartupCoordinator.shared.updates {
+// Each call to updates() returns a fresh stream backed by NotificationCenter
+// This provides multicast semantics - all subscribers receive all updates
+for await context in StartupCoordinator.shared.updates() {
     await handleContextUpdate(context)
 }
 ```
 
+**Why Method Instead of Property:**
+- A shared `AsyncStream` property would be unicast (subscribers compete for elements)
+- Method pattern creates fresh stream per subscriber (multicast)
+- Each stream has its own NotificationCenter observer
+
 **Benefits:**
 - Type-safe (compiler-enforced context structure)
-- Sequential delivery (no duplicate/reordered events)
-- Explicit dependencies (see who subscribes)
-- No suppression logic needed (coordinator deduplicates)
+- Multicast (all subscribers receive all updates)
+- Deduplication handled in `publishContext()` before notification
 
 ### 3. Off-Main-Thread Database Operations
 
@@ -222,13 +237,16 @@ public final class StartupCoordinator {
     // Current context (observable)
     public private(set) var current: ActiveProjectContext?
 
-    // Stream of context updates
-    public let updates: AsyncStream<ActiveProjectContext>
+    // Pipeline readiness state for gating UI
+    public var pipelineReadiness: PipelineReadiness
 
-    // Start coordinator (call once from app launch)
-    public func start() async throws
+    // Create fresh update stream (multicast - each caller gets own stream)
+    nonisolated public func updates() -> AsyncStream<ActiveProjectContext>
 
-    // Wait for initial context (blocking)
+    // Start coordinator (call once from app launch, idempotent)
+    public func start() async  // Note: does not throw
+
+    // Wait for initial context (with 5s timeout)
     public func ready() async throws -> ActiveProjectContext
 
     // Switch to new project (user action)
@@ -236,6 +254,13 @@ public final class StartupCoordinator {
 
     // Receive notification from AppStateOrchestrator (legacy bridge)
     public func handleExternalProjectSwitch(id: String, path: String) async throws
+
+    // Update pipeline readiness state
+    public func updatePipelineReadiness(
+        discoveryComplete: Bool? = nil,
+        dbUpdated: Bool? = nil,
+        watchersReady: Bool? = nil
+    )
 }
 ```
 
@@ -243,13 +268,14 @@ public final class StartupCoordinator {
 
 ```swift
 // Pattern 1: Start coordinator (app init) - Legacy path
-try await StartupCoordinator.shared.start()
+await StartupCoordinator.shared.start()  // Does not throw
 
 // Pattern 2: Block until ready (ContentView.task) - Legacy path
 let context = try await StartupCoordinator.shared.ready()
 
 // Pattern 3: Subscribe to updates (ConversationMonitor) - Legacy path
-for await context in StartupCoordinator.shared.updates {
+// Note: updates() is a method, returns fresh stream for each caller (multicast)
+for await context in StartupCoordinator.shared.updates() {
     await handleContextUpdate(context)
 }
 
@@ -280,7 +306,7 @@ Task {
 **DON'T:**
 ```swift
 // Don't use StartupCoordinator for new code
-for await context in StartupCoordinator.shared.updates {
+for await context in StartupCoordinator.shared.updates() {
     self.activeProjectId = context.id
 }
 
@@ -313,14 +339,14 @@ let projectId = try orchestrator.getOrCreateProject(...)
 ```swift
 func testStartPublishesContext() async throws {
     let coordinator = StartupCoordinator(/* inject mocks */)
-    try await coordinator.start()
+    await coordinator.start()  // Note: start() does not throw
 
     let context = try await coordinator.ready()
     XCTAssertEqual(context.path, expectedPath)
 }
 
 func testSwitchProjectUpdatesContext() async throws {
-    try await coordinator.start()
+    await coordinator.start()
     try await coordinator.switchProject(to: "/new/project")
 
     XCTAssertEqual(coordinator.current?.path, "/new/project")
@@ -332,7 +358,7 @@ func testSwitchProjectUpdatesContext() async throws {
 ```swift
 func testFullStartupSequence() async throws {
     // 1. Start coordinator
-    try await StartupCoordinator.shared.start()
+    await StartupCoordinator.shared.start()  // Does not throw
 
     // 2. Verify legacy subscribers receive context
     XCTAssertNotNil(ProjectSwitcherState.shared.activeProjectId)
@@ -406,7 +432,7 @@ func testFullStartupSequence() async throws {
    - Update to use AppStateOrchestrator directly (not StartupCoordinator)
 
 2. **Audit Legacy Subscribers** (1 week)
-   - Find all uses of `StartupCoordinator.shared.updates`
+   - Find all uses of `StartupCoordinator.shared.updates()`
    - Migrate to `AppStateOrchestrator.state` observation
    - Remove AsyncStream subscriptions
 
@@ -424,7 +450,7 @@ func testFullStartupSequence() async throws {
 **Current (Legacy Pattern):**
 ```swift
 // Legacy pattern (StartupCoordinator)
-for await context in StartupCoordinator.shared.updates {
+for await context in StartupCoordinator.shared.updates() {
     self.activeProjectId = context.id
     self.projectPath = context.path
     await refreshTimeline()
