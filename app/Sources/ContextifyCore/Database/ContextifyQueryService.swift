@@ -456,7 +456,7 @@ public struct ContextifyQueryService: Sendable {
 
   public func search(
     query: String,
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -499,9 +499,15 @@ public struct ContextifyQueryService: Sendable {
       if !includeHidden {
         sql += " AND e.display_in_timeline = 1"
       }
-      if let projectId {
-        sql += " AND e.project_id = ?"
-        args.append(projectId)
+      if let projectIds = projectIds {
+        if projectIds.isEmpty {
+          return []  // Empty array = no results
+        }
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.project_id IN (\(placeholders))"
+        for id in projectIds {
+          args.append(id)
+        }
       }
       if let transcriptId {
         sql += " AND e.transcript_id = ?"
@@ -859,7 +865,7 @@ public struct ContextifyQueryService: Sendable {
   }
 
   public func activity(
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -872,7 +878,7 @@ public struct ContextifyQueryService: Sendable {
     let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
     return try activityImpl(
       filter: filter,
-      projectId: projectId,
+      projectIds: projectIds,
       transcriptId: transcriptId,
       limit: limit,
       timeRange: timeRange,
@@ -885,7 +891,7 @@ public struct ContextifyQueryService: Sendable {
   /// Internal implementation using EntryFilter for unified filter handling.
   internal func activityImpl(
     filter: EntryFilter,
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     timeRange: QueryTimeRange = QueryTimeRange(),
@@ -946,9 +952,15 @@ public struct ContextifyQueryService: Sendable {
       var args: [any DatabaseValueConvertible] = []
       args.append(contentsOf: filterArgs)
 
-      if let projectId {
-        sql += " AND e.project_id = ?"
-        args.append(projectId)
+      if let projectIds = projectIds {
+        if projectIds.isEmpty {
+          return []  // Empty array = no results
+        }
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.project_id IN (\(placeholders))"
+        for id in projectIds {
+          args.append(id)
+        }
       }
       if let transcriptId {
         sql += " AND e.transcript_id = ?"
