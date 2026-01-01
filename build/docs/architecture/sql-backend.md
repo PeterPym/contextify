@@ -405,16 +405,17 @@ Post notification → ConversationMonitor → UI update
 
 **Example:**
 ```swift
-protocol EntryRepository {
+public protocol EntryRepository {
   func insert(_ entry: TranscriptEntry) throws
+  func insertBatch(_ entries: [TranscriptEntry]) throws
   func recentFeed(projectId: String, limit: Int, generatorSignature: String)
     throws -> [(TranscriptEntry, TimelineCache?)]
 }
 
-struct EntryRepositoryImpl: EntryRepository {
+public final class EntryRepositoryImpl: EntryRepository {
   private let db: DatabasePool
 
-  func recentFeed(...) throws -> [(TranscriptEntry, TimelineCache?)] {
+  public func recentFeed(...) throws -> [(TranscriptEntry, TimelineCache?)] {
     try db.read { db in
       // Single query with LEFT JOIN on timeline_cache
       // Uses covering index idx_entries_feed_cover
