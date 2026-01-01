@@ -1,8 +1,10 @@
 ---
 title: Contextify Query Plugin Draft
-status: draft
+status: superseded
 owner: contextify
 ---
+
+> **SUPERSEDED:** See `contextify-query/claude-plugin/` for current plugin specification.
 
 This directory contains a draft replacement plugin for Contextify query skills.
 
