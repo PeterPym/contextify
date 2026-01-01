@@ -116,6 +116,20 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
   let claudeRoot: URL?
   let codexRoot: URL?
 
+  init(claudeRoot: URL?, codexRoot: URL?) {
+    self.claudeRoot = claudeRoot
+    self.codexRoot = codexRoot
+
+    // Start security-scoped access for both roots if available
+    // This keeps access open for the lifetime of the provider
+    if let claude = claudeRoot {
+      _ = claude.startAccessingSecurityScopedResource()
+    }
+    if let codex = codexRoot {
+      _ = codex.startAccessingSecurityScopedResource()
+    }
+  }
+
   func withAccess<T>(
     for provider: String,
     _ body: @Sendable (URL) throws -> T
@@ -133,29 +147,23 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
       }
       root = url
     default:
-      assertionFailure("Unknown provider")
+      assertionFailure("Unknown transcript provider")
       root = FileManager.default.homeDirectoryForCurrentUser
     }
 
-    guard root.startAccessingSecurityScopedResource() else {
-      throw FolderAccessError.securityScopeAccessDenied(root)
-    }
-    defer { root.stopAccessingSecurityScopedResource() }
-
+    // Security scope already started in init, just return URL
     return try body(root)
   }
 }
 ```
 
 **Behavior:**
-1. Built once during app init with URLs from `FolderAccessController`
-2. Captures security-scoped URLs as immutable properties
-3. On `withAccess()`:
-   - Starts security scope (`startAccessingSecurityScopedResource()`)
-   - Executes body (file I/O happens here)
-   - Ends scope in `defer` (guaranteed cleanup)
+1. Built once during app init with security-scoped URLs from `FolderAccessController`
+2. Starts security scope once in `init()` and keeps it active for provider lifetime
+3. On `withAccess()`: returns the already-scoped URL directly (no per-call scope management)
+4. Security scope remains active for the entire app session
 
-**Key constraint:** File I/O MUST complete before `withAccess()` returns. Security scope is only active during the call.
+**Design rationale:** Starting scope once at init simplifies the API and avoids per-call overhead. The provider is created during app startup and lives for the entire session, so scope lifetime matches app lifetime.
 
 ---
 
