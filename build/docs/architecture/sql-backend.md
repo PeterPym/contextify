@@ -488,22 +488,23 @@ See: `technical-reference/conversation-monitor-state-architecture.md`
 // Initialize orchestrator (shared, nonisolated)
 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
 
-// Create/get project (on main actor)
-let projectId = try orchestrator.getOrCreateProject(
+// Create/get project
+let result = try orchestrator.getOrCreateProject(
   name: "MyProject",
   rootPath: "/Users/rob/code/projects/myproject"
 )
+let projectId = result.projectId
 
-// Background discovery (off main actor)
+// Background discovery (async - routes through HooverScheduler)
 Task.detached {
-  try orchestrator.discoverTranscripts(
+  try await orchestrator.discoverTranscripts(
     projectId: projectId,
-    files: [(fileURL, "claude.code", nil)],
+    transcriptFiles: [(url: fileURL, provider: "claude.code", sessionId: nil)],
     startWatching: true
   )
 }
 
-// Query feed (main actor, fast)
+// Query feed (synchronous, fast)
 let feed = try orchestrator.getRecentFeed(
   forProject: projectId,
   limit: 50,
