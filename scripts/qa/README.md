@@ -95,6 +95,7 @@ Use this before testing DMG installation, CLI installation, or skill activation.
 | CLI-01 | Query Baseline | contextify-query, jq |
 | CLI-02 | Query Issues (red) | contextify-query, jq |
 | CLI-03 | Skill Invocation | contextify-query, jq, Claude Code |
+| CLI-04 | Worktree Query | contextify-query, jq, git |
 | **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
 | QA-13 | CLI Install/Repair/Uninstall (DMG) | DMG build, Accessibility |
 | QA-15 | contextify-query bundle integrity | DMG build (App Store optional) |
@@ -145,7 +146,8 @@ scripts/qa/
     └── QA-11-deep-search.sh
     ├── CLI-01-query-baseline.sh
     ├── CLI-02-query-issues.sh
-    └── CLI-03-skill-invocation.sh
+    ├── CLI-03-skill-invocation.sh
+    └── CLI-04-worktree-query.sh
 ```
 
 ## Running Individual Tests
