@@ -99,6 +99,8 @@ Use this before testing DMG installation, CLI installation, or skill activation.
 | **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
 | QA-13 | CLI Install/Repair/Uninstall (DMG) | DMG build, Accessibility |
 | QA-15 | contextify-query bundle integrity | DMG build (App Store optional) |
+| QA-16 | Agent Decoration | DMG build |
+| QA-17 | Status Bar Permissions | DMG build |
 
 ## Test Output
 

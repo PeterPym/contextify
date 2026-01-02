@@ -408,7 +408,7 @@ try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
 
 ## Testing
 
-**Command:** `swift test` (46 tests, zero failures required)
+**Command:** `swift test` (300+ tests, zero failures required)
 **Test location:** `Tests/ContextifyCoreTests/` (NOT `Contextify/ContextifyTests/` which is legacy/read-only)
 
 ### Before Merging (Required)
