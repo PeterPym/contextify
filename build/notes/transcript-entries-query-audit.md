@@ -223,6 +223,7 @@ When adding new queries loading transcript_entries:
 |------|---------|----------|---------------|
 | 2025-11-23 | Claude (audit) | 3 user-facing queries missing filter (48% failure) | Fixed byTranscript(), search(), getEntriesAfterCursor() |
 | 2025-11-23 | Claude (audit) | 13 internal queries without filter | Verified all are correct exceptions, documented |
+| 2025-12-31 | Claude (docs-audit) | Periodic review | No changes; document structure still valid |
 
 ---
 

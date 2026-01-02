@@ -1,8 +1,12 @@
 # Abstract LLM Work Queue - Design Document
 
-**Status:** Design Complete, Ready for Implementation
+**Status:** UNIMPLEMENTED - Historical Design Proposal
 **Date:** 2025-11-09
 **Author:** Transcript Window Refactoring (Phase 0)
+
+> **Note (2025-12):** This design was never implemented. The abstract `LLMWorkQueue` infrastructure does not exist. Both `TimelineCacheMissGenerator` and `TranscriptMetadataOrchestrator` remain independent implementations with their own queue logic. See `llm-processing.md` for current architecture.
+>
+> This document is preserved as a reference for potential future refactoring but does not reflect the actual codebase.
 
 ---
 
@@ -297,7 +301,9 @@ func clearPending(exceptProjectId: String?) async {
 
 ---
 
-## Migration Strategy
+## Migration Strategy (Not Executed)
+
+> **Note:** This migration was never executed. Steps 1-3 were not completed.
 
 ### Step 1: Implement Abstract Queue (This PR)
 
@@ -489,7 +495,9 @@ struct TimelineCacheProcessor: LLMWorkProcessor {
 
 ---
 
-## File Structure
+## File Structure (Proposed, Not Implemented)
+
+> **Note:** These files were never created. The directory `Contextify/Contextify/LLM/` does not exist.
 
 ```
 Contextify/Contextify/LLM/
@@ -500,9 +508,16 @@ Contextify/Contextify/LLM/
 └── TranscriptMetadataProcessor.swift  # Transcript implementation
 ```
 
+**Actual current files:**
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` - Timeline queue (independent implementation)
+- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift` - Metadata queue (independent implementation)
+- `Contextify/Contextify/QueueStatsProvider.swift` - Protocol for status bar integration
+
 ---
 
 ## Success Criteria
+
+> **Status:** None of these criteria were achieved - this design was not implemented.
 
 - [ ] `LLMWorkQueue` actor implemented with both processing modes
 - [ ] `TranscriptMetadataProcessor` implemented and tested
@@ -530,11 +545,15 @@ Contextify/Contextify/LLM/
 
 ## Conclusion
 
-This abstract queue design provides a **clean, type-safe, and extensible foundation** for all LLM work in Contextify. By capturing common patterns in a reusable actor while allowing specialization through protocols and configuration, we can:
+> **Historical Note (2025-12):** This design was not implemented. The abstract queue infrastructure was proposed but development proceeded with the existing independent implementations. Both `TimelineCacheMissGenerator` and `TranscriptMetadataOrchestrator` continue to work well as standalone actors.
+
+This abstract queue design proposed a **clean, type-safe, and extensible foundation** for all LLM work in Contextify. The intended benefits were:
 
 1. **Reduce duplication** (~300 lines saved)
 2. **Improve maintainability** (one place to fix queue bugs)
 3. **Enable future features** (easy to add new LLM work types)
 4. **Maintain compatibility** (QueueStatsProvider unchanged)
 
-The migration strategy is **low-risk and incremental**: implement the abstraction, migrate Transcript window first (this PR), validate thoroughly, then migrate Timeline (future PR).
+**Why it wasn't implemented:** The existing implementations work well and the refactoring effort was deprioritized in favor of other features. The code duplication between the two queues is manageable, and both share the `QueueStatsProvider` protocol for status bar integration which provides the key shared abstraction.
+
+**For current architecture:** See `llm-processing.md` which documents the actual implementation.

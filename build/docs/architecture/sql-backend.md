@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v30 current)
+**Status:** Post-Implementation (v33 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 30 (latest: sidechain ingestion + tool invocations)
+**Schema Version:** 33 (latest: ingestion_runs table for CLI debugging)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v30 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v30).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v33 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v33).
 
 ---
 
@@ -42,8 +42,9 @@ projects
 ├── hidden (INTEGER DEFAULT 0, v18+, hide from UI)
 ├── display_order (INTEGER, v19+, tab ordering)
 ├── is_orphaned (INTEGER DEFAULT 0, v20+, directory missing)
-├── orphaned_since (TEXT, v20+, ISO8601 timestamp)
-└── timestamps
+├── orphaned_since (INTEGER, v20+, epoch when directory went missing)
+├── last_activity_detected_at (INTEGER, v32+, for tiered watcher lifecycle)
+└── timestamps (created_at, updated_at)
 
 transcripts
 ├── id (PK)
@@ -51,11 +52,23 @@ transcripts
 ├── file_path (UNIQUE per project)
 ├── provider (claude.code | codex.cli | other)
 ├── provider_session_id
+├── last_modified + file_size + line_count
+├── bookmark (security-scoped bookmark data)
 ├── ingestion_state
 │   ├── last_processed_line
 │   ├── last_processed_entry_id (v2+: resume checkpoint)
 │   ├── parser_version
-│   └── status (active | unavailable | error)
+│   ├── status (active | unavailable | error)
+│   ├── ingest_state (complete | partial, v24+)
+│   └── last_error
+├── identity_fields (v3+: path-based deduplication)
+│   ├── normalized_path + path_hash
+│   ├── content_length + mtime_ms + content_sha256
+├── lazy_watcher_fields (v31-v32)
+│   ├── pending_rehoover (v31+)
+│   ├── known_last_entry_ts + known_file_size (v32+)
+│   ├── unread_approx_count + unread_approx_confidence (v32+)
+│   └── last_activity_detected_at (v32+)
 └── timestamps
 
 transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
@@ -63,21 +76,24 @@ transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
 ├── transcript_id (FK → transcripts, CASCADE)
 ├── project_id (FK → projects, CASCADE, DENORMALIZED for query performance)
 ├── session_id
+├── provider (claude.code | codex.cli | other)
 ├── kind (user | assistant | system)
 ├── timestamp
 ├── content + content_sha256
+├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── parent_id (FK → transcript_entries, SET NULL)
+├── git_context (git_branch, git_commit, cwd)
 ├── window_tracking (v2+)
 │   ├── prev1_id
 │   ├── prev2_id
 │   └── window_sha256 (for cache key computation)
-├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── embedding (BLOB, optional for RAG features)
 ├── created_ts (REAL, v12+, millisecond-precision epoch for unread queries)
 ├── is_queued (INTEGER, v27+, transient queued message tracking)
 ├── is_sidechain (INTEGER, v30+, agent sidechain marker)
-├── git_context (branch, commit, cwd)
-└── embedding (BLOB, optional for RAG features)
-    └── v6 REMOVED: summary, disposition, is_completion, is_directive
-                   (all moved to timeline_cache - see "Schema Evolution" below)
+└── timestamps (created_at, updated_at)
+    Note: v6 REMOVED: summary, disposition, is_completion, is_directive
+          (all moved to timeline_cache - see "Schema Evolution" below)
 
 timeline_cache (WITHOUT ROWID - DERIVED/COMPUTED DATA)
 ├── content_sha256 + window_sha256 (COMPOSITE PK, NO generator_signature)
@@ -110,7 +126,7 @@ transcript_metadata
 ├── confidence + hallucination_flags
 ├── generation_metadata
 │   ├── model, prompt_version, generator_version
-│   ├── strategy (full | bookends | heuristic)
+│   ├── strategy (full | adaptive | bookends | signalFirst | heuristic)
 │   └── transcript_sha256
 └── timestamps
 
@@ -119,6 +135,39 @@ parse_errors
 ├── transcript_id (FK → transcripts, CASCADE)
 ├── line_number + raw_line + error_message
 └── created_at
+
+database_access_metadata (v21+)
+├── machine_id (PK)
+├── machine_name
+├── last_access
+└── app_version
+
+project_follow_policy (v23+)
+├── project_id (UNIQUE, FK → projects, CASCADE)
+├── mode (0=auto, 1=manual)
+├── pinned_session_id + pinned_provider
+└── updated_at
+
+ingestion_locks (v24+)
+├── transcript_id (PK, FK → transcripts, CASCADE)
+└── locked_at
+
+transcript_preflight_cache (v25+, WITHOUT ROWID)
+├── file_path + provider (COMPOSITE PK)
+├── mtime + status (passed|failed) + error
+└── checked_at
+
+transcript_entries_fts (v28+, FTS5 virtual table)
+├── content (indexed)
+├── entry_id, project_id, role, created_at (UNINDEXED metadata)
+└── Triggers: fts_insert, fts_update, fts_delete
+
+ingestion_runs (v33+)
+├── id (PK)
+├── started_at + completed_at
+├── transcripts_processed + entries_inserted + errors_encountered
+├── duration_seconds + status (running|completed|failed)
+└── cli_version + timestamps
 ```
 
 ### Schema Evolution
@@ -139,16 +188,12 @@ Removed denormalized fields from `transcript_entries` that violated data archite
 
 **UI Flag Derivation (post-v6):**
 ```swift
-// ConversationMonitor.swift:513-517
-let cached = try? orchestrator.getCachedTimeline(
-  contentSha256: entry.contentSha256,
-  windowSha256: entry.windowSha256 ?? ""
-)
-let isCompletion = cached?.disposition == "completion"
-let isDirective: Bool = {
-  guard let disp = cached?.disposition else { return false }
-  return ["directive", "affirmative", "negative"].contains(disp)
-}()
+// ConversationMonitor.swift#makeTimelineItem (within the function body)
+isCompletion: cached?.disposition == "completion",
+isDirective: {
+    guard let disp = cached?.disposition else { return false }
+    return ["directive", "affirmative", "negative"].contains(disp)
+}(),
 ```
 
 **Migration Strategy:**
@@ -289,19 +334,20 @@ CREATE UNIQUE INDEX idx_cache_entry_window
 ```swift
 // Project management
 func createProject(name: String?, rootPath: String, bookmark: Data?) throws -> String
-func getOrCreateProject(name: String?, rootPath: String) throws -> String
+func getOrCreateProject(name: String?, rootPath: String, bookmark: Data?) throws -> ProjectLookupResult
 
-// Discovery & ingestion
-func discoverTranscript(projectId: String, fileURL: URL, provider: String, ...) throws
-func discoverTranscripts(projectId: String, files: [(URL, String, String?)], ...) throws
+// Discovery & ingestion (async - routes through HooverScheduler)
+func discoverTranscript(projectId: String, fileURL: URL, provider: String, providerSessionId: String?, startWatching: Bool, ...) async throws
+func discoverTranscripts(projectId: String, transcriptFiles: [(url: URL, provider: String, sessionId: String?)], ...) async throws
 
 // Queries
-func getRecentFeed(forProject: String, limit: Int, generatorSignature: String)
+func getRecentFeed(forProject projectId: String, limit: Int, generatorSignature: String)
   throws -> [(TranscriptEntry, TimelineCache?)]
 
 // Cache (nonisolated - thread-safe via GRDB)
 nonisolated func getCachedTimeline(key: CacheKey) throws -> TimelineCache?
 nonisolated func saveCachedTimeline(_ cache: TimelineCache) throws
+nonisolated func saveCachedTimelineMany(_ caches: [TimelineCache]) throws
 ```
 
 **Design:** Sendable via `@unchecked` (GRDB handles thread safety). Can be called from background tasks.
@@ -375,16 +421,17 @@ Post notification → ConversationMonitor → UI update
 
 **Example:**
 ```swift
-protocol EntryRepository {
+public protocol EntryRepository {
   func insert(_ entry: TranscriptEntry) throws
+  func insertBatch(_ entries: [TranscriptEntry]) throws
   func recentFeed(projectId: String, limit: Int, generatorSignature: String)
     throws -> [(TranscriptEntry, TimelineCache?)]
 }
 
-struct EntryRepositoryImpl: EntryRepository {
+public final class EntryRepositoryImpl: EntryRepository {
   private let db: DatabasePool
 
-  func recentFeed(...) throws -> [(TranscriptEntry, TimelineCache?)] {
+  public func recentFeed(...) throws -> [(TranscriptEntry, TimelineCache?)] {
     try db.read { db in
       // Single query with LEFT JOIN on timeline_cache
       // Uses covering index idx_entries_feed_cover
@@ -451,28 +498,29 @@ struct EntryRepositoryImpl: EntryRepository {
 
 ### ConversationMonitor Integration
 
-See: `technical-reference/conversation-monitor-state-architecture.md`
+See: `build/docs/architecture/conversation-monitor-state.md`
 
 ```swift
 // Initialize orchestrator (shared, nonisolated)
 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
 
-// Create/get project (on main actor)
-let projectId = try orchestrator.getOrCreateProject(
+// Create/get project
+let result = try orchestrator.getOrCreateProject(
   name: "MyProject",
   rootPath: "/Users/rob/code/projects/myproject"
 )
+let projectId = result.projectId
 
-// Background discovery (off main actor)
+// Background discovery (async - routes through HooverScheduler)
 Task.detached {
-  try orchestrator.discoverTranscripts(
+  try await orchestrator.discoverTranscripts(
     projectId: projectId,
-    files: [(fileURL, "claude.code", nil)],
+    transcriptFiles: [(url: fileURL, provider: "claude.code", sessionId: nil)],
     startWatching: true
   )
 }
 
-// Query feed (main actor, fast)
+// Query feed (synchronous, fast)
 let feed = try orchestrator.getRecentFeed(
   forProject: projectId,
   limit: 50,
@@ -482,7 +530,7 @@ let feed = try orchestrator.getRecentFeed(
 
 ### Timeline Cache Integration
 
-See: `technical-reference/timeline-cache-llm-architecture.md`
+See: `build/docs/components/timeline-cache.md`
 
 ```swift
 // Cache lookup (nonisolated)
@@ -501,14 +549,19 @@ generator.queueMisses([miss])  // Async processing
 
 ## Testing
 
-**Integration Tests:** `ContextifyTests/IntegrationTests.swift`
-- Full hoover workflow (create project → discover → ingest)
+**Integration Tests:** `Contextify/ContextifyTests/IntegrationTests.swift`
+- Full hoover workflow (create project -> discover -> ingest)
 - Crash recovery (stop mid-ingestion, verify resume)
 - Window tracking correctness (verify prev1/prev2 linkage)
 
-**Load Tests:** `ContextifyTests/FeedLoadingDiagnosticTest.swift`
+**Load Tests:** `Contextify/ContextifyTests/FeedLoadingDiagnosticTest.swift`
 - Feed query performance with 50K entries
 - Cache lookup performance with 10K cached entries
+
+**Core Package Tests:** `Tests/ContextifyCoreTests/`
+- FastPathIngestionTests - ingestion state machine
+- ProjectIdentityTests - path canonicalization
+- SandboxEnforcementTests - security-scoped access
 
 ---
 
@@ -548,7 +601,7 @@ generator.queueMisses([miss])  // Async processing
 - Purpose: Control whether timeline automatically follows active transcript or stays pinned to selected session
 - Default: Auto mode for all existing projects
 
-## Recent Migrations (v27-v30)
+## Recent Migrations (v27-v33)
 
 **v27: Queued Messages**
 - Add `transcript_entries.is_queued` with default 0
@@ -569,11 +622,29 @@ generator.queueMisses([miss])  // Async processing
 - Create `tool_invocations` table with linkage to tool_use/tool_result and sidechains
 - Re-ingest Claude Code transcripts to backfill tool metadata
 
+**v31: Pending Rehoover**
+- Add `transcripts.pending_rehoover` column for lazy watcher catch-up
+- Purpose: Mark transcripts needing re-ingestion after COLD→HOT tier promotion
+
+**v32: Lazy Watcher Baseline Tracking**
+- Add 7 columns to support watcher budget system and unread approximation:
+  - `transcripts.known_last_entry_ts`, `known_file_size`
+  - `transcripts.unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`
+  - `transcripts.last_activity_detected_at`
+  - `projects.last_activity_detected_at`
+- Purpose: Enable tiered watcher lifecycle (HOT/WARM/COLD) with efficient unread tracking
+
+**v33: Ingestion Runs**
+- Create `ingestion_runs` table for CLI debugging and diagnostics
+- Tracks ingestion performance metrics, errors, and outcomes per transcript
+- Purpose: Support debugging of ingestion issues and performance monitoring
+
 ---
 
 ## Cross-References
 
-- **Usage Guide:** `app/Sources/ContextifyCore/Database/README.md`
 - **Timeline Integration:** `build/docs/components/timeline-cache.md`
 - **State Management:** `build/docs/architecture/conversation-monitor-state.md`
+- **Schema Source:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
+- **Repositories:** `app/Sources/ContextifyCore/Database/Repositories.swift`
 - **Planning Docs (Archive):** `build/docs/archive/completed-work/technical-brief-sql-migration-architecture.md`

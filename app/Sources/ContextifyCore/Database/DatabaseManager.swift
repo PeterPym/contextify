@@ -66,6 +66,7 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
+    #if os(macOS)
     // Guard: In sandboxed builds, require onboarding completion before DB access
     // This prevents accidental creation of database in container location
     // NOTE: Must use runtime Sandbox.isSandboxed check instead of #if APPSTORE_BUILD
@@ -101,6 +102,7 @@ public final class DatabaseManager: @unchecked Sendable {
         log.debug("Using custom database location (non-sandbox): \(bookmarkURL.path)")
       }
     }
+    #endif
 
     let dbPath = try databasePath()
     let isNewDatabase = !FileManager.default.fileExists(atPath: dbPath.path)
@@ -157,6 +159,7 @@ public final class DatabaseManager: @unchecked Sendable {
     }
 
     // Write discovery sidecar (best-effort).
+    #if os(macOS)
     let schemaVersion = try pool.read { db in
       try Int.fetchOne(db, sql: "PRAGMA user_version") ?? DatabaseSchema.version
     }
@@ -170,6 +173,7 @@ public final class DatabaseManager: @unchecked Sendable {
       buildFlavor: buildFlavor,
       capabilities: capabilities
     )
+    #endif
 
     log.info("Database opened and validated successfully")
 
@@ -193,6 +197,7 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Returns custom database path if configured
   private func customDatabasePath() throws -> URL? {
+    #if os(macOS)
     // Try to resolve bookmark first (sandboxed builds)
     if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
       let dbPath = bookmarkURL.appendingPathComponent("contextify.db")
@@ -214,6 +219,7 @@ public final class DatabaseManager: @unchecked Sendable {
       log.debug("Using custom database location: \(dbPath.path)")
       return dbPath
     }
+    #endif
 
     return nil
   }
@@ -221,9 +227,11 @@ public final class DatabaseManager: @unchecked Sendable {
   /// Returns default database path
   /// DMG builds: ~/Library/Application Support/Contextify/ (no TCC prompt needed)
   /// App Store builds: Should never reach here without onboarding (guarded in openDatabase)
+  /// Linux: Uses ~/.local/share/Contextify/
   private func defaultDatabasePath() throws -> URL {
     let fm = FileManager.default
 
+    #if os(macOS)
     // Application Support location (no TCC prompt required)
     let appSupport = try fm.url(
       for: .applicationSupportDirectory,
@@ -260,6 +268,17 @@ public final class DatabaseManager: @unchecked Sendable {
       HUDPreferences.setLegacyDatabaseLocationIfMissing(appSupportDir)
     }
     return appSupportDB
+
+    #else
+    // Linux: Use ~/.local/share/Contextify/
+    let homeDir = fm.homeDirectoryForCurrentUser
+    let dataDir = homeDir.appendingPathComponent(".local/share/Contextify", isDirectory: true)
+    let dbPath = dataDir.appendingPathComponent("contextify.db")
+
+    try fm.createDirectory(at: dataDir, withIntermediateDirectories: true)
+    log.info("[DB-PATH] Using \(dataDir.path) (Linux)")
+    return dbPath
+    #endif
   }
 
   /// Validates database integrity and logs summary
@@ -418,12 +437,14 @@ public final class DatabaseManager: @unchecked Sendable {
 
     _pool = nil  // Release the pool, connection will be closed
 
+    #if os(macOS)
     // Stop security-scoped access (sandbox only)
     if Sandbox.isSandboxed, let url = securityScopedDirURL {
       url.stopAccessingSecurityScopedResource()
       securityScopedDirURL = nil
       log.debug("Stopped security-scoped access: \(url.path)")
     }
+    #endif
   }
 
 }

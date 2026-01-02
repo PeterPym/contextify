@@ -9,13 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - **Codex Global Discovery** - Contextify now scans `~/.codex/sessions` to index Codex-only projects.
   - Security-scoped enumeration with cached `CodexIndex` snapshots.
-  - Codex-only projects appear in Welcome modal, ProjectSwitcher, and status bar with 🟡 provider badges.
+  - Codex-only projects appear in Welcome modal, ProjectSwitcher, and status bar with provider badges.
   - Fast-path/primer pipelines ingest Codex transcripts without requiring `.codex` folders inside each project.
 - **Timeline Improvements** - Enhanced conversation timeline with provider branding and session management
   - Provider-specific icons for assistant messages (Claude Code: orange, Codex CLI: blue)
   - Timeline entries now persist when switching between conversation sessions
   - Session type detection (new vs existing conversations)
-  - Reveal-in-inventory action on system messages with clickable button (↗️)
+  - Reveal-in-inventory action on system messages with clickable button
   - Harmonious color palette: warm gray assistant messages, rich blue user messages
   - Custom provider icons at 12pt for subtle, professional branding
   - Universal color compatibility across all provider brands
@@ -32,45 +32,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - Timeline icon placement corrected to assistant messages (semantic accuracy)
 
-## 2025-10-10 - Timeline Caching & Transcripts
+## [1.0.7] - 2025-12-20
 
-### Added
-- **Transcripts** - Browse and switch between conversation sessions
-  - Independent window UI with session list
-  - Worktree support for git repositories
-  - Session metadata display (provider, duration, message count)
-  - Real-time session discovery and updates
-  - Click-to-switch session functionality
+(DMG release - see releases/v1.0.7/ for details)
 
-- **Timeline Caching** - Persistent cache system for timeline summaries
-  - Actor-based orchestrator for thread-safe operations
-  - File-based storage in `~/Library/Application Support/Contextify/timeline-cache/`
-  - Per-conversation caching with content-based invalidation
-  - Dual-form tense storage (present and past forms)
-  - Cache hit/miss logging with hit rate tracking
-  - Performance: 1-2 LLM calls on startup vs 20-50 previously
+## [1.0.6] - 2025-12-14
 
-- **Timeline Tense Management** - Natural progression from active to completed state
-  - Dual-form generation: present continuous and past simple
-  - `flipTenseToPast()` method for instant tense conversion
-  - No regex mutations, pure data-driven approach
+(App Store release - see releases/v1.0.6/ for details)
 
-- **Task Duration Tracking** - Show elapsed time for completed tasks
-  - Duration display next to completion markers (e.g., "✓ Completed in 2m 34s")
-  - Jump-to-request arrows for navigating to original directive
-  - Request-to-completion correlation tracking
+## [1.0.5] - 2025-12-05
 
-### Changed
-- **Timeline Entry Filtering** - Reduced assistant entry density
-  - Disposition-based filtering (suppress ack/wip, keep completion/proposal)
-  - Merged sequential completion entries to reduce redundancy
-  - Balanced verbosity (3-5 entries per cycle vs 10-14 previously)
+(DMG release - see releases/v1.0.5/ for details)
 
-### Fixed
-- Timeline entry tense inconsistency (entries now use appropriate tense)
-- Sequential completed entries creating redundancy
+## [1.0.2] - 2025-11-23
 
-## 2025-10-08 - Initial Core Features
+(DMG release - see releases/v1.0.2/ for details)
+
+## [1.0.1] - 2025-11-20
+
+(Initial public release)
+
+## [1.0.0] - 2025-11-17
+
+Initial release of Contextify.
 
 ### Added
 - **Core Timeline Monitoring** - Real-time conversation tracking
@@ -78,6 +62,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - LLM-based timeline summarization with disposition classification
   - Security-scoped bookmarks for sandboxed file access
   - Real-time file watching with DispatchSource
+
+- **Timeline Caching** - Persistent cache system for timeline summaries
+  - Actor-based orchestrator for thread-safe operations
+  - File-based storage in `~/Library/Application Support/Contextify/timeline-cache/`
+  - Per-conversation caching with content-based invalidation
+  - Dual-form tense storage (present and past forms)
+  - Cache hit/miss logging with hit rate tracking
+
+- **Timeline Tense Management** - Natural progression from active to completed state
+  - Dual-form generation: present continuous and past simple
+  - Instant tense conversion for completed tasks
+
+- **Task Duration Tracking** - Show elapsed time for completed tasks
+  - Duration display next to completion markers
+  - Jump-to-request arrows for navigating to original directive
+  - Request-to-completion correlation tracking
+
+- **Transcripts** - Browse and switch between conversation sessions
+  - Independent window UI with session list
+  - Worktree support for git repositories
+  - Session metadata display (provider, duration, message count)
+  - Real-time session discovery and updates
 
 - **Git Integration** - Repository and branch detection
   - Automatic git repository discovery
@@ -89,7 +95,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Drag-and-drop file ingestion with Markdown artifacts
   - URL ingestion and metadata extraction
   - Session and checkpoint management
-  - Timestamped output artifacts in `~/Contextify/outputs`
 
 - **UI Foundation** - SwiftUI HUD interface
   - Project root selector with persistence
@@ -97,26 +102,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Timeline view with auto-scroll
   - Toast notifications for user feedback
   - Menu bar extra for quick access
-
----
-
-## Format Guidelines
-
-### Categories
-- **Added** for new features
-- **Changed** for changes in existing functionality
-- **Deprecated** for soon-to-be removed features
-- **Removed** for now removed features
-- **Fixed** for any bug fixes
-- **Security** in case of vulnerabilities
-
-### Release Format
-- Use date-based releases: `YYYY-MM-DD - Brief Description`
-- Example: `2025-10-10 - Timeline Improvements`
-- Most recent releases at the top
-
-### Writing Style
-- Start with a verb (Added, Fixed, Changed, etc.)
-- Be concise but descriptive
-- Group related changes together under themed releases
-- Include technical details but keep user-focused

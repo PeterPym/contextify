@@ -7,7 +7,11 @@
 //
 
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 
 /// Path normalization for canonical transcript identification
 /// - Resolves symlinks (if file exists)

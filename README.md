@@ -103,7 +103,7 @@ Resume AI coding conversations across different assistants. The transcript conve
 Contextify uses a SQL backend (GRDB.swift) with real-time transcript monitoring and LLM-powered summaries.
 
 ### Key Components
-- **Database**: SQLite (schema v26) at `~/Library/Application Support/Contextify/contextify.db`
+- **Database**: SQLite (schema v33) at `~/Library/Application Support/Contextify/contextify.db`
   - `HooverEngine`: Streaming JSONL transcript ingestion (1000 lines/batch)
   - `TranscriptWatcher`: File system monitoring for live updates
   - `TranscriptOrchestrator`: High-level database coordinator

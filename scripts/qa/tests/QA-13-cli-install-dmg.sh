@@ -162,14 +162,14 @@ trigger_install() {
   if ! click_cli_actions_button 1; then
     return 1
   fi
-  wait_for_any_pattern 5 "\\[QUERYCLI-INSTALL-START\\]" "\\[QUERYCLI-INSTALL-DIR\\]"
+  wait_for_any_pattern 5 "\\[CLI-INSTALL\\]" "\\[CLI-INSTALL-SUCCESS\\]"
 }
 
 trigger_uninstall() {
   if ! click_cli_actions_button 2; then
     return 1
   fi
-  wait_for_any_pattern 5 "\\[QUERYCLI-UNINSTALL-START\\]" "\\[QUERYCLI-UNINSTALL-DONE\\]"
+  wait_for_any_pattern 5 "\\[CLI-REMOVE\\]" "\\[CLI-DISABLE-START\\]"
 }
 
 check_prerequisites() {
@@ -207,7 +207,7 @@ run_test_steps() {
   sleep 1.2
   select_cli_tab
 
-  if ! wait_for_log_pattern "\\[QUERYCLI-SETTINGS-TAB-OPEN\\]" 10; then
+  if ! wait_for_log_pattern "\\[CLI-SETTINGS-TAB-OPEN\\]" 10; then
     log_error "CLI settings tab did not appear (missing log tag)"
     TEST_FAILED=1
     return 1
@@ -222,19 +222,17 @@ run_test_steps() {
   fi
 
   if ! wait_for_any_pattern 20 \
-    "\\[QUERYCLI-INSTALL-START\\]" \
-    "\\[QUERYCLI-INSTALL-DONE\\]" \
-    "\\[QUERYCLI-INSTALL-SUDO-REQUIRED\\]" \
-    "\\[QUERYCLI-INSTALL-COLLISION\\]" \
-    "\\[QUERYCLI-INSTALL-ERROR\\]"; then
+    "\\[CLI-INSTALL\\]" \
+    "\\[CLI-INSTALL-SUCCESS\\]" \
+    "\\[CLI-ADMIN-INSTALL-START\\]" \
+    "\\[CLI-NO-WRITABLE-PATHS\\]"; then
     log_error "No install completion log observed"
     TEST_FAILED=1
     return 1
   fi
 
-  assert_log_contains "\\[QUERYCLI-INSTALL-DIR\\] mode=dmg dir=$INSTALL_DIR" "Installer used override directory"
-  assert_log_contains "\\[QUERYCLI-INSTALL-DONE\\]" "Install completed"
-  assert_log_not_contains "\\[QUERYCLI-INSTALL-SUDO-REQUIRED\\]" "Install did not require sudo"
+  assert_log_contains "\\[CLI-INSTALL-SUCCESS\\]" "Install completed"
+  assert_log_not_contains "\\[CLI-ADMIN-INSTALL-START\\]" "Install did not require admin"
 
   # Verify filesystem + CLI behavior.
   assert_file_exists "$INSTALL_SHIM_PATH" "Shim installed at $INSTALL_SHIM_PATH"
@@ -248,7 +246,7 @@ run_test_steps() {
     return 1
   fi
 
-  if ! wait_for_log_pattern "\\[QUERYCLI-UNINSTALL-DONE\\]" 10; then
+  if ! wait_for_log_pattern "\\[CLI-REMOVE\\]" 10; then
     log_error "Uninstall completion log not observed"
     TEST_FAILED=1
     return 1

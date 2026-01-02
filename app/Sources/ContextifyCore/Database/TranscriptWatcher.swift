@@ -17,9 +17,10 @@ public final class TranscriptWatcher: @unchecked Sendable {
   private var rehoover: ((String, URL, String, String?) throws -> Void)?
   private let accessProvider: TranscriptAccessProvider?
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
-  private var debounceTimers: [String: Timer] = [:]
+  private var debounceWorkItems: [String: DispatchWorkItem] = [:]
   private var lastEventTime: [String: Date] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
+  private let watcherEventQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher.events")
   private var heartbeatStarted = false
   private var heartbeatToken: UInt64 = 0
 
@@ -120,11 +121,9 @@ public final class TranscriptWatcher: @unchecked Sendable {
 
   /// Stop watching a transcript
   public func stopWatching(transcriptId: String) {
-    let (source, timer) = detachWatcher(transcriptId: transcriptId)
+    let (source, workItem) = detachWatcher(transcriptId: transcriptId)
     source?.cancel()
-    if let timer {
-      invalidateTimer(timer)
-    }
+    workItem?.cancel()
     log.debug("Stopped watching transcript: \(transcriptId)")
   }
 
@@ -132,7 +131,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
   @discardableResult
   public func stopAll() -> Int {
     var sources: [DispatchSourceFileSystemObject] = []
-    var timers: [Timer] = []
+    var workItems: [DispatchWorkItem] = []
     let count = watcherQueue.sync { () -> Int in
       if heartbeatStarted {
         heartbeatStarted = false
@@ -140,14 +139,14 @@ public final class TranscriptWatcher: @unchecked Sendable {
       }
       let currentCount = watchers.count
       sources = Array(watchers.values)
-      timers = Array(debounceTimers.values)
+      workItems = Array(debounceWorkItems.values)
       watchers.removeAll()
-      debounceTimers.removeAll()
+      debounceWorkItems.removeAll()
       lastEventTime.removeAll()
       return currentCount
     }
     sources.forEach { $0.cancel() }
-    timers.forEach { invalidateTimer($0) }
+    workItems.forEach { $0.cancel() }
     return count
   }
 
@@ -183,17 +182,37 @@ public final class TranscriptWatcher: @unchecked Sendable {
     log.info("[WATCHER-EVENT] File change detected for transcript: \(transcriptId, privacy: .public) path: \(fileURL.path, privacy: .public)")
     log.info("[FSEVENTS-CHANGE] transcript=\(transcriptId, privacy: .public) flags=\(flagsString, privacy: .public)")
 
-    watcherQueue.sync {
-      // Cancel existing timer
-      debounceTimers[transcriptId]?.invalidate()
+    // Debounce using DispatchWorkItem on watcherQueue (no RunLoop dependency, no race window)
+    // Cancel + schedule is atomic since both happen on watcherQueue
+    log.debug("[WATCHER-DEBOUNCE] Starting debounce (\(MonitorConfig.fileWatcherDebounce, privacy: .public)s) for: \(transcriptId, privacy: .public)")
+    watcherQueue.async { [weak self] in
+      guard let self else { return }
 
-      // Create new debounce timer
-      log.debug("[WATCHER-DEBOUNCE] Starting debounce timer (\(MonitorConfig.fileWatcherDebounce, privacy: .public)s) for: \(transcriptId, privacy: .public)")
-      let timer = Timer.scheduledTimer(withTimeInterval: MonitorConfig.fileWatcherDebounce, repeats: false) { [weak self] _ in
-        self?.processFileChange(transcriptId: transcriptId, fileURL: fileURL)
+      // P0.1 fix: If watcher was stopped/detached, ignore this event entirely.
+      // Events can be delivered after stopWatching() is called; without this guard,
+      // we'd recreate debounceWorkItems entries for stopped transcripts.
+      guard self.watchers[transcriptId] != nil else {
+        self.debounceWorkItems[transcriptId]?.cancel()
+        self.debounceWorkItems.removeValue(forKey: transcriptId)
+        return
       }
 
-      debounceTimers[transcriptId] = timer
+      // Cancel existing debounce work item
+      self.debounceWorkItems[transcriptId]?.cancel()
+
+      // Create new debounce work item
+      let workItem = DispatchWorkItem { [weak self] in
+        // P1 fix: Remove completed work item before processing to prevent memory growth
+        self?.debounceWorkItems.removeValue(forKey: transcriptId)
+        self?.processFileChange(transcriptId: transcriptId, fileURL: fileURL)
+      }
+      self.debounceWorkItems[transcriptId] = workItem
+
+      // Schedule after debounce interval
+      self.watcherQueue.asyncAfter(
+        deadline: .now() + MonitorConfig.fileWatcherDebounce,
+        execute: workItem
+      )
     }
   }
 
@@ -213,10 +232,13 @@ public final class TranscriptWatcher: @unchecked Sendable {
       log.debug("[WATCHER-FD-OPEN] Opened file descriptor fd=\(fileDescriptor) for transcript=\(transcriptId, privacy: .public)")
     }
 
+    // Use dedicated event queue for DispatchSource callbacks to avoid deadlock.
+    // handleFileChange() uses watcherQueue.async for debounce scheduling, so the
+    // event handler must NOT run on watcherQueue itself to avoid queue saturation.
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: fileDescriptor,
       eventMask: [.write, .extend],
-      queue: DispatchQueue.main
+      queue: watcherEventQueue
     )
 
     if LoggingConfig.enableVerboseWatcherLogs {
@@ -359,12 +381,12 @@ public final class TranscriptWatcher: @unchecked Sendable {
 
   private func detachWatcher(
     transcriptId: String
-  ) -> (DispatchSourceFileSystemObject?, Timer?) {
+  ) -> (DispatchSourceFileSystemObject?, DispatchWorkItem?) {
     var source: DispatchSourceFileSystemObject?
-    var timer: Timer?
+    var workItem: DispatchWorkItem?
     watcherQueue.sync {
       source = watchers.removeValue(forKey: transcriptId)
-      timer = debounceTimers.removeValue(forKey: transcriptId)
+      workItem = debounceWorkItems.removeValue(forKey: transcriptId)
       lastEventTime.removeValue(forKey: transcriptId)
       if watchers.isEmpty, heartbeatStarted {
         heartbeatStarted = false
@@ -374,17 +396,6 @@ public final class TranscriptWatcher: @unchecked Sendable {
     if LoggingConfig.enableVerboseWatcherLogs, source != nil {
       log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
     }
-    return (source, timer)
-  }
-
-  private func invalidateTimer(_ timer: Timer) {
-    // Timer.invalidate() must be called from the thread that created it.
-    // Our timers are created on the main thread, so dispatch there.
-    // Use nonisolated(unsafe) to satisfy Swift 6 strict concurrency since
-    // Timer is not Sendable but invalidate() is thread-safe.
-    nonisolated(unsafe) let unsafeTimer = timer
-    DispatchQueue.main.async {
-      unsafeTimer.invalidate()
-    }
+    return (source, workItem)
   }
 }

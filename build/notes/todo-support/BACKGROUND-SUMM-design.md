@@ -66,7 +66,7 @@ Options to consider:
 
 ## Files
 
-- `Contextify/Contextify/ConversationMonitor.swift:2390-2395` (handleAppResignActive)
+- `Contextify/Contextify/ConversationMonitor.swift` - `handleAppResignActive()` function (line numbers drift; search for function name)
 - LLM queue management code
 - Timeline cache/priority logic
 

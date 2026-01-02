@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-28 (Smart Lazy Watchers v2 implementation ready for review)
+**Last Updated:** 2026-01-02 (Removed fixed P0s: #INGEST-UI-LAG, #WINDOW-CONTROLS-DISABLED)
 **Status:** Active
 
 **Priority Levels:**
@@ -170,6 +170,55 @@ Detect the user's active shell and provide the correct command:
 
 ---
 
+## App Store Worktree Grouping Support
+
+**Status:** Not started
+**Priority:** P1 (feature parity for App Store build)
+**Discovered:** 2025-12-29
+
+- [ ] #APPSTORE-WORKTREE-GROUPS: Enable worktree auto-grouping in sandboxed App Store build
+
+**Problem:**
+The worktree auto-grouping feature requires filesystem access to:
+1. Read `.git` files to detect if a project is a worktree
+2. Resolve `gitdir:` paths (absolute or relative) to find the main repository
+3. Compute shared git roots for grouping related projects
+
+In the sandboxed App Store build, without additional permissions, none of this works. Users would only have access to manual grouping (if implemented).
+
+**Current behavior (App Store):**
+- Transcript access requires onboarding wizard permission grant
+- Project folders themselves may not have read permission
+- Git detection functions will fail silently
+- No auto-grouping occurs
+
+**Solution options:**
+
+1. **Extend onboarding to request project folder access**
+   - Add step to grant access to common project locations (~/code, ~/projects, etc.)
+   - Store security-scoped bookmarks for these folders
+   - Wrap git detection in `accessProvider.withAccess()` calls
+
+2. **On-demand permission request**
+   - When a project is discovered, request access to its folder
+   - Show permission prompt explaining "Contextify needs access to detect git worktrees"
+   - Graceful fallback to ungrouped if denied
+
+3. **Manual grouping as fallback**
+   - Implement manual "Create Group" / "Add to Group" UI
+   - Works without any filesystem access (pure database state)
+   - Could be combined with option 1 or 2
+
+**Files to modify:**
+- `TranscriptAccessProvider` - extend to cover project folders
+- `HUDCore.swift` - wrap git detection in access blocks
+- Onboarding wizard (if option 1)
+- Settings/Preferences (if option 2)
+
+**Related:** See `build/docs/architecture/transcript-access-security.md` for security-scoped bookmark patterns.
+
+---
+
 ## Project Chronicle: Continuous Development Narrative Synthesis
 
 **Status:** Spec complete, ready for prototype
@@ -201,21 +250,135 @@ Background process that continuously watches conversation transcripts and uses A
 
 ---
 
-## Cross-Platform Ingestion CLI (Linux/Windows)
+## Cross-Platform Ingestion CLI (Linux)
 
-**Status:** Not started
+**Status:** Scaffolding complete, not yet usable (entry parsing + distribution missing)
 **Priority:** P1
+**Tag:** #LINUX-CLI
 
-- [ ] #CROSS-PLATFORM-INGESTION: Derisk and prototype a cross-platform ingestion engine
+- [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
 
-**Goal:** Build a Linux/Windows CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
+**Goal:** Linux CLI that ingests Claude Code/Codex transcripts into a Contextify-compatible, searchable database.
 
-**Key tasks:**
-1. Lift SwiftPM macOS-only platform restriction and attempt Linux/Windows builds.
-2. Identify macOS-only APIs in ingestion path and isolate behind platform adapters.
-3. Decide on GRDB portability vs SQLite C fallback based on feasibility results.
-4. Prototype CLI ingestion run on Linux with fixture transcripts and validate parity.
+**Current State:** CLI builds and creates project/transcript records, but does NOT parse entries. Users get an empty database shell. No distribution mechanism exists.
 
+---
+
+### Completed Work
+
+- [x] Phase 1: Platform adapters (CrossPlatformLock, CrossPlatformCrypto, CrossPlatformLogger, IngestionEventSink)
+- [x] Phase 2: Package.swift restructure (conditional targets, swift-crypto)
+- [x] Phase 2.5: Docker build environment, Linux build succeeds
+- [x] Phase 3 skeleton: CLI creates project/transcript records (no entries)
+- [x] Phase 4: `ingestion_runs` table migration (v33)
+- [x] Phase 7: GitHub Actions Linux CI (.github/workflows/linux-build.yml)
+- [x] Phase 7: Change detection script, pre-commit hook
+
+---
+
+### P0 - Core Functionality (blocks everything else)
+
+These must be done before CLI is usable:
+
+- [ ] #LINUX-OSLOG: Add OSLog cross-platform wrapper to `Repositories.swift`
+  - 6-line change: `#if canImport(OSLog)` wrapper at top of file
+  - No privacy labels to update (already checked)
+
+- [ ] #LINUX-HOOVER-SOURCES: Add HooverEngine + dependencies to `linuxSources` in Package.swift
+  - `Database/Repositories.swift`
+  - `Database/HooverEngine.swift`
+  - `Database/TranscriptParsers.swift` (already cross-platform)
+
+- [ ] #LINUX-HOOVER-WIRE: Wire HooverEngine in IngestCommand
+  - Call `hooverTranscript()` for each transcript file
+  - Track entries_inserted in run stats
+
+- [ ] #LINUX-E2E-VERIFY: E2E verification - ingest produces searchable entries
+  - Ingest real transcript, query FTS5, confirm results
+
+---
+
+### P1 - Distribution (required for users to actually use it)
+
+- [ ] #LINUX-RELEASE-WORKFLOW: GitHub Releases workflow
+  - Build on tag push (v*.*.*)
+  - Publish .tar.gz artifacts (x86_64, arm64)
+  - Include version in binary (`contextify-ingest --version`)
+
+- [ ] #LINUX-INSTALL-SCRIPT: Install script
+  - `curl -sSL https://contextify.sh/install-cli.sh | sh`
+  - Detect architecture, download correct binary
+  - Install to ~/.local/bin or /usr/local/bin
+
+- [ ] #LINUX-VERSION-STRATEGY: Versioning strategy
+  - Decision: same version as app, or independent?
+  - Schema version compatibility checking
+
+---
+
+### P1 - Validation
+
+- [ ] #LINUX-FIXTURE-TEST: Golden fixture comparison
+  - Same input transcript → same DB output on macOS vs Linux
+  - Hash comparison of query results
+
+- [ ] #LINUX-DOCKER-TEST: Docker-based E2E test in CI
+  - Full ingest + query cycle in workflow
+
+---
+
+### P2 - CLI Features
+
+- [ ] #LINUX-INPUT-OPTION: Wire `--input` option to LightweightDiscoveryService
+  - Currently fails fast with error message
+
+- [ ] #LINUX-SINCE-OPTION: `--since <timestamp>` for incremental ingestion
+  - Skip transcripts not modified since timestamp
+
+- [ ] #LINUX-WORKERS-OPTION: `--workers N` for parallel ingestion
+  - Concurrent transcript processing
+
+- [ ] #LINUX-BATCH-TRANSACTIONS: Transaction batching per-project
+  - Performance at scale (10-100k transcripts)
+  - Batch writes using `db.inTransaction { ... }`
+
+---
+
+### P2 - Documentation
+
+- [ ] #LINUX-CLI-README: CLI README with usage examples
+  - Installation, basic usage, common workflows
+  - Located at `Sources/ContextifyIngestionCLI/README.md` or `docs/cli/`
+
+- [ ] #LINUX-INSTALL-GUIDE: Installation guide
+  - Per-platform instructions (Ubuntu, Debian, Fedora, Arch, macOS)
+  - Dependencies (none expected, but document)
+
+- [ ] #LINUX-WEBSITE-PAGE: Website /cli page
+  - contextify.sh/cli or contextify.sh/linux
+  - Installation, features, use cases
+
+- [ ] #LINUX-DB-SCHEMA-DOCS: Database query documentation
+  - What tables exist, what can you query
+  - Example SQL for common use cases
+  - FTS5 search syntax
+
+---
+
+### P3 - Polish
+
+- [ ] #LINUX-HOMEBREW: Homebrew tap for macOS CLI users
+  - `brew install contextify/tap/contextify-ingest`
+
+- [ ] #LINUX-APT-REPO: apt/deb packaging
+  - PPA or direct .deb download
+
+- [ ] #LINUX-DOCKER-IMAGE: Docker image for one-liner usage
+  - `docker run contextify/ingest -v ~/.claude:/data ...`
+
+---
+
+**Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
 ## Periodic Ingestion Check for Resilience

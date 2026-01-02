@@ -1,0 +1,182 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      # Source code paths (excluding markdown files which are documentation)
+      - 'app/Sources/**/*.swift'
+      - 'Sources/**/*.swift'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/linux-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/Sources/**/*.swift'
+      - 'Sources/**/*.swift'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/linux-build.yml'
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: 'Build architecture (x86_64, arm64, or both)'
+        required: false
+        default: 'x86_64'
+        type: choice
+        options:
+          - x86_64
+          - arm64
+          - both
+
+env:
+  SQLITE_VERSION: "3450100"
+  SWIFT_VERSION: "6.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.0-noble
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Cache SQLite build
+        uses: actions/cache@v4
+        id: sqlite-cache
+        with:
+          path: /tmp/sqlite-install
+          key: sqlite-${{ env.SQLITE_VERSION }}-noble-x86_64
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y build-essential curl pkg-config sqlite3 -qq > /dev/null 2>&1
+
+      - name: Build SQLite with ENABLE_SNAPSHOT
+        if: steps.sqlite-cache.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp
+          curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${SQLITE_VERSION}.tar.gz" | tar xz
+          cd sqlite-autoconf-*
+          CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
+            ./configure --prefix=/tmp/sqlite-install --quiet
+          make -j$(nproc) --quiet
+          make install --quiet
+
+      - name: Install SQLite
+        run: |
+          cp -r /tmp/sqlite-install/* /usr/
+          ldconfig
+          echo "SQLite version installed:"
+          sqlite3 --version
+          echo "Snapshot symbols check:"
+          nm -D /usr/lib/*/libsqlite3.so 2>/dev/null | grep sqlite3_snapshot | head -3 || \
+            nm -D /usr/lib/libsqlite3.so 2>/dev/null | grep sqlite3_snapshot | head -3 || \
+            echo "Note: Snapshot symbols verified during build"
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build contextify-ingest CLI
+        run: |
+          swift build --product contextify-ingest 2>&1
+          echo "Build succeeded!"
+
+      - name: Verify CLI runs
+        run: |
+          .build/debug/contextify-ingest --help
+          .build/debug/contextify-ingest schema --help
+          .build/debug/contextify-ingest discover --help
+          .build/debug/contextify-ingest ingest --help
+          .build/debug/contextify-ingest verify --help
+          .build/debug/contextify-ingest --version
+          echo "CLI verification passed!"
+
+      - name: E2E ingest test
+        run: |
+          # Create test fixture directory using Claude Code's hash-based naming
+          # Claude Code stores transcripts in ~/.claude/projects/-path-to-project/
+          FIXTURE_DIR="$HOME/.claude/projects/-ci-test-project"
+          mkdir -p "$FIXTURE_DIR"
+
+          # Create a minimal Claude Code transcript using base64 to avoid YAML parsing issues
+          # The JSONL contains colons which confuse GitHub Actions' YAML parser
+          FIXTURE_B64="eyJ0eXBlIjoicXVldWUtb3BlcmF0aW9uIiwib3BlcmF0aW9uIjoiZGVxdWV1ZSIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDAuMDAwWiIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiJ9CnsicGFyZW50VXVpZCI6bnVsbCwiaXNTaWRlY2hhaW4iOmZhbHNlLCJ1c2VyVHlwZSI6ImV4dGVybmFsIiwiY3dkIjoiL2NpL3Rlc3QvcHJvamVjdCIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiIsInZlcnNpb24iOiIyLjAuMCIsImdpdEJyYW5jaCI6Im1haW4iLCJ0eXBlIjoidXNlciIsIm1lc3NhZ2UiOnsicm9sZSI6InVzZXIiLCJjb250ZW50IjoiQ0kgdGVzdCBtZXNzYWdlIGZvciBFMkUgdmVyaWZpY2F0aW9uIn0sInV1aWQiOiJjaS11c2VyLW1zZyIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDEuMDAwWiJ9CnsicGFyZW50VXVpZCI6ImNpLXVzZXItbXNnIiwiaXNTaWRlY2hhaW4iOmZhbHNlLCJ1c2VyVHlwZSI6ImV4dGVybmFsIiwiY3dkIjoiL2NpL3Rlc3QvcHJvamVjdCIsInNlc3Npb25JZCI6ImNpLXRlc3Qtc2Vzc2lvbiIsInZlcnNpb24iOiIyLjAuMCIsImdpdEJyYW5jaCI6Im1haW4iLCJtZXNzYWdlIjp7Im1vZGVsIjoiY2xhdWRlLXRlc3QiLCJpZCI6Im1zZ19jaSIsInR5cGUiOiJtZXNzYWdlIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IlRoaXMgaXMgYSBDSSB0ZXN0IHJlc3BvbnNlIGZvciBFMkUgdmVyaWZpY2F0aW9uLiJ9XSwic3RvcF9yZWFzb24iOiJlbmRfdHVybiIsInVzYWdlIjp7ImlucHV0X3Rva2VucyI6MTAsIm91dHB1dF90b2tlbnMiOjE1fX0sInJlcXVlc3RJZCI6InJlcV9jaSIsInR5cGUiOiJhc3Npc3RhbnQiLCJ1dWlkIjoiY2ktYXNzaXN0YW50LW1zZyIsInRpbWVzdGFtcCI6IjIwMjUtMTItMDFUMDA6MDA6MDIuMDAwWiJ9Cg=="
+          echo "$FIXTURE_B64" | base64 -d > "$FIXTURE_DIR/ci-test-session.jsonl"
+
+          # Run ingest with explicit input path (bypasses discovery which expects full path structure)
+          DB_PATH="/tmp/ci-e2e-test.db"
+          .build/debug/contextify-ingest ingest --db "$DB_PATH" --input "$FIXTURE_DIR" --format human
+
+          # Verify database contents
+          PROJECT_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM projects;")
+          TRANSCRIPT_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcripts;")
+          ENTRY_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcript_entries;")
+
+          echo "E2E Results: $PROJECT_COUNT projects, $TRANSCRIPT_COUNT transcripts, $ENTRY_COUNT entries"
+
+          # Assert expected counts
+          if [ "$PROJECT_COUNT" -ge 1 ] && [ "$TRANSCRIPT_COUNT" -ge 1 ] && [ "$ENTRY_COUNT" -ge 2 ]; then
+            echo "E2E test PASSED!"
+          else
+            echo "E2E test FAILED!"
+            echo "Expected: >= 1 project, >= 1 transcript, >= 2 entries"
+            exit 1
+          fi
+
+      - name: Build ContextifyIngestionCore library
+        run: |
+          swift build --product ContextifyIngestionCore 2>&1
+          echo "Library build succeeded!"
+
+  # ARM64 build (runs on self-hosted or ubuntu-latest with QEMU, manual trigger only)
+  build-arm64:
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.architecture == 'arm64' || github.event.inputs.architecture == 'both')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build for ARM64
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v ${{ github.workspace }}:/workspace:rw \
+            -w /workspace \
+            swift:6.0-noble \
+            bash -c '
+              set -e
+              apt-get update -qq
+              apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+
+              # Build SQLite with ENABLE_SNAPSHOT
+              cd /tmp
+              curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${{ env.SQLITE_VERSION }}.tar.gz" | tar xz
+              cd sqlite-autoconf-*
+              CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
+                ./configure --prefix=/usr --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) --quiet
+              make -j$(nproc) --quiet
+              make install --quiet
+              ldconfig
+
+              cd /workspace
+              swift package resolve
+              swift build --product contextify-ingest
+              .build/debug/contextify-ingest --help
+              echo "ARM64 build succeeded!"
+            '

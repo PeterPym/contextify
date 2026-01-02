@@ -97,7 +97,7 @@ See CONSOLIDATED-CODE-SMELL-ANALYSIS.md § "Integration with TODOS.md and ROADMA
 
 ## Metrics
 
-**Current Health Score:** 62/100
+**Current Health Score:** 75/100 (updated 2025-12-31; P0 bugs fixed in commit ad190448)
 
 **Target Health Score:** >90/100
 

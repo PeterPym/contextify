@@ -35,30 +35,63 @@ Refreshes can be deferred when:
 
 ### Optimistic Update Pattern
 
+From `ProjectSwitcherState.switchToProject()`:
+
 ```swift
 // Optimistic update - immediate UI feedback
 @MainActor
-func activateProject() {
-  unreadCounts[projectId] = 0  // Instant UI update
+func switchToProject(_ projectId: String) async {
+  // IMMEDIATE UI UPDATE: Set activeProjectId now for instant visual feedback
+  activeProjectId = projectId
 
-  // Background write - no explicit refresh needed
-  Task.detached {
-    // markProjectActivated() consolidates: markProjectSelected + markProjectViewed + getUnreadCount in one transaction
-    let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: ISO8601Z.string(from: Date()))
-    // result.unreadCount available if reconciliation needed
+  // Background write - coordinator will confirm/correct via handleContextUpdate()
+  Task.detached(priority: .userInitiated) {
+    await AppStateOrchestrator.shared.selectProject(id: projectId)
+  }
+
+  // Metadata update in separate background task
+  Task.detached(priority: .userInitiated) {
+    let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: ...)
+    await MainActor.run { self?.unreadCounts[projectId] = result.unreadCount }
+  }
+}
+```
+
+From `ProjectSwitcherState.reorderProjects()`:
+
+```swift
+// Optimistic update with rollback on error
+func reorderProjects(_ orderedProjectIds: [String]) async {
+  // OPTIMIZATION: Update UI immediately
+  updateTabProjects(reorderedTabs)
+  allProjects = reorderedTabs + remainingProjects
+
+  // Persist asynchronously, revert on failure
+  Task {
+    do {
+      try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
+    } catch {
+      await self.refreshProjects()  // Revert to DB state on error
+    }
   }
 }
 ```
 
 ### Database-Driven Pattern
 
-```swift
-// Background change - refresh from database
-func onNewTranscriptEntry(notification: Notification) async {
-  // Refresh timeline from database
-  await loadTimelineFromDatabase()
+From `ConversationMonitor.watchForDebouncedTranscriptUpdates()`:
 
-  // UI updates automatically via @Observable
+```swift
+// Background change - refresh from database via notification
+private func watchForDebouncedTranscriptUpdates() async {
+  for await note in NotificationCenter.default.notifications(named: "TranscriptUpdated") {
+    if note.userInfo?["projectId"] == currentProjectId {
+      debounceTask = Task {
+        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms debounce
+        await processIncrementalUpdate()  // Fetches new entries from database
+      }
+    }
+  }
 }
 ```
 

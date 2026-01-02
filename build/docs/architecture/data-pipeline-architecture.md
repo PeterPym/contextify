@@ -14,7 +14,7 @@ This document provides **five levels of detail** for understanding Contextify's 
 1. **[Executive Overview](#level-1-executive-overview)** - 30,000 foot view for stakeholders
 2. **[Component Architecture](#level-2-component-architecture)** - System components and responsibilities
 3. **[Data Flow Sequences](#level-3-data-flow-sequences)** - Detailed flows with mermaid diagrams
-4. **[Implementation Details](#level-4-implementation-details)** - Code-level specifics, line numbers, algorithms
+4. **[Implementation Details](#level-4-implementation-details)** - Code-level specifics, algorithms
 5. **[Technical Debt & Future Work](#level-5-technical-debt--future-work)** - Known issues and improvement opportunities
 
 ---
@@ -63,7 +63,7 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 5. **StartupCoordinator (Legacy)** - Compatibility shim for ConversationMonitor
 6. **Streaming Ingestion** - HooverEngine processes 1000 lines at a time (memory efficient)
 7. **Dual Monitoring** - FSEvents (global) + DispatchSource (per-file) for reliability
-8. **SQL Backend** - GRDB with schema v26, WAL mode for concurrent access
+8. **SQL Backend** - GRDB with schema v33, WAL mode for concurrent access
 
 ---
 
@@ -142,22 +142,22 @@ graph TB
 
 ### State Coordination Layer
 
-**AppStateOrchestrator** (`app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`, 297 lines)
+**AppStateOrchestrator** (`app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`)
 - **Purpose:** Central state coordinator for app lifecycle
-- **State Machine:** AppState enum (startup → discovering → idle → loading → active → error)
+- **State Machine:** AppState enum (startup -> discovering -> idle -> loading -> active -> error)
 - **Key Methods:**
-  - `startup()` (line 77) - Lightweight app launch (<200ms target)
-  - `selectProject(id:)` (line 106) - JIT ingestion on user selection
-  - `startBackgroundIndexing()` (line 166) - Low-priority pre-ingestion
+  - `startup()` - Lightweight app launch (<200ms target)
+  - `selectProject(id:)` - JIT ingestion on user selection
+  - `startBackgroundIndexing()` - Low-priority pre-ingestion
 - **Published State:** `@Published var state: AppState`
 - **Notifications:** `.appStateDidChange` for legacy subscribers
 
-**LightweightDiscoveryService** (`app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`, 251 lines)
+**LightweightDiscoveryService** (`app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`)
 - **Purpose:** Fast filesystem scanner (NO file reads, NO DB writes)
 - **Performance:** <200ms for typical setup (19 projects, 663 transcripts)
 - **Strategy:** Stat-only (mtime as activity proxy)
 - **Key Method:**
-  - `discoverProjectsLightweight()` (line 17) → `[LightweightProject]`
+  - `discoverProjectsLightweight()` -> `[LightweightProject]`
 - **Returns:** Sorted by last activity (newest first)
 - **Actor:** Thread-safe background execution
 
@@ -180,17 +180,17 @@ graph TB
 
 ### Discovery Layer (Legacy)
 
-**StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`, 735 lines)
+**StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`)
 - **Purpose:** Legacy compatibility shim for ConversationMonitor
 - **Integration:** Receives handleExternalProjectSwitch() calls from AppStateOrchestrator
 - **Publishes:** `ActiveProjectContext` (id, path, branch, bookmark) via AsyncStream
 - **Note:** Planned for refactor/removal after remaining ConversationMonitor subsystems move out (see architecture-refactoring-analysis.md)
 
-**ProjectDiscoveryService** (`app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`, 1000 lines)
+**ProjectDiscoveryService** (`app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`)
 - **Purpose:** Full discovery with DB writes (used by legacy code paths)
 - **Key Methods:**
-  - `discoverAllProjects(currentProjectPath:)` (line 97) → `[DiscoveredProject]`
-  - `ingestAllProjects(projects:progressHandler:)` (line 387)
+  - `discoverAllProjects(currentProjectPath:)` -> `[DiscoveredProject]`
+  - `ingestAllProjects(projects:progressHandler:)`
 - **Usage:** Background indexing, manual refresh
 
 ### Ingestion Layer
@@ -202,19 +202,19 @@ graph TB
 - **Event Delivery:** AsyncStream (not NotificationCenter)
 - **Latency:** ~100-200ms (OS-dependent)
 
-**TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`, 307 lines)
+**TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`)
 - **Purpose:** Per-file real-time monitoring with debouncing
 - **Technology:** DispatchSource file monitoring
-- **Key Method:** `watch()` (line 61)
+- **Key Method:** `watch(transcriptId:fileURL:provider:)`
 - **Debounce:** 150ms (MonitorConfig.fileWatcherDebounce)
-- **Event Delivery:** NotificationCenter (`.transcriptDidUpdate`)
+- **Event Delivery:** NotificationCenter (`TranscriptUpdated`)
 - **Reliability:** Created per-transcript, torn down on project switch
 
-**HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`, 898 lines)
+**HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`)
 - **Purpose:** Streaming JSONL parser for transcript ingestion
-- **Key Method:** `hooverTranscript()` (line 263)
-- **Batch Size:** 1000 lines (MonitorConfig.batchLines, line 11)
-- **Checkpointing:** Every 1000 lines (MonitorConfig.checkpointEveryLines, line 12)
+- **Key Method:** `hooverTranscript(_:fileURL:progress:)`
+- **Batch Size:** 1000 lines (MonitorConfig.batchLines)
+- **Checkpointing:** Every 1000 lines (MonitorConfig.checkpointEveryLines)
 - **Memory:** O(batch_size) ~1MB for 1000 entries
 - **Parsing Strategy:**
   1. Read file in 1000-line chunks
@@ -240,25 +240,25 @@ graph TB
 **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`)
 - **Purpose:** GRDB connection pool singleton
 - **Configuration:**
-  - WAL mode: `PRAGMA journal_mode=WAL` (line 91)
+  - WAL mode: `PRAGMA journal_mode=WAL`
   - Foreign keys: Enabled
-  - Schema: v26 (current)
+  - Schema: v33 (current)
 - **Location:** `~/Library/Application Support/Contextify/contextify.db`
 - **Custom Locations:** Supported (Dropbox, iCloud Drive, external drives)
 
 ### Presentation Layer
 
-**ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`, 163 lines)
+**ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`)
 - **Purpose:** Simplified observer view model
 - **Pattern:** "Dumb" observer that watches AppStateOrchestrator
 - **Key Methods:**
-  - `updateFromOrchestrator()` (line 52) - Sync state from orchestrator
-  - `convertToDiscoveredProjects()` (line 156) - Convert LightweightProject → UI model
+  - `updateFromOrchestrator()` - Sync state from orchestrator
+  - `convertToDiscoveredProjects()` - Convert LightweightProject -> UI model
 - **Responsibilities:** State observation, UI model conversion, action delegation (no business logic)
 
-**ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`, ~2900 lines)
+**ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`)
 - **Purpose:** Timeline state management and real-time updates
-- **Key Method:** `startMonitoring()` (line 428)
+- **Key Method:** `startMonitoring(projectId:)`
 - **Architecture:** @MainActor @Observable
 - **Note:** Phase 1–3 extractions complete (TimelineDataLoader, ViewportTrackingCoordinator, HealthMonitoringCoordinator, TimelineCacheCoordinator); remaining subsystems tracked in architecture-refactoring-analysis.md
 - **Current:** Still uses legacy StartupCoordinator integration
@@ -556,21 +556,19 @@ sequenceDiagram
 ### Core Algorithm
 
 **File:** `app/Sources/ContextifyCore/Database/HooverEngine.swift`
-**Function:** `hooverTranscript()` at line 263
+**Function:** `hooverTranscript(_:fileURL:progress:)`
 
 ```swift
-public static func hooverTranscript(
-    transcriptId: String,
+public func hooverTranscript(
+    _ transcript: Transcript,
     fileURL: URL,
-    checkpoint: Int64?,
-    db: DatabasePool,
-    provider: TranscriptProviderID
-) async throws -> Int64 {
+    progress: IngestProgressSink
+) throws -> HooverOutcome {
     // Implementation details...
 }
 ```
 
-**Configuration Constants (lines 9-13):**
+**Configuration Constants (MonitorConfig enum):**
 ```swift
 public enum MonitorConfig {
     public static let fileWatcherDebounce: TimeInterval = 0.150  // 150ms
@@ -648,7 +646,7 @@ let checkpoint = try db.read { db in
 ### DispatchSource File Monitoring
 
 **File:** `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
-**Function:** `watch()` at line 61
+**Function:** `watch(transcriptId:fileURL:provider:)`
 
 **Technology:** macOS DispatchSource.makeFileSystemObjectSource
 
@@ -656,7 +654,7 @@ let checkpoint = try db.read { db in
 ```swift
 .write    // File content changed
 .extend   // File size increased
-.attrib   // File attributes changed
+// Note: .attrib removed in current implementation
 ```
 
 ### Debouncing Strategy
@@ -702,44 +700,34 @@ deinit {
 
 ### State Management
 
-**File:** `Contextify/Contextify/ConversationMonitor.swift` (~2900 lines)
+**File:** `Contextify/Contextify/ConversationMonitor.swift`
 **Architecture:** @MainActor @Observable
 
 **Key State:**
 ```swift
-@Published var entries: [TimelineEntry] = []
-@Published var isLoading: Bool = false
-var cursor: TimelineCursor?  // Pagination state
-var activeTranscriptWatchers: [String: TranscriptWatcher] = [:]
+// State is managed via TimelineState container
+private let state = TimelineState()  // Contains entries array
+private(set) var phase: Phase = .cold  // Timeline load phase
+private(set) var isProcessing = false
+private(set) var allSessions: [TranscriptSession] = []
 ```
 
 ### Initialization Sequence
 
-**Function:** `startMonitoring()` at line 428
+**Function:** `startMonitoring(projectId:)`
 
 ```swift
-public func startMonitoring(projectId: String) async {
-    // 1. Store projectId
-    self.currentProjectId = projectId
+func startMonitoring(projectId: String) {
+    // 1. Load project's sessions from database
+    loadSessions(for: projectId)
 
-    // 2. Query database for transcripts (via data loader)
-    let transcripts = try await dataLoader.loadAllSessions(projectId: projectId)
+    // 2. Load timeline entries (via TimelineDataLoader)
+    loadFeedFromSQL()
 
-    // 3. Create watchers for each transcript
-    for transcript in transcripts {
-        let watcher = TranscriptWatcher(
-            transcriptId: transcript.id,
-            fileURL: transcript.fileURL,
-            provider: transcript.provider
-        )
-        await watcher.watch()
-        activeTranscriptWatchers[transcript.id] = watcher
-    }
+    // 3. Watch for transcript updates (debounced)
+    watchForDebouncedTranscriptUpdates()
 
-    // 4. Load initial timeline entries (delegates to TimelineDataLoader)
-    await loadFeedFromSQL()
-
-    // 5. Subscribe to coordinator updates
+    // 4. Subscribe to coordinator updates
     subscribeToCoordinator()
 }
 ```
@@ -785,7 +773,7 @@ struct TimelineCursor {
 - Scroll to top: Load next 50 older
 - Scroll to bottom: Auto-load new entries (if monitoring active)
 
-## Database Schema (v26)
+## Database Schema (v33)
 
 ### Core Tables
 
@@ -854,9 +842,16 @@ CREATE INDEX idx_timeline_cache_window ON timeline_cache(window_hash);
 
 ### Schema Evolution
 
-**Current Version:** v26
+**Current Version:** v33
 
 **Recent Changes:**
+- **v33:** Added `ingestion_runs` table for CLI debugging
+- **v32:** Lazy watcher baseline tracking (7 new columns)
+- **v31:** Added `pending_rehoover` for lazy watchers
+- **v30:** Sidechain ingestion + `tool_invocations` table
+- **v29:** FTS5 summaries indexing
+- **v28:** FTS5 search index for conversations
+- **v27:** Queued message tracking (`is_queued` column)
 - **v26:** Removed `sandbox_container_path` column (projects table)
 - **v25:** Added `display_order` to projects
 - **v24:** Added `timeline_cache` table for LLM summaries
@@ -871,14 +866,13 @@ CREATE INDEX idx_timeline_cache_window ON timeline_cache(window_hash);
 
 ## AppStateOrchestrator Implementation
 
-**File:** `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (297 lines)
+**File:** `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
 **Pattern:** Singleton, @MainActor, ObservableObject
 **State Machine:** AppState enum
 
 ### State Transitions
 
 ```swift
-// AppStateOrchestrator.swift:8-15
 public enum AppState: Sendable {
   case startup
   case discovering
@@ -900,7 +894,6 @@ public enum AppState: Sendable {
 ### Startup Implementation
 
 ```swift
-// AppStateOrchestrator.swift:77-103
 public func startup() async {
   log.info("[ORCH-STARTUP] Beginning lightweight startup...")
   let startTime = Date()
@@ -939,7 +932,6 @@ public func startup() async {
 ### Project Lookup Cache
 
 ```swift
-// AppStateOrchestrator.swift:120-143
 var project = projectLookup[id]
 if project == nil {
   // DB fallback for cache miss
@@ -954,23 +946,19 @@ if project == nil {
 - Built during startup via `rebuildProjectLookup()`
 - Invalidated on discovery refresh
 - DB fallback for cache misses
-- ⚠️ Potential stale data if projects added externally
 
 ---
 
 ## LightweightDiscoveryService Implementation
 
-**File:** `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift` (251 lines)
+**File:** `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`
 **Pattern:** Actor (background execution, thread-safe)
 
 ### Stat-Only Scanning
 
 ```swift
-// LightweightDiscoveryService.swift:39-58
-private func scanClaudeProjects() -> [LightweightProject] {
-  let root = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".claude/projects")
-
+// scanClaudeDirectory(at:) - nonisolated helper
+private nonisolated func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
   let dirs = try? FileManager.default.contentsOfDirectory(
     at: root,
     includingPropertiesForKeys: [.contentModificationDateKey],
@@ -979,7 +967,6 @@ private func scanClaudeProjects() -> [LightweightProject] {
 
   return dirs.map { dir in
     // Optimization: Use directory mtime as proxy for activity
-    // This avoids opening/reading individual files (saves syscalls)
     let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))
       ?.contentModificationDate ?? Date.distantPast
 
@@ -1001,8 +988,8 @@ private func scanClaudeProjects() -> [LightweightProject] {
 ### Path Resolution
 
 ```swift
-// LightweightDiscoveryService.swift:161-188
-private func resolveClaudeProjectPath(
+// resolveClaudeProjectPath - nonisolated helper
+private nonisolated func resolveClaudeProjectPath(
   hashFolder: String,
   directory: URL,
   transcripts: [URL]
@@ -1061,7 +1048,7 @@ private func resolveClaudeProjectPath(
 - User deletes transcript files via Finder
 - Multiple Contextify instances (different machines)
 
-**Current Mitigation:** DB fallback on cache miss (AppStateOrchestrator.swift:120-143)
+**Current Mitigation:** DB fallback on cache miss (AppStateOrchestrator#selectProject)
 
 **Proper Fix:**
 - Add FSEvents monitoring of `~/.claude/projects/` and `~/.codex/sessions/`
@@ -1074,7 +1061,7 @@ private func resolveClaudeProjectPath(
 
 **Issue:** Two nearly-identical types require manual conversion.
 
-**Code:** ProjectsViewModel.convertToDiscoveredProjects() (lines 156-180)
+**Code:** ProjectsViewModel#convertToDiscoveredProjects()
 
 **Proper Fix:**
 - Unify types into single Project struct
@@ -1429,13 +1416,13 @@ Here's how to create security-scoped bookmarks...
 **Review Schedule:** Update after major architecture changes
 
 **Key Code References:**
-- StartupCoordinator.swift:213 (start)
-- HooverEngine.swift:263 (hooverTranscript)
-- ConversationMonitor.swift:428 (startMonitoring)
-- ProjectDiscoveryService.swift:97 (discoverAllProjects)
-- TranscriptWatcher.swift:61 (watch)
-- AppStateOrchestrator.swift:77 (startup)
-- LightweightDiscoveryService.swift:17 (discoverProjectsLightweight)
+- `StartupCoordinator#start()`
+- `HooverEngine#hooverTranscript()`
+- `ConversationMonitor#startMonitoring(projectId:)`
+- `ProjectDiscoveryService#discoverAllProjects()`
+- `TranscriptWatcher#watch(transcriptId:fileURL:provider:)`
+- `AppStateOrchestrator#startup()`
+- `LightweightDiscoveryService#discoverProjectsLightweight()`
 
 **Related Documentation:**
 - `build/docs/architecture/startup-coordinator.md` - Project identity pipeline

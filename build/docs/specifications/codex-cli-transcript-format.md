@@ -1,6 +1,6 @@
 # Codex CLI Transcript Format - Complete Technical Reference
 
-**Last Updated:** 2025-11-21
+**Last Updated:** 2025-12-31
 **Related:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
 ---
@@ -123,14 +123,16 @@ pub const INTERACTIVE_SESSION_SOURCES: &[SessionSource] =
     &[SessionSource::Cli, SessionSource::VSCode];
 ```
 
-**MUST use one of:**
-- `"source": "cli"` ← Use this for converted sessions
-- `"source": "vscode"`
+**Source values recognized by Codex:**
+- `"source": "cli"` - Interactive CLI sessions (appears in `codex resume`)
+- `"source": "vscode"` - VS Code extension sessions (appears in `codex resume`)
+- `"source": "exec"` - Non-interactive `codex exec` runs (does NOT appear in `codex resume`, but Contextify ingests these)
+
+**For converted sessions, use:** `"source": "cli"`
 
 **DO NOT use:**
-- `"source": "conversion"` ❌ (will be filtered out)
-- `"source": "api"` ❌
-- Any other value ❌
+- `"source": "conversion"` (will be filtered out of `codex resume`)
+- Any arbitrary value (may be filtered)
 
 ### 4. Must Have session_meta Record (REQUIRED)
 
@@ -263,10 +265,10 @@ Declares session-level context at the start. **Contains project path in `payload
   - `id` (uuid) — **REQUIRED:** Session identifier
   - `timestamp` (ISO)
   - `cwd` (string) — **Current working directory (PROJECT PATH)**
-  - `originator` (string, e.g., `"codex_cli_rs"`)
+  - `originator` (string) — `"codex_cli_rs"` for interactive, `"codex_exec"` for exec runs
   - `cli_version` (string)
   - `instructions` (nullable string) — May be large, multiline (AGENTS.md content)
-  - `source` (string) — **REQUIRED:** Must be `"cli"` or `"vscode"` to appear in session picker
+  - `source` (string) — **REQUIRED:** `"cli"`, `"vscode"`, or `"exec"` (only cli/vscode appear in `codex resume`)
   - `git` (optional object):
     - `commit_hash` (string)
     - `branch` (string)
@@ -563,7 +565,7 @@ To convert Claude Code → Codex, the converter MUST:
 |-------|---------|-----|
 | Filename doesn't start with `rollout-` | Skipped during scan | Rename to `rollout-*` |
 | UUID mismatch | Pagination fails | Ensure UUIDs match |
-| `source` not `"cli"` or `"vscode"` | Filtered out | Change to `"cli"` |
+| `source` not `"cli"` or `"vscode"` | Filtered out of picker | Change to `"cli"` (note: `"exec"` sessions are valid but don't appear in picker) |
 | No `event_msg` with `user_message` | Filtered out | Add for each user message |
 | JSON has spaces | May not parse correctly | Use `separators=(',', ':')` |
 | Wrong directory structure | Not found during discovery | Move to `~/.codex/sessions/YYYY/MM/DD/` |

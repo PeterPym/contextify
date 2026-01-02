@@ -8,7 +8,7 @@
 
 ### Tests
 - [ ] Run test suite: `swift test`
-- [ ] Expected: All tests pass (currently 46 tests)
+- [ ] Expected: All tests pass
 - [ ] Actual result: ____
 
 ### Build Warnings

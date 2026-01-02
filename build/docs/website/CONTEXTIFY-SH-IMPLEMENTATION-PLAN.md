@@ -187,8 +187,8 @@ A macOS app for monitoring your Claude Code and Codex CLI sessions.
 
 ## System Requirements
 
-- macOS 14 or later
-- Full features require macOS 26 (Sequoia) for on-device LLM
+- macOS 15 (Sequoia) or later
+- Full features require macOS 26 (Tahoe) for on-device LLM
 
 ## Download
 
@@ -510,8 +510,8 @@ We typically respond within 24-48 hours.
             <div class="requirements">
                 <h3>System Requirements</h3>
                 <ul>
-                    <li>macOS 14 (Sonoma) or later</li>
-                    <li>macOS 26 (Sequoia) required for LLM summaries</li>
+                    <li>macOS 15 (Sequoia) or later</li>
+                    <li>macOS 26 (Tahoe) required for LLM summaries</li>
                     <li>Works with Claude Code and Codex CLI</li>
                 </ul>
             </div>
@@ -866,7 +866,7 @@ cat > index.html << 'EOF'
     <ul>
         <li>Real-time timeline of AI conversations</li>
         <li>Local database backup</li>
-        <li>LLM-powered summaries (macOS 26+)</li>
+        <li>LLM-powered summaries (macOS 26 Tahoe+)</li>
     </ul>
 
     <h2>Download</h2>

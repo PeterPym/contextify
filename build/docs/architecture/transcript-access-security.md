@@ -116,6 +116,20 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
   let claudeRoot: URL?
   let codexRoot: URL?
 
+  init(claudeRoot: URL?, codexRoot: URL?) {
+    self.claudeRoot = claudeRoot
+    self.codexRoot = codexRoot
+
+    // Start security-scoped access for both roots if available
+    // This keeps access open for the lifetime of the provider
+    if let claude = claudeRoot {
+      _ = claude.startAccessingSecurityScopedResource()
+    }
+    if let codex = codexRoot {
+      _ = codex.startAccessingSecurityScopedResource()
+    }
+  }
+
   func withAccess<T>(
     for provider: String,
     _ body: @Sendable (URL) throws -> T
@@ -133,29 +147,23 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
       }
       root = url
     default:
-      assertionFailure("Unknown provider")
+      assertionFailure("Unknown transcript provider")
       root = FileManager.default.homeDirectoryForCurrentUser
     }
 
-    guard root.startAccessingSecurityScopedResource() else {
-      throw FolderAccessError.securityScopeAccessDenied(root)
-    }
-    defer { root.stopAccessingSecurityScopedResource() }
-
+    // Security scope already started in init, just return URL
     return try body(root)
   }
 }
 ```
 
 **Behavior:**
-1. Built once during app init with URLs from `FolderAccessController`
-2. Captures security-scoped URLs as immutable properties
-3. On `withAccess()`:
-   - Starts security scope (`startAccessingSecurityScopedResource()`)
-   - Executes body (file I/O happens here)
-   - Ends scope in `defer` (guaranteed cleanup)
+1. Built once during app init with security-scoped URLs from `FolderAccessController`
+2. Starts security scope once in `init()` and keeps it active for provider lifetime
+3. On `withAccess()`: returns the already-scoped URL directly (no per-call scope management)
+4. Security scope remains active for the entire app session
 
-**Key constraint:** File I/O MUST complete before `withAccess()` returns. Security scope is only active during the call.
+**Design rationale:** Starting scope once at init simplifies the API and avoids per-call overhead. The provider is created during app startup and lives for the entire session, so scope lifetime matches app lifetime.
 
 ---
 
@@ -243,22 +251,23 @@ public final class TranscriptWatcher {
 }
 ```
 
-**In TranscriptOrchestrator:**
+**In TranscriptOrchestrator (init):**
 
 ```swift
+// Set re-hoover callback to route through discoverTranscriptInternal (synchronous)
 watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
-  try self?.discoverTranscript(
+  try self?.discoverTranscriptInternal(
     projectId: projectId,
     fileURL: fileURL,
     provider: provider,
     providerSessionId: sessionId,
     startWatching: false,  // Already watching
-    progress: nil
+    bypassScheduler: true
   )
 }
 ```
 
-**Effect:** All re-ingestion routes through `discoverTranscript()`, which applies security scoping consistently.
+**Effect:** All re-ingestion routes through `discoverTranscriptInternal()`, which applies security scoping via `accessProvider.withAccess()` for sandbox builds.
 
 ---
 
@@ -266,14 +275,19 @@ watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
 
 **File:** `Contextify/Contextify/ContextifyApp.swift`
 
+Provider creation happens in `buildAndConfigureAccessProvider()`:
+
 ```swift
-private func initializeProjectsSystem() async {
-  let accessProvider: TranscriptAccessProvider
+@MainActor
+private func buildAndConfigureAccessProvider() async -> TranscriptAccessProvider {
+  // Return cached provider if already built
+  if let existing = sharedAccessProvider {
+    return existing
+  }
 
   #if APPSTORE_BUILD
-  // Resolve security-scoped URLs from FolderAccessController
   let claudeAuth = await folderAccessController.authorization(for: .claude)
-  let codexAuth = await folderAccessController.authorization(for: .codex)
+  let codexAuth  = await folderAccessController.authorization(for: .codex)
 
   var claudeURL: URL? = nil
   if let auth = claudeAuth, auth.status == .authorized {
@@ -285,43 +299,79 @@ private func initializeProjectsSystem() async {
     codexURL = try? await folderAccessController.resolve(auth).url
   }
 
-  accessProvider = SandboxTranscriptAccessProvider(
+  let provider = SandboxTranscriptAccessProvider(
     claudeRoot: claudeURL,
     codexRoot: codexURL
   )
   #else
-  accessProvider = PassthroughAccessProvider()
+  let provider = PassthroughAccessProvider()
   #endif
 
-  orchestrator = try TranscriptOrchestrator(
-    dbManager: dbManager,
-    accessProvider: accessProvider
-  )
+  await AppStateOrchestrator.shared.configureAccessProvider(provider)
+  await ImageExtractor.shared.configure(accessProvider: provider)
+  sharedAccessProvider = provider
+  return provider
 }
 ```
 
-**Built once, used everywhere:** The provider is created at app startup and injected into `TranscriptOrchestrator`. All subsequent file access goes through it.
+The provider is then used in `initializeProjectsSystem()`:
+
+```swift
+private func initializeProjectsSystem(existingProvider: TranscriptAccessProvider? = nil) async {
+  // Reuse existing provider, or cached provider, or build new one
+  let accessProvider: TranscriptAccessProvider
+  if let existing = existingProvider {
+    accessProvider = existing
+  } else if let cached = sharedAccessProvider {
+    accessProvider = cached
+  } else {
+    accessProvider = await buildAndConfigureAccessProvider()
+  }
+
+  // Initialize orchestrator with access provider
+  let orchestrator = try TranscriptOrchestrator(
+    dbManager: .shared,
+    accessProvider: accessProvider
+  )
+  // ... configure other components
+}
+```
+
+**Key points:**
+- Provider is built once via `buildAndConfigureAccessProvider()` and cached in `sharedAccessProvider`
+- `initializeProjectsSystem()` reuses the cached provider to avoid reconstruction
+- Mid-session permission grants use separate `reconfigureAccessProvider()` method (see ContextifyApp.swift)
 
 ---
 
 ## Build Configuration
 
-### APPSTORE_BUILD Flag
+### APPSTORE_BUILD Flag vs Sandbox.isSandboxed
 
-**Set via build script:** `scripts/xc.sh --dist=appstore`
+**Build flag:** `APPSTORE_BUILD` is set via `scripts/xc.sh --dist=appstore`
 
-**Effect:**
-- Core uses flag to disable global discovery and FSEvents in sandbox
-- App uses flag to choose `SandboxTranscriptAccessProvider` vs `PassthroughAccessProvider`
+**Usage patterns:**
 
-**In code:**
-```swift
-#if APPSTORE_BUILD
-// Sandboxed behavior
-#else
-// DMG behavior
-#endif
-```
+1. **App layer (`#if APPSTORE_BUILD`)** - Used for provider selection at compile time:
+   ```swift
+   #if APPSTORE_BUILD
+   let provider = SandboxTranscriptAccessProvider(...)
+   #else
+   let provider = PassthroughAccessProvider()
+   #endif
+   ```
+
+2. **Core layer (`Sandbox.isSandboxed`)** - Runtime check for sandbox detection:
+   ```swift
+   // In TranscriptOrchestrator.needsSecurityScope()
+   guard Sandbox.isSandboxed else { return false }
+   return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
+   ```
+
+**Why runtime check in Core?**
+The ContextifyCore Swift package does not receive the `APPSTORE_BUILD` compile-time flag.
+Instead, it uses `Sandbox.isSandboxed` (defined in `HUDCore.swift`) which detects sandbox
+at runtime via environment variables set by macOS for sandboxed apps.
 
 ---
 
@@ -426,6 +476,39 @@ try accessProvider.withAccess(for: "claude.code") { ... }  // Typo risk
 
 ---
 
+## Sandbox Container Path Filtering
+
+**File:** `app/Sources/ContextifyCore/Security/SandboxPathFilter.swift`
+
+When running in App Store sandbox, the app's home directory is virtualized to
+`~/Library/Containers/<bundle-id>/Data/`. If a project path inside this container
+is persisted, it causes "invalid root" modals on subsequent launches.
+
+```swift
+public enum SandboxPathFilter {
+  /// Returns true when the provided path resolves inside ANY app's sandbox container.
+  public static func isSandboxContainerPath(_ path: String) -> Bool {
+    let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard normalized.contains("/Library/Containers/") else { return false }
+    // Check for .../Containers/<bundle-id>/Data/... pattern
+    let components = normalized.split(separator: "/")
+    guard let containersIdx = components.firstIndex(of: "Containers") else { return false }
+    let dataIdx = containersIdx + 2
+    guard components.indices.contains(dataIdx) else { return false }
+    return components[dataIdx] == "Data"
+  }
+}
+```
+
+**Usage throughout codebase:**
+- `TranscriptWatcher.watch()` - Refuses to watch files in container paths
+- `HUDPreferences` - Skips persisting container paths
+- `StartupCoordinator` - Filters candidate paths during project resolution
+- `ProjectDiscoveryService` - Skips container path projects during discovery
+- `FastPathIngestionCoordinator` - Filters container paths in fast-path
+
+---
+
 ## Future Enhancements
 
 ### Long-Lived FSEvents in Sandbox
@@ -457,7 +540,16 @@ Just need to implement `TranscriptAccessProvider` for the new source.
 
 - Security-scoped bookmarks: https://developer.apple.com/documentation/foundation/nsurl/1417051-startaccessingsecurityscopedreso
 - App Sandbox: https://developer.apple.com/documentation/security/app_sandbox
-- Related code:
-  - `app/Sources/ContextifyCore/Projects/TranscriptAccessProvider.swift`
-  - `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
-  - `Contextify/Contextify/SandboxTranscriptAccessProvider.swift`
+
+**Related code:**
+- `app/Sources/ContextifyCore/Projects/TranscriptAccessProvider.swift` - Protocol + PassthroughAccessProvider
+- `app/Sources/ContextifyCore/Projects/TranscriptProviderID.swift` - Provider ID constants
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` - Security-scoped access wrapper
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` - Re-hoover callback pattern
+- `app/Sources/ContextifyCore/Security/FolderAccessController.swift` - Bookmark management + folder picker
+- `app/Sources/ContextifyCore/Security/BookmarkStore.swift` - Bookmark persistence
+- `app/Sources/ContextifyCore/Security/SourceAuthorization.swift` - SourceID enum + authorization state
+- `app/Sources/ContextifyCore/Security/SandboxPathFilter.swift` - Container path filtering
+- `app/Sources/ContextifyCore/HUDCore.swift` - Sandbox.isSandboxed runtime detection
+- `Contextify/Contextify/SandboxTranscriptAccessProvider.swift` - App Store provider implementation
+- `Contextify/Contextify/ContextifyApp.swift` - buildAndConfigureAccessProvider()

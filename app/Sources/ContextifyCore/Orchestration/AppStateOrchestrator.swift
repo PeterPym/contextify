@@ -669,33 +669,7 @@ public final class AppStateOrchestrator: ObservableObject {
 
 // MARK: - Supporting Types
 
-/// Lightweight project metadata (no DB required)
-public struct LightweightProject: Sendable, Identifiable, Hashable {
-  public let id: String
-  public let path: URL
-  public let displayName: String  // Friendly name derived during discovery
-  public let transcriptCount: Int
-  public let lastActivity: Date
-  public let provider: String
-  public let cwd: String?  // Real project path (for Codex) or decoded path (for Claude)
-  public let transcriptFiles: [URL]  // File paths discovered during scan (for JIT ingestion)
-
-  public init(id: String, path: URL, displayName: String, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil, transcriptFiles: [URL] = []) {
-    self.id = id
-    self.path = path
-    self.displayName = displayName
-    self.transcriptCount = transcriptCount
-    self.lastActivity = lastActivity
-    self.provider = provider
-    self.cwd = cwd
-    self.transcriptFiles = transcriptFiles
-  }
-
-  /// Canonical root path used for database identity (defaults to filesystem path if decoding fails).
-  public var canonicalRootPath: String {
-    PathUtils.canonicalizePath(cwd ?? path.path)
-  }
-}
+// Note: LightweightProject is now defined in ProjectModels.swift for cross-platform support
 
 // MARK: - Notifications
 

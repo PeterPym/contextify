@@ -1,5 +1,7 @@
 # Contextify Query (Claude Code Plugin)
 
+> **Note:** This plugin is a draft/specification. The Claude Code plugin marketplace is not yet available. Currently, the Total Recall skill is installed as a user-level skill via `~/.claude/commands/total-recall.md`.
+
 This plugin provides the Contextify Total Recall skill and a researcher subagent that enable Claude Code to search your conversation history using `contextify-query`.
 
 The Total Recall skill is installed as a user skill for discoverability via `/total-recall` autocomplete.

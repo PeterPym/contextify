@@ -30,7 +30,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v32** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v33** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -70,7 +70,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v30)
+- SQL schema definitions and versioned migrations (v1-v33)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -84,7 +84,9 @@ This document provides detailed information about Contextify's architecture and 
 - **v28**: FTS5 search index for conversation search
 - **v29**: include summaries in FTS
 - **v30**: sidechain ingestion (`transcript_entries.is_sidechain`) + `tool_invocations` table
+- **v31**: pending_rehoover for lazy watchers
 - **v32**: lazy watcher baseline tracking (`transcripts.known_last_entry_ts`, `known_file_size`, `unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`, `last_activity_detected_at`, `projects.last_activity_detected_at`)
+- **v33**: ingestion_runs table for CLI debugging
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
@@ -99,7 +101,6 @@ This document provides detailed information about Contextify's architecture and 
 
 ### Documentation
 
-- Usage guide: `app/Sources/ContextifyCore/Database/README.md`
 - Architecture: `build/docs/architecture/sql-backend.md`
 - Database migration: `build/docs/components/database-migration.md`
 - Custom location feature: Shipped (see Settings > Database tab)
@@ -236,21 +237,20 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 
 ## Core Components (Project Context)
 
-**HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`):
+**HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift#HUDViewModel`):
 - Main `@Observable` `@MainActor` view model
 - Manages:
   - Project root detection (environment → persisted → CWD → existing)
   - Git repository discovery and branch monitoring via file watchers
-  - File/URL ingestion with Markdown artifact generation
   - Session and checkpoint management
   - Security-scoped bookmarks for sandboxed access
 
-**GitRepositoryResolver** (`app/Sources/ContextifyCore/HUDCore.swift:142-368`):
+**GitRepositoryResolver** (`app/Sources/ContextifyCore/HUDCore.swift#GitRepositoryResolver`):
 - Git repository detection
 - Finds `.git` root, parses HEAD (handles detached state, worktrees)
 - Executes `git rev-parse` with timeout/fallback
 
-**HUDPreferences** (`app/Sources/ContextifyCore/HUDCore.swift:13-126`):
+**HUDPreferences** (`app/Sources/ContextifyCore/HUDCore.swift#HUDPreferences`):
 - Manages UserDefaults with suite fallback
 - Stores project root path and security-scoped bookmarks
 
@@ -279,7 +279,7 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 - Returns `LightweightProject` structs sorted by last activity
 - Actor-based for thread safety
 
-**LightweightProject** (struct in AppStateOrchestrator.swift):
+**LightweightProject** (`app/Sources/ContextifyCore/Projects/ProjectModels.swift#LightweightProject`):
 - Sendable, lightweight project metadata (no database required)
 - Contains: id, path, displayName, transcriptCount, lastActivity, provider, cwd, transcriptFiles
 - Used for initial UI display before full ingestion
@@ -293,8 +293,7 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 - Called by AppStateOrchestrator.selectProject()
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified observer view model (163 lines)
-- Observes AppStateOrchestrator state transitions
+- Observer view model for AppStateOrchestrator state transitions
 - Converts state to UI-compatible models (LightweightProject → DiscoveredProject)
 - Delegates all actions to AppStateOrchestrator (no direct discovery or ingestion)
 
@@ -357,7 +356,7 @@ for await _ in NotificationCenter.default.notifications(named: .appStateDidChang
 }
 
 // Legacy components: Still use StartupCoordinator
-for await context in StartupCoordinator.shared.updates {
+for await context in StartupCoordinator.shared.updates() {
     self.activeProjectId = context.id
 }
 ```
@@ -381,7 +380,7 @@ for await context in StartupCoordinator.shared.updates {
 ## UI Layer
 
 **ContentView** (`Contextify/Contextify/ContentView.swift`):
-- Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications
+- Main UI with project switcher, project header, timeline view, quick search, and toast notifications
 
 **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`):
 - Timeline display UI with session filtering and real-time updates
@@ -399,13 +398,10 @@ for await context in StartupCoordinator.shared.updates {
 - `@Observable` state management for project list, active project, and unread counts
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified observer view model for Projects window (163 lines)
+- Observer view model for Projects window
 - Observes AppStateOrchestrator state transitions
 - Converts LightweightProject → DiscoveredProject for UI display
 - Delegates all actions (project selection, refresh) to AppStateOrchestrator
-
-**IngestDropZone** (`Contextify/Contextify/IngestDropZone.swift`):
-- Drag-and-drop target for files, uses SwiftUI `onDrop` with completion handlers and main actor marshaling
 
 ### Documentation
 
@@ -452,9 +448,6 @@ Key information in transcript-formats.md:
 **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`):
 - Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics)
 
-**SidecarMetadataStore** (`Contextify/Contextify/SidecarMetadataStore.swift`):
-- JSON sidecar file persistence for transcript metadata
-
 ---
 
 ## Transcript Corruption (Claude Code Web)
@@ -479,3 +472,35 @@ python3 scripts/transcript-repair/repair_transcript.py <transcript>
 - Full guide: `build/docs/operations/transcript-corruption-detection.md`
 - Script README: `scripts/transcript-repair/README.md`
 - Format spec: `build/docs/specifications/claude-code-transcript-format.md`
+
+---
+
+## Platform Abstractions (Cross-Platform Support)
+
+Contextify supports both macOS (full app) and Linux (ingestion CLI). Platform-specific APIs are wrapped in abstraction modules.
+
+**CrossPlatformLogger** (`app/Sources/ContextifyCore/Platform/CrossPlatformLogger.swift`):
+- Darwin: Wraps `OSLog.Logger` for system logging
+- Linux: Writes to stderr with timestamp/level prefixes
+
+**CrossPlatformCrypto** (`app/Sources/ContextifyCore/Platform/CrossPlatformCrypto.swift`):
+- Darwin: Uses `CryptoKit.SHA256`
+- Linux: Uses `Crypto.SHA256` from swift-crypto
+
+**CrossPlatformLock** (`app/Sources/ContextifyCore/Platform/CrossPlatformLock.swift`):
+- Darwin: Wraps `OSAllocatedUnfairLock<State>`
+- Linux: Uses `NSLock` with DEBUG reentrancy detection
+
+**PlatformSandbox** (`app/Sources/ContextifyCore/Platform/PlatformSandbox.swift`):
+- Darwin: Detects App Store sandbox
+- Linux: Always returns `false`
+
+**IngestionEventSink** (`app/Sources/ContextifyCore/Platform/IngestionEventSink.swift`):
+- Protocol for ingestion event reporting (progress, errors, completion)
+- CLI implements this with `CLIEventSink` for human/JSONL output
+
+### Documentation
+
+- **Architecture:** `build/docs/architecture/cross-platform-architecture.md`
+- **Development patterns:** `build/docs/guides/cross-platform-swift.md`
+- **CLI usage:** `Sources/ContextifyIngestionCLI/README.md`

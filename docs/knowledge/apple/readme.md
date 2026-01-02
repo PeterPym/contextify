@@ -7,7 +7,7 @@ platforms: [macOS]
 xcode_version: ">=16"
 os_targets:
   base_sdk: macOS 26
-  min_deployment: macOS 14
+  min_deployment: macOS 15
 priorities:
   - Phase 1 HUD ingest + toast
   - Availability‑safe UI patterns
@@ -46,7 +46,7 @@ Comprehensive, LLM‑friendly reference for building a macOS 26 (Tahoe) SwiftUI 
 
 ## Target Environment Profile
 - Xcode: 16+ (set Command Line Tools to this version).
-- Base SDK: macOS 26; Minimum deployment: macOS 14 or 15 (project decision).
+- Base SDK: macOS 26 (Tahoe); Minimum deployment: macOS 15 (Sequoia).
 - Language: Swift 6 with strict concurrency; Frameworks: SwiftUI, Observation, SwiftData (optional), Core ML (future), AppIntents (optional).
 - Availability: gate Tahoe‑only features with `@available(macOS 26, *)` and provide fallbacks.
 

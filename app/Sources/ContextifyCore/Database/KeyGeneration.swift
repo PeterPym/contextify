@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 
 // MARK: - SHA256 Utilities
 
@@ -27,7 +31,7 @@ public enum SHA256Utils {
 
   /// Incremental SHA256 hasher for streaming transcript hashing
   public final class IncrementalHasher {
-    private var hasher = CryptoKit.SHA256()
+    private var hasher = SHA256()
 
     public init() {}
 
