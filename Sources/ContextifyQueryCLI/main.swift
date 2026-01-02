@@ -320,10 +320,17 @@ struct ContextifyQueryCLI {
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let scope = try resolveProjectScope(options: options, service: service)
 
-        // Print scope info to stderr when worktree group detected (not just when multiple resolved)
+        // Print scope info to stderr when worktree group detected
         if scope.worktreeGroupDetected {
-          fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
-          fputs("(use --this-worktree to search only current)\n", stderr)
+          if options.thisWorktreeOnly {
+            fputs("Worktree group detected; searching current only (--this-worktree)\n", stderr)
+          } else if scope.expansionApplied {
+            fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+            fputs("(use --this-worktree to search only current)\n", stderr)
+          } else {
+            // Only one worktree resolved to DB (others excluded/archived/not indexed)
+            fputs("Worktree group detected, but only \(scope.displayNames.first ?? "current") is indexed\n", stderr)
+          }
 
           if !scope.unresolvedSiblings.isEmpty {
             fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
@@ -377,13 +384,15 @@ struct ContextifyQueryCLI {
           metadataDict["sourceCounts"] = .object(sourceCounts)
 
           // Skew warning: when results truncated and >90% from one worktree
-          if hasMore && !trimmedResults.isEmpty {
+          // Only show when expansion was actually applied and we have 2+ projects
+          if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
             let maxCount = sourceCounts.values.compactMap { value -> Int? in
               if case .number(let n) = value { return Int(n) }
               return nil
             }.max() ?? 0
             let total = trimmedResults.count
-            if Double(maxCount) / Double(total) > 0.9 {
+            // Also require minimum result count to avoid noisy warnings for small limits
+            if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
               fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
             }
           }
@@ -397,10 +406,17 @@ struct ContextifyQueryCLI {
       case .activity:
         let scope = try resolveProjectScope(options: options, service: service)
 
-        // Print scope info to stderr when worktree group detected (not just when multiple resolved)
+        // Print scope info to stderr when worktree group detected
         if scope.worktreeGroupDetected {
-          fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
-          fputs("(use --this-worktree to search only current)\n", stderr)
+          if options.thisWorktreeOnly {
+            fputs("Worktree group detected; searching current only (--this-worktree)\n", stderr)
+          } else if scope.expansionApplied {
+            fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+            fputs("(use --this-worktree to search only current)\n", stderr)
+          } else {
+            // Only one worktree resolved to DB (others excluded/archived/not indexed)
+            fputs("Worktree group detected, but only \(scope.displayNames.first ?? "current") is indexed\n", stderr)
+          }
 
           if !scope.unresolvedSiblings.isEmpty {
             fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
@@ -1505,7 +1521,11 @@ private func resolveProjectScope(
 
   // 4. Load config for archived/names
   let config = loadWorktreeConfig(gitRoot: group.commonGitDir.deletingLastPathComponent())
-  let excludeList = options.exclude?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? []
+  // Parse exclude list, trimming whitespace and ignoring empty segments (e.g., "a,,b")
+  let excludeList = options.exclude?
+    .split(separator: ",")
+    .map { String($0).trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty } ?? []
 
   // 5. Build list of all worktrees considered (for messaging)
   let worktreesConsidered = group.worktrees.map { worktree -> String in

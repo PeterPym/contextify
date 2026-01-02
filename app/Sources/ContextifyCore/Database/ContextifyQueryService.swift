@@ -503,9 +503,11 @@ public struct ContextifyQueryService: Sendable {
         if projectIds.isEmpty {
           return []  // Empty array = no results
         }
-        let placeholders = projectIds.map { _ in "?" }.joined(separator: ", ")
+        // Dedupe and sort for deterministic SQL and reduced query work
+        let uniqueIds = Array(Set(projectIds)).sorted()
+        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
         sql += " AND e.project_id IN (\(placeholders))"
-        for id in projectIds {
+        for id in uniqueIds {
           args.append(id)
         }
       }
@@ -582,9 +584,11 @@ public struct ContextifyQueryService: Sendable {
   }
 
   // Backward compatibility overload for old single projectId parameter
+  @available(*, deprecated, message: "Use search(query:projectIds:...) instead")
+  @_disfavoredOverload
   public func search(
     query: String,
-    projectId: String? = nil,
+    projectId: String?,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -915,8 +919,10 @@ public struct ContextifyQueryService: Sendable {
   }
 
   // Backward compatibility overload for old single projectId parameter
+  @available(*, deprecated, message: "Use activity(projectIds:...) instead")
+  @_disfavoredOverload
   public func activity(
-    projectId: String? = nil,
+    projectId: String?,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -1008,9 +1014,11 @@ public struct ContextifyQueryService: Sendable {
         if projectIds.isEmpty {
           return []  // Empty array = no results
         }
-        let placeholders = projectIds.map { _ in "?" }.joined(separator: ", ")
+        // Dedupe and sort for deterministic SQL and reduced query work
+        let uniqueIds = Array(Set(projectIds)).sorted()
+        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
         sql += " AND e.project_id IN (\(placeholders))"
-        for id in projectIds {
+        for id in uniqueIds {
           args.append(id)
         }
       }

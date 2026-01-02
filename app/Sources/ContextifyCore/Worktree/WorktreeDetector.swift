@@ -31,19 +31,23 @@ public struct WorktreeDetector {
             return nil
         }
 
-        guard let commonGitDir = runGit(["rev-parse", "--git-common-dir"], in: directory) else {
-            return nil
-        }
-
-        // Resolve relative path (e.g., ".git") against repo root
-        // git rev-parse --git-common-dir returns relative path from main worktree
+        // Try --path-format=absolute first (Git 2.31+), fallback to manual resolution
         let resolvedGitDir: URL
-        if commonGitDir.hasPrefix("/") {
-            resolvedGitDir = URL(fileURLWithPath: commonGitDir)
+        if let absoluteGitDir = runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: directory),
+           absoluteGitDir.hasPrefix("/") {
+            resolvedGitDir = URL(fileURLWithPath: absoluteGitDir).resolvingSymlinksInPath()
+        } else if let commonGitDir = runGit(["rev-parse", "--git-common-dir"], in: directory) {
+            // Fallback: resolve relative path (e.g., ".git") against repo root
+            if commonGitDir.hasPrefix("/") {
+                resolvedGitDir = URL(fileURLWithPath: commonGitDir).resolvingSymlinksInPath()
+            } else {
+                resolvedGitDir = URL(fileURLWithPath: repoRoot)
+                    .appendingPathComponent(commonGitDir)
+                    .standardized
+                    .resolvingSymlinksInPath()
+            }
         } else {
-            resolvedGitDir = URL(fileURLWithPath: repoRoot)
-                .appendingPathComponent(commonGitDir)
-                .standardized
+            return nil
         }
 
         guard let worktreeListOutput = runGit(["worktree", "list", "--porcelain"], in: directory) else {
@@ -62,32 +66,71 @@ public struct WorktreeDetector {
         )
     }
 
-    private static func runGit(_ args: [String], in directory: URL) -> String? {
+    /// Default timeout for git commands (seconds)
+    private static let gitTimeoutSeconds: TimeInterval = 5.0
+
+    private static func runGit(_ args: [String], in directory: URL, timeout: TimeInterval = gitTimeoutSeconds) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = args
         process.currentDirectoryURL = directory
 
-        // Hardening: prevent hangs
+        // Hardening: prevent hangs from prompts, pagers, or odd configs
         var env = ProcessInfo.processInfo.environment
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_PAGER"] = "cat"
         env["LC_ALL"] = "C"
         process.environment = env
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        // Merge stderr into stdout to avoid separate pipe buffer deadlock
+        process.standardError = stdoutPipe
 
         do {
             try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             return nil
         }
+
+        // Use DispatchSemaphore for timeout with proper pipe draining
+        let semaphore = DispatchSemaphore(value: 0)
+        var outputData = Data()
+        var timedOut = false
+
+        // Read stdout asynchronously to avoid pipe buffer deadlock
+        let readQueue = DispatchQueue(label: "dev.contextify.git-read")
+        readQueue.async {
+            outputData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+
+        // Wait for process with timeout
+        DispatchQueue.global().async {
+            process.waitUntilExit()
+            semaphore.signal()
+        }
+
+        let result = semaphore.wait(timeout: .now() + timeout)
+        if result == .timedOut {
+            timedOut = true
+            process.terminate()
+            // Give it a moment, then force kill if needed
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+            }
+            return nil
+        }
+
+        guard !timedOut && process.terminationStatus == 0 else {
+            return nil
+        }
+
+        // Give the read queue a moment to finish
+        readQueue.sync {}
+
+        return String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func parseWorktreeList(_ output: String) -> [URL] {
