@@ -35,6 +35,17 @@ public struct WorktreeDetector {
             return nil
         }
 
+        // Resolve relative path (e.g., ".git") against repo root
+        // git rev-parse --git-common-dir returns relative path from main worktree
+        let resolvedGitDir: URL
+        if commonGitDir.hasPrefix("/") {
+            resolvedGitDir = URL(fileURLWithPath: commonGitDir)
+        } else {
+            resolvedGitDir = URL(fileURLWithPath: repoRoot)
+                .appendingPathComponent(commonGitDir)
+                .standardized
+        }
+
         guard let worktreeListOutput = runGit(["worktree", "list", "--porcelain"], in: directory) else {
             return nil
         }
@@ -45,7 +56,7 @@ public struct WorktreeDetector {
         }
 
         return WorktreeGroup(
-            commonGitDir: URL(fileURLWithPath: commonGitDir),
+            commonGitDir: resolvedGitDir,
             worktrees: worktrees,
             currentWorktree: URL(fileURLWithPath: repoRoot)
         )

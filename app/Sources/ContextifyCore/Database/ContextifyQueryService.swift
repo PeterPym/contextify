@@ -529,6 +529,8 @@ public struct ContextifyQueryService: Sendable {
         args.append(until)
       }
 
+      // Order by BM25 relevance (more negative = better match), then recency, then id for stability
+      sql += " ORDER BY score ASC, e.timestamp DESC, e.id ASC"
       sql += " LIMIT ?"
       args.append(limit)
 

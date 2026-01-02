@@ -53,7 +53,9 @@ private struct ProjectScope {
   let displayNames: [String]
   let unresolvedSiblings: [String]
   let excluded: [String]
-  let expansionApplied: Bool
+  let worktreeGroupDetected: Bool  // Was a worktree group found?
+  let worktreesConsidered: [String]  // All worktrees in the group
+  let expansionApplied: Bool  // Did multiple worktrees resolve to DB?
 }
 
 @main
@@ -318,8 +320,8 @@ struct ContextifyQueryCLI {
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let scope = try resolveProjectScope(options: options, service: service)
 
-        // Print scope info to stderr
-        if scope.expansionApplied {
+        // Print scope info to stderr when worktree group detected (not just when multiple resolved)
+        if scope.worktreeGroupDetected {
           fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
           fputs("(use --this-worktree to search only current)\n", stderr)
 
@@ -364,15 +366,27 @@ struct ContextifyQueryCLI {
           "hasMore": .bool(hasMore)
         ]
 
-        // Add worktree expansion metadata
-        if scope.expansionApplied {
+        // Add worktree expansion metadata when group detected
+        if scope.worktreeGroupDetected {
           metadataDict["worktreeExpansion"] = .object([
-            "enabled": .bool(true),
+            "enabled": .bool(scope.expansionApplied),
             "worktrees": .array(scope.displayNames.map { .string($0) }),
             "excluded": .array(scope.excluded.map { .string($0) }),
             "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
           ])
           metadataDict["sourceCounts"] = .object(sourceCounts)
+
+          // Skew warning: when results truncated and >90% from one worktree
+          if hasMore && !trimmedResults.isEmpty {
+            let maxCount = sourceCounts.values.compactMap { value -> Int? in
+              if case .number(let n) = value { return Int(n) }
+              return nil
+            }.max() ?? 0
+            let total = trimmedResults.count
+            if Double(maxCount) / Double(total) > 0.9 {
+              fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+            }
+          }
         }
 
         let metadata: JSONValue = .object(metadataDict)
@@ -383,8 +397,8 @@ struct ContextifyQueryCLI {
       case .activity:
         let scope = try resolveProjectScope(options: options, service: service)
 
-        // Print scope info to stderr
-        if scope.expansionApplied {
+        // Print scope info to stderr when worktree group detected (not just when multiple resolved)
+        if scope.worktreeGroupDetected {
           fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
           fputs("(use --this-worktree to search only current)\n", stderr)
 
@@ -1460,6 +1474,7 @@ private func resolveProjectScope(
   } else {
     return ProjectScope(projectIds: [], displayNames: [],
                        unresolvedSiblings: [], excluded: [],
+                       worktreeGroupDetected: false, worktreesConsidered: [],
                        expansionApplied: false)
   }
 
@@ -1469,6 +1484,7 @@ private func resolveProjectScope(
       return ProjectScope(projectIds: [id],
                          displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
                          unresolvedSiblings: [], excluded: [],
+                         worktreeGroupDetected: false, worktreesConsidered: [],
                          expansionApplied: false)
     }
     throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
@@ -1481,6 +1497,7 @@ private func resolveProjectScope(
       return ProjectScope(projectIds: [id],
                          displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
                          unresolvedSiblings: [], excluded: [],
+                         worktreeGroupDetected: false, worktreesConsidered: [],
                          expansionApplied: false)
     }
     throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
@@ -1490,7 +1507,12 @@ private func resolveProjectScope(
   let config = loadWorktreeConfig(gitRoot: group.commonGitDir.deletingLastPathComponent())
   let excludeList = options.exclude?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? []
 
-  // 5. Resolve each sibling
+  // 5. Build list of all worktrees considered (for messaging)
+  let worktreesConsidered = group.worktrees.map { worktree -> String in
+    config?.nameFor(path: worktree.path) ?? worktree.lastPathComponent
+  }
+
+  // 6. Resolve each sibling
   var projectIds: [String] = []
   var displayNames: [String] = []
   var unresolvedSiblings: [String] = []
@@ -1526,6 +1548,8 @@ private func resolveProjectScope(
     displayNames: displayNames,
     unresolvedSiblings: unresolvedSiblings,
     excluded: excluded,
+    worktreeGroupDetected: true,
+    worktreesConsidered: worktreesConsidered,
     expansionApplied: projectIds.count > 1
   )
 }
