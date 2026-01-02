@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-31 (Documentation audit - line references, health score)
+**Last Updated:** 2026-01-01 (Added P0: #INGEST-UI-LAG, #WINDOW-CONTROLS-DISABLED from user reports)
 **Status:** Active
 
 **Priority Levels:**
@@ -79,6 +79,65 @@ brought back into the timeline view. This creates noise and clutter.
 - Find where thinking messages started appearing (side chain feature commits)
 - Identify the transcript record types being shown (thinking vs other)
 - Determine filtering logic needed in timeline data loading
+
+---
+
+## Ingest UI Lag - Main Thread Blocking (1 item)
+
+**Status:** Not started
+**Priority:** P0 (user-reported, multiple reports)
+**Discovered:** 2025-12-31
+**Reports:** Reddit DM (luongnv-com), Reddit comment (VoiceAggravating2699)
+
+- [ ] #INGEST-UI-LAG: Fix main thread blocking during transcript ingestion
+
+**Background:**
+Multiple users report the app becomes completely unresponsive during initial transcript
+ingestion. The UI freezes, window controls stop working, and users must force quit.
+This is especially severe for users with many transcripts. Sidechain feature may have
+increased ingestion cost significantly.
+
+**Symptoms:**
+1. App appears frozen during first-run ingestion
+2. Window control buttons (close/minimize/maximize) unresponsive
+3. Users force-quitting because app seems hung
+4. Reports specifically on App Store build, macOS 15.7.1
+
+**Investigation needed:**
+1. Profile ingest pipeline for main thread work
+2. Check if HooverScheduler/sidechain parsing blocks main actor
+3. Identify which operations need to move off main thread
+4. Consider progress indicator so users know app is working
+
+**Related:** Supersedes P2 #SWITCH-DELAY-VERIFY which assumed issue was resolved.
+
+---
+
+## Window Controls Grayed Out on First Launch (1 item)
+
+**Status:** Not started
+**Priority:** P0 (user-reported, App Store specific)
+**Discovered:** 2025-12-31
+**Reports:** Reddit DM (luongnv-com), Reddit comment (VoiceAggravating2699)
+
+- [ ] #WINDOW-CONTROLS-DISABLED: Fix grayed-out window buttons on first launch
+
+**Background:**
+Users report window control buttons (close, minimize, maximize) appear grayed out
+as if the app is not focused. This happens specifically on first launch in the
+App Store build. Users cannot close the app and must force quit.
+
+**User quote:** "When I firstly installed it, the program buttons on the top left
+are gray out like the application is no focused. I was unable to exit it and had
+to force quit."
+
+**Investigation needed:**
+1. Determine if this is main-thread-blocking related (same root cause as #INGEST-UI-LAG)
+2. Or if this is a separate issue with window activation/focus during onboarding
+3. Check if modal sheets or permission dialogs affect window control state
+4. Test App Store build first-launch flow specifically
+
+**Environment:** Mac mini, macOS 15.7.1, App Store build, Lite Mode
 
 ---
 
