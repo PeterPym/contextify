@@ -6,12 +6,13 @@ This document describes how transcript files on disk become searchable timeline 
 
 - **Provider**: A transcript source such as `claude.code` or `codex.cli`.
 - **Lightweight project**: A filesystem-discovered project used for UI listing (`LightweightDiscoveryService`).
-- **DB project**: A row in `projects`, identified by `ActiveProjectContext.id` (UUID).
+- **DB project**: A row in `projects` table, identified by a UUID. Created via `TranscriptOrchestrator.getOrCreateProject()`.
 - **Transcript row**: A row in `transcripts` representing a file, keyed by `transcript.id`.
 - **Hoover**: Streaming parser+ingestor (`HooverEngine.hooverTranscript`) that writes `transcript_entries` and updates checkpoints.
 - **Preview ingestion**: Bounded ingest intended to make the UI usable quickly (`IngestionMode.preview(entries:)`).
 - **Completion ingestion**: Full ingest to EOF (`IngestionMode.complete`).
 - **Watcher**: File-change monitor (`TranscriptWatcher`) that triggers incremental re-hoover when a transcript changes.
+- **HooverScheduler**: Optional concurrency controller (`HooverScheduler`) that queues hoover operations when `hooverSchedulerEnabled` is true.
 
 ## Build Variants: The Operational Differences
 
@@ -79,7 +80,9 @@ Constraints for sandbox builds:
 ┌───────────────────────────────────────────────────────────────────────┐
 │ 5) Core ingestion                                                      │
 │    TranscriptOrchestrator.ingestTranscript(transcriptId, mode, ...)     │
-│      → discoverTranscript(...) → doDiscoverTranscript()                 │
+│      → discoverTranscript(...)                                          │
+│          → (if hooverSchedulerEnabled) hooverScheduler.enqueue(...)     │
+│          → discoverTranscriptInternal(...) → doDiscoverTranscript()     │
 │          - preflight validation + cache                                 │
 │          - transcript upsert                                            │
 │          - hoover (parse + write entries + checkpoint)                  │
@@ -181,13 +184,14 @@ TranscriptOrchestrator.ingestTranscript(transcriptId, mode, notifyUI, startWatch
   ├─ file exists?
   │    - if missing: status=unavailable, ingest_state=complete, last_error
   ├─ discoverTranscript(projectId, fileURL, provider, sessionId, startWatching, ingestLimit)
+  │    ├─ (if hooverSchedulerEnabled) hooverScheduler.enqueue(...)
   │    └─ discoverTranscriptInternal(...)
   │         ├─ (App Store) accessProvider.withAccess(for: provider) { ... }
   │         └─ doDiscoverTranscript(...)
   │              - preflight validate + cache
   │              - transcriptRepo.upsert(...)
   │              - hooverEngine.hooverTranscript(..., limit: ingestLimit)
-  │              - if startWatching: TranscriptWatcher.watch(...)
+  │              - if startWatching: watcher.startWatching(...)
   ├─ releaseIngestionLock(transcriptId)
   └─ if notifyUI: post Notification("TranscriptUpdated", projectId)
 ```
@@ -244,8 +248,10 @@ Alternative behavior:
 
 # Key Code Anchors
 
-- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
-- `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
-- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
-- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` - startup, project selection
+- `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift` - preview/completion coordination
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` - high-level ingestion API
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` - file change monitoring
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift` - line-by-line parsing and DB writes
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - provider-specific parsing (Claude, Codex)
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift` - filesystem project discovery

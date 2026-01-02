@@ -49,31 +49,39 @@ struct WindowCommands: Commands {
 
       Divider()
 
+      // Context-aware tab movement (Phase 5)
+      // - If tab is in a group: moves within the group only
+      // - If tab is solo: moves globally in the tab bar
       Button("Move Tab Left") {
         Task {
-          let state = ProjectSwitcherState.shared
-          guard let activeId = state.activeProjectId,
-                let idx = state.tabProjects.firstIndex(where: { $0.id == activeId }),
-                idx > 0 else { return }
-          var newOrder = state.tabProjects.map(\.id)
-          newOrder.swapAt(idx, idx - 1)
-          await state.reorderProjects(newOrder)
+          await ProjectSwitcherState.shared.moveActiveTabLeft()
         }
       }
       .keyboardShortcut("[", modifiers: [.command, .shift, .option])
 
       Button("Move Tab Right") {
         Task {
-          let state = ProjectSwitcherState.shared
-          guard let activeId = state.activeProjectId,
-                let idx = state.tabProjects.firstIndex(where: { $0.id == activeId }),
-                idx < state.tabProjects.count - 1 else { return }
-          var newOrder = state.tabProjects.map(\.id)
-          newOrder.swapAt(idx, idx + 1)
-          await state.reorderProjects(newOrder)
+          await ProjectSwitcherState.shared.moveActiveTabRight()
         }
       }
       .keyboardShortcut("]", modifiers: [.command, .shift, .option])
+
+      Divider()
+
+      // Group movement (Phase 5) - only works when active tab is in a group
+      Button("Move Group Left") {
+        Task {
+          await ProjectSwitcherState.shared.moveActiveGroupLeft()
+        }
+      }
+      .keyboardShortcut("[", modifiers: [.command, .shift, .control])
+
+      Button("Move Group Right") {
+        Task {
+          await ProjectSwitcherState.shared.moveActiveGroupRight()
+        }
+      }
+      .keyboardShortcut("]", modifiers: [.command, .shift, .control])
     }
   }
 }

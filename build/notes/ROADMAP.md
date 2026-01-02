@@ -29,7 +29,7 @@ priority_levels:
 
 **Challenge:** SwiftUI gesture handling - tried `Button`, `.highPriorityGesture`, `.simultaneousGesture` but row's tap gesture still captures. Need to research gesture exclusion or view restructuring.
 
-**Location:** `TimelineEntryRow.swift:198-224`
+**Location:** `TimelineEntryRow.swift` - checkmark and scroll-to logic around lines 297-319 (line numbers drift; search for `isCompletion`)
 
 ---
 

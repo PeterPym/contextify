@@ -35,13 +35,9 @@ swift test --verbose
 
 ### Tests in This Directory (Platform-Agnostic)
 
-Located in `Tests/ContextifyCoreTests/`:
+Located in `Tests/ContextifyCoreTests/` (32 test files as of 2025-12):
 
-- ✅ `DatabaseTests.swift` - Database schema, migrations, repositories (GRDB)
-- ✅ `TranscriptParserTests.swift` - Transcript format parsing logic
-- ✅ `ProjectIdentityTests.swift` - Project identity resolution
-- ✅ `MetadataParserTests.swift` - Metadata extraction from transcripts
-- ✅ `TestHelpers.swift` - Shared test utilities
+Run `ls Tests/ContextifyCoreTests/*.swift | wc -l` to get the current count.
 
 **Why these tests are here:**
 - Pure Swift + Foundation + GRDB only

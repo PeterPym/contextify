@@ -4,27 +4,27 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'app/**'
-      - 'Contextify/**'
-      - 'Tests/**'
+      # Swift source files
+      - 'app/Sources/**/*.swift'
+      - 'Contextify/**/*.swift'
+      - 'Tests/**/*.swift'
+      # Package manifests
       - 'Package.swift'
       - 'Package.resolved'
+      # CI config and QA scripts
       - '.github/workflows/macos-build.yml'
-      - 'scripts/qa/**'
-    paths-ignore:
-      - '**/*.md'
+      - 'scripts/qa/**/*.sh'
   pull_request:
     branches: [ main ]
     paths:
-      - 'app/**'
-      - 'Contextify/**'
-      - 'Tests/**'
+      - 'app/Sources/**/*.swift'
+      - 'Contextify/**/*.swift'
+      - 'Tests/**/*.swift'
       - 'Package.swift'
       - 'Package.resolved'
       - '.github/workflows/macos-build.yml'
-      - 'scripts/qa/**'
-    paths-ignore:
-      - '**/*.md'
+      - 'scripts/qa/**/*.sh'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -59,11 +59,14 @@ jobs:
             -project Contextify/Contextify.xcodeproj \
             -scheme Contextify \
             -configuration Debug \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .derived-dmg \
             -skipPackagePluginValidation \
             -skipMacroValidation \
-            build | xcpretty || exit ${PIPESTATUS[0]}
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1
         env:
           NSUnbufferedIO: "YES"
 
@@ -86,6 +89,7 @@ jobs:
 
       - name: Upload QA logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: qa-logs
@@ -93,6 +97,7 @@ jobs:
 
       - name: Archive build logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: xcode-build-logs

@@ -1,7 +1,6 @@
 # Sandbox & App Store Architecture
 
-**Status:** Active (as of 2025-11-12)
-**Relevant Branch:** `feature/appstore-folder-authorization`
+**Status:** Active
 
 ## Overview
 
@@ -40,10 +39,11 @@ Without bookmarks, sandboxed builds can only access:
 ### Implementation
 
 **Key Files:**
-- `HUDCore.swift` - Main bookmark lifecycle (`updateSecurityScope`, `securityScopedURL`)
-- `HUDPreferences.swift` - Bookmark persistence (UserDefaults)
-- `DatabaseManager.swift` - Database location bookmarks
-- `ActiveProjectContext.swift` - Bookmark transport via coordinator
+- `HUDCore.swift` - `HUDViewModel` class manages security-scoped URLs; `HUDPreferences` enum handles bookmark persistence to UserDefaults
+- `DatabaseManager.swift#openDatabase()` - Database location bookmarks and security-scoped access
+- `ActiveProjectContext.swift` - Bookmark transport via coordinator (includes `bookmark: Data?` property)
+- `SandboxTranscriptAccessProvider.swift` - Transcript directory access with security-scoped bookmarks
+- `TranscriptAccessProvider.swift` - Protocol defining `withAccess(for:body:)` pattern
 
 **Core Pattern:**
 ```swift
@@ -81,136 +81,104 @@ let contents = try FileManager.default.contentsOfDirectory(at: url, ...)
 
 ### Git Monitoring (updateHeadWatcher)
 
-**Location:** `HUDCore.swift:894-1035`
+**Location:** `HUDCore.swift#HUDViewModel.updateHeadWatcher()`
 
-**Unsandboxed Flow:**
-```swift
-updateHeadWatcher() {
-    // isSandboxed = false, skip bookmark check
-    // Directly create file watchers on .git/HEAD
-}
-```
+**DMG (Unsandboxed) Flow:**
+Git file watchers are created directly on `.git/HEAD` and related files. No bookmark or security scope required.
 
-**Sandboxed Flow (REQUIRED):**
-```swift
-updateHeadWatcher() {
-    // Guard: MUST have security-scoped URL
-    guard !isSandboxed || securityScopedURL != nil else {
-        watcherLog.error("Sandboxed without security scope; skipping watcher arm")
-        return  // ← Watchers silently fail
-    }
-
-    // Proceed with watcher creation
-}
-```
-
-**Critical Requirement:** `securityScopedURL` MUST be non-nil before calling `updateHeadWatcher()` in sandbox builds.
-
-### Working Paths (Security Scope Restored)
-
-**1. Startup with Existing Bookmark** (`HUDCore.swift:500-508`)
-```swift
-Task { @MainActor in
-    await startup()
-    // ↓
-    if let bookmark = preferences.retrieveBookmark() {
-        let url = try URL(resolvingBookmarkData: bookmark, ...)
-        await updateSecurityScope(url)  // ← Sets securityScopedURL
-    }
-    updateHeadWatcher()  // ← Works (security scope active)
-}
-```
-
-**2. User Sets Project Root** (`HUDCore.swift:777-810`)
-```swift
-func adoptDetectedRoot(_ url: URL, persist: Bool) {
-    if persist {
-        let bookmark = try url.bookmarkData(...)
-        preferences.storeBookmark(bookmark)
-    }
-    await updateSecurityScope(url)  // ← Sets securityScopedURL
-    updateHeadWatcher()  // ← Works (security scope active)
-}
-```
-
-### Broken Path (Security Scope NOT Restored)
-
-**Coordinator-Driven Updates** (`HUDCore.swift:528-538`)
-```swift
-private func handleCoordinatorUpdate(_ context: ActiveProjectContext) {
-    projectRootURL = URL(fileURLWithPath: context.path)
-
-    // BUG: context.bookmark exists but is NEVER used
-    // securityScopedURL remains nil
-
-    updateHeadWatcher()  // ← FAILS in sandbox (guard fires)
-}
-```
-
-**Impact:**
-- All coordinator updates fail to restore security scope
-- Affects: startup, project switching, welcome modal completion
-- Git watchers never arm in sandboxed builds
-- Only manual `setProjectRoot()` works (bypasses coordinator)
-
-**Affected Flows:**
-1. `StartupCoordinator.ready()` → `handleCoordinatorUpdate()` → watcher fails
-2. `switchProject(to:)` → `handleCoordinatorUpdate()` → watcher fails
-3. Welcome modal completion → coordinator update → watcher fails
-
----
-
-## Bug History & Known Issues
-
-### ✅ Bug 1: Git Watchers Fail in Sandbox (RESOLVED 2025-11-12)
-
-**Status:** FIXED in commit 8cf56b2 (2025-11-12 14:32:34)
-
-**Was:** `handleCoordinatorUpdate()` didn't restore security-scoped access from bookmarks, causing git watchers to fail silently in sandboxed builds.
-
-**Fix Applied:**
-`handleCoordinatorUpdate()` now restores security scope from `context.bookmark` before calling `updateHeadWatcher()` (HUDCore.swift:561-578):
+**App Store (Sandboxed) Flow:**
+Git monitoring is **disabled entirely** in sandboxed builds:
 
 ```swift
-private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
-    projectRootURL = URL(fileURLWithPath: context.path)
-
-    // Restore security-scoped access from bookmark
-    if let bookmark = context.bookmark {
-        do {
-            var isStale = false
-            let scopedURL = try URL(
-                resolvingBookmarkData: bookmark,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            updateSecurityScope(for: scopedURL, persisted: true)
-            // ...
-        } catch {
-            watcherLog.error("Failed to resolve bookmark: ...")
-        }
-    }
-
-    updateHeadWatcher()  // Now has valid security scope
-}
-```
-
-**Note on Git Monitoring:** As of 2025-11-12, git monitoring is **disabled entirely** in App Store builds (HUDCore.swift:963-966):
-```swift
+// HUDViewModel.updateHeadWatcher()
 guard !Sandbox.isSandboxed else {
     watcherLog.info("Git monitoring disabled (App Store build)")
     return
 }
 ```
 
-This was a deliberate decision to avoid complexity with App Store sandbox restrictions. Even with security-scoped bookmarks restored, git file watchers do not run in sandboxed builds.
+This is a deliberate design choice: git monitoring would require per-project folder access grants from the user, which adds complexity for minimal benefit. App Store builds get branch information from transcript metadata instead (see `handleCoordinatorUpdate()` for fallback logic).
 
-### Bug 2: Transcript Hoovering Fails After Welcome Modal (P0)
+### Startup Flow (DMG and App Store)
 
-**See:** `/tmp/contextify-welcome-modal-debug-status.md` for full details.
+**Location:** `HUDCore.swift#HUDViewModel.startup()`
 
-**Relation to Sandboxing:** Welcome modal uses bookmarks to access `~/.claude/` and `~/.codex/` in sandboxed builds. If bookmarks aren't properly restored during ingestion, hoovering will fail silently.
+Both builds resolve bookmarks and restore security scope during startup:
+
+```swift
+// 1. Resolve bookmark from UserDefaults
+let (bookmarkURL, persistedPath) = await Task.detached {
+    return (HUDPreferences.resolveBookmark(), HUDPreferences.getPersistedRoot())
+}.value
+
+// 2. Validate and restore security scope
+if let bookmark = bookmarkURL {
+    if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+        // Skip sandbox container paths
+    } else {
+        updateSecurityScope(for: bookmark, persisted: true)
+        updateHeadWatcher()  // No-op in sandboxed builds
+    }
+}
+```
+
+### Coordinator Update Flow
+
+**Location:** `HUDCore.swift#HUDViewModel.handleCoordinatorUpdate()`
+
+When `StartupCoordinator` publishes a new `ActiveProjectContext`:
+
+1. Updates `projectRootURL` and resolves branch (git or transcript metadata)
+2. Restores security scope from `context.bookmark` if available
+3. Calls `updateHeadWatcher()` (no-op in sandboxed builds)
+
+**Note:** For discovered projects in sandboxed builds, `context.bookmark` is typically `nil` because the app only has access to transcript directories, not project directories. This is expected behavior.
+
+---
+
+## Transcript Access Architecture
+
+### TranscriptAccessProvider Protocol
+
+**Location:** `TranscriptAccessProvider.swift`
+
+All filesystem operations on transcript directories must go through this protocol:
+
+```swift
+public protocol TranscriptAccessProvider: Sendable {
+    func withAccess<T>(
+        for provider: String,  // TranscriptProviderID.claude or .codex
+        _ body: @Sendable (URL) throws -> T
+    ) throws -> T
+}
+```
+
+### DMG Builds: PassthroughAccessProvider
+
+**Location:** `TranscriptAccessProvider.swift#PassthroughAccessProvider`
+
+Direct filesystem access. Simply returns the appropriate home directory path:
+- Claude: `~/.claude/projects/`
+- Codex: `~/.codex/sessions/`
+
+### App Store Builds: SandboxTranscriptAccessProvider
+
+**Location:** `SandboxTranscriptAccessProvider.swift`
+
+Manages security-scoped bookmarks for transcript directories. Key behaviors:
+
+1. **Init:** Receives pre-resolved security-scoped URLs from onboarding
+2. **Scope:** Calls `startAccessingSecurityScopedResource()` once during init
+3. **Access:** Returns the scoped URL when `withAccess()` is called
+4. **Lifetime:** Security scope remains active for the lifetime of the provider
+
+```swift
+// Created during app initialization with URLs from onboarding bookmarks
+let provider = SandboxTranscriptAccessProvider(
+    claudeRoot: resolvedClaudeURL,
+    codexRoot: resolvedCodexURL
+)
+```
 
 ---
 
@@ -246,11 +214,12 @@ open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 
 # Grant folder permissions in welcome modal
 # Verify:
-# 1. Projects discovered ✓
-# 2. Timeline loads ✓
-# 3. Git branch shows in header ← This will fail until Bug 1 is fixed
-# 4. Branch updates when switching git branches ← This will fail
+# 1. Projects discovered
+# 2. Timeline loads
+# 3. Branch shows (from transcript metadata in App Store builds)
 ```
+
+**Note:** App Store builds get branch information from transcript metadata rather than git file monitoring. This is by design.
 
 ### Permission Testing
 
@@ -290,23 +259,49 @@ log stream --predicate 'subsystem == "dev.contextify" AND category == "GitWatche
 ## Distribution Mode Detection
 
 **Runtime Check:**
+
+**Location:** `HUDCore.swift#Sandbox`
+
 ```swift
-// HUDCore.swift
-let isSandboxed: Bool = {
-    let env = ProcessInfo.processInfo.environment
-    return env["APP_SANDBOX_CONTAINER_ID"] != nil
-}()
+public enum Sandbox {
+    /// Returns true when running in a sandboxed environment.
+    /// Uses runtime detection because compile-time flags (#if APPSTORE_BUILD)
+    /// don't propagate to Swift package code.
+    public static var isSandboxed: Bool {
+        #if DEBUG
+        if let override = isSandboxedOverrideForTests {
+            return override
+        }
+        #endif
+        return isRuntimeSandboxed
+    }
+
+    /// Runtime check via environment variables set by macOS for sandboxed apps.
+    public static var isRuntimeSandboxed: Bool {
+        #if os(macOS)
+        if getenv("APP_SANDBOX_CONTAINER_ID") != nil { return true }
+        if ProcessInfo.processInfo.environment["__XPC_SANDBOXED"] == "1" { return true }
+        #endif
+        return false
+    }
+}
 ```
+
+**Why Runtime Detection?**
+Compile-time flags like `#if APPSTORE_BUILD` don't propagate to Swift package code (ContextifyCore). Using runtime detection via `APP_SANDBOX_CONTAINER_ID` or `__XPC_SANDBOXED` environment variables ensures consistent behavior across both the main app target and the Swift package.
 
 **Build-Time Configuration:**
 - DMG: `Contextify/Contextify.entitlements` (no sandbox key)
 - App Store: `Contextify/Contextify-AppStore.entitlements` (includes `com.apple.security.app-sandbox = true`)
 
-**Capabilities Required (App Store):**
+**Entitlements (App Store):**
+
+From `Contextify/Contextify-AppStore.entitlements`:
 - `com.apple.security.app-sandbox` - Enable sandbox
 - `com.apple.security.files.user-selected.read-write` - User-selected file access
 - `com.apple.security.files.bookmarks.app-scope` - Bookmark creation
-- `com.apple.security.network.client` - LLM API calls (if applicable)
+
+**Note:** Network entitlements are not required because Contextify's LLM processing uses Apple Intelligence APIs (macOS 26+) rather than network-based LLM APIs.
 
 ---
 
@@ -363,54 +358,40 @@ bash scripts/xc.sh --dist=appstore Debug cleanrun
 ```
 
 **Common Failures:**
-- File operations work in DMG, fail silently in App Store
-- Watchers arm in DMG, skip in App Store (current bug)
-- Database migrations work in DMG, corrupt in App Store (if paths differ)
+- File operations work in DMG, fail silently in App Store (missing security scope)
+- Watchers arm in DMG, disabled by design in App Store
+- Database at wrong location if onboarding not completed properly
 
 ---
 
 ## Future Work
 
-### Bookmark Refresh Strategy
+### Per-Project Directory Access (P4)
 
-**Current:** Bookmarks resolved once at startup, held for app lifetime.
+**Current:** App Store builds only have access to transcript directories (`~/.claude/projects/`, `~/.codex/sessions/`). Project directories are discovered from transcript cwd hints but cannot be accessed directly.
 
-**Issue:** Long-running app sessions may lose access if user revokes permissions via System Settings.
+**Impact:** Without project directory access, App Store builds cannot:
+- Monitor git branches via file watchers (using transcript metadata instead)
+- Perform Finder reveals to project directories
+- Access any project files directly
 
-**Proposal:** Periodic bookmark validation (every 5 minutes):
+**Proposal:** See ROADMAP.md for P4-PROJECT-DIRECTORY-ACCESS enhancement.
+
+### Stale Bookmark Handling
+
+**Current:** Bookmark staleness is detected during resolution but handling is minimal.
+
+**Implementation:** `HUDPreferences.resolveBookmarkData()` already detects stale bookmarks:
 ```swift
-Task {
-    while !Task.isCancelled {
-        try await Task.sleep(for: .seconds(300))
-        await validateBookmark()
-    }
+var stale = false
+let url = try URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale)
+if stale {
+    // Re-store the bookmark to update it
+    try? storeBookmark(for: canonical, key: bookmarkKey)
 }
 ```
 
-### Bookmark Migration
-
-**Current:** No migration path if bookmark becomes stale (user moved folder, renamed, etc.).
-
-**Proposal:** Detect stale bookmarks and prompt user to re-select:
-```swift
-var isStale = false
-let url = try URL(resolvingBookmarkData: bookmark, bookmarkDataIsStale: &isStale)
-if isStale {
-    // Prompt user to re-select folder
-    // Create new bookmark
-}
-```
-
-### Multi-Project Bookmark Management
-
-**Current:** Single global bookmark for project root.
-
-**Issue:** Switching between projects in different locations requires re-granting permissions.
-
-**Proposal:** Per-project bookmarks stored in database:
-```sql
-ALTER TABLE projects ADD COLUMN bookmark BLOB;
-```
+**Future:** Could prompt user to re-grant access if bookmark resolution fails entirely.
 
 ---
 
@@ -424,8 +405,5 @@ ALTER TABLE projects ADD COLUMN bookmark BLOB;
 **Contextify Docs:**
 - First-run testing: `build/docs/testing/first-run-qa-guide.md`
 - Startup coordination: `build/docs/architecture/startup-coordinator.md`
-- Database migration: `build/docs/components/database-migration.md`
-
-**Related Issues:**
-- Welcome modal debug status: `/tmp/contextify-welcome-modal-debug-status.md`
-- P0 bugs: `build/notes/TODOS.md`
+- Transcript access: `build/docs/architecture/transcript-access-security.md`
+- Security-scoped bookmarks guide: `build/docs/guides/security-scoped-bookmarks.md`

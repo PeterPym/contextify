@@ -40,6 +40,9 @@ From analysis of 18,589 records across 43 transcripts:
 | `file-history-snapshot` | 907 | 4.9% | File backup/version tracking |
 | `system` | 55 | 0.3% | System events, commands, errors |
 | `summary` | 48 | 0.3% | Session summaries for navigation |
+| `queue-operation` | varies | <0.1% | Message queue lifecycle events |
+| `timeline-state` | varies | <0.1% | UI timeline state snapshots (skipped) |
+| `queue-operation-result` | varies | <0.1% | Queue operation results (skipped) |
 
 ---
 
@@ -61,6 +64,7 @@ From analysis of 18,589 records across 43 transcripts:
   userType: "external",      // Always "external" in observed data
   cwd: string,               // Current working directory
   gitBranch: string,         // Active git branch
+  slug: string?,             // Session slug identifier (e.g., "woolly-purring-liskov")
   isSidechain: boolean,      // True = warmup/non-conversational
   isMeta: boolean?,          // True = meta/command wrapper (optional)
   message: {
@@ -69,8 +73,8 @@ From analysis of 18,589 records across 43 transcripts:
   },
   toolUseResult: ToolUseResult?, // Tool execution result (optional)
   thinkingMetadata: ThinkingMetadata?, // Thinking trigger info (optional)
-  isVisibleInTranscriptOnly: boolean?, // UI hint (optional)
-  isCompactSummary: boolean? // Compact mode flag (optional)
+  isVisibleInTranscriptOnly: boolean?, // UI hint - transcript-only visibility (optional)
+  isCompactSummary: boolean? // True for compaction summary messages (optional)
 }
 ```
 
@@ -134,17 +138,19 @@ type ContentBlock =
   cwd: string,
   gitBranch: string,
   isSidechain: boolean,
-  requestId: string?,  // API request ID for tracking
+  requestId: string?,         // API request ID for tracking (top-level)
   isApiErrorMessage: boolean?,  // True if this is an error message
+  slug: string?,              // Session slug identifier (e.g., "woolly-purring-liskov")
   message: {
-    id: string,          // Message ID from API
+    id: string,          // Message ID from API (distinct from requestId)
     type: "message",
     role: "assistant",
     model: string,       // e.g., "claude-sonnet-4-5-20250929"
     content: ContentBlock[],
     stop_reason: string | null,  // Why generation stopped
     stop_sequence: string | null,
-    usage: UsageInfo
+    usage: UsageInfo,
+    service_tier: string?  // e.g., "standard"
   }
 }
 ```
@@ -249,10 +255,12 @@ type ContentBlock =
 {
   type: "summary",
   summary: string,   // Human-readable session summary
-  leafUuid: string,  // Conversation tree leaf identifier
+  leafUuid: string,  // Conversation tree leaf identifier (camelCase in JSON)
   cwd: string?       // Working directory (optional)
 }
 ```
+
+**Parser Bug:** The JSON field is `leafUuid` (camelCase), but `TranscriptParsers.swift` reads `json["leaf_uuid"]` (snake_case), causing this field to always be nil. The database column is `leaf_uuid`.
 
 **Examples:**
 - `"Claude Code Contextify Project Navigation Warmup"`
@@ -286,15 +294,29 @@ type ContentBlock =
   gitBranch: string,
   isSidechain: boolean,
   isMeta: boolean?,
+  slug: string?,            // Session slug identifier
   subtype: "local_command" | "compact_boundary" | "api_error",
   level: "info" | "error",
-  content: string?,         // Message content (for local_command, error details)
+  content: string?,         // Message content (for local_command, compact_boundary)
   logicalParentUuid: string?,  // For compact mode threading
-  compactMetadata: object?,    // Compact mode metadata
-  error: string?,           // Error message (for api_error)
-  retryAttempt: number?,    // Retry attempt number
-  maxRetries: number?,      // Max retry attempts
-  retryInMs: number?        // Retry delay in milliseconds
+  compactMetadata: CompactMetadata?,  // Compact mode metadata (see below)
+  error: ApiError?,         // Error object (for api_error subtype)
+  retryAttempt: number?,    // Retry attempt number (for api_error)
+  maxRetries: number?,      // Max retry attempts (for api_error)
+  retryInMs: number?        // Retry delay in milliseconds (for api_error)
+}
+
+// CompactMetadata structure (for compact_boundary subtype)
+type CompactMetadata = {
+  trigger: "auto" | "manual",
+  preTokens: number        // Token count before compaction
+}
+
+// ApiError structure (for api_error subtype)
+type ApiError = {
+  status: number,          // HTTP status code (e.g., 521)
+  headers: object,         // Response headers
+  requestID: string | null // API request ID
 }
 ```
 
@@ -422,14 +444,18 @@ Claude Code queues user messages sent during tool execution to prevent interrupt
   type: "queue-operation",
   operation: "enqueue" | "remove" | "popAll" | "dequeue",
   timestamp: string,         // ISO 8601
-  content?: string,          // User message text (absent in dequeue)
+  content?: string,          // User message text (see below for presence by operation)
   sessionId: string          // Session UUID
 }
 ```
 
 **Key Characteristics:**
 - **Metadata-only:** Queue operations are not conversational messages
-- **Content field:** Present in `enqueue`, `remove`, `popAll`; **absent** in `dequeue`
+- **Content field presence:**
+  - `enqueue`: **Present** - contains the queued user message text
+  - `remove`: **Absent** - Claude Code does NOT include content in remove operations
+  - `popAll`: **Present** - contains the message being replaced
+  - `dequeue`: **Absent** - queue is being cleared entirely
 - **Not displayed:** Should not appear as timeline entries (only affect display of related user messages)
 - **Session-scoped:** Queue state is per-session (isolated by `sessionId`)
 
@@ -468,14 +494,15 @@ Claude Code queues user messages sent during tool execution to prevent interrupt
   "type": "queue-operation",
   "operation": "remove",
   "timestamp": "2025-11-12T19:51:53.870Z",
-  "content": "may be okay to not include these big thigns in teh git ",
   "sessionId": "2393f674-7037-407a-a0ed-0f7e7b61625d"
 }
 ```
 
+**Important:** Claude Code's `remove` operation does **NOT** include the message content. Unlike `enqueue` which contains the full user message text, `remove` only contains the sessionId. This means parsers must use FIFO matching to pair `remove` operations with their corresponding `enqueue` operations.
+
 **Semantics (v2.0.50+):**
 - Message processed **ephemerally** - influences conversation but **not persisted**
-- Content field matches the corresponding `enqueue` operation
+- **NO** content field in the record (must use FIFO matching)
 - **NO** corresponding `user` message record written to transcript
 - Assistant still responds to the message despite no permanent record
 - One `remove` operation per queued message
@@ -485,7 +512,7 @@ Claude Code queues user messages sent during tool execution to prevent interrupt
 - Message would appear as permanent `user` record after `remove`
 - See "Version Behavior Differences" section above
 
-**Parser Note:** Match `remove` to `enqueue` by content. In v2.0.50+, synthetic timeline entries are needed to show these ephemeral messages.
+**Parser Note:** Use FIFO (first-in-first-out) matching to pair `remove` operations with `enqueue` operations since content is not included. In v2.0.50+, synthetic timeline entries are needed to show these ephemeral messages.
 
 **Timing Pattern Example:**
 ```
@@ -758,16 +785,23 @@ class QueueStateTracker {
 - Extract: `content`, `timestamp`, `parentUuid`, `sessionId`, `provider`, `kind`, `gitBranch`, `gitCommit`, `cwd`
 - Tool-use-only entries are stored with tool markers (e.g., `[Tool: Bash]`) and `display_in_timeline = 0`
 
-**What we skip:**
-- `isMeta: true` - Meta/command wrappers
-- `summary` - Internal navigation metadata
-- `file-history-snapshot` - File tracking metadata
-- `system` - System events
+**What we skip (from transcript_entries):**
+- `isMeta: true` - Meta/command wrappers (skipped from entries, not metadata)
+- `timeline-state` - UI state snapshots (fully skipped)
+- `queue-operation-result` - Queue operation results (fully skipped)
 - Empty content - Messages with no displayable text or tool markers
 
-### Proposed Enhancements
+**What we parse into metadata tables:**
+- `summary` - Stored in `transcript_summaries` table
+- `file-history-snapshot` - Stored in `file_snapshots` + `tracked_files` tables
+- `system` - Stored in `system_events` table
+- `queue-operation` - Processed for queue state management
 
-**1. File-History-Snapshot Storage:**
+### Implemented Metadata Tables
+
+These tables are implemented in the current schema (v32):
+
+**1. File-History-Snapshot Storage (Implemented):**
 ```sql
 CREATE TABLE file_snapshots (
   id TEXT PRIMARY KEY,
@@ -799,7 +833,7 @@ CREATE INDEX idx_tracked_files_snapshot ON tracked_files(snapshot_id);
 - Correlate file changes with conversation
 - Session scope visualization ("Files Modified: 12")
 
-**2. Summary Storage:**
+**2. Summary Storage (Implemented):**
 ```sql
 CREATE TABLE transcript_summaries (
   id TEXT PRIMARY KEY,
@@ -817,7 +851,7 @@ CREATE TABLE transcript_summaries (
 - Cross-session navigation via leaf_uuid
 - Improve search relevance
 
-**3. System Event Storage:**
+**3. System Event Storage (Implemented):**
 ```sql
 CREATE TABLE system_events (
   id TEXT PRIMARY KEY,
@@ -843,7 +877,7 @@ CREATE INDEX idx_system_events_transcript ON system_events(transcript_id);
 - Session debugging (api_error events)
 - Compact mode analysis
 
-**4. Usage Metadata Storage:**
+**4. Usage Metadata Storage (Implemented):**
 ```sql
 -- Add to transcript_entries table:
 ALTER TABLE transcript_entries ADD COLUMN usage_metadata TEXT; -- JSON
@@ -1052,7 +1086,7 @@ Transcripts should be classified across **four orthogonal axes**:
 **Event-Tracked:**
 - Has `type: "system"` records
 - Database: Entries in `system_events` table
-- Types: slash_command, api_error, compact_mode_boundary
+- Subtypes: local_command, api_error, compact_boundary
 - 55 records across sample (0.3% of all records)
 
 **Usage-Rich:**

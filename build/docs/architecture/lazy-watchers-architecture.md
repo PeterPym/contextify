@@ -16,6 +16,8 @@ Smart Lazy Watchers v2 uses a **three-tier budget model**:
 - **WARM**: up to 2 most recently activated projects (up to 10 transcripts each)
 - **COLD**: all remaining projects (0 watchers; FSEvents-only activity signals)
 
+**Global limit:** 150 watchers maximum across all tiers. If budget is exceeded, warm projects are reduced first.
+
 When FD exhaustion is detected, v2 enters **degraded mode** and drops to **hot-only** until restart.
 
 ---
@@ -45,7 +47,7 @@ When FD exhaustion is detected, v2 enters **degraded mode** and drops to **hot-o
 
 ### Tier assignment
 
-LRU is updated **only on user activation**.
+LRU is updated **only on user activation**. Activity-triggered promotion recomputes are debounced (300ms).
 
 - `LRU[0]` → HOT
 - `LRU[1]`, `LRU[2]` → WARM
@@ -70,7 +72,7 @@ Targets:
 - **Stop first** (evictions, demotions, intra-tier drops)
 - **Start next** (HOT first, then WARM in LRU order)
 
-Degraded mode bypasses residency gating to shed warm watchers immediately.
+**Residency gating:** Newly started watchers have a 20-second residency window to prevent thrashing. Degraded mode bypasses residency gating to shed warm watchers immediately.
 
 ---
 
@@ -118,9 +120,9 @@ Tail scan runs only if baseline exists and rate-limited (1s per transcript). Low
 
 ---
 
-## Schema (v32)
+## Schema
 
-v32 adds baseline + activity + approximation fields:
+Migration v32 added baseline + activity + approximation fields (current schema is v33):
 
 - `transcripts.known_last_entry_ts`
 - `transcripts.known_file_size`

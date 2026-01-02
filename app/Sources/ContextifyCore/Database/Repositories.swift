@@ -1,8 +1,14 @@
 import Foundation
 import GRDB
+#if canImport(OSLog)
 import OSLog
+#endif
 
+#if canImport(OSLog)
 private let log = Logger(subsystem: "dev.contextify", category: "Repositories")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Repositories")
+#endif
 
 // MARK: - Project Repository
 
@@ -16,6 +22,7 @@ public protocol ProjectRepository {
   func markOrphaned(id: String, orphanedSince: Int) throws
   func markRestored(id: String) throws
   func delete(id: String) throws
+  func setGroupMembership(id: String, groupId: String?, groupDisplayOrder: Int?) throws  // v33: Tab grouping
 }
 
 public final class ProjectRepositoryImpl: ProjectRepository {
@@ -137,6 +144,21 @@ public final class ProjectRepositoryImpl: ProjectRepository {
   public func delete(id: String) throws {
     _ = try db.write { db in
       try Project.deleteOne(db, key: id)
+    }
+  }
+
+  /// Set a project's group membership (v33)
+  public func setGroupMembership(id: String, groupId: String?, groupDisplayOrder: Int?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.groupId = groupId
+      project.groupDisplayOrder = groupDisplayOrder
+      project.updatedAt = now
+      try project.update(db)
     }
   }
 }
@@ -1158,6 +1180,240 @@ public final class AssistantUsageRepositoryImpl: AssistantUsageRepository {
         totalCacheRead: row["total_cache_read"],
         messageCount: row["message_count"]
       )
+    }
+  }
+}
+
+// MARK: - Tab Group Repository (v33)
+
+public protocol TabGroupRepository {
+  func create(name: String?, colorHex: String?, gitRoot: String?, isWorktreeGroup: Bool) throws -> TabGroup
+  func list() throws -> [TabGroup]
+  func get(id: String) throws -> TabGroup?
+  func getByGitRoot(_ gitRoot: String) throws -> TabGroup?
+  func update(id: String, name: String?, colorHex: String?, colorSource: ColorSource?) throws
+  func setName(id: String, name: String?) throws  // Set or clear group name
+  func setColorOverride(id: String, colorHex: String?) throws  // Set color (or clear to auto)
+  func setDisplayOrder(id: String, displayOrder: Int) throws
+  func delete(id: String) throws
+  func deleteIfEmpty(id: String) throws -> Bool
+  func nextDisplayOrder() throws -> Int
+  func reorderGroups(_ orderedGroupIds: [String]) throws  // Phase 5: bulk reorder
+}
+
+public final class TabGroupRepositoryImpl: TabGroupRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func create(name: String?, colorHex: String?, gitRoot: String?, isWorktreeGroup: Bool) throws -> TabGroup {
+    let id = UUID().uuidString
+    let now = Int(Date().timeIntervalSince1970)
+    let displayOrder = try nextDisplayOrder()
+
+    let group = TabGroup(
+      id: id,
+      name: name,
+      colorHex: colorHex,
+      colorSource: colorHex != nil ? .user : .auto,
+      gitRoot: gitRoot,
+      isWorktreeGroup: isWorktreeGroup,
+      displayOrder: displayOrder,
+      createdAt: now,
+      updatedAt: now
+    )
+
+    try db.write { db in
+      try group.insert(db)
+    }
+
+    return group
+  }
+
+  public func list() throws -> [TabGroup] {
+    try db.read { db in
+      try TabGroup
+        .order(Column("display_order").asc)
+        .fetchAll(db)
+    }
+  }
+
+  public func get(id: String) throws -> TabGroup? {
+    try db.read { db in
+      try TabGroup.fetchOne(db, key: id)
+    }
+  }
+
+  public func getByGitRoot(_ gitRoot: String) throws -> TabGroup? {
+    try db.read { db in
+      try TabGroup
+        .filter(Column("git_root") == gitRoot && Column("is_worktree_group") == true)
+        .fetchOne(db)
+    }
+  }
+
+  public func update(id: String, name: String?, colorHex: String?, colorSource: ColorSource?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      if let name = name {
+        group.name = name
+      }
+      if let colorHex = colorHex {
+        group.colorHex = colorHex
+      }
+      if let colorSource = colorSource {
+        group.colorSource = colorSource
+      }
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  /// Set or clear group name (nil clears)
+  public func setName(id: String, name: String?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      group.name = name  // Can set to nil to clear
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  /// Set color override (or clear to auto if nil)
+  public func setColorOverride(id: String, colorHex: String?) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      group.colorHex = colorHex
+      group.colorSource = colorHex != nil ? .user : .auto
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  public func setDisplayOrder(id: String, displayOrder: Int) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var group = try TabGroup.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      group.displayOrder = displayOrder
+      group.updatedAt = now
+      try group.update(db)
+    }
+  }
+
+  public func delete(id: String) throws {
+    _ = try db.write { db in
+      // Clear both group_id and group_display_order for all members.
+      // ON DELETE SET NULL only clears group_id; we must clear group_display_order explicitly
+      // to avoid stale ordering values on regrouping.
+      try db.execute(sql: """
+        UPDATE projects SET group_id = NULL, group_display_order = NULL, updated_at = ?
+        WHERE group_id = ?
+      """, arguments: [Int(Date().timeIntervalSince1970), id])
+
+      try TabGroup.deleteOne(db, key: id)
+    }
+  }
+
+  /// Deletes group if it has no members. Returns true if deleted.
+  public func deleteIfEmpty(id: String) throws -> Bool {
+    try db.write { db in
+      let memberCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM projects WHERE group_id = ?
+      """, arguments: [id]) ?? 0
+
+      if memberCount == 0 {
+        try TabGroup.deleteOne(db, key: id)
+        return true
+      }
+      return false
+    }
+  }
+
+  public func nextDisplayOrder() throws -> Int {
+    try db.read { db in
+      let maxOrder = try Int.fetchOne(db, sql: "SELECT MAX(display_order) FROM tab_groups") ?? -1
+      return maxOrder + 1
+    }
+  }
+
+  /// Bulk reorder groups by setting display_order based on array position (Phase 5)
+  public func reorderGroups(_ orderedGroupIds: [String]) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      for (order, groupId) in orderedGroupIds.enumerated() {
+        try db.execute(sql: """
+          UPDATE tab_groups SET display_order = ?, updated_at = ?
+          WHERE id = ?
+        """, arguments: [order, now, groupId])
+      }
+    }
+  }
+}
+
+// MARK: - Worktree Preference Repository (v33)
+
+public protocol WorktreePreferenceRepository {
+  func get(_ gitRoot: String) throws -> WorktreePreference?
+  func setUngrouped(_ gitRoot: String, ungrouped: Bool) throws
+  func delete(_ gitRoot: String) throws
+}
+
+public final class WorktreePreferenceRepositoryImpl: WorktreePreferenceRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func get(_ gitRoot: String) throws -> WorktreePreference? {
+    // Use explicit filter query instead of fetchOne(key:) for robustness
+    // (avoids relying on GRDB's primary key inference)
+    try db.read { db in
+      try WorktreePreference
+        .filter(Column("git_root") == gitRoot)
+        .fetchOne(db)
+    }
+  }
+
+  public func setUngrouped(_ gitRoot: String, ungrouped: Bool) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      let pref = WorktreePreference(gitRoot: gitRoot, ungrouped: ungrouped, updatedAt: now)
+      try db.execute(sql: """
+        INSERT INTO worktree_preferences (git_root, ungrouped, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(git_root) DO UPDATE SET
+          ungrouped = excluded.ungrouped,
+          updated_at = excluded.updated_at
+      """, arguments: [pref.gitRoot, pref.ungrouped ? 1 : 0, pref.updatedAt])
+    }
+  }
+
+  public func delete(_ gitRoot: String) throws {
+    // Use explicit filter for deletion (avoids relying on primary key inference)
+    _ = try db.write { db in
+      try WorktreePreference
+        .filter(Column("git_root") == gitRoot)
+        .deleteAll(db)
     }
   }
 }

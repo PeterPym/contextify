@@ -62,6 +62,7 @@ declare -a ALL_TESTS=(
   "CLI-01-query-baseline.sh:3"
   "CLI-02-query-issues.sh:3"
   "CLI-03-skill-invocation.sh:3"
+  "CLI-04-worktree-query.sh:3"
 )
 
 # Track results

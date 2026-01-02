@@ -639,6 +639,8 @@ final class ConversationMonitor {
     @MainActor
     func stopMonitoring() {
         log.info("[TIMELINE-STOP] Stopping timeline monitoring")
+        phase = .cold  // Reset phase on stop to prevent stuck loading state
+        log.info("[UIOPT-BRANCH] phase → cold")
         isMonitoring = false
         lastMonitorReadyAt = nil
         activeSession = nil
@@ -1625,6 +1627,8 @@ final class ConversationMonitor {
     @MainActor
     private func restoreLoadStateAfterCancellation(priorReady: Bool) {
         log.debug("[TIMELINE-HYDRATE-CANCELLED] Previous load cancelled before completion")
+        phase = .cold  // Reset phase to prevent stuck loading state
+        log.info("[UIOPT-BRANCH] phase → cold")
         isProcessing = false
         isReadyForUpdates = priorReady
     }

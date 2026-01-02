@@ -15,7 +15,7 @@ This folder contains the macOS SwiftUI app for Contextify - a HUD that monitors 
 ### Transcript Monitoring
 - Automatically discovers transcripts in `~/.claude/projects/` and `~/.codex/sessions/`
 - Real-time file watching with automatic ingestion
-- SQLite backend (v26) with crash-safe checkpointing
+- SQLite backend (v33) with crash-safe checkpointing
 - See `ConversationMonitor.swift` for timeline implementation
 
 ### Timeline View

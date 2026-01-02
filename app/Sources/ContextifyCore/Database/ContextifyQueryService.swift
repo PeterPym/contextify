@@ -456,7 +456,7 @@ public struct ContextifyQueryService: Sendable {
 
   public func search(
     query: String,
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -499,9 +499,17 @@ public struct ContextifyQueryService: Sendable {
       if !includeHidden {
         sql += " AND e.display_in_timeline = 1"
       }
-      if let projectId {
-        sql += " AND e.project_id = ?"
-        args.append(projectId)
+      if let projectIds = projectIds {
+        if projectIds.isEmpty {
+          return []  // Empty array = no results
+        }
+        // Dedupe and sort for deterministic SQL and reduced query work
+        let uniqueIds = Array(Set(projectIds)).sorted()
+        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.project_id IN (\(placeholders))"
+        for id in uniqueIds {
+          args.append(id)
+        }
       }
       if let transcriptId {
         sql += " AND e.transcript_id = ?"
@@ -523,6 +531,8 @@ public struct ContextifyQueryService: Sendable {
         args.append(until)
       }
 
+      // Order by BM25 relevance (more negative = better match), then recency, then id for stability
+      sql += " ORDER BY score ASC, e.timestamp DESC, e.id ASC"
       sql += " LIMIT ?"
       args.append(limit)
 
@@ -571,6 +581,32 @@ public struct ContextifyQueryService: Sendable {
         )
       }
     }
+  }
+
+  // Backward compatibility overload for old single projectId parameter
+  @available(*, deprecated, message: "Use search(query:projectIds:...) instead")
+  @_disfavoredOverload
+  public func search(
+    query: String,
+    projectId: String?,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    kinds: [String]? = nil,
+    treatAsFTS: Bool = false
+  ) throws -> [SearchHit] {
+    let projectIds = projectId.map { [$0] }
+    return try search(
+      query: query,
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      limit: limit,
+      includeHidden: includeHidden,
+      timeRange: timeRange,
+      kinds: kinds,
+      treatAsFTS: treatAsFTS
+    )
   }
 
   public func entry(
@@ -859,7 +895,7 @@ public struct ContextifyQueryService: Sendable {
   }
 
   public func activity(
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
@@ -872,9 +908,37 @@ public struct ContextifyQueryService: Sendable {
     let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
     return try activityImpl(
       filter: filter,
-      projectId: projectId,
+      projectIds: projectIds,
       transcriptId: transcriptId,
       limit: limit,
+      timeRange: timeRange,
+      includeContent: includeContent,
+      fullContent: fullContent,
+      maxContentBytes: maxContentBytes
+    )
+  }
+
+  // Backward compatibility overload for old single projectId parameter
+  @available(*, deprecated, message: "Use activity(projectIds:...) instead")
+  @_disfavoredOverload
+  public func activity(
+    projectId: String?,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    includeSidechains: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> [ActivityItem] {
+    let projectIds = projectId.map { [$0] }
+    return try activity(
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      limit: limit,
+      includeHidden: includeHidden,
+      includeSidechains: includeSidechains,
       timeRange: timeRange,
       includeContent: includeContent,
       fullContent: fullContent,
@@ -885,7 +949,7 @@ public struct ContextifyQueryService: Sendable {
   /// Internal implementation using EntryFilter for unified filter handling.
   internal func activityImpl(
     filter: EntryFilter,
-    projectId: String? = nil,
+    projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
     timeRange: QueryTimeRange = QueryTimeRange(),
@@ -946,9 +1010,17 @@ public struct ContextifyQueryService: Sendable {
       var args: [any DatabaseValueConvertible] = []
       args.append(contentsOf: filterArgs)
 
-      if let projectId {
-        sql += " AND e.project_id = ?"
-        args.append(projectId)
+      if let projectIds = projectIds {
+        if projectIds.isEmpty {
+          return []  // Empty array = no results
+        }
+        // Dedupe and sort for deterministic SQL and reduced query work
+        let uniqueIds = Array(Set(projectIds)).sorted()
+        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.project_id IN (\(placeholders))"
+        for id in uniqueIds {
+          args.append(id)
+        }
       }
       if let transcriptId {
         sql += " AND e.transcript_id = ?"

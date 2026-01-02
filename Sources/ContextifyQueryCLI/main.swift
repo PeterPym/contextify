@@ -47,6 +47,17 @@ private struct CLIError: Error {
   }
 }
 
+/// Result of resolving project scope for worktree expansion
+private struct ProjectScope {
+  let projectIds: [String]
+  let displayNames: [String]
+  let unresolvedSiblings: [String]
+  let excluded: [String]
+  let worktreeGroupDetected: Bool  // Was a worktree group found?
+  let worktreesConsidered: [String]  // All worktrees in the group
+  let expansionApplied: Bool  // Did multiple worktrees resolve to DB?
+}
+
 @main
 struct ContextifyQueryCLI {
   enum Command: String {
@@ -95,6 +106,10 @@ struct ContextifyQueryCLI {
     var all: Bool = false
     var force: Bool = false
     var edit: Bool = false
+
+    // Worktree options
+    var thisWorktreeOnly: Bool = false
+    var exclude: String?
   }
 
   struct StateSidecar: Decodable {
@@ -246,6 +261,12 @@ struct ContextifyQueryCLI {
           options.limit = n
         case "--json":
           options.jsonOutput = true
+        case "--this-worktree":
+          options.thisWorktreeOnly = true
+        case "--exclude":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude", exitCode: .invalidArgs) }
+          options.exclude = args[index]
         case "--help", "-h":
           usage(nil)
         default:
@@ -297,12 +318,33 @@ struct ContextifyQueryCLI {
         let rawQuery = commandArgs.joined(separator: " ")
         let query = try buildSearchQuery(rawQuery)
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
-        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let scope = try resolveProjectScope(options: options, service: service)
+
+        // Print scope info to stderr when worktree group detected
+        if scope.worktreeGroupDetected {
+          if options.thisWorktreeOnly {
+            fputs("Worktree group detected; searching current only (--this-worktree)\n", stderr)
+          } else if scope.expansionApplied {
+            fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+            fputs("(use --this-worktree to search only current)\n", stderr)
+          } else {
+            // Only one worktree resolved to DB (others excluded/archived/not indexed)
+            fputs("Worktree group detected, but only \(scope.displayNames.first ?? "current") is indexed\n", stderr)
+          }
+
+          if !scope.unresolvedSiblings.isEmpty {
+            fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
+          }
+          if !scope.excluded.isEmpty {
+            fputs("Excluded: \(scope.excluded.joined(separator: ", "))\n", stderr)
+          }
+        }
+
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
         let requestedLimit = options.limit
         let results = try service.search(
           query: query,
-          projectId: resolvedProjectId,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
           transcriptId: options.transcriptId,
           limit: requestedLimit + 1,
           includeHidden: options.includeHidden,
@@ -316,19 +358,76 @@ struct ContextifyQueryCLI {
           trimmedResults = Array(results.prefix(requestedLimit))
           hasMore = true
         }
-        let metadata: JSONValue = .object([
+
+        // Compute source counts by grouping results by projectId
+        let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
+          .mapValues { $0.count }
+          .sorted { $0.key < $1.key }
+          .reduce(into: [String: JSONValue]()) { dict, pair in
+            dict[pair.key] = .number(Double(pair.value))
+          }
+
+        var metadataDict: [String: JSONValue] = [
           "returned": .number(Double(trimmedResults.count)),
           "limit": .number(Double(requestedLimit)),
           "hasMore": .bool(hasMore)
-        ])
+        ]
+
+        // Add worktree expansion metadata when group detected
+        if scope.worktreeGroupDetected {
+          metadataDict["worktreeExpansion"] = .object([
+            "enabled": .bool(scope.expansionApplied),
+            "worktrees": .array(scope.displayNames.map { .string($0) }),
+            "excluded": .array(scope.excluded.map { .string($0) }),
+            "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
+          ])
+          metadataDict["sourceCounts"] = .object(sourceCounts)
+
+          // Skew warning: when results truncated and >90% from one worktree
+          // Only show when expansion was actually applied and we have 2+ projects
+          if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
+            let maxCount = sourceCounts.values.compactMap { value -> Int? in
+              if case .number(let n) = value { return Int(n) }
+              return nil
+            }.max() ?? 0
+            let total = trimmedResults.count
+            // Also require minimum result count to avoid noisy warnings for small limits
+            if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
+              fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+            }
+          }
+        }
+
+        let metadata: JSONValue = .object(metadataDict)
         try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
           printSearchHits(trimmedResults)
         }
 
       case .activity:
-        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let scope = try resolveProjectScope(options: options, service: service)
+
+        // Print scope info to stderr when worktree group detected
+        if scope.worktreeGroupDetected {
+          if options.thisWorktreeOnly {
+            fputs("Worktree group detected; searching current only (--this-worktree)\n", stderr)
+          } else if scope.expansionApplied {
+            fputs("Including worktrees: \(scope.displayNames.joined(separator: ", "))\n", stderr)
+            fputs("(use --this-worktree to search only current)\n", stderr)
+          } else {
+            // Only one worktree resolved to DB (others excluded/archived/not indexed)
+            fputs("Worktree group detected, but only \(scope.displayNames.first ?? "current") is indexed\n", stderr)
+          }
+
+          if !scope.unresolvedSiblings.isEmpty {
+            fputs("Note: \(scope.unresolvedSiblings.joined(separator: ", ")) not in database\n", stderr)
+          }
+          if !scope.excluded.isEmpty {
+            fputs("Excluded: \(scope.excluded.joined(separator: ", "))\n", stderr)
+          }
+        }
+
         let results = try service.activity(
-          projectId: resolvedProjectId,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
           transcriptId: options.transcriptId,
           limit: options.limit,
           includeHidden: options.includeHidden,
@@ -1376,6 +1475,103 @@ private func resolveProjectId(
       )
     }
   }
+}
+
+private func resolveProjectScope(
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService
+) throws -> ProjectScope {
+  // 1. Resolve base path
+  let basePath: String
+  if let project = options.project {
+    basePath = (project == "." || project == "current")
+      ? FileManager.default.currentDirectoryPath
+      : project
+  } else {
+    return ProjectScope(projectIds: [], displayNames: [],
+                       unresolvedSiblings: [], excluded: [],
+                       worktreeGroupDetected: false, worktreesConsidered: [],
+                       expansionApplied: false)
+  }
+
+  // 2. Check for worktree expansion disabled
+  if options.thisWorktreeOnly {
+    if let id = try? service.resolveProjectId(forPath: basePath) {
+      return ProjectScope(projectIds: [id],
+                         displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
+                         unresolvedSiblings: [], excluded: [],
+                         worktreeGroupDetected: false, worktreesConsidered: [],
+                         expansionApplied: false)
+    }
+    throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
+  }
+
+  // 3. Detect worktree group
+  guard let group = WorktreeDetector.findWorktreeGroup(from: URL(fileURLWithPath: basePath)) else {
+    // Not a worktree group, single project
+    if let id = try? service.resolveProjectId(forPath: basePath) {
+      return ProjectScope(projectIds: [id],
+                         displayNames: [URL(fileURLWithPath: basePath).lastPathComponent],
+                         unresolvedSiblings: [], excluded: [],
+                         worktreeGroupDetected: false, worktreesConsidered: [],
+                         expansionApplied: false)
+    }
+    throw CLIError(code: "projectNotFound", message: "Project not found: \(basePath)", exitCode: .dbNotFound)
+  }
+
+  // 4. Load config for archived/names
+  let config = loadWorktreeConfig(gitRoot: group.commonGitDir.deletingLastPathComponent())
+  // Parse exclude list, trimming whitespace and ignoring empty segments (e.g., "a,,b")
+  let excludeList = options.exclude?
+    .split(separator: ",")
+    .map { String($0).trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty } ?? []
+
+  // 5. Build list of all worktrees considered (for messaging)
+  let worktreesConsidered = group.worktrees.map { worktree -> String in
+    config?.nameFor(path: worktree.path) ?? worktree.lastPathComponent
+  }
+
+  // 6. Resolve each sibling
+  var projectIds: [String] = []
+  var displayNames: [String] = []
+  var unresolvedSiblings: [String] = []
+  var excluded: [String] = []
+
+  for worktree in group.worktrees {
+    let pathString = worktree.path
+    let displayName = config?.nameFor(path: pathString) ?? worktree.lastPathComponent
+
+    // Check if archived
+    if config?.isArchived(path: pathString) == true {
+      excluded.append(displayName)
+      continue
+    }
+
+    // Check if user-excluded
+    if excludeList.contains(displayName) || excludeList.contains(worktree.lastPathComponent) {
+      excluded.append(displayName)
+      continue
+    }
+
+    // Resolve in database
+    if let id = try? service.resolveProjectId(forPath: pathString) {
+      projectIds.append(id)
+      displayNames.append(displayName)
+    } else {
+      unresolvedSiblings.append(displayName)
+    }
+  }
+
+  return ProjectScope(
+    projectIds: projectIds,
+    displayNames: displayNames,
+    unresolvedSiblings: unresolvedSiblings,
+    excluded: excluded,
+    worktreeGroupDetected: true,
+    worktreesConsidered: worktreesConsidered,
+    expansionApplied: projectIds.count > 1
+  )
 }
 
 private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSuggestion) -> JSONValue {

@@ -6,7 +6,11 @@
 //
 
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 
 /// File metadata extraction with streaming hash computation
 public enum FileFacts {

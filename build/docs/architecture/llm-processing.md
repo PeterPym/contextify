@@ -153,8 +153,8 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - `confidence`: "high" | "medium" | "low"
 
 **Context Strategy:**
-- **Full Strategy:** Transcripts ≤150 exchanges (all content)
-- **Adaptive Strategy:** Transcripts >150 exchanges (smart sampling)
+- **Full Strategy:** Transcripts ≤25 exchanges (all content)
+- **Adaptive Strategy:** Transcripts >25 exchanges (smart sampling with importance-based selection)
 
 **Detailed Documentation:** *(To be created: `transcript-metadata-llm-architecture.md`)*
 
@@ -197,7 +197,7 @@ The `disposition` field evolved from binary (cached/not cached) to **ternary sta
 **Transient failures** (retry with exponential backoff, up to 3 attempts):
 - llmTimeout, llmUnavailable
 
-**Implementation:** `TimelineCacheMissGenerator.swift` lines 502-545, 811-844
+**Implementation:** `TimelineCacheMissGenerator.swift#processMissWithRetry`, `TimelineCacheMissGenerator.swift#writeErrorTombstone`
 
 ---
 
@@ -218,11 +218,12 @@ protocol QueueStatsProvider: Sendable {
 }
 ```
 
-**Aggregation Strategy:**
+**Aggregation Strategy (Phase 5: True Sum):**
 - StatusBarViewModel monitors multiple providers concurrently
 - Each provider yields `QueueStats` updates via AsyncStream
-- ViewModel applies latest stats from any provider (last-write-wins)
-- UI shows combined state: pending count, processing status, ETA, errors
+- ViewModel sums pending counts from all providers (true aggregation)
+- Processing shows if ANY provider is processing; ETA uses MAX across providers
+- UI shows combined state: total pending count, processing status, ETA, errors
 
 **Display States:**
 - **Not monitoring:** No providers available (before timeline starts)
@@ -276,12 +277,12 @@ Both systems use the shared `FoundationLLM` singleton for LLM calls.
 
 Slash commands (e.g., `/clear`, `/compact`) use a **fast path** that skips LLM calls for instant response.
 
-**Detection** (`FoundationLLM.swift:1013-1053`):
+**Detection** (`FoundationLLM.swift#detectSlashCommand`):
 - `<command-name>/command</command-name>` tags (Claude Code format)
 - Messages starting with `/command`
-- Supports 30+ commands from Claude Code and Codex CLI
+- Supports 30+ commands from Claude Code and Codex CLI (see `FoundationLLM.swift#knownCommandSummary`)
 
-**Prefix Policy** (`FoundationLLM.swift:1320-1362`):
+**Prefix Policy** (`FoundationLLM.swift#prefixPolicy`, `FoundationLLM.swift#hasAllowedPrefix`):
 User summaries require allowed prefixes. Command-specific verbs (e.g., "You cleared", "You compacted") prevent fallback prefix prepending that would create malformed summaries like "You requested Claude Code You cleared..."
 
 ### SQL Caching
@@ -413,12 +414,13 @@ When FoundationLLM is unavailable:
 
 ### Potential Enhancements
 
-1. **True Aggregation:** Sum pending counts from both queues instead of last-write-wins
-2. **Queue Priority:** Allow urgent metadata generation to preempt timeline generation
-3. **Batch Metadata:** Group multiple transcript metadata requests into batches
-4. **ETA Calculation:** Add ETA support for metadata generation (currently 0)
-5. **Error Details:** Surface specific error types in status bar tooltip
-6. **Offline Mode:** Cache-only operation when LLM unavailable
+1. **Queue Priority:** Allow urgent metadata generation to preempt timeline generation
+2. **Batch Metadata:** Group multiple transcript metadata requests into batches
+3. **ETA Calculation:** Add ETA support for metadata generation (currently 0)
+4. **Error Details:** Surface specific error types in status bar tooltip
+5. **Offline Mode:** Cache-only operation when LLM unavailable
+
+*Note: True Aggregation (summing pending counts from all queues) was implemented in Phase 5.*
 
 ### Scalability Notes
 

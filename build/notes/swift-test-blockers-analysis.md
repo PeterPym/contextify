@@ -16,7 +16,7 @@ Contextify's test suite cannot be run using `swift test` or other non-Xcode mean
 
 ### Test Organization
 
-**Location:** `Contextify/ContextifyTests/*.swift` (14 test files)
+**Location:** `Tests/ContextifyCoreTests/*.swift` (32 test files as of 2025-12)
 
 **Test Files:**
 - `GitDetectionTests.swift` - Git resolution, worktree handling
@@ -339,9 +339,9 @@ Tests/
 | LLMHealthCheckTests.swift | ❌ | ✅ | ❌ | ✅ | ❌ (depends on app target) |
 
 **Summary:**
-- **7 tests** are potentially platform-agnostic
-- **6 tests** require macOS or the main app target
-- **Opportunity:** Move ~50% of tests to `swift test` for faster execution
+- Most tests are now platform-agnostic (32 test files in SPM as of 2025-12)
+- Some tests still require macOS or the main app target (FoundationModels, security APIs)
+- Run `ls Tests/ContextifyCoreTests/*.swift | wc -l` to verify current count
 
 ## Sources
 

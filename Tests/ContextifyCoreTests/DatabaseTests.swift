@@ -1189,6 +1189,161 @@ final class DatabaseTests: XCTestCase {
     XCTAssertEqual(unreadCount, 1)
   }
 
+  // MARK: - Tab Group Repository Tests (v33)
+
+  func testTabGroupRepository_CRUD() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+    let repo = TabGroupRepositoryImpl(db: pool)
+
+    // Create a tab group
+    let group = try repo.create(
+      name: "Test Group",
+      colorHex: "#FF0000",
+      gitRoot: "/test/repo",
+      isWorktreeGroup: true
+    )
+    XCTAssertFalse(group.id.isEmpty)
+    XCTAssertEqual(group.name, "Test Group")
+    XCTAssertEqual(group.colorHex, "#FF0000")
+    XCTAssertEqual(group.gitRoot, "/test/repo")
+    XCTAssertTrue(group.isWorktreeGroup)
+
+    // Get by ID
+    let fetched = try repo.get(id: group.id)
+    XCTAssertNotNil(fetched)
+    XCTAssertEqual(fetched?.id, group.id)
+
+    // Get by git root
+    let byGitRoot = try repo.getByGitRoot("/test/repo")
+    XCTAssertNotNil(byGitRoot)
+    XCTAssertEqual(byGitRoot?.id, group.id)
+
+    // List groups
+    let groups = try repo.list()
+    XCTAssertEqual(groups.count, 1)
+
+    // Update name
+    try repo.setName(id: group.id, name: "Updated Group")
+    let updated = try repo.get(id: group.id)
+    XCTAssertEqual(updated?.name, "Updated Group")
+
+    // Update color
+    try repo.setColorOverride(id: group.id, colorHex: "#00FF00")
+    let colorUpdated = try repo.get(id: group.id)
+    XCTAssertEqual(colorUpdated?.colorHex, "#00FF00")
+
+    // Delete group
+    try repo.delete(id: group.id)
+    let deleted = try repo.get(id: group.id)
+    XCTAssertNil(deleted)
+  }
+
+  func testTabGroupRepository_deleteIfEmpty() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+    let groupRepo = TabGroupRepositoryImpl(db: pool)
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+
+    // Create a tab group
+    let group = try groupRepo.create(name: "Test Group", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+
+    // Empty group should be deleted
+    let deletedEmpty = try groupRepo.deleteIfEmpty(id: group.id)
+    XCTAssertTrue(deletedEmpty)
+    XCTAssertNil(try groupRepo.get(id: group.id))
+
+    // Create another group with a member
+    let group2 = try groupRepo.create(name: "Test Group 2", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/project", bookmark: nil)
+    try projectRepo.setGroupMembership(id: projectId, groupId: group2.id, groupDisplayOrder: 0)
+
+    // Non-empty group should NOT be deleted
+    let deletedNonEmpty = try groupRepo.deleteIfEmpty(id: group2.id)
+    XCTAssertFalse(deletedNonEmpty)
+    XCTAssertNotNil(try groupRepo.get(id: group2.id))
+  }
+
+  func testTabGroupRepository_reorderGroups() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+    let repo = TabGroupRepositoryImpl(db: pool)
+
+    // Create multiple groups
+    let group1 = try repo.create(name: "Group 1", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+    let group2 = try repo.create(name: "Group 2", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+    let group3 = try repo.create(name: "Group 3", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+
+    // Reorder: 3, 1, 2
+    try repo.reorderGroups([group3.id, group1.id, group2.id])
+
+    // Verify new order
+    let groups = try repo.list()
+    XCTAssertEqual(groups.count, 3)
+    XCTAssertEqual(groups[0].id, group3.id)
+    XCTAssertEqual(groups[1].id, group1.id)
+    XCTAssertEqual(groups[2].id, group2.id)
+  }
+
+  func testProjectGroupMembership() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+    let groupRepo = TabGroupRepositoryImpl(db: pool)
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+
+    // Create projects and group
+    let projectId1 = try projectRepo.create(name: "Project 1", rootPath: "/test/p1", bookmark: nil)
+    let projectId2 = try projectRepo.create(name: "Project 2", rootPath: "/test/p2", bookmark: nil)
+    let group = try groupRepo.create(name: "Test Group", colorHex: nil, gitRoot: nil, isWorktreeGroup: false)
+
+    // Add projects to group
+    try projectRepo.setGroupMembership(id: projectId1, groupId: group.id, groupDisplayOrder: 0)
+    try projectRepo.setGroupMembership(id: projectId2, groupId: group.id, groupDisplayOrder: 1)
+
+    // Verify group membership
+    let p1 = try projectRepo.get(id: projectId1)
+    XCTAssertEqual(p1?.groupId, group.id)
+    XCTAssertEqual(p1?.groupDisplayOrder, 0)
+
+    let p2 = try projectRepo.get(id: projectId2)
+    XCTAssertEqual(p2?.groupId, group.id)
+    XCTAssertEqual(p2?.groupDisplayOrder, 1)
+
+    // Remove from group
+    try projectRepo.setGroupMembership(id: projectId1, groupId: nil, groupDisplayOrder: nil)
+    let p1Updated = try projectRepo.get(id: projectId1)
+    XCTAssertNil(p1Updated?.groupId)
+    XCTAssertNil(p1Updated?.groupDisplayOrder)
+  }
+
+  func testWorktreePreferenceRepository() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+    let repo = WorktreePreferenceRepositoryImpl(db: pool)
+
+    let gitRoot = "/test/repo"
+
+    // Initially no preference
+    let initial = try repo.get(gitRoot)
+    XCTAssertNil(initial)
+
+    // Set ungrouped
+    try repo.setUngrouped(gitRoot, ungrouped: true)
+    let pref = try repo.get(gitRoot)
+    XCTAssertNotNil(pref)
+    XCTAssertTrue(pref?.ungrouped ?? false)
+
+    // Clear ungrouped
+    try repo.setUngrouped(gitRoot, ungrouped: false)
+    let cleared = try repo.get(gitRoot)
+    XCTAssertFalse(cleared?.ungrouped ?? true)
+
+    // Delete preference
+    try repo.delete(gitRoot)
+    let deleted = try repo.get(gitRoot)
+    XCTAssertNil(deleted)
+  }
+
   // MARK: - Helpers
 
   private func makeMigratedPool(at url: URL) throws -> DatabasePool {

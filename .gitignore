@@ -96,3 +96,5 @@ build/archives/
 # Website deploy artifacts
 website/.version
 build/marketing-assets
+.build-linux/
+core

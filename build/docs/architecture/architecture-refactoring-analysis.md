@@ -31,7 +31,7 @@ Contextify's architecture demonstrates **strong fundamentals** with a mature laz
 ### Strengths
 - ✅ Excellent separation of UI/Business Logic/Data layers
 - ✅ Swift 6 strict concurrency with proper actor isolation
-- ✅ Robust SQL backend (GRDB, schema v26, WAL mode)
+- ✅ Robust SQL backend (GRDB, schema v33, WAL mode)
 - ✅ Central state coordination (AppStateOrchestrator with state machine)
 - ✅ High-performance lazy loading architecture
 - ✅ Clean discovery tier separation (lightweight vs. full)
@@ -139,7 +139,7 @@ enum AppState: Sendable {
 
 ## 3. Database Layer
 
-**Implementation:** GRDB with schema v26, WAL mode
+**Implementation:** GRDB with schema v33, WAL mode
 
 **Strengths:**
 - Clean repository pattern

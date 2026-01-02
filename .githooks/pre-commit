@@ -3,10 +3,37 @@ set -euo pipefail
 
 # Pre-commit: test + build guard for Xcode project changes
 # Blocks commit if files under the Xcode project folder changed and tests or build fails.
+# Also warns about cross-platform implications for database schema changes.
 
 changed=$(git diff --cached --name-only --diff-filter=ACMR || true)
 if [[ -z "$changed" ]]; then
   exit 0
+fi
+
+# Cross-platform migration warning
+if grep -q "DatabaseSchema.swift" <<< "$changed"; then
+  echo ""
+  echo "⚠️  [pre-commit] DATABASE SCHEMA CHANGE DETECTED"
+  echo "    File: app/Sources/ContextifyCore/Database/DatabaseSchema.swift"
+  echo ""
+  echo "    Cross-platform considerations:"
+  echo "    • Linux CLI uses the same schema (via ContextifyIngestionCore)"
+  echo "    • After merging, verify Linux build: scripts/docker-linux-build.sh"
+  echo "    • CI will automatically build on Linux: .github/workflows/linux-build.yml"
+  echo ""
+  echo "    Continuing with commit..."
+  echo ""
+fi
+
+# Warn about changes to Linux-relevant files
+if scripts/cross-platform-change-detect.sh HEAD~0 --quiet 2>/dev/null; then
+  LINUX_CHANGES=$(scripts/cross-platform-change-detect.sh HEAD~0 2>/dev/null | grep -v "^Linux CLI changes" | grep -v "^Count:" | head -5 || true)
+  if [[ -n "$LINUX_CHANGES" ]] && ! grep -q "DatabaseSchema.swift" <<< "$changed"; then
+    echo ""
+    echo "ℹ️  [pre-commit] Linux CLI files staged:"
+    echo "$LINUX_CHANGES" | sed 's/^/    /'
+    echo ""
+  fi
 fi
 
 # Adjust this pattern if the project path changes

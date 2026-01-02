@@ -20,6 +20,32 @@ import AppKit  // For NSAlert
 
 private let log = Logger(subsystem: "dev.contextify", category: "CLICoordinator")
 
+// MARK: - QA Test Support
+//
+// DMGInstallDirOverride: UserDefaults key used by QA-13 (CLI Install E2E test) to redirect
+// CLI installation to a temporary directory. This allows the test to:
+// 1. Install the shim to a controlled location (/tmp/contextify-qa-bin/)
+// 2. Validate the shim works without touching real system paths
+// 3. Clean up without leaving artifacts in /opt/homebrew/bin or /usr/local/bin
+//
+// This is only checked in DMG builds (non-sandboxed). The key is set via:
+//   defaults write sh.contextify.Contextify Contextify.QueryCLI.DMGInstallDirOverride "/tmp/test-dir"
+//
+// See: scripts/qa/tests/QA-13-cli-install-dmg.sh
+private let kDMGInstallDirOverrideKey = "Contextify.QueryCLI.DMGInstallDirOverride"
+
+/// Returns the QA test override path if set, nil otherwise.
+/// Only applies to DMG builds - sandboxed builds ignore this.
+private func dmgInstallDirOverride() -> URL? {
+  guard !Sandbox.isSandboxed else { return nil }
+  guard let override = UserDefaults.standard.string(forKey: kDMGInstallDirOverrideKey),
+        !override.isEmpty else {
+    return nil
+  }
+  log.info("[CLI-QA-OVERRIDE] Using test override path: \(override, privacy: .public)")
+  return URL(fileURLWithPath: override)
+}
+
 /// Coordinates CLI (shim + plugin) installation state.
 ///
 /// **Responsibilities:**
@@ -479,6 +505,15 @@ exit 1
         log.warning("[CLI-REMOVE] No stored bookmark for sandboxed build")
       }
     } else {
+      // QA test override: check override directory first (see kDMGInstallDirOverrideKey)
+      if let overrideDir = dmgInstallDirOverride() {
+        let overridePath = overrideDir.appendingPathComponent("contextify-query").path
+        if fileManager.fileExists(atPath: overridePath) {
+          try? fileManager.removeItem(atPath: overridePath)
+          log.info("[CLI-REMOVE] Removed shim at override path \(overridePath, privacy: .public)")
+        }
+      }
+
       // DMG: Remove shim from all possible locations
       let possibleShimPaths = [
         "/opt/homebrew/bin/contextify-query",
@@ -616,6 +651,14 @@ exit 1
       return nil
     }
 
+    // QA test override: check override directory first (see kDMGInstallDirOverrideKey)
+    if let overrideDir = dmgInstallDirOverride() {
+      let overridePath = overrideDir.appendingPathComponent("contextify-query").path
+      if fileManager.fileExists(atPath: overridePath) {
+        return overridePath
+      }
+    }
+
     // DMG: check all possible locations
     let possiblePaths = [
       "/opt/homebrew/bin/contextify-query",
@@ -677,6 +720,14 @@ exit 1
       HUDPreferences.setCLIInstallLocation(selectedDir, bookmarkData: bookmark)
 
       return (url: selectedDir.appendingPathComponent("contextify-query"), requiresAdmin: false)
+    }
+
+    // QA test override: install to specified directory (see kDMGInstallDirOverrideKey)
+    if let overrideDir = dmgInstallDirOverride() {
+      return (
+        url: overrideDir.appendingPathComponent("contextify-query"),
+        requiresAdmin: false
+      )
     }
 
     // DMG: Try writable system paths (homebrew-enabled systems)
