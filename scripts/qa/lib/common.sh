@@ -805,8 +805,8 @@ setup_test_cleanup_trap() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Source transcript isolation library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../../lib/transcript-isolation.sh"
+_COMMON_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_COMMON_SCRIPT_DIR/../../lib/transcript-isolation.sh"
 
 # Backup real transcripts and install minimal test data
 # Usage: backup_and_isolate_transcripts
