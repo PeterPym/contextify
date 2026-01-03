@@ -268,9 +268,12 @@ struct ContextifyApp: App {
     startupLog.notice("🚀 Contextify launched (Phase 3 Lazy Loading)")
 
     // Configure for quiet mode if --quiet flag is set (benchmark mode)
+    // Note: NSApp may be nil during init(), so defer the activation policy change
     if LaunchArguments.shared.quiet {
       startupLog.info("[BENCH] Quiet mode enabled - hiding dock icon")
-      NSApp.setActivationPolicy(.accessory)
+      DispatchQueue.main.async {
+        NSApp?.setActivationPolicy(.accessory)
+      }
     }
 
     // Pre-warm expensive framework initialization off main thread

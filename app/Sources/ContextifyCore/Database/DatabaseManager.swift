@@ -222,7 +222,15 @@ public final class DatabaseManager: @unchecked Sendable {
       return cachedURL
     }
     if let cliPath = LaunchArguments.shared.databasePath {
-      try validateCLIDatabasePath(cliPath)
+      do {
+        try validateCLIDatabasePath(cliPath)
+      } catch let error as DatabasePathError {
+        // Fail-fast for CLI database path validation errors
+        let msg = error.errorDescription ?? error.localizedDescription
+        log.error("[BENCH] Database path validation failed: \(msg)")
+        fputs("Error: \(msg)\n", stderr)
+        exit(73)  // EX_CANTCREAT
+      }
       let url = URL(fileURLWithPath: cliPath)
       validatedCLIDatabaseURL = url
       log.info("[BENCH] Using CLI database path: \(cliPath, privacy: .public)")
