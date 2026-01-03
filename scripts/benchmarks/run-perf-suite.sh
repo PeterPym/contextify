@@ -34,8 +34,7 @@ source "$SCRIPT_DIR/lib/report.sh"
 # Configuration
 APP_NAME="Contextify"
 APP_PATH="$PROJECT_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app"
-DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
-BACKUP_DB_PATH=""
+APP_BINARY="$APP_PATH/Contents/MacOS/Contextify"
 RUN_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 RESULTS_DIR="$SCRIPT_DIR/results"
 LOG_FILE="/tmp/contextify-benchmark-$RUN_TIMESTAMP.log"
@@ -43,9 +42,22 @@ METRICS_FILE="$RESULTS_DIR/benchmark-$RUN_TIMESTAMP.json"
 REPORT_FILE="$RESULTS_DIR/benchmark-$RUN_TIMESTAMP.md"
 HISTORY_FILE="$PROJECT_ROOT/build/docs/performance/benchmark-history.md"
 
+# Benchmark isolation paths (using new CLI flags)
+BENCH_DB_PATH="/tmp/bench-$RUN_TIMESTAMP.db"
+BENCH_TRANSCRIPT_PATH=""  # Set via --corpus option
+
+# Legacy mode paths
+DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
+BACKUP_DB_PATH=""
+
+# Runtime state
+APP_PID=""
+TRACE_PATH=""
+
 # Options
 MODE="full"
 USE_INSTRUMENTS=false
+USE_CLI_FLAGS=true  # Use new --database-path --no-summaries --quiet flags
 RUN_NOTES=""
 
 # =============================================================================
@@ -66,12 +78,49 @@ while [[ $# -gt 0 ]]; do
             USE_INSTRUMENTS=true
             shift
             ;;
+        --corpus)
+            BENCH_TRANSCRIPT_PATH="$2"
+            shift 2
+            ;;
+        --legacy)
+            USE_CLI_FLAGS=false
+            shift
+            ;;
         --notes)
             RUN_NOTES="$2"
             shift 2
             ;;
         --help)
-            head -30 "$0" | tail -25
+            cat << 'EOF'
+Contextify Performance Benchmark Suite
+
+Usage:
+  ./run-perf-suite.sh [options]
+
+Options:
+  --full          Run full benchmark (default)
+  --quick         Run quick benchmark (startup only)
+  --instruments   Enable Instruments profiling (Time Profiler)
+  --corpus PATH   Use snapshot corpus at PATH (default: live transcripts)
+  --legacy        Use legacy mode (backup/restore DB instead of CLI flags)
+  --notes "text"  Add notes to this run
+  --help          Show this help
+
+Examples:
+  # Quick startup-only benchmark
+  ./run-perf-suite.sh --quick
+
+  # Full benchmark with Instruments profiling
+  ./run-perf-suite.sh --full --instruments
+
+  # Benchmark with snapshot corpus for reproducibility
+  ./run-perf-suite.sh --corpus ~/benchmarks/corpus-v1 --notes "baseline v1.0.7"
+
+Output:
+  - JSON metrics: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.json
+  - Markdown report: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.md
+  - Full logs: /tmp/contextify-benchmark-YYYYMMDD-HHMMSS.log
+EOF
             exit 0
             ;;
         *)
@@ -95,8 +144,11 @@ cleanup_on_exit() {
     # best-effort cleanup; never fail
     stop_log_stream || true
     kill_app || true
-    restore_db || true
+    if ! $USE_CLI_FLAGS; then
+        restore_db || true
+    fi
     [[ -n "${INSTRUMENTS_PID:-}" ]] && kill "$INSTRUMENTS_PID" 2>/dev/null || true
+    [[ -n "${APP_PID:-}" ]] && kill "$APP_PID" 2>/dev/null || true
 }
 
 log_section() {
@@ -144,9 +196,37 @@ delete_db() {
     rm -f "$DB_PATH-shm"
 }
 
+build_cli_args() {
+    local args=()
+
+    # Always use isolated database
+    args+=("--database-path" "$BENCH_DB_PATH")
+
+    # Skip LLM summaries for pure ingest benchmark
+    args+=("--no-summaries")
+
+    # Run headless (no window, no dock icon)
+    args+=("--quiet")
+
+    # Use corpus if specified
+    if [[ -n "$BENCH_TRANSCRIPT_PATH" ]]; then
+        args+=("--transcript-path" "$BENCH_TRANSCRIPT_PATH")
+    fi
+
+    echo "${args[@]}"
+}
+
 launch_app() {
-    log "Launching $APP_NAME..."
-    open "$APP_PATH"
+    if $USE_CLI_FLAGS; then
+        local cli_args=$(build_cli_args)
+        log "Launching $APP_NAME with CLI flags: $cli_args"
+        "$APP_BINARY" $cli_args &
+        APP_PID=$!
+        log "App PID: $APP_PID"
+    else
+        log "Launching $APP_NAME (legacy mode)..."
+        open "$APP_PATH"
+    fi
 }
 
 launch_app_with_instruments() {
@@ -154,13 +234,24 @@ launch_app_with_instruments() {
     log "Launching with Instruments (Time Profiler)..."
     log "Trace will be saved to: $trace_path"
 
-    # Start Instruments in background
-    xcrun xctrace record --template "Time Profiler" \
-        --output "$trace_path" \
-        --launch "$APP_PATH/Contents/MacOS/Contextify" &
+    if $USE_CLI_FLAGS; then
+        local cli_args=$(build_cli_args)
+        log "CLI flags: $cli_args"
+
+        # Start Instruments with CLI args
+        xcrun xctrace record --template "Time Profiler" \
+            --output "$trace_path" \
+            --launch "$APP_BINARY" -- $cli_args &
+    else
+        # Legacy mode - no CLI flags
+        xcrun xctrace record --template "Time Profiler" \
+            --output "$trace_path" \
+            --launch "$APP_BINARY" &
+    fi
 
     INSTRUMENTS_PID=$!
     log "Instruments PID: $INSTRUMENTS_PID"
+    TRACE_PATH="$trace_path"
 }
 
 wait_for_startup() {
@@ -247,7 +338,14 @@ phase_startup() {
     log_section "Phase: Startup Benchmark"
 
     kill_app
-    delete_db
+
+    # In CLI flags mode, we use isolated DB path - no need to touch production DB
+    if ! $USE_CLI_FLAGS; then
+        delete_db
+    fi
+
+    # Clean up any previous benchmark DB
+    rm -f "$BENCH_DB_PATH" "$BENCH_DB_PATH-wal" "$BENCH_DB_PATH-shm"
 
     local start_ms=$(get_timestamp_ms)
 
@@ -263,6 +361,17 @@ phase_startup() {
     local startup_duration=$((startup_ms - start_ms))
     log "Cold startup time: ${startup_duration}ms"
     add_metric "startup_cold_ms" "$startup_duration"
+
+    # Record CLI flags mode
+    if $USE_CLI_FLAGS; then
+        add_metric_string "isolation_mode" "cli_flags"
+        add_metric_string "bench_db_path" "$BENCH_DB_PATH"
+        if [[ -n "$BENCH_TRANSCRIPT_PATH" ]]; then
+            add_metric_string "transcript_path" "$BENCH_TRANSCRIPT_PATH"
+        fi
+    else
+        add_metric_string "isolation_mode" "legacy"
+    fi
 }
 
 phase_ingest() {
@@ -360,10 +469,13 @@ phase_cleanup() {
     # Cleanup Instruments if running
     if [[ -n "${INSTRUMENTS_PID:-}" ]]; then
         kill "$INSTRUMENTS_PID" 2>/dev/null || true
+        wait "$INSTRUMENTS_PID" 2>/dev/null || true
     fi
 
-    # Restore original database if we backed it up
-    restore_db
+    # Restore original database if we backed it up (legacy mode only)
+    if ! $USE_CLI_FLAGS; then
+        restore_db
+    fi
 
     # Record log file info
     local log_size=$(du -m "$LOG_FILE" 2>/dev/null | cut -f1)
@@ -371,6 +483,21 @@ phase_cleanup() {
     add_metric "log_size_mb" "${log_size:-0}"
 
     log "Log file: $LOG_FILE (${log_size:-0}MB)"
+
+    # Record trace file if Instruments was used
+    if [[ -n "$TRACE_PATH" && -d "$TRACE_PATH" ]]; then
+        local trace_size=$(du -m "$TRACE_PATH" 2>/dev/null | cut -f1)
+        add_metric_string "trace_file" "$TRACE_PATH"
+        add_metric "trace_size_mb" "${trace_size:-0}"
+        log "Trace file: $TRACE_PATH (${trace_size:-0}MB)"
+    fi
+
+    # Record benchmark DB size
+    if [[ -f "$BENCH_DB_PATH" ]]; then
+        local db_size=$(du -m "$BENCH_DB_PATH" 2>/dev/null | cut -f1)
+        add_metric "final_db_size_mb" "${db_size:-0}"
+        log "Benchmark DB: $BENCH_DB_PATH (${db_size:-0}MB)"
+    fi
 }
 
 # =============================================================================
@@ -381,6 +508,8 @@ main() {
     log_section "Contextify Performance Benchmark Suite"
     log "Mode: $MODE"
     log "Instruments: $USE_INSTRUMENTS"
+    log "CLI Flags: $USE_CLI_FLAGS"
+    log "Corpus: ${BENCH_TRANSCRIPT_PATH:-live transcripts}"
     log "Notes: ${RUN_NOTES:-none}"
     log "Timestamp: $RUN_TIMESTAMP"
     log ""
@@ -394,6 +523,9 @@ main() {
     # Initialize metrics
     init_metrics "$METRICS_FILE"
 
+    add_metric_string "mode" "$MODE"
+    add_metric_string "instruments" "$USE_INSTRUMENTS"
+
     if [[ -n "$RUN_NOTES" ]]; then
         add_metric_string "run_notes" "$RUN_NOTES"
     fi
@@ -401,8 +533,10 @@ main() {
     # Kill app before backup
     kill_app
 
-    # Backup existing database
-    backup_db
+    # Only backup/restore in legacy mode
+    if ! $USE_CLI_FLAGS; then
+        backup_db
+    fi
 
     # Set up exit trap for cleanup
     trap cleanup_on_exit EXIT INT TERM
@@ -432,9 +566,15 @@ main() {
     log "  Metrics: $METRICS_FILE"
     log "  Report:  $REPORT_FILE"
     log "  Logs:    $LOG_FILE"
+    if [[ -n "${TRACE_PATH:-}" ]]; then
+        log "  Trace:   $TRACE_PATH"
+    fi
     log "  History: $HISTORY_FILE"
     log ""
     log "View report: cat $REPORT_FILE"
+    if [[ -n "${TRACE_PATH:-}" ]]; then
+        log "Open trace: open $TRACE_PATH"
+    fi
 }
 
 # Run main
