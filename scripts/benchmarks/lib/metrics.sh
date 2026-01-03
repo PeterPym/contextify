@@ -27,12 +27,21 @@ EOF
 add_metric() {
     local key=$1
     local value=$2
-    METRICS_JSON=$(echo "$METRICS_JSON" | python3 -c "
+    METRICS_JSON=$(python3 - "$METRICS_JSON" "$key" "$value" <<'PY'
 import json, sys
-data = json.load(sys.stdin)
-data['metrics']['$key'] = $value
+data = json.loads(sys.argv[1])
+s = sys.argv[3]
+try:
+    v = int(s)
+except ValueError:
+    try:
+        v = float(s)
+    except ValueError:
+        v = s
+data['metrics'][sys.argv[2]] = v
 print(json.dumps(data, indent=2))
-")
+PY
+)
 }
 
 # Add a string metric value
@@ -40,12 +49,13 @@ print(json.dumps(data, indent=2))
 add_metric_string() {
     local key=$1
     local value=$2
-    METRICS_JSON=$(echo "$METRICS_JSON" | python3 -c "
+    METRICS_JSON=$(python3 - "$METRICS_JSON" "$key" "$value" <<'PY'
 import json, sys
-data = json.load(sys.stdin)
-data['metrics']['$key'] = '$value'
+data = json.loads(sys.argv[1])
+data['metrics'][sys.argv[2]] = sys.argv[3]
 print(json.dumps(data, indent=2))
-")
+PY
+)
 }
 
 # Add a nested metric object
@@ -53,12 +63,13 @@ print(json.dumps(data, indent=2))
 add_metric_object() {
     local key=$1
     local json_value=$2
-    METRICS_JSON=$(echo "$METRICS_JSON" | python3 -c "
+    METRICS_JSON=$(python3 - "$METRICS_JSON" "$key" "$json_value" <<'PY'
 import json, sys
-data = json.load(sys.stdin)
-data['metrics']['$key'] = $json_value
+data = json.loads(sys.argv[1])
+data['metrics'][sys.argv[2]] = json.loads(sys.argv[3])
 print(json.dumps(data, indent=2))
-")
+PY
+)
 }
 
 # Save metrics to file

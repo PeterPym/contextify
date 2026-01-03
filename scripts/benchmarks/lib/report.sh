@@ -23,6 +23,8 @@ m = data.get('metrics', {})
 def fmt_ms(ms):
     if ms is None:
         return "N/A"
+    if isinstance(ms, str):
+        return ms
     if ms < 1000:
         return f"{ms}ms"
     return f"{ms/1000:.2f}s"
@@ -135,6 +137,14 @@ with open(metrics_file) as f:
 
 m = data.get('metrics', {})
 
+def is_numeric(value):
+    """Check if a value is numeric (int or float)"""
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    return False
+
 # Create header if file doesn't exist
 if not os.path.exists(history_file):
     header = """# Benchmark Results History
@@ -146,7 +156,19 @@ if not os.path.exists(history_file):
         f.write(header)
 
 # Append row
-row = f"| {data.get('timestamp', 'N/A')[:10]} | {data.get('git_commit', 'N/A')} | {m.get('startup_cold_ms', 'N/A')}ms | {m.get('ingest_lines_per_sec', 'N/A')}/s | {m.get('peak_memory_mb', 'N/A')}MB | {m.get('switch_cold_ms', 'N/A')}ms | {m.get('run_notes', '-')} |\n"
+startup = m.get('startup_cold_ms', 'N/A')
+startup_str = f"{startup}ms" if is_numeric(startup) else startup
+
+ingest = m.get('ingest_lines_per_sec', 'N/A')
+ingest_str = f"{ingest}/s" if is_numeric(ingest) else ingest
+
+memory = m.get('peak_memory_mb', 'N/A')
+memory_str = f"{memory}MB" if is_numeric(memory) else memory
+
+switch = m.get('switch_cold_ms', 'N/A')
+switch_str = f"{switch}ms" if is_numeric(switch) else switch
+
+row = f"| {data.get('timestamp', 'N/A')[:10]} | {data.get('git_commit', 'N/A')} | {startup_str} | {ingest_str} | {memory_str} | {switch_str} | {m.get('run_notes', '-')} |\n"
 
 with open(history_file, 'a') as f:
     f.write(row)

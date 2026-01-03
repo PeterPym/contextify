@@ -91,6 +91,14 @@ log() {
     echo "$msg" >> "$LOG_FILE"
 }
 
+cleanup_on_exit() {
+    # best-effort cleanup; never fail
+    stop_log_stream || true
+    kill_app || true
+    restore_db || true
+    [[ -n "${INSTRUMENTS_PID:-}" ]] && kill "$INSTRUMENTS_PID" 2>/dev/null || true
+}
+
 log_section() {
     log ""
     log "========================================"
@@ -171,7 +179,14 @@ wait_for_idle() {
     log "Waiting for app to reach idle state..."
 
     for ((i=0; i<timeout; i++)); do
-        local cpu=$(ps -p $(pgrep -x "$APP_NAME" | head -1) -o %cpu= 2>/dev/null | tr -d ' ' || echo "0")
+        local pid
+        pid="$(pgrep -x "$APP_NAME" | head -1 || true)"
+        if [[ -z "$pid" ]]; then
+            log "ERROR: $APP_NAME is not running (crashed?)"
+            return 2
+        fi
+
+        local cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ' || echo "0")
         cpu=${cpu%.*}  # Remove decimal
 
         if [[ $cpu -lt $idle_threshold ]]; then
@@ -203,8 +218,9 @@ capture_memory_sample() {
 
 stream_logs() {
     # Stream unified logs for Contextify to log file
+    command -v log >/dev/null || { log "Missing macOS 'log' tool"; exit 1; }
     log "Starting log capture..."
-    log_stream --predicate 'subsystem == "dev.contextify"' \
+    log stream --predicate 'subsystem == "dev.contextify"' \
         --style compact >> "$LOG_FILE" 2>&1 &
     LOG_STREAM_PID=$!
 }
@@ -254,7 +270,6 @@ phase_ingest() {
 
     local start_ms=$(get_timestamp_ms)
     local peak_memory=0
-    local sample_interval=5  # Sample memory every 5 seconds
 
     log "Monitoring ingest progress..."
     log "This may take 15-20 minutes for a large corpus."
@@ -262,7 +277,17 @@ phase_ingest() {
 
     # Monitor until idle
     local elapsed=0
-    while ! wait_for_idle 10; do
+    while true; do
+        # Use errexit-safe pattern: capture non-zero exit without triggering set -e
+        local rc=0
+        wait_for_idle 10 || rc=$?
+        if [[ $rc -eq 0 ]]; then
+            break
+        elif [[ $rc -eq 2 ]]; then
+            log "ERROR: App crashed during ingest"
+            return 1
+        fi
+
         elapsed=$((elapsed + 10))
         local mem=$(capture_memory_sample)
 
@@ -332,6 +357,11 @@ phase_cleanup() {
     kill_app
     stop_log_stream
 
+    # Cleanup Instruments if running
+    if [[ -n "${INSTRUMENTS_PID:-}" ]]; then
+        kill "$INSTRUMENTS_PID" 2>/dev/null || true
+    fi
+
     # Restore original database if we backed it up
     restore_db
 
@@ -368,8 +398,14 @@ main() {
         add_metric_string "run_notes" "$RUN_NOTES"
     fi
 
+    # Kill app before backup
+    kill_app
+
     # Backup existing database
     backup_db
+
+    # Set up exit trap for cleanup
+    trap cleanup_on_exit EXIT INT TERM
 
     # Start log capture
     stream_logs
