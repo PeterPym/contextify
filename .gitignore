@@ -98,3 +98,8 @@ website/.version
 build/marketing-assets
 .build-linux/
 core
+
+# Benchmark results (machine-specific, large files)
+scripts/benchmarks/results/*
+!scripts/benchmarks/results/.gitignore
+!scripts/benchmarks/results/.gitkeep
