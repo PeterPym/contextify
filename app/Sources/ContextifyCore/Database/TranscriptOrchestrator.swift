@@ -182,6 +182,17 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   ) throws {
     self.dbManager = dbManager
     self.accessProvider = accessProvider
+
+    // Validate CLI transcript path if provided
+    do {
+      try PassthroughAccessProvider.validateTranscriptPath()
+    } catch let error as TranscriptPathError {
+      let msg = error.errorDescription ?? error.localizedDescription
+      log.error("[BENCH] Transcript path validation failed: \(msg)")
+      fputs("Error: \(msg)\n", stderr)
+      exit(66)  // EX_NOINPUT
+    }
+
     let pool = try dbManager.pool
 
     // v23: Initialize write queue early (P0-3: non-optional let)

@@ -171,6 +171,11 @@ actor TimelineCacheMissGenerator {
             log.debug("[GENERATOR] queueMisses cancelled; skipping \(misses.count) entries")
             return
         }
+        // Skip if --no-summaries flag is set (benchmark mode)
+        if LaunchArguments.shared.noSummaries {
+            log.info("[BENCH] Skipping \(misses.count) cache misses (--no-summaries flag active)")
+            return
+        }
         // Skip in lite mode - no LLM available for summaries
         if isLiteModeActive() {
             log.info("[LITE-MODE] Skipping \(misses.count) cache misses - summaries disabled")
