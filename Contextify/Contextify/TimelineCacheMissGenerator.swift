@@ -1031,6 +1031,7 @@ actor TimelineCacheMissGenerator {
 
     /// Generate a rule-based fallback summary when LLM decoding fails
     /// This handles cases like markdown tables that confuse structured output
+    /// Uses shared utility for consistency with FoundationLLM validation fallback
     private func generateDecodingFallback(miss: CacheMiss) -> GeneratedSummary? {
         let content = miss.content
         let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
@@ -1040,118 +1041,23 @@ actor TimelineCacheMissGenerator {
         let fallbackSummary: String
 
         if kind == .user {
-            fallbackSummary = generateUserFallback(message: content, assistantName: assistantName)
+            fallbackSummary = TimelineSummaryFallback.makeUserFallback(message: content, assistantName: assistantName)
         } else {
-            fallbackSummary = generateAssistantFallback(message: content, assistantName: assistantName)
+            fallbackSummary = TimelineSummaryFallback.makeAssistantFallback(message: content, assistantName: assistantName)
         }
 
         log.info("[DECODING-FALLBACK] Generated: \(fallbackSummary, privacy: .public)")
 
+        // Use neutral disposition and isCompletion=false for decoding fallback
+        // We can't reliably infer intent from failed decoding, so be conservative
         return GeneratedSummary(
             presentForm: fallbackSummary,
             pastForm: fallbackSummary,
             selectedForm: "present",  // Must be 'present' or 'past', not the text
-            disposition: kind == .user ? "directive" : "report",
-            isDirective: kind == .user,
-            isCompletion: kind == .assistant
+            disposition: "unknown",   // Neutral - can't reliably infer from decode failure
+            isDirective: false,       // Conservative default
+            isCompletion: false       // Conservative default - don't assume completion
         )
-    }
-
-    /// Generate fallback for user messages
-    private func generateUserFallback(message: String, assistantName: String) -> String {
-        var msgLower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Strip leading "you " when addressing assistant
-        if msgLower.hasPrefix("you ") {
-            msgLower = String(msgLower.dropFirst(4))
-        }
-
-        let commandVerbs = ["run", "do", "fix", "commit", "push", "build", "test", "deploy", "merge", "check", "show"]
-        for verb in commandVerbs {
-            if msgLower.hasPrefix(verb) || msgLower == verb {
-                return "You asked \(assistantName) to \(msgLower.prefix(40))."
-            }
-        }
-
-        if msgLower.hasPrefix("how") || msgLower.hasPrefix("what") || msgLower.hasPrefix("why") ||
-           msgLower.hasPrefix("are you") || msgLower.hasPrefix("do you") || msgLower.hasPrefix("can you") {
-            // For questions addressing the assistant, rephrase to third person
-            if msgLower.hasPrefix("are you ") {
-                let rest = String(msgLower.dropFirst(8))
-                return "You asked if \(assistantName) was \(rest)"
-            }
-            return "You asked \(assistantName) a question."
-        }
-
-        let affirmations = ["yes", "ok", "okay", "sure", "go ahead", "do it", "proceed"]
-        if affirmations.contains(where: { msgLower == $0 || msgLower.hasPrefix($0) }) {
-            return "You confirmed to proceed."
-        }
-
-        // File paths (Example 16)
-        if msgLower.hasPrefix("/") && (msgLower.contains(".") || msgLower.contains("/tmp/") || msgLower.contains("/users/")) {
-            return "You referenced a file path."
-        }
-
-        // JSON/code snippets (only if message STARTS with JSON, not just contains it)
-        if (message.hasPrefix("{") && message.contains(":")) || (message.hasPrefix("[") && message.contains(",")) {
-            return "You shared a code snippet."
-        }
-
-        // Suggestions: "we should", "we could", "it would be nice" (Example 10)
-        if msgLower.hasPrefix("we should ") || msgLower.hasPrefix("we could ") {
-            // Extract what the suggestion is about
-            let rest = msgLower.hasPrefix("we should ")
-                ? String(message.dropFirst(10))  // "we should " = 10 chars
-                : String(message.dropFirst(9))   // "we could " = 9 chars
-            let topic = rest.prefix(40).trimmingCharacters(in: .whitespaces)
-            return "You suggested: \(topic)."
-        }
-        let suggestionPatterns = ["it would be", "might want to", "maybe we"]
-        if suggestionPatterns.contains(where: { msgLower.hasPrefix($0) || msgLower.contains($0) }) {
-            return "You suggested an improvement."
-        }
-
-        return "You gave an instruction."
-    }
-
-    /// Generate fallback for assistant messages
-    private func generateAssistantFallback(message: String, assistantName: String) -> String {
-        let msgLower = message.lowercased()
-
-        // Table detection
-        if message.contains("|") && (message.contains("---") || message.contains("| ")) {
-            return "\(assistantName) displayed a data table."
-        }
-
-        // Code block detection
-        if message.contains("```") {
-            return "\(assistantName) provided code."
-        }
-
-        // Queue system specific
-        if msgLower.contains("queue system") || msgLower.contains("queue") && msgLower.contains("message") {
-            return "\(assistantName) explained how the queue system works."
-        }
-
-        // Explanation patterns
-        if msgLower.contains("let you") || msgLower.contains("allows you") {
-            return "\(assistantName) explained a feature."
-        }
-
-        // Instructions
-        if msgLower.contains("you can") || msgLower.contains("to do this") {
-            return "\(assistantName) provided instructions."
-        }
-
-        // First sentence extraction
-        let firstSentenceEnd = message.firstIndex(of: ".") ?? message.firstIndex(of: "\n") ?? message.endIndex
-        let firstPart = String(message[..<firstSentenceEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
-        if firstPart.count <= 60 && firstPart.count >= 10 {
-            return "\(assistantName): \(firstPart)."
-        }
-
-        return "\(assistantName) provided a response."
     }
 
     // MARK: - Error Tombstone Writing

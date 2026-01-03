@@ -1952,121 +1952,16 @@ extension FoundationLLM {
         let reason: String
     }
 
-    /// Generate a meaningful fallback summary for short user messages that would otherwise be echoed
+    /// Generate a meaningful fallback summary for user messages that would otherwise be echoed
+    /// Delegates to shared utility for consistency with cache-miss fallback
     func generateUserMessageFallback(message: String, assistantName: String) -> String {
-        var msgLower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Strip leading "you " when user is addressing the assistant (e.g., "you run it" → "run it")
-        if msgLower.hasPrefix("you ") {
-            msgLower = String(msgLower.dropFirst(4))
-        }
-
-        // Imperative commands: "run it", "do it", "fix it", "commit", "push"
-        let commandVerbs = ["run", "do", "fix", "commit", "push", "build", "test", "deploy", "merge", "check"]
-        for verb in commandVerbs {
-            if msgLower.hasPrefix(verb) || msgLower == verb {
-                return "You asked \(assistantName) to \(msgLower)."
-            }
-        }
-
-        // Questions: "how", "what", "why", "where", "when", "can you", "are you", "do you"
-        if msgLower.hasPrefix("how") || msgLower.hasPrefix("what") || msgLower.hasPrefix("why") ||
-           msgLower.hasPrefix("where") || msgLower.hasPrefix("when") || msgLower.hasPrefix("can you") ||
-           msgLower.hasPrefix("are you") || msgLower.hasPrefix("do you") || msgLower.hasPrefix("will you") {
-            // For questions addressing the assistant, rephrase to third person
-            if msgLower.hasPrefix("are you ") {
-                let rest = String(msgLower.dropFirst(8))  // "are you " is 8 chars
-                return "You asked if \(assistantName) was \(rest)"
-            }
-            return "You asked \(assistantName) a question."
-        }
-
-        // Affirmations: "yes", "ok", "sure", "go ahead", "sounds good"
-        let affirmations = ["yes", "ok", "okay", "sure", "go ahead", "sounds good", "do it", "proceed", "yep", "yeah"]
-        if affirmations.contains(where: { msgLower == $0 || msgLower.hasPrefix($0) }) {
-            return "You confirmed to proceed."
-        }
-
-        // Negations: "no", "stop", "cancel", "wait"
-        let negations = ["no", "stop", "cancel", "wait", "hold on", "nope"]
-        if negations.contains(where: { msgLower == $0 || msgLower.hasPrefix($0) }) {
-            return "You asked to stop or reconsider."
-        }
-
-        // File paths (Example 16)
-        if msgLower.hasPrefix("/") && (msgLower.contains(".") || msgLower.contains("/tmp/") || msgLower.contains("/users/")) {
-            return "You referenced a file path."
-        }
-
-        // JSON/code snippets (only if message STARTS with JSON, not just contains it)
-        if (message.hasPrefix("{") && message.contains(":")) || (message.hasPrefix("[") && message.contains(",")) {
-            return "You shared a code snippet."
-        }
-
-        // Suggestions: "we should", "we could", "it would be nice" (Example 10)
-        if msgLower.hasPrefix("we should ") || msgLower.hasPrefix("we could ") {
-            // Extract what the suggestion is about
-            let rest = msgLower.hasPrefix("we should ")
-                ? String(message.dropFirst(10))  // "we should " = 10 chars
-                : String(message.dropFirst(9))   // "we could " = 9 chars
-            let topic = rest.prefix(40).trimmingCharacters(in: .whitespaces)
-            return "You suggested: \(topic)."
-        }
-        let suggestionPatterns = ["it would be", "might want to", "maybe we"]
-        if suggestionPatterns.contains(where: { msgLower.hasPrefix($0) || msgLower.contains($0) }) {
-            return "You suggested an improvement."
-        }
-
-        // Default: treat as instruction
-        return "You instructed: \"\(message)\""
+        TimelineSummaryFallback.makeUserFallback(message: message, assistantName: assistantName)
     }
 
-    /// Generate a meaningful fallback summary for longer assistant messages that would otherwise be echoed/truncated
+    /// Generate a meaningful fallback summary for assistant messages that would otherwise be echoed/truncated
+    /// Delegates to shared utility for consistency with cache-miss fallback
     func generateAssistantMessageFallback(message: String, assistantName: String) -> String {
-        let msgLower = message.lowercased()
-
-        // Try to extract the topic from the first sentence
-        let firstSentenceEnd = message.firstIndex(of: ".") ?? message.firstIndex(of: "\n") ?? message.endIndex
-        let firstPart = String(message[..<firstSentenceEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Common explanation patterns
-        if msgLower.contains("queue system") || msgLower.contains("queue") {
-            return "\(assistantName) explained how the queue system works."
-        }
-        if msgLower.contains("let you") || msgLower.contains("allows you") || msgLower.contains("enables") {
-            // Extract what the feature does
-            if firstPart.count <= 80 {
-                return "\(assistantName) explained: \(firstPart)."
-            }
-        }
-
-        // Technical explanations
-        if msgLower.contains("works by") || msgLower.contains("this means") || msgLower.contains("essentially") {
-            return "\(assistantName) provided a technical explanation."
-        }
-
-        // Instructions/how-to
-        if msgLower.contains("you can") || msgLower.contains("to do this") || msgLower.contains("first,") {
-            return "\(assistantName) provided instructions."
-        }
-
-        // Analysis/investigation
-        if msgLower.contains("looking at") || msgLower.contains("found that") || msgLower.contains("the issue") {
-            return "\(assistantName) shared analysis findings."
-        }
-
-        // Table/data display
-        if message.contains("|") && message.contains("---") {
-            return "\(assistantName) displayed a data table."
-        }
-
-        // Default: use truncated first sentence if reasonable length
-        if firstPart.count <= 60 && firstPart.count >= 10 {
-            return "\(assistantName): \(firstPart)."
-        }
-
-        // Ultimate fallback
-        return "\(assistantName) provided a detailed response."
+        TimelineSummaryFallback.makeAssistantFallback(message: message, assistantName: assistantName)
     }
 
     /// Detect when a summary is just echoing the input with minimal transformation
@@ -2109,13 +2004,28 @@ extension FoundationLLM {
 
             // Check 2c: Truncated echo - summary is just the start of the message
             // Catches cases like long message truncated to first ~140 chars
+            // Require stronger evidence: high length ratio OR truncation marker
             if normalizedMessage.hasPrefix(normalizedSummary) && normalizedSummary.count >= 50 {
-                return EchoCheckResult(isEcho: true, reason: "truncated echo - summary is prefix of message")
+                // Only flag as echo if summary is a significant portion of the message (>= 70%)
+                // OR the summary ends with truncation markers
+                let lengthRatio = Double(normalizedSummary.count) / Double(normalizedMessage.count)
+                let hasTruncationMarker = summary.hasSuffix("…") || summary.hasSuffix("...")
+                if lengthRatio >= 0.7 || hasTruncationMarker {
+                    return EchoCheckResult(isEcho: true, reason: "truncated echo - summary is prefix of message")
+                }
             }
-            // Also catch when summary ends with "…" (truncation indicator)
+            // Also catch when summary ends with ellipsis (explicit truncation indicator)
             if summary.hasSuffix("…") || summary.hasSuffix("...") {
-                let trimmedSummary = summary.trimmingCharacters(in: CharacterSet(charactersIn: "….")).lowercased()
-                if normalizedMessage.hasPrefix(trimmedSummary) {
+                // Trim ellipsis and trailing whitespace/periods properly
+                var trimmedSummary = summary
+                if trimmedSummary.hasSuffix("…") {
+                    trimmedSummary = String(trimmedSummary.dropLast())
+                } else if trimmedSummary.hasSuffix("...") {
+                    trimmedSummary = String(trimmedSummary.dropLast(3))
+                }
+                trimmedSummary = trimmedSummary.trimmingCharacters(in: .whitespaces).lowercased()
+                // Require trimmed prefix to be non-trivial (>= 20 chars) before declaring echo
+                if trimmedSummary.count >= 20 && normalizedMessage.hasPrefix(trimmedSummary) {
                     return EchoCheckResult(isEcho: true, reason: "truncated echo with ellipsis")
                 }
             }
@@ -2239,12 +2149,11 @@ extension FoundationLLM {
         if echoCheckResult.isEcho {
             log.warning("[VALIDATION-ECHO] Echo pattern detected: \(echoCheckResult.reason, privacy: .public)")
 
-            // For short messages, provide a template fallback instead of failing
-            if kind == .user && message.count <= 50 {
-                // Generate a meaningful summary for short user messages
+            // Generate bounded fallback for all echo cases (regardless of message length)
+            // The shared utility already applies hard caps to prevent unbounded summaries
+            if kind == .user {
                 let fallbackSummary = generateUserMessageFallback(message: message, assistantName: assistantName)
-                log.info("[VALIDATION-ECHO] Using fallback for short user message: \(fallbackSummary, privacy: .public)")
-                // Determine isDirective from disposition
+                log.info("[VALIDATION-ECHO] Using fallback for user message: \(fallbackSummary, privacy: .public)")
                 let isDirective = payload.disposition == "directive"
                 return TimelineSummaryResult(
                     summary: fallbackSummary,
@@ -2259,7 +2168,8 @@ extension FoundationLLM {
                 let fallbackSummary: String
                 if message.count <= 30 {
                     // For very short messages like "Done.", use simple template
-                    fallbackSummary = "\(assistantName) confirmed: \(message)"
+                    let clipped = TimelineSummaryFallback.clipForSummary(message, maxLength: 40)
+                    fallbackSummary = "\(assistantName) confirmed: \(clipped)"
                 } else {
                     // For longer truncated echoes, summarize the topic
                     fallbackSummary = generateAssistantMessageFallback(message: message, assistantName: assistantName)
