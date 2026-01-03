@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import OSLog
 import ContextifyCore
+import MarkdownUI
 
 private let log = Logger(subsystem: "dev.contextify.timeline", category: "EntryRow")
 
@@ -40,6 +41,8 @@ struct TimelineEntryRow: View, Equatable {
     @State private var extractedImages: [ExtractedImage] = []
     @State private var imagePromptText: String?
     @State private var hasLoadedImages = false
+    // Cached parsed markdown content to avoid re-parsing on SwiftUI re-renders
+    @State private var cachedMarkdownContent: MarkdownContent?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ConversationMonitor.self) private var monitor
@@ -81,12 +84,16 @@ struct TimelineEntryRow: View, Equatable {
                     .padding(.leading, 4)  // Align with text content
                 }
 
-                if isExpanded {
+                if isExpanded, let content = cachedMarkdownContent {
                     Divider()
-                    Text(entry.detail)
+                    Markdown(content)
                         .font(.caption)
-                        .textSelection(.enabled)
                         .lineSpacing(2)
+                        .markdownBlockStyle(\.table) { configuration in
+                            configuration.label
+                                .markdownTableBorderStyle(.init(color: .secondary.opacity(0.3)))
+                        }
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .transition(.opacity)
                 }
@@ -158,6 +165,27 @@ struct TimelineEntryRow: View, Equatable {
             }
             // Load images for this entry (lazy, cached)
             loadImagesIfNeeded()
+            // Pre-parse markdown if already expanded on appear
+            updateMarkdownCacheIfNeeded()
+        }
+        .onChange(of: isExpanded) { _, newValue in
+            // Parse markdown when expanding, clear cache when collapsing
+            if newValue {
+                updateMarkdownCacheIfNeeded()
+            } else {
+                invalidateMarkdownCache()
+            }
+        }
+        .onChange(of: entry.detail) { _, _ in
+            // Invalidate cache when entry content changes (will re-parse on next expand)
+            invalidateMarkdownCache()
+            // If currently expanded, immediately re-parse
+            updateMarkdownCacheIfNeeded()
+        }
+        .onChange(of: entry.id) { _, _ in
+            // Invalidate cache when entry identity changes (view reuse safety)
+            invalidateMarkdownCache()
+            updateMarkdownCacheIfNeeded()
         }
     }
 
@@ -179,6 +207,19 @@ struct TimelineEntryRow: View, Equatable {
                 }
             }
         }
+    }
+
+    /// Update cached markdown content when expansion state or entry content changes
+    /// Uses onChange handlers for explicit cache management (no side effects in getters)
+    private func updateMarkdownCacheIfNeeded() {
+        if isExpanded && cachedMarkdownContent == nil {
+            cachedMarkdownContent = MarkdownContent(entry.detail)
+        }
+    }
+
+    /// Clear cache when entry detail changes (will re-parse on next expand)
+    private func invalidateMarkdownCache() {
+        cachedMarkdownContent = nil
     }
 
     private var header: some View {
