@@ -464,10 +464,12 @@ public final class DatabaseManager: @unchecked Sendable {
   /// Tracks cumulative entries across transcripts and triggers checkpoint when threshold reached.
   /// Uses PASSIVE mode which doesn't block readers.
   /// Thread-safe: uses poolLock to protect counter and pool access.
+  /// - Important: Must be called outside any active DatabasePool write closure.
   public func checkpointAfterBulkWrites(entriesWritten: Int) {
     guard entriesWritten > 0 else { return }
+    assert(!Thread.isMainThread, "checkpointAfterBulkWrites must not be called on main thread")
 
-    var pool: DatabasePool?
+    let pool: DatabasePool
     var claimedCount = 0
 
     // Acquire lock to safely update counter and check threshold
@@ -501,11 +503,19 @@ public final class DatabaseManager: @unchecked Sendable {
     // Perform checkpoint outside lock (blocking operation)
     do {
       // Use writeWithoutTransaction to avoid implicit transaction overhead
-      try pool!.writeWithoutTransaction { db in
-        // PASSIVE checkpoint - doesn't block readers, moves what it can
-        _ = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
+      try pool.writeWithoutTransaction { db in
+        // PASSIVE checkpoint - returns (busy, log, checkpointed) counts
+        if let result = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)") {
+          let busy = result[0] as? Int ?? 0
+          let logPages = result[1] as? Int ?? 0
+          let checkpointed = result[2] as? Int ?? 0
+          if busy > 0 || checkpointed < logPages {
+            log.debug("[WAL-CHECKPOINT] Partial after \(claimedCount) entries: \(checkpointed)/\(logPages) pages, \(busy) busy")
+          } else {
+            log.debug("[WAL-CHECKPOINT] Complete after \(claimedCount) entries: \(checkpointed) pages")
+          }
+        }
       }
-      log.debug("[WAL-CHECKPOINT] Checkpoint after \(claimedCount) cumulative entries")
     } catch {
       // Re-add claimed count on failure to preserve pressure for retry
       poolLock.lock()
