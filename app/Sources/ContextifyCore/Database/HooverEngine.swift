@@ -14,7 +14,15 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Ho
 
 public enum MonitorConfig {
   public static let fileWatcherDebounce: TimeInterval = 0.150
-  public static let batchLines: Int = 1000
+  /// Number of lines per batch commit. Default 1000, override via CONTEXTIFY_BATCH_LINES.
+  /// Larger batches reduce transaction overhead but increase memory usage.
+  public static let batchLines: Int = {
+    if let envValue = ProcessInfo.processInfo.environment["CONTEXTIFY_BATCH_LINES"],
+       let value = Int(envValue), value > 0 {
+      return value
+    }
+    return 1000
+  }()
   public static let checkpointEveryLines: Int = 1000
   public static let parseErrorMaxChars: Int = 1024
   public static let parseErrorRetentionPerTranscript: Int = 500
