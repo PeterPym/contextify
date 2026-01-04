@@ -277,13 +277,16 @@ wait_for_startup() {
 }
 
 wait_for_idle() {
-    # Wait for app to reach idle state by monitoring CPU usage
+    # Wait for app to reach idle state using DB-based completion detection
+    # This is more reliable than CPU-based detection, especially for bulk mode
+    # where index rebuild causes concentrated CPU spikes at the end.
     local timeout=${1:-300}
-    local idle_threshold=5  # CPU % below which we consider idle
-    local idle_count=0
-    local required_idle=3   # Need 3 consecutive idle readings
+    local stable_count=0
+    local required_stable=3   # Need 3 consecutive stable readings
+    local prev_entries=0
+    local prev_transcripts=0
 
-    log "Waiting for app to reach idle state..."
+    log "Waiting for ingest completion (DB-based detection)..."
 
     for ((i=0; i<timeout; i++)); do
         local pid
@@ -293,29 +296,42 @@ wait_for_idle() {
             return 2
         fi
 
-        local cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ' || echo "0")
-        cpu=${cpu%.*}  # Remove decimal
+        # Query DB state - this is authoritative
+        local mode="unknown"
+        local entries=0
+        local transcripts=0
 
-        if [[ $cpu -lt $idle_threshold ]]; then
-            idle_count=$((idle_count + 1))
-            if [[ $idle_count -ge $required_idle ]]; then
-                log "App reached idle state (CPU: ${cpu}%)"
+        if [[ -f "$BENCH_DB_PATH" ]]; then
+            mode=$(sqlite3 "$BENCH_DB_PATH" "SELECT COALESCE((SELECT mode FROM ingest_mode WHERE id=1), 'unknown');" 2>/dev/null || echo "error")
+            entries=$(sqlite3 "$BENCH_DB_PATH" "SELECT COALESCE((SELECT count(*) FROM transcript_entries), 0);" 2>/dev/null || echo "0")
+            transcripts=$(sqlite3 "$BENCH_DB_PATH" "SELECT COALESCE((SELECT count(*) FROM transcripts), 0);" 2>/dev/null || echo "0")
+        fi
+
+        # Check for completion: mode=normal AND counts stable
+        if [[ "$mode" == "normal" && "$entries" == "$prev_entries" && "$transcripts" == "$prev_transcripts" && "$entries" -gt 0 ]]; then
+            stable_count=$((stable_count + 1))
+            if [[ $stable_count -ge $required_stable ]]; then
+                log "Ingest complete (mode=normal, entries stable at $entries)"
                 return 0
             fi
         else
-            idle_count=0
+            stable_count=0
         fi
+
+        prev_entries=$entries
+        prev_transcripts=$transcripts
 
         # Log progress every 30 seconds
         if [[ $((i % 30)) -eq 0 && $i -gt 0 ]]; then
             local mem=$(get_process_memory_mb "$APP_NAME")
-            log "  Progress: ${i}s elapsed, CPU: ${cpu}%, Memory: ${mem}MB"
+            local idx_count=$(sqlite3 "$BENCH_DB_PATH" "SELECT count(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL;" 2>/dev/null || echo "?")
+            log "  Progress: ${i}s, mode=$mode, idx=$idx_count, entries=$entries, transcripts=$transcripts, mem=${mem}MB"
         fi
 
         sleep 1
     done
 
-    log "WARNING: Timeout waiting for idle state"
+    log "WARNING: Timeout waiting for ingest completion"
     return 1
 }
 
@@ -395,18 +411,51 @@ phase_ingest() {
 
     local start_ms=$(get_timestamp_ms)
     local peak_memory=0
+    local bulk_entered=false
+    local bulk_exit_ms=0
+    local ingest_done_ms=0
+    local min_idx_count=999
+    local max_idx_count=0
 
     log "Monitoring ingest progress..."
     log "This may take 15-20 minutes for a large corpus."
     log ""
 
-    # Monitor until idle
+    # Monitor until idle, tracking bulk mode phases
     local elapsed=0
+    local prev_mode="unknown"
     while true; do
+        # Check DB state for bulk mode tracking
+        if [[ -f "$BENCH_DB_PATH" ]]; then
+            local mode=$(sqlite3 "$BENCH_DB_PATH" "SELECT COALESCE((SELECT mode FROM ingest_mode WHERE id=1), 'unknown');" 2>/dev/null || echo "error")
+            local idx_count=$(sqlite3 "$BENCH_DB_PATH" "SELECT count(*) FROM sqlite_master WHERE type='index' AND sql IS NOT NULL;" 2>/dev/null || echo "0")
+
+            # Track bulk mode entry
+            if [[ "$mode" == "bulk" && "$bulk_entered" == false ]]; then
+                bulk_entered=true
+                log "  [BULK] Entered bulk mode (indexes: $idx_count)"
+            fi
+
+            # Track index count range
+            if [[ "$idx_count" =~ ^[0-9]+$ ]]; then
+                if [[ $idx_count -lt $min_idx_count ]]; then min_idx_count=$idx_count; fi
+                if [[ $idx_count -gt $max_idx_count ]]; then max_idx_count=$idx_count; fi
+            fi
+
+            # Track bulk mode exit (rebuild complete)
+            if [[ "$prev_mode" == "bulk" && "$mode" == "normal" ]]; then
+                bulk_exit_ms=$(get_timestamp_ms)
+                log "  [BULK] Exited bulk mode (indexes rebuilt: $idx_count)"
+            fi
+
+            prev_mode="$mode"
+        fi
+
         # Use errexit-safe pattern: capture non-zero exit without triggering set -e
         local rc=0
         wait_for_idle 10 || rc=$?
         if [[ $rc -eq 0 ]]; then
+            ingest_done_ms=$(get_timestamp_ms)
             break
         elif [[ $rc -eq 2 ]]; then
             log "ERROR: App crashed during ingest"
@@ -433,6 +482,24 @@ phase_ingest() {
 
     add_metric "ingest_total_ms" "$ingest_duration"
     add_metric "peak_memory_mb" "$peak_memory"
+
+    # Record bulk mode metrics
+    if [[ "$bulk_entered" == true ]]; then
+        add_metric_string "bulk_mode_used" "true"
+        add_metric "bulk_min_idx_count" "$min_idx_count"
+        add_metric "bulk_max_idx_count" "$max_idx_count"
+        log "  Bulk mode: YES (indexes: $min_idx_count min, $max_idx_count max)"
+
+        # Calculate rebuild time if we captured the exit
+        if [[ $bulk_exit_ms -gt 0 && $ingest_done_ms -gt 0 ]]; then
+            local rebuild_ms=$((ingest_done_ms - bulk_exit_ms))
+            add_metric "bulk_rebuild_ms" "$rebuild_ms"
+            log "  Index rebuild time: $(format_duration_ms $rebuild_ms)"
+        fi
+    else
+        add_metric_string "bulk_mode_used" "false"
+        log "  Bulk mode: NO"
+    fi
 
     # Calculate ingest rate from corpus stats
     local total_lines=$(echo "$METRICS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['metrics']['corpus']['total_lines'])")
