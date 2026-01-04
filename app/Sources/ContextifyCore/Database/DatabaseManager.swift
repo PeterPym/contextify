@@ -4,6 +4,31 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager")
 
+// MARK: - CLI Database Path Error
+
+/// Errors for CLI database path validation
+enum DatabasePathError: LocalizedError {
+  case pathExists(String)
+  case parentNotWritable(String)
+  case invalidPath(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .pathExists(let path):
+      return """
+        Database already exists at --database-path location: \(path)
+        Benchmark mode requires a fresh database. Either:
+          1. Delete the existing file: rm '\(path)'
+          2. Use a different path: --database-path /tmp/bench-\(UUID().uuidString.prefix(8)).db
+        """
+    case .parentNotWritable(let path):
+      return "Parent directory not writable for --database-path: \(path)"
+    case .invalidPath(let path):
+      return "Invalid --database-path: \(path)"
+    }
+  }
+}
+
 // MARK: - Onboarding Error
 
 /// Guard error for App Store builds attempting DB access before onboarding.
@@ -26,6 +51,11 @@ public final class DatabaseManager: @unchecked Sendable {
   private var securityScopedDirURL: URL?
   private var isMigrationInProgress = false
   private let overrideDatabaseURL: URL?
+
+  /// Cached CLI database URL after validation (set once at first resolution)
+  /// This prevents re-validation failing after the DB file is created
+  /// Access protected by poolLock (set in databasePath() which is called under lock)
+  private var validatedCLIDatabaseURL: URL?
 
   public var pool: DatabasePool {
     get throws {
@@ -186,6 +216,27 @@ public final class DatabaseManager: @unchecked Sendable {
       return overrideDatabaseURL
     }
 
+    // CLI override takes precedence (runtime-only)
+    // Use cached URL after first validation to avoid failing after DB creation
+    if let cachedURL = validatedCLIDatabaseURL {
+      return cachedURL
+    }
+    if let cliPath = LaunchArguments.shared.databasePath {
+      do {
+        try validateCLIDatabasePath(cliPath)
+      } catch let error as DatabasePathError {
+        // Fail-fast for CLI database path validation errors
+        let msg = error.errorDescription ?? error.localizedDescription
+        log.error("[BENCH] Database path validation failed: \(msg)")
+        fputs("Error: \(msg)\n", stderr)
+        exit(73)  // EX_CANTCREAT
+      }
+      let url = URL(fileURLWithPath: cliPath)
+      validatedCLIDatabaseURL = url
+      log.info("[BENCH] Using CLI database path: \(cliPath, privacy: .public)")
+      return url
+    }
+
     // Check for custom database location first
     if let customLocation = try customDatabasePath() {
       return customLocation
@@ -193,6 +244,33 @@ public final class DatabaseManager: @unchecked Sendable {
 
     // Fall back to default location
     return try defaultDatabasePath()
+  }
+
+  /// Validates CLI database path before use
+  private func validateCLIDatabasePath(_ cliPath: String) throws {
+    // App Store builds: reject path flags (security-scoped access required)
+    #if APPSTORE_BUILD
+    fputs("Error: --database-path is not supported in App Store builds\n", stderr)
+    exit(64)  // EX_USAGE
+    #endif
+
+    let url = URL(fileURLWithPath: cliPath)
+
+    // Validate: path must not exist (fresh benchmark DB)
+    if FileManager.default.fileExists(atPath: cliPath) {
+      throw DatabasePathError.pathExists(cliPath)
+    }
+
+    // Validate: parent directory must exist and be writable
+    let parentDir = url.deletingLastPathComponent()
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: parentDir.path, isDirectory: &isDir),
+          isDir.boolValue else {
+      throw DatabasePathError.invalidPath(cliPath)
+    }
+    guard FileManager.default.isWritableFile(atPath: parentDir.path) else {
+      throw DatabasePathError.parentNotWritable(cliPath)
+    }
   }
 
   /// Returns custom database path if configured

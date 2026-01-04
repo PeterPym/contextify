@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import OSLog
+import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify.timeline", category: "EntryRow")
 
@@ -55,6 +56,12 @@ struct TimelineEntryRow: View, Equatable {
             if isLiteMode {
                 // Lite mode: show deterministic fallback description
                 liteModeContent
+            } else if LaunchArguments.shared.noSummaries {
+                // Benchmark mode with --no-summaries flag
+                Text("[Summaries disabled]")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .italic()
             } else {
                 // Full mode: show LLM-generated summary
                 formatWithBackticks(entry.summary)

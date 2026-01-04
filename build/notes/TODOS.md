@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-02 (Removed fixed P0s: #INGEST-UI-LAG, #WINDOW-CONTROLS-DISABLED)
+**Last Updated:** 2026-01-02 (Added #PERF-AUDIT-* performance optimization phases)
 **Status:** Active
 
 **Priority Levels:**
@@ -142,6 +142,45 @@ Image rendering feature is functional but needs UI polish:
 - Window loses size/position on close
 
 **Scope:** UI/UX polish only. Performance concerns tracked separately in #IMAGE-RENDER-*.
+
+---
+
+## Performance Audit - Proactive Optimization (5 phases)
+
+**Status:** Phase 1 in progress (benchmark infrastructure created)
+**Priority:** P1 (performance/stability)
+**Discovered:** 2026-01-02
+
+- [x] #PERF-AUDIT-INFRA: Create benchmark infrastructure (scripts, metrics, comparison tools)
+- [ ] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
+- [ ] #PERF-AUDIT-PHASE2: Quick wins (index audit, cache tuning, debounce tuning)
+- [ ] #PERF-AUDIT-PHASE3: Architectural improvements (parallelization, streaming)
+- [ ] #PERF-AUDIT-PHASE4: Low-level optimizations (parser, hashing, memory)
+- [ ] #PERF-AUDIT-PHASE5: User communication (status bar progress, settings panel)
+
+**Background:**
+Following P0 fixes for UI lag during ingest (commit `2f447097`), this is a proactive, holistic performance optimization effort. Primary goal: initial ingest experience must never feel sluggish.
+
+**Strategic value:** Linux engine shipping soon - optimizations to shared code (ContextifyCore) benefit both macOS and Linux (2-3x impact).
+
+**Phase 1 - Measurement & Baselines (current):**
+- Benchmark harness using production transcript corpus
+- Metrics: startup time, ingest rate, memory peak, query latency
+- Comparison tools for before/after validation
+
+**Key commands:**
+```bash
+./scripts/benchmarks/run-perf-suite.sh --full    # Run full benchmark (~16 min)
+./scripts/benchmarks/set-baseline.sh             # Mark as baseline
+./scripts/benchmarks/compare.sh                  # Compare to baseline
+```
+
+**Documentation:**
+- **Plan:** `build/notes/todo-support/PERF-AUDIT-plan.md` (5 phases, 430+ lines)
+- **Guide:** `build/docs/performance/benchmark-guide.md`
+- **History:** `build/docs/performance/benchmark-history.md`
+- **Architecture:** `build/docs/architecture/data-pipeline-architecture.md`
+- **Ingestion:** `build/docs/architecture/ingestion-workflow.md`
 
 ---
 
