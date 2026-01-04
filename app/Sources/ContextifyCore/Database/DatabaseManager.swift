@@ -163,6 +163,10 @@ public final class DatabaseManager: @unchecked Sendable {
       try db.execute(sql: "PRAGMA synchronous=NORMAL")
       try db.execute(sql: "PRAGMA wal_autocheckpoint=1000")
       try db.execute(sql: "PRAGMA temp_store=MEMORY")
+      // Performance: 100MB cache (negative = KB), reduces disk I/O
+      try db.execute(sql: "PRAGMA cache_size=-102400")
+      // Performance: 1GB mmap for read-heavy operations (parent validation, dedup)
+      try db.execute(sql: "PRAGMA mmap_size=1073741824")
     }
 
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
