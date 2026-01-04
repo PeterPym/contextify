@@ -1119,6 +1119,19 @@ public final class HooverEngine {
     var insertedCount = 0
     let now = Int(Date().timeIntervalSince1970)
     try db.write { db in
+      // PERF: Batch validate parent IDs in a single query instead of per-entry
+      // Collect all unique parent IDs that need validation
+      let parentIds = Set(entries.compactMap { $0.parentId })
+      var existingParentIds: Set<String> = []
+
+      if !parentIds.isEmpty {
+        // Single query to check which parent IDs exist (replaces O(n) per-entry queries)
+        let placeholders = parentIds.map { _ in "?" }.joined(separator: ",")
+        let sql = "SELECT id FROM transcript_entries WHERE id IN (\(placeholders))"
+        let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(Array(parentIds)))
+        existingParentIds = Set(rows.map { $0["id"] as String })
+      }
+
       // Insert entries with window tracking
       for entry in entries {
         // Compute window from previous 2 entries
@@ -1131,14 +1144,10 @@ public final class HooverEngine {
         model.prev2Id = prev2
         model.windowSha256 = windowSha
 
-        // Check if parent exists before inserting (avoid FK constraint violation)
+        // Check if parent exists using pre-validated set (avoid FK constraint violation)
         // This handles out-of-order entries where a child references a parent that hasn't been inserted yet
         if let parentId = model.parentId {
-          let parentExists = try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM transcript_entries WHERE id = ?)
-          """, arguments: [parentId]) ?? false
-
-          if !parentExists {
+          if !existingParentIds.contains(parentId) {
             if MonitorConfig.enableHooverStorageTracing {
               log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
             }
