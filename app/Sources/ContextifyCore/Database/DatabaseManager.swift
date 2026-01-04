@@ -457,6 +457,9 @@ public final class DatabaseManager: @unchecked Sendable {
   /// Cumulative entries written since last checkpoint (protected by poolLock)
   private var entriesSinceLastCheckpoint = 0
 
+  /// Flag to prevent concurrent checkpoints (protected by poolLock)
+  private var checkpointInProgress = false
+
   /// Checkpoint WAL after bulk ingest operations
   /// Tracks cumulative entries across transcripts and triggers checkpoint when threshold reached.
   /// Uses PASSIVE mode which doesn't block readers.
@@ -464,36 +467,50 @@ public final class DatabaseManager: @unchecked Sendable {
   public func checkpointAfterBulkWrites(entriesWritten: Int) {
     guard entriesWritten > 0 else { return }
 
+    var pool: DatabasePool?
+    var claimedCount = 0
+
     // Acquire lock to safely update counter and check threshold
     poolLock.lock()
     entriesSinceLastCheckpoint += entriesWritten
-    guard entriesSinceLastCheckpoint >= Self.walCheckpointThreshold else {
+
+    // Skip if checkpoint already in progress or below threshold
+    guard !checkpointInProgress,
+          entriesSinceLastCheckpoint >= Self.walCheckpointThreshold,
+          let p = _pool
+    else {
       poolLock.unlock()
       return
     }
-    guard let pool = _pool else {
-      poolLock.unlock()
-      return
-    }
-    let cumulativeCount = entriesSinceLastCheckpoint
+
+    // Claim checkpoint and reset counter before running
+    // New writes during checkpoint will accumulate from 0
+    checkpointInProgress = true
+    pool = p
+    claimedCount = entriesSinceLastCheckpoint
+    entriesSinceLastCheckpoint = 0
     poolLock.unlock()
 
-    // Perform checkpoint outside lock (checkpoint is blocking but doesn't need our lock)
+    // Clear in-progress flag when done (success or failure)
+    defer {
+      poolLock.lock()
+      checkpointInProgress = false
+      poolLock.unlock()
+    }
+
+    // Perform checkpoint outside lock (blocking operation)
     do {
       // Use writeWithoutTransaction to avoid implicit transaction overhead
-      try pool.writeWithoutTransaction { db in
+      try pool!.writeWithoutTransaction { db in
         // PASSIVE checkpoint - doesn't block readers, moves what it can
-        // Returns row with (busy, log, checkpointed) but we don't need the values
         _ = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
       }
-      log.debug("[WAL-CHECKPOINT] Checkpoint after \(cumulativeCount) cumulative entries")
-      // Reset counter on success
-      poolLock.lock()
-      entriesSinceLastCheckpoint = 0
-      poolLock.unlock()
+      log.debug("[WAL-CHECKPOINT] Checkpoint after \(claimedCount) cumulative entries")
     } catch {
-      // Checkpoint failures are non-fatal - WAL will be checkpointed eventually
-      // Keep cumulative count so we retry on next significant ingest
+      // Re-add claimed count on failure to preserve pressure for retry
+      poolLock.lock()
+      entriesSinceLastCheckpoint += claimedCount
+      poolLock.unlock()
       log.debug("[WAL-CHECKPOINT] Skipped: \(error.localizedDescription)")
     }
   }
