@@ -1138,6 +1138,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) (partial \(outcome.newEntries) entries)")
     }
 
+    // Checkpoint WAL after significant bulk writes to prevent WAL growth
+    dbManager.checkpointAfterBulkWrites(entriesWritten: outcome.newEntries)
+
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 
     // Reconcile pending assistant_usage records after hoover completes

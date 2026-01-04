@@ -451,6 +451,53 @@ public final class DatabaseManager: @unchecked Sendable {
     }
   }
 
+  /// Threshold for WAL checkpoint (5 batches worth of entries)
+  private static let walCheckpointThreshold = 5000
+
+  /// Cumulative entries written since last checkpoint (protected by poolLock)
+  private var entriesSinceLastCheckpoint = 0
+
+  /// Checkpoint WAL after bulk ingest operations
+  /// Tracks cumulative entries across transcripts and triggers checkpoint when threshold reached.
+  /// Uses PASSIVE mode which doesn't block readers.
+  /// Thread-safe: uses poolLock to protect counter and pool access.
+  public func checkpointAfterBulkWrites(entriesWritten: Int) {
+    guard entriesWritten > 0 else { return }
+
+    // Acquire lock to safely update counter and check threshold
+    poolLock.lock()
+    entriesSinceLastCheckpoint += entriesWritten
+    guard entriesSinceLastCheckpoint >= Self.walCheckpointThreshold else {
+      poolLock.unlock()
+      return
+    }
+    guard let pool = _pool else {
+      poolLock.unlock()
+      return
+    }
+    let cumulativeCount = entriesSinceLastCheckpoint
+    poolLock.unlock()
+
+    // Perform checkpoint outside lock (checkpoint is blocking but doesn't need our lock)
+    do {
+      // Use writeWithoutTransaction to avoid implicit transaction overhead
+      try pool.writeWithoutTransaction { db in
+        // PASSIVE checkpoint - doesn't block readers, moves what it can
+        // Returns row with (busy, log, checkpointed) but we don't need the values
+        _ = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
+      }
+      log.debug("[WAL-CHECKPOINT] Checkpoint after \(cumulativeCount) cumulative entries")
+      // Reset counter on success
+      poolLock.lock()
+      entriesSinceLastCheckpoint = 0
+      poolLock.unlock()
+    } catch {
+      // Checkpoint failures are non-fatal - WAL will be checkpointed eventually
+      // Keep cumulative count so we retry on next significant ingest
+      log.debug("[WAL-CHECKPOINT] Skipped: \(error.localizedDescription)")
+    }
+  }
+
   /// Runs ANALYZE for query optimization
   public func analyze() throws {
     guard let pool = _pool else { return }
