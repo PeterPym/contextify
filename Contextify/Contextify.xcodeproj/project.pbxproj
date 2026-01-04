@@ -286,6 +286,7 @@
 				name = Contextify;
 			packageProductDependencies = (
 				D4C0A0062E77AAAA00747100 /* ContextifyCore */,
+				D4MDUI00010000000000002 /* MarkdownUI */,
 				D4SPAR00010000000000002 /* Sparkle */,
 			);
 			productName = Contextify;
@@ -441,6 +442,7 @@
 			packageReferences = (
 				D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */,
 				D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				D4MDUI00010000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D4A7739E2E76936700747100 /* Products */;
@@ -1050,6 +1052,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D4MDUI00010000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = exactVersion;
+				version = 2.4.1;
+			};
+		};
 		D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -1061,6 +1071,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D4MDUI00010000000000002 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4MDUI00010000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
 		D4APPSTORE00000000000010 /* ContextifyCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
