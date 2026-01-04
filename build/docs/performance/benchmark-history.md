@@ -17,3 +17,20 @@
 - **2026-01-04 3b3d2404**: P1.1 review improvements after ChatGPT code review (2 iterations). Changes: (1) Extracted magic numbers to named constants with documentation, (2) Reduced `maximumReaderCount` from 5 to 2 to bound cache memory to ~300MB, (3) Added PRAGMA verification logging with computed MiB. Sustained rate of **750 entries/sec** confirmed (**3x improvement** over baseline 237/s). P1.2 (prepared statement reuse) and P1.3 (multi-row INSERT) were evaluated but deferred - GRDB already caches statements, and multi-row INSERT would break same-batch parent linking logic for marginal gains.
 
 - **2026-01-04 (not merged)**: P2 fresh build optimizations investigated but abandoned. Tested: (1) `page_size=16KB`, (2) `synchronous=OFF`, (3) `wal_autocheckpoint=0`. Measured ~790/s (only 5% improvement over 750/s baseline). ChatGPT review identified P0 issues: page_size not reliably applied without VACUUM, unsafe settings persist after build phase without proper transition logic, missing checkpoint at end. Given marginal gain (5%) and significant complexity to implement correctly, decided not to merge. The P1.1 optimizations (cache/mmap) already captured the major I/O wins.
+
+- **2026-01-04 (not merged)**: P3 schema optimizations investigated but abandoned. P3.1 (temp table JOIN for parent ID validation) was implemented and benchmarked at 739-768/s, showing no improvement over baseline 750/s - the temp table overhead offsets any JOIN benefit. P3.2 (WITHOUT ROWID for TEXT PRIMARY KEY tables) was evaluated but deferred: (1) Expected gain only 5-10%, (2) Requires complex schema migrations for existing databases with FK dependencies, (3) Only affects `tool_invocations`, `system_events`, `ingestion_runs`. Given marginal expected gain and high migration complexity, decided not to proceed. The P1.1 cache/mmap optimizations already captured the major performance wins.
+
+## Optimization Summary
+
+| Optimization | Result | Merged |
+|--------------|--------|--------|
+| P1.1 PRAGMA cache/mmap | **+200% (3x)** | ✅ Yes |
+| P1.2 Statement reuse | N/A (GRDB handles) | ⏸ Deferred |
+| P1.3 Multi-row INSERT | Would break parent links | ⏸ Deferred |
+| P2.1 Checkpoint disable | 5% combined | ❌ No |
+| P2.2 Page size 16KB | 5% combined | ❌ No |
+| P2.3 Sync OFF | 5% combined | ❌ No |
+| P3.1 Temp table JOIN | No improvement | ❌ No |
+| P3.2 WITHOUT ROWID | 5-10% expected, high complexity | ❌ No |
+
+**Final ingest rate: ~750 entries/sec (3x improvement over baseline 237/s)**
