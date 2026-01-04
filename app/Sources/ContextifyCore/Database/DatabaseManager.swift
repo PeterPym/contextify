@@ -18,7 +18,7 @@ enum DatabasePathError: LocalizedError {
       return """
         Database already exists at --database-path location: \(path)
         Benchmark mode requires a fresh database. Either:
-          1. Delete the existing file: rm '\(path)'
+          1. Delete the existing file at that path
           2. Use a different path: --database-path /tmp/bench-\(UUID().uuidString.prefix(8)).db
         """
     case .parentNotWritable(let path):
@@ -448,6 +448,80 @@ public final class DatabaseManager: @unchecked Sendable {
         }
         log.info("WAL checkpoint triggered: \(walMB)MB → truncated")
       }
+    }
+  }
+
+  /// Threshold for WAL checkpoint (5 batches worth of entries)
+  private static let walCheckpointThreshold = 5000
+
+  /// Cumulative entries written since last checkpoint (protected by poolLock)
+  private var entriesSinceLastCheckpoint = 0
+
+  /// Flag to prevent concurrent checkpoints (protected by poolLock)
+  private var checkpointInProgress = false
+
+  /// Checkpoint WAL after bulk ingest operations
+  /// Tracks cumulative entries across transcripts and triggers checkpoint when threshold reached.
+  /// Uses PASSIVE mode which doesn't block readers.
+  /// Thread-safe: uses poolLock to protect counter and pool access.
+  /// - Important: Must be called outside any active DatabasePool write closure.
+  public func checkpointAfterBulkWrites(entriesWritten: Int) {
+    guard entriesWritten > 0 else { return }
+    assert(!Thread.isMainThread, "checkpointAfterBulkWrites must not be called on main thread")
+
+    let pool: DatabasePool
+    var claimedCount = 0
+
+    // Acquire lock to safely update counter and check threshold
+    poolLock.lock()
+    entriesSinceLastCheckpoint += entriesWritten
+
+    // Skip if checkpoint already in progress or below threshold
+    guard !checkpointInProgress,
+          entriesSinceLastCheckpoint >= Self.walCheckpointThreshold,
+          let p = _pool
+    else {
+      poolLock.unlock()
+      return
+    }
+
+    // Claim checkpoint and reset counter before running
+    // New writes during checkpoint will accumulate from 0
+    checkpointInProgress = true
+    pool = p
+    claimedCount = entriesSinceLastCheckpoint
+    entriesSinceLastCheckpoint = 0
+    poolLock.unlock()
+
+    // Clear in-progress flag when done (success or failure)
+    defer {
+      poolLock.lock()
+      checkpointInProgress = false
+      poolLock.unlock()
+    }
+
+    // Perform checkpoint outside lock (blocking operation)
+    do {
+      // Use writeWithoutTransaction to avoid implicit transaction overhead
+      try pool.writeWithoutTransaction { db in
+        // PASSIVE checkpoint - returns (busy, log, checkpointed) counts
+        if let result = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)") {
+          let busy = result[0] as? Int ?? 0
+          let logPages = result[1] as? Int ?? 0
+          let checkpointed = result[2] as? Int ?? 0
+          if busy > 0 || checkpointed < logPages {
+            log.debug("[WAL-CHECKPOINT] Partial after \(claimedCount) entries: \(checkpointed)/\(logPages) pages, \(busy) busy")
+          } else {
+            log.debug("[WAL-CHECKPOINT] Complete after \(claimedCount) entries: \(checkpointed) pages")
+          }
+        }
+      }
+    } catch {
+      // Re-add claimed count on failure to preserve pressure for retry
+      poolLock.lock()
+      entriesSinceLastCheckpoint += claimedCount
+      poolLock.unlock()
+      log.debug("[WAL-CHECKPOINT] Skipped: \(error.localizedDescription)")
     }
   }
 

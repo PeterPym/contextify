@@ -51,7 +51,7 @@ public struct LaunchArguments: Sendable {
       }
     } catch let error as ArgumentError {
       fputs("Error: \(error.message)\n", stderr)
-      Self.printUsage()
+      Self.printUsage(to: stderr)
       exit(64)  // EX_USAGE
     } catch {
       fputs("Error: \(error.localizedDescription)\n", stderr)
@@ -98,7 +98,8 @@ public struct LaunchArguments: Sendable {
     return url.standardizedFileURL.path
   }
 
-  private static func printUsage() {
+  /// Print usage to specified stream (stdout for --help, stderr for errors)
+  private static func printUsage(to stream: UnsafeMutablePointer<FILE> = stdout) {
     let usage = """
     Contextify Benchmark Mode Options:
       --database-path <path>    Use temporary database (must not exist)
@@ -113,8 +114,9 @@ public struct LaunchArguments: Sendable {
 
     Note: Duplicate flags use last-one-wins behavior.
     Note: --transcript-path and --database-path are disabled in App Store builds.
+
     """
-    print(usage)
+    fputs(usage, stream)
   }
 }
 

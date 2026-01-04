@@ -45,6 +45,7 @@ HISTORY_FILE="$PROJECT_ROOT/build/docs/performance/benchmark-history.md"
 # Benchmark isolation paths (using new CLI flags)
 BENCH_DB_PATH="/tmp/bench-$RUN_TIMESTAMP.db"
 BENCH_TRANSCRIPT_PATH=""  # Set via --corpus option
+BENCH_BATCH_SIZE=""       # Set via --batch-size option (default: 1000)
 
 # Legacy mode paths
 DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
@@ -90,6 +91,10 @@ while [[ $# -gt 0 ]]; do
             RUN_NOTES="$2"
             shift 2
             ;;
+        --batch-size)
+            BENCH_BATCH_SIZE="$2"
+            shift 2
+            ;;
         --help)
             cat << 'EOF'
 Contextify Performance Benchmark Suite
@@ -98,13 +103,14 @@ Usage:
   ./run-perf-suite.sh [options]
 
 Options:
-  --full          Run full benchmark (default)
-  --quick         Run quick benchmark (startup only)
-  --instruments   Enable Instruments profiling (Time Profiler)
-  --corpus PATH   Use snapshot corpus at PATH (default: live transcripts)
-  --legacy        Use legacy mode (backup/restore DB instead of CLI flags)
-  --notes "text"  Add notes to this run
-  --help          Show this help
+  --full            Run full benchmark (default)
+  --quick           Run quick benchmark (startup only)
+  --instruments     Enable Instruments profiling (Time Profiler)
+  --corpus PATH     Use snapshot corpus at PATH (default: live transcripts)
+  --batch-size N    Set batch size for ingest (default: 1000)
+  --legacy          Use legacy mode (backup/restore DB instead of CLI flags)
+  --notes "text"    Add notes to this run
+  --help            Show this help
 
 Examples:
   # Quick startup-only benchmark
@@ -217,10 +223,20 @@ build_cli_args() {
 }
 
 launch_app() {
+    local env_vars=""
+    if [[ -n "$BENCH_BATCH_SIZE" ]]; then
+        env_vars="CONTEXTIFY_BATCH_LINES=$BENCH_BATCH_SIZE"
+        log "Using batch size: $BENCH_BATCH_SIZE"
+    fi
+
     if $USE_CLI_FLAGS; then
         local cli_args=$(build_cli_args)
         log "Launching $APP_NAME with CLI flags: $cli_args"
-        "$APP_BINARY" $cli_args &
+        if [[ -n "$env_vars" ]]; then
+            env $env_vars "$APP_BINARY" $cli_args &
+        else
+            "$APP_BINARY" $cli_args &
+        fi
         APP_PID=$!
         log "App PID: $APP_PID"
     else
