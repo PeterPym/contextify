@@ -149,11 +149,11 @@ The codebase is structured with explicit platform separation:
 
 ---
 
-### Phase 2: Quick Wins - IN PROGRESS
+### Phase 2: Quick Wins - COMPLETE
 
 **Goal:** Immediate performance improvements with minimal code changes.
 
-**Status:** 🔄 In Progress (2026-01-03)
+**Status:** ✅ Complete (2026-01-03)
 
 **Completed:**
 
@@ -168,22 +168,26 @@ The codebase is structured with explicit platform separation:
    - **Result:** No improvement - chunking overhead offsets gains
    - Recommendation: Keep default 1000
 
-**In Progress:**
-
-3. 🔄 **WAL Checkpointing** (Shared) - current work
-   - Add explicit WAL checkpoint after bulk ingest
-   - Prevent WAL file growth during heavy operations
+3. ✅ **WAL Checkpointing** (Shared) - commit 0bda13fa
+   - Added explicit WAL checkpoint after bulk ingest (5000 entry threshold)
+   - Uses PASSIVE mode to avoid blocking readers
+   - Thread-safe with checkpointInProgress flag to prevent concurrent checkpoints
+   - Logs checkpoint result (busy/log/checkpointed) for observability
    - File: `app/Sources/ContextifyCore/Database/DatabaseManager.swift`
 
-4. 🔄 **Defer Tool Result Updates** (Shared)
-   - Batch UPDATE queries instead of per-entry
-   - Expected: 10-15% improvement
+4. ✅ **Defer Tool Result Updates** (Shared) - commit 37870142
+   - Collect tool result data during entry loop, execute UPDATEs after all INSERTs
+   - Improves SQLite page cache locality
+   - Skip nil toolUseId (avoids useless UPDATEs)
+   - Dedupe sidechain transcript linking by unique agentIds
+   - File: `app/Sources/ContextifyCore/Database/HooverEngine.swift`
 
 **Not Started:**
 
 5. ⏳ **Database Index Audit** (Shared)
    - Review existing indexes against actual query patterns
-   - Add composite index for `(transcript_id, timestamp)` if missing
+   - Add composite index for `(tool_use_id, transcript_id)` - needed for P4 UPDATEs
+   - Add index for `sidechain_agent_id` - needed for sidechain linking
 
 6. ⏳ **HooverEngine Project Resolution Cache Expansion** (Shared)
    - Pre-warm cache during FastPath initialization
