@@ -2267,64 +2267,65 @@ Multiple branches created during late-night token burn session with speculative 
 
 ## LLM Summarization Quality (1 item)
 
-**Status:** Not Started
+**Status:** Fallback handling complete, prompt improvements pending
 **Priority:** P2 (Quality improvement - summaries misrepresenting user intent)
-**Effort:** 4-6 hours
+**Effort:** 2-3 hours remaining (prompt tuning)
 **Spec:** `build/notes/todo-support/SUMMARIZATION-FIX-spec.md`
 
-- [ ] #SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
+- [ ] #SUMMARIZATION-FIX: Improve LLM prompts for remaining attribution edge cases
 
-**Problem:**
-Timeline summaries sometimes reverse attribution, showing user action requests as assistant explanations. Example: User says "add a P1 todo" → Summary says "You explained how to add a todo."
+**Progress:**
+Rule-based fallback handling now covers most cases via `TimelineSummaryFallback.swift`:
+- Echo/passthrough detection with meaningful fallbacks
+- Format issue detection (tables, XML, CSS)
+- Pronoun confusion detection
+- Suggestion-as-request, multi-clause imperative, file-path-as-command detection
 
-**Root Cause:**
-- Summarizer doesn't distinguish action requests from explanations
-- Tool completion results not visible to summarizer (assistant doesn't relay in text)
-- Prompts lack explicit guidance on attribution preservation
+**Remaining Work:**
+3 edge cases still need prompt improvements (not fallback-solvable):
+- Example 5: "Let me find X" misread as question instead of investigation
+- Example 7: Nested JSON content confuses framing vs quoted text
+- Example 12: "Ready to implement" claimed as completed work
 
-**Solution:**
-1. Update LLM prompts with explicit attribution rules
-2. Ensure tool_result content available to summarizer
-3. Add examples of correct vs. incorrect attribution patterns
-
-**Test Cases:**
-- Entry `f268414b-31ca-431a-b4e6-383898844de0` - Primary example with detailed transcript analysis
-- Additional UUIDs in audit doc for validation
+**Validation:**
+Before further work, validate current fixes using the QA script:
+```bash
+bash build/notes/todo-support/summarization-validation-test.sh
+```
 
 **Files:**
-- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (prompts)
-- `app/Sources/ContextifyCore/Database/Models.swift` (structure)
-
-**Acceptance Criteria:**
-- Action requests correctly identified as "User asked to..." or "User requested..."
-- No reversed attribution (user actions attributed to assistant or vice versa)
-- Completed tasks reflected in summaries (not just requests)
-- Information requests distinguished from action requests
-
-**For full analysis**: See investigation document with transcript analysis, examples, and proposed prompt improvements
+- `Contextify/Contextify/TimelineSummaryFallback.swift` (shared fallback utility)
+- `Contextify/Contextify/FoundationLLM.swift` (validation + fallback)
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (decode fallback)
 
 ---
 
 ## Summarization Parsing Backlog (1 item)
 
-**Status:** Collecting examples
+**Status:** 14/17 examples handled, 3 remaining
 **Priority:** P2 (Quality - batch fix unparseable summaries)
-**Effort:** 2-4 hours per batch
+**Effort:** 1-2 hours for remaining prompt work
 
-- [ ] #SUMM-PARSING-BACKLOG: Fix messages that fail summarization parsing
+- [ ] #SUMM-PARSING-BACKLOG: Fix remaining 3 examples requiring prompt improvements
 
-**Problem:**
-Some transcript entries produce summaries that fail post-processing or contain unexpected formats. Rather than fixing these one-off as they appear, collect examples and fix in batches.
+**Progress:**
+14 of 17 blooper examples now handled by `TimelineSummaryFallback.swift`:
+- Markdown tables, CSS syntax, XML tags (format detection)
+- Echo/passthrough, truncated echoes, duplicate attribution
+- Pronoun confusion, suggestion-as-request, multi-clause imperatives, file paths
 
-**Workflow:**
-1. When encountering an unparseable summary, add to the backlog reference doc
-2. Periodically review backlog and identify patterns
-3. Fix root causes in parser/prompts/post-processing
-4. Validate fixes against collected examples
+**Remaining (3 examples):**
+- Example 5: Investigation misread as question
+- Example 7: Nested JSON confuses content vs framing
+- Example 12: Future work claimed as complete
+
+**Validation:**
+Before adding new examples or doing further work, validate current fixes:
+```bash
+bash build/notes/todo-support/summarization-validation-test.sh
+```
 
 **Reference:** `build/notes/todo-support/SUMM-PARSING-BACKLOG-examples.md`
-
-**Current Count:** 1 example (seed script markdown table output)
 
 ---
 
