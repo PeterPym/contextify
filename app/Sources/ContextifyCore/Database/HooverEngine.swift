@@ -1162,6 +1162,13 @@ public final class HooverEngine {
         }
       }
 
+      // PERF: Collect tool result data for batch UPDATE after entry inserts
+      // Instead of per-entry UPDATEs, we batch them to reduce query overhead
+      var deferredToolResults: [(toolUseId: String, entryId: String, agentId: String?, timestamp: Int, status: String?)] = []
+      var deferredSidechainLinks: [(agentId: String, transcriptId: String)] = []
+      // PERF: Collect unique agentIds for deduped sidechain transcript linking
+      var sidechainAgentIds: Set<String> = []
+
       // Insert entries with window tracking
       for entry in entries {
         // Compute window from previous 2 entries
@@ -1244,51 +1251,75 @@ public final class HooverEngine {
           try tool.insert(db, onConflict: .ignore)
         }
 
-        // Update tool invocations with tool_result data (completion + agent linkage)
+        // PERF: Collect tool result data for deferred batch UPDATE
+        // Skip nil toolUseId - UPDATE WHERE tool_use_id = NULL won't match anything
         for result in entry.toolResultData {
-          try db.execute(sql: """
-            UPDATE tool_invocations
-            SET tool_result_entry_id = ?,
-                sidechain_agent_id = ?,
-                completed_at = ?,
-                status = COALESCE(?, status),
-                updated_at = ?
-            WHERE tool_use_id = ? AND transcript_id = ?
-          """, arguments: [
-            result.entryId,
-            result.agentId,
-            Int(result.timestamp.timeIntervalSince1970),
-            result.status,
-            now,
-            result.toolUseId,
-            transcriptId
-          ])
-
-          // Also link already-ingested sidechain transcripts (fixes race condition where
-          // agent transcript is ingested before tool_result sets sidechain_agent_id)
+          guard let toolUseId = result.toolUseId else { continue }
+          deferredToolResults.append((
+            toolUseId: toolUseId,
+            entryId: result.entryId,
+            agentId: result.agentId,
+            timestamp: Int(result.timestamp.timeIntervalSince1970),
+            status: result.status
+          ))
+          // Collect unique agentIds for deduped sidechain transcript linking
           if let agentId = result.agentId {
-            let sidechainTranscriptId = "agent-\(agentId)"
-            try db.execute(sql: """
-              UPDATE tool_invocations
-              SET sidechain_transcript_id = ?,
-                  updated_at = ?
-              WHERE sidechain_agent_id = ?
-                AND sidechain_transcript_id IS NULL
-                AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
-            """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+            sidechainAgentIds.insert(agentId)
           }
         }
 
-        // Link sidechain transcripts to parent invocations by agentId
+        // PERF: Collect sidechain link data for deferred batch UPDATE
         if entry.isSidechain, let agentId = entry.agentId {
-          try db.execute(sql: """
-            UPDATE tool_invocations
-            SET sidechain_transcript_id = ?,
-                updated_at = ?
-            WHERE sidechain_agent_id = ?
-              AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
-          """, arguments: [transcriptId, now, agentId, transcriptId])
+          deferredSidechainLinks.append((agentId: agentId, transcriptId: transcriptId))
         }
+      }
+
+      // PERF: Batch UPDATE tool invocations with tool_result data
+      // Uses chunked individual updates (avoiding CASE complexity) but after all inserts complete
+      // This improves SQLite page cache locality vs interleaving updates with inserts
+      for result in deferredToolResults {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET tool_result_entry_id = ?,
+              sidechain_agent_id = ?,
+              completed_at = ?,
+              status = COALESCE(?, status),
+              updated_at = ?
+          WHERE tool_use_id = ? AND transcript_id = ?
+        """, arguments: [
+          result.entryId,
+          result.agentId,
+          result.timestamp,
+          result.status,
+          now,
+          result.toolUseId,
+          transcriptId
+        ])
+      }
+
+      // PERF: Deduped sidechain transcript linking by unique agentIds
+      // Instead of one UPDATE per tool_result, one UPDATE per unique agentId
+      for agentId in sidechainAgentIds {
+        let sidechainTranscriptId = "agent-\(agentId)"
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND sidechain_transcript_id IS NULL
+            AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
+        """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+      }
+
+      // PERF: Batch UPDATE sidechain transcript links for sidechain entries
+      for link in deferredSidechainLinks {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
+        """, arguments: [link.transcriptId, now, link.agentId, link.transcriptId])
       }
 
       // HEURISTIC: Delete synthetic queue-XX entries when real message appears
