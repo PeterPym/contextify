@@ -4,6 +4,22 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager")
 
+// MARK: - SQLite Performance Constants
+
+/// SQLite page cache size in KiB (negative = KiB, positive = pages).
+/// 100MB cache significantly reduces disk I/O during ingestion.
+/// Applied per-connection; with 2 readers + 1 writer = ~300MB total.
+private let sqliteCacheSizeKiB: Int = -102400  // 100MB
+
+/// Maximum bytes SQLite will memory-map from the database file.
+/// Improves read performance for parent validation and deduplication lookups.
+/// This is an upper bound - actual mapping depends on file size and system limits.
+private let sqliteMmapSizeBytes: Int = 1_073_741_824  // 1GB
+
+/// Maximum concurrent reader connections in the GRDB pool.
+/// Reduced from default (5) to limit total cache memory footprint.
+private let grdbMaxReaderCount: Int = 2
+
 // MARK: - CLI Database Path Error
 
 /// Errors for CLI database path validation
@@ -158,15 +174,26 @@ public final class DatabaseManager: @unchecked Sendable {
     var config = Configuration()
     config.foreignKeysEnabled = true
     config.busyMode = .timeout(5.0)
+    config.maximumReaderCount = grdbMaxReaderCount
     config.prepareDatabase { db in
       try db.execute(sql: "PRAGMA journal_mode=WAL")
       try db.execute(sql: "PRAGMA synchronous=NORMAL")
       try db.execute(sql: "PRAGMA wal_autocheckpoint=1000")
       try db.execute(sql: "PRAGMA temp_store=MEMORY")
-      // Performance: 100MB cache (negative = KB), reduces disk I/O
-      try db.execute(sql: "PRAGMA cache_size=-102400")
-      // Performance: 1GB mmap for read-heavy operations (parent validation, dedup)
-      try db.execute(sql: "PRAGMA mmap_size=1073741824")
+      // Performance tuning (see constants at top of file for rationale)
+      try db.execute(sql: "PRAGMA cache_size=\(sqliteCacheSizeKiB)")
+      try db.execute(sql: "PRAGMA mmap_size=\(sqliteMmapSizeBytes)")
+
+      // Verify applied values (SQLite may clamp based on system limits)
+      // Note: cache_size returns page count, so we compute MiB from page_size
+      if let cachePages = try Int.fetchOne(db, sql: "PRAGMA cache_size"),
+         let pageSize = try Int.fetchOne(db, sql: "PRAGMA page_size"),
+         let appliedMmap = try Int.fetchOne(db, sql: "PRAGMA mmap_size") {
+        let cacheMiB = (abs(cachePages) * pageSize) / (1024 * 1024)
+        log.debug(
+          "[DB-PRAGMA] cache=\(cacheMiB, privacy: .public)MiB (\(cachePages, privacy: .public) pages) mmap=\(appliedMmap, privacy: .public)"
+        )
+      }
     }
 
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
