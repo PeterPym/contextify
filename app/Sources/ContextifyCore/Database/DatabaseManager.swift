@@ -18,7 +18,7 @@ enum DatabasePathError: LocalizedError {
       return """
         Database already exists at --database-path location: \(path)
         Benchmark mode requires a fresh database. Either:
-          1. Delete the existing file: rm '\(path)'
+          1. Delete the existing file at that path
           2. Use a different path: --database-path /tmp/bench-\(UUID().uuidString.prefix(8)).db
         """
     case .parentNotWritable(let path):

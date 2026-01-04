@@ -14,11 +14,22 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Ho
 
 public enum MonitorConfig {
   public static let fileWatcherDebounce: TimeInterval = 0.150
+  /// Maximum batch size (clamped to prevent memory spikes and SQL parameter limit issues)
+  private static let maxBatchLines = 10000
   /// Number of lines per batch commit. Default 1000, override via CONTEXTIFY_BATCH_LINES.
   /// Larger batches reduce transaction overhead but increase memory usage.
+  /// P1.1: Clamped to maxBatchLines (10000) to prevent memory spikes and SQL issues.
   public static let batchLines: Int = {
     if let envValue = ProcessInfo.processInfo.environment["CONTEXTIFY_BATCH_LINES"],
        let value = Int(envValue), value > 0 {
+      if value > maxBatchLines {
+        // Log when clamping - use OSLog directly since we're in static init
+        #if canImport(OSLog)
+        let clampLog = Logger(subsystem: "dev.contextify", category: "MonitorConfig")
+        clampLog.warning("[CONFIG] CONTEXTIFY_BATCH_LINES=\(value) exceeds max (\(maxBatchLines)), clamping")
+        #endif
+        return maxBatchLines
+      }
       return value
     }
     return 1000
@@ -1133,11 +1144,22 @@ public final class HooverEngine {
       var existingParentIds: Set<String> = []
 
       if !parentIds.isEmpty {
-        // Single query to check which parent IDs exist (replaces O(n) per-entry queries)
-        let placeholders = parentIds.map { _ in "?" }.joined(separator: ",")
-        let sql = "SELECT id FROM transcript_entries WHERE id IN (\(placeholders))"
-        let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(Array(parentIds)))
-        existingParentIds = Set(rows.map { $0["id"] as String })
+        // P0.2 fix: Chunk parent IDs to avoid SQLite bind parameter limit (999 max)
+        // Use 500 as chunk size for safety margin
+        let chunkSize = 500
+        let parentIdArray = Array(parentIds)
+        for chunkStart in stride(from: 0, to: parentIdArray.count, by: chunkSize) {
+          let chunkEnd = min(chunkStart + chunkSize, parentIdArray.count)
+          let chunk = Array(parentIdArray[chunkStart..<chunkEnd])
+          let placeholders = chunk.map { _ in "?" }.joined(separator: ",")
+          let sql = "SELECT id FROM transcript_entries WHERE id IN (\(placeholders))"
+          let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(chunk))
+          for row in rows {
+            if let id: String = row["id"] {
+              existingParentIds.insert(id)
+            }
+          }
+        }
       }
 
       // Insert entries with window tracking
@@ -1154,6 +1176,7 @@ public final class HooverEngine {
 
         // Check if parent exists using pre-validated set (avoid FK constraint violation)
         // This handles out-of-order entries where a child references a parent that hasn't been inserted yet
+        // P0.1 fix: existingParentIds now includes entries inserted earlier in this batch
         if let parentId = model.parentId {
           if !existingParentIds.contains(parentId) {
             if MonitorConfig.enableHooverStorageTracing {
@@ -1170,6 +1193,9 @@ public final class HooverEngine {
           let inserted = db.changesCount > 0
           if inserted {
             insertedCount += 1
+            // P0.1 fix: Add inserted entry to existingParentIds so later entries in same batch
+            // can find it as a valid parent (fixes same-batch parent links)
+            existingParentIds.insert(model.id)
             previousEntries.append(entry.id)
             if previousEntries.count > 2 {
               previousEntries.removeFirst()
