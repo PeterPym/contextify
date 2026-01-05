@@ -174,6 +174,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
 
+  // Performance: Bulk ingest manager bypasses GRDB observation overhead
+  private let bulkIngestManager: BulkIngestManager?
+
   private let accessProvider: TranscriptAccessProvider?
 
   public init(
@@ -216,6 +219,19 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let systemEventRepo = SystemEventRepositoryImpl(db: pool)
     let assistantUsageRepo = AssistantUsageRepositoryImpl(db: pool)
 
+    // Initialize bulk ingest manager for high-performance writes
+    // Uses separate DatabaseQueue to bypass GRDB observation overhead
+    let dbPath = try dbManager.databasePath().path
+    let bulkManager = BulkIngestManager(dbPath: dbPath)
+    do {
+      try bulkManager.open()
+      self.bulkIngestManager = bulkManager
+      log.info("[PERF] BulkIngestManager initialized for observation-free bulk ingest")
+    } catch {
+      log.warning("[ORCHESTRATOR] BulkIngestManager init failed, using standard path: \(error.localizedDescription)")
+      self.bulkIngestManager = nil
+    }
+
     // Initialize hoover engine with multi-provider parser
     let parser = MultiProviderParser()
     let metadataParser = MultiProviderMetadataParser()
@@ -231,7 +247,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       transcriptSummaryRepo: transcriptSummaryRepo,
       systemEventRepo: systemEventRepo,
       assistantUsageRepo: assistantUsageRepo,
-      metadataParser: metadataParser
+      metadataParser: metadataParser,
+      bulkIngestManager: bulkIngestManager
     )
 
     // Initialize watcher (invalidation callback set after initialization)
@@ -260,6 +277,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         bypassScheduler: true
       )
     }
+  }
+
+  deinit {
+    bulkIngestManager?.close()
   }
 
   // MARK: - Primer Tracking
