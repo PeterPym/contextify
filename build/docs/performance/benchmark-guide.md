@@ -14,20 +14,20 @@ The standard workflow for performance optimization:
 
 ```bash
 # 1. Establish baseline (once, before making changes)
-./scripts/benchmarks/run-perf-suite.sh --full
-./scripts/benchmarks/set-baseline.sh
+./scripts/performance/run-perf-suite.sh --full
+./scripts/performance/set-baseline.sh
 
 # 2. Make your optimization changes
 # ... edit code ...
 
 # 3. Run benchmark again
-./scripts/benchmarks/run-perf-suite.sh --full --notes "Description of change"
+./scripts/performance/run-perf-suite.sh --full --notes "Description of change"
 
 # 4. Compare to baseline
-./scripts/benchmarks/compare.sh
+./scripts/performance/compare.sh
 
 # 5. If improvement confirmed, update baseline for next round
-./scripts/benchmarks/set-baseline.sh
+./scripts/performance/set-baseline.sh
 ```
 
 ## Running Benchmarks
@@ -48,7 +48,7 @@ The standard workflow for performance optimization:
 Measures startup only (fast, ~1 minute):
 
 ```bash
-./scripts/benchmarks/run-perf-suite.sh --quick
+./scripts/performance/run-perf-suite.sh --quick
 ```
 
 ### Full Benchmark
@@ -56,7 +56,7 @@ Measures startup only (fast, ~1 minute):
 Measures everything including full ingest (~20 minutes):
 
 ```bash
-./scripts/benchmarks/run-perf-suite.sh --full
+./scripts/performance/run-perf-suite.sh --full
 ```
 
 ### With Instruments Profiling
@@ -64,7 +64,7 @@ Measures everything including full ingest (~20 minutes):
 Adds CPU/memory profiling (slower, more data):
 
 ```bash
-./scripts/benchmarks/run-perf-suite.sh --full --instruments
+./scripts/performance/run-perf-suite.sh --full --instruments
 ```
 
 ### Adding Notes
@@ -72,7 +72,7 @@ Adds CPU/memory profiling (slower, more data):
 Tag runs for comparison:
 
 ```bash
-./scripts/benchmarks/run-perf-suite.sh --full --notes "After index optimization"
+./scripts/performance/run-perf-suite.sh --full --notes "After index optimization"
 ```
 
 ## Output Files
@@ -81,8 +81,8 @@ Each run produces:
 
 | File | Description |
 |------|-------------|
-| `scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.json` | Raw metrics (JSON) |
-| `scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.md` | Human-readable report |
+| `scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.json` | Raw metrics (JSON) |
+| `scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.md` | Human-readable report |
 | `/tmp/contextify-benchmark-YYYYMMDD-HHMMSS.log` | Full application logs |
 | `build/docs/performance/benchmark-history.md` | Historical comparison |
 
@@ -122,19 +122,19 @@ The full log file contains OSLog output with timing information. Key patterns:
 Compare latest run to baseline:
 
 ```bash
-./scripts/benchmarks/compare.sh
+./scripts/performance/compare.sh
 ```
 
 Compare a specific run to baseline:
 
 ```bash
-./scripts/benchmarks/compare.sh 20260102-143022
+./scripts/performance/compare.sh 20260102-143022
 ```
 
 Compare two specific runs:
 
 ```bash
-./scripts/benchmarks/compare.sh 20260101-100000 20260102-143022
+./scripts/performance/compare.sh 20260101-100000 20260102-143022
 ```
 
 ### Setting the Baseline
@@ -143,13 +143,13 @@ Mark a run as the official baseline:
 
 ```bash
 # Use most recent run
-./scripts/benchmarks/set-baseline.sh
+./scripts/performance/set-baseline.sh
 
 # Use specific run
-./scripts/benchmarks/set-baseline.sh 20260102-143022
+./scripts/performance/set-baseline.sh 20260102-143022
 ```
 
-The baseline symlink is at `scripts/benchmarks/baseline.json`.
+The baseline symlink is at `scripts/performance/baseline.json`.
 
 ### Historical Trends
 
@@ -164,7 +164,7 @@ cat build/docs/performance/benchmark-history.md
 For detailed diff of raw metrics:
 
 ```bash
-diff scripts/benchmarks/results/benchmark-A.json scripts/benchmarks/results/benchmark-B.json
+diff scripts/performance/results/benchmark-A.json scripts/performance/results/benchmark-B.json
 ```
 
 ## Troubleshooting

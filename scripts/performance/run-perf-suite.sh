@@ -16,8 +16,8 @@ set -euo pipefail
 #   --help          Show this help
 #
 # Output:
-#   - JSON metrics: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.json
-#   - Markdown report: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.md
+#   - JSON metrics: scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.json
+#   - Markdown report: scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.md
 #   - Full logs: /tmp/contextify-benchmark-YYYYMMDD-HHMMSS.log
 #   - History updated: build/docs/performance/benchmark-history.md
 #
@@ -123,8 +123,8 @@ Examples:
   ./run-perf-suite.sh --corpus ~/benchmarks/corpus-v1 --notes "baseline v1.0.7"
 
 Output:
-  - JSON metrics: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.json
-  - Markdown report: scripts/benchmarks/results/benchmark-YYYYMMDD-HHMMSS.md
+  - JSON metrics: scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.json
+  - Markdown report: scripts/performance/results/benchmark-YYYYMMDD-HHMMSS.md
   - Full logs: /tmp/contextify-benchmark-YYYYMMDD-HHMMSS.log
 EOF
             exit 0

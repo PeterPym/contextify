@@ -129,10 +129,10 @@ The codebase is structured with explicit platform separation:
 1. **Create Benchmark Fixtures**
    - Synthetic transcripts: 100 lines, 1000 lines, 10000 lines, 50000 lines
    - Multiple project configurations: 5, 20, 50, 100 projects
-   - Store in `scripts/benchmarks/fixtures/`
+   - Store in `scripts/performance/fixtures/`
 
 2. **Implement Performance Test Harness**
-   - Script: `scripts/benchmarks/run-perf-suite.sh`
+   - Script: `scripts/performance/run-perf-suite.sh`
    - Measures: startup, JIT ingest, bulk ingest, project switch, search
    - Output: JSON metrics for tracking over time
 
