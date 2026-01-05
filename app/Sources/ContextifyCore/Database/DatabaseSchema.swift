@@ -1025,6 +1025,60 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v34] Tab grouping migration complete")
     }
 
+    // MARK: - v35: Performance optimizations (P5/P6)
+    migrator.registerMigration("v35_perf_dedupe_index") { db in
+      logger.info("[MIGRATION-v35] Adding UNIQUE index for entry deduplication (P5 optimization)")
+
+      // P5: Add UNIQUE constraint on (transcript_id, content_sha256) for automatic deduplication
+      // This allows INSERT OR IGNORE to reject duplicates without explicit SELECT checks.
+      // Uses partial index (WHERE content_sha256 IS NOT NULL) since content_sha256 can theoretically be NULL
+      // for malformed entries, though current code always populates it.
+      //
+      // IMPORTANT: This migration may fail if there are existing duplicates in the database.
+      // We handle this by first deduplicating any existing data.
+
+      // Step 1: Count existing duplicates (for logging)
+      let duplicateCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM (
+          SELECT transcript_id, content_sha256
+          FROM transcript_entries
+          WHERE content_sha256 IS NOT NULL
+          GROUP BY transcript_id, content_sha256
+          HAVING COUNT(*) > 1
+        )
+      """) ?? 0
+
+      if duplicateCount > 0 {
+        logger.warning("[MIGRATION-v35] Found \(duplicateCount) duplicate (transcript_id, content_sha256) pairs, deduplicating...")
+
+        // Step 2: Delete duplicates, keeping the oldest entry (lowest rowid)
+        // This preserves the original entry and removes later duplicates
+        try db.execute(sql: """
+          DELETE FROM transcript_entries
+          WHERE rowid NOT IN (
+            SELECT MIN(rowid)
+            FROM transcript_entries
+            WHERE content_sha256 IS NOT NULL
+            GROUP BY transcript_id, content_sha256
+          )
+          AND content_sha256 IS NOT NULL
+        """)
+
+        let deletedCount = db.changesCount
+        logger.info("[MIGRATION-v35] Deleted \(deletedCount) duplicate entries")
+      }
+
+      // Step 3: Create the UNIQUE index
+      // Partial index excludes NULL content_sha256 to allow multiple NULLs (SQLite UNIQUE behavior)
+      try db.execute(sql: """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_transcript_content_sha
+        ON transcript_entries(transcript_id, content_sha256)
+        WHERE content_sha256 IS NOT NULL
+      """)
+
+      logger.info("[MIGRATION-v35] UNIQUE index created successfully")
+    }
+
     return migrator
   }
 
@@ -1195,6 +1249,13 @@ public enum DatabaseSchema {
     }
     try db.create(index: "idx_entries_transcript_time", on: "transcript_entries", columns: ["transcript_id", "timestamp"], ifNotExists: true)
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
+
+    // v35: P5 optimization - UNIQUE index for automatic deduplication via INSERT OR IGNORE
+    try db.execute(sql: """
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_transcript_content_sha
+      ON transcript_entries(transcript_id, content_sha256)
+      WHERE content_sha256 IS NOT NULL
+    """)
 
     // Project time indexes with DESC for ORDER BY performance
     try db.execute(sql: """

@@ -733,6 +733,17 @@ public final class HooverEngine {
     var totalEntriesInserted = 0  // Track actual DB inserts
     var projectCache = ProjectResolutionCache()  // P0 fix: cache project lookups per transcript
 
+    // P6 optimization: Preload all existing entry IDs for this transcript
+    // This eliminates per-batch parent validation queries (was ~25% of SQL parsing overhead)
+    // Memory cost: ~40 bytes per entry (UUID string + Set overhead), acceptable for most transcripts
+    var preloadedEntryIds: Set<String> = try db.read { db in
+      let ids = try String.fetchAll(db, sql: """
+        SELECT id FROM transcript_entries WHERE transcript_id = ?
+      """, arguments: [transcript.id])
+      return Set(ids)
+    }
+    log.debug("[HOOVER-P6] Preloaded \(preloadedEntryIds.count) existing entry IDs for parent validation")
+
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
     if let lastId = transcript.lastProcessedEntryId {
@@ -916,7 +927,8 @@ public final class HooverEngine {
             errors: errors,
             lastProcessedLine: lineNo,
             lineCount: lineNo,
-            previousEntries: &previousEntries
+            previousEntries: &previousEntries,
+            preloadedEntryIds: &preloadedEntryIds
           )
           totalEntriesInserted += inserted
 
@@ -1049,7 +1061,8 @@ public final class HooverEngine {
         errors: errors,
         lastProcessedLine: lineNo,
         lineCount: lineNo,
-        previousEntries: &previousEntries
+        previousEntries: &previousEntries,
+        preloadedEntryIds: &preloadedEntryIds
       )
       totalEntriesInserted += inserted
     }
@@ -1126,6 +1139,9 @@ public final class HooverEngine {
   /// All operations are atomic within a single transaction
   /// Tracks previous entries for window SHA256 computation
   /// Returns the number of entries actually inserted to the database
+  ///
+  /// - Parameter preloadedEntryIds: P6 optimization - preloaded set of existing entry IDs
+  ///   for this transcript, used for parent validation. Updated in-place as new entries are inserted.
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
@@ -1133,34 +1149,15 @@ public final class HooverEngine {
     errors: [(lineNumber: Int, rawLine: String, error: String)],
     lastProcessedLine: Int,
     lineCount: Int,
-    previousEntries: inout [String]
+    previousEntries: inout [String],
+    preloadedEntryIds: inout Set<String>
   ) throws -> Int {
     var insertedCount = 0
     let now = Int(Date().timeIntervalSince1970)
     try db.write { db in
-      // PERF: Batch validate parent IDs in a single query instead of per-entry
-      // Collect all unique parent IDs that need validation
-      let parentIds = Set(entries.compactMap { $0.parentId })
-      var existingParentIds: Set<String> = []
-
-      if !parentIds.isEmpty {
-        // P0.2 fix: Chunk parent IDs to avoid SQLite bind parameter limit (999 max)
-        // Use 500 as chunk size for safety margin
-        let chunkSize = 500
-        let parentIdArray = Array(parentIds)
-        for chunkStart in stride(from: 0, to: parentIdArray.count, by: chunkSize) {
-          let chunkEnd = min(chunkStart + chunkSize, parentIdArray.count)
-          let chunk = Array(parentIdArray[chunkStart..<chunkEnd])
-          let placeholders = chunk.map { _ in "?" }.joined(separator: ",")
-          let sql = "SELECT id FROM transcript_entries WHERE id IN (\(placeholders))"
-          let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(chunk))
-          for row in rows {
-            if let id: String = row["id"] {
-              existingParentIds.insert(id)
-            }
-          }
-        }
-      }
+      // P6 optimization: Use preloaded entry IDs for parent validation instead of per-batch queries
+      // The preloadedEntryIds set is maintained across batches and updated as entries are inserted
+      // This eliminates the chunked SELECT queries that contributed to ~25% SQL parsing overhead
 
       // PERF: Collect tool result data for batch UPDATE after entry inserts
       // Instead of per-entry UPDATEs, we batch them to reduce query overhead
@@ -1181,11 +1178,11 @@ public final class HooverEngine {
         model.prev2Id = prev2
         model.windowSha256 = windowSha
 
-        // Check if parent exists using pre-validated set (avoid FK constraint violation)
+        // Check if parent exists using preloaded entry IDs (P6 optimization)
         // This handles out-of-order entries where a child references a parent that hasn't been inserted yet
-        // P0.1 fix: existingParentIds now includes entries inserted earlier in this batch
+        // The preloadedEntryIds set includes both pre-existing entries AND entries inserted earlier in this batch
         if let parentId = model.parentId {
-          if !existingParentIds.contains(parentId) {
+          if !preloadedEntryIds.contains(parentId) {
             if MonitorConfig.enableHooverStorageTracing {
               log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
             }
@@ -1200,9 +1197,9 @@ public final class HooverEngine {
           let inserted = db.changesCount > 0
           if inserted {
             insertedCount += 1
-            // P0.1 fix: Add inserted entry to existingParentIds so later entries in same batch
+            // P6: Add inserted entry to preloadedEntryIds so later entries (same batch or future batches)
             // can find it as a valid parent (fixes same-batch parent links)
-            existingParentIds.insert(model.id)
+            preloadedEntryIds.insert(model.id)
             previousEntries.append(entry.id)
             if previousEntries.count > 2 {
               previousEntries.removeFirst()
