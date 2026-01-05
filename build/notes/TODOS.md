@@ -200,6 +200,40 @@ Separate ingest engine from UI via XPC service:
 
 ---
 
+## First-Run Ingest Experience
+
+**Status:** Not started
+**Priority:** P2 (UX/delight)
+**Discovered:** 2026-01-05
+
+- [ ] #INGEST-EXPERIENCE: Create engaging visualization for initial transcript ingest
+
+**Problem:**
+First-run ingest takes ~11 minutes for a full corpus (174k entries). Currently there's minimal visual feedback - just a progress indicator. This is a missed opportunity to create a memorable first impression.
+
+**Inspiration:**
+Classic PC game installers (Command & Conquer, Westwood games) turned wait time into entertainment with:
+- Animated visuals that told a story
+- Interesting statistics/facts displayed during wait
+- Progress that felt meaningful, not just a bar filling
+
+**Proposed elements:**
+1. **Visual timeline building** - Show conversations appearing on a timeline as they're ingested
+2. **Live statistics** - "Processing conversation from 3 days ago...", entry counts, transcript counts
+3. **Project discovery** - Animate project cards appearing as they're found
+4. **Milestone celebrations** - "1,000 entries indexed!", "Found 50 projects!"
+5. **Estimated time remaining** - Based on current rate and corpus size
+6. **Fun facts** - "Your longest conversation was 2,847 messages" (calculated as we go)
+
+**Technical notes:**
+- Must not slow down ingest (UI updates should be batched/throttled)
+- Consider headless ingest (#PERF-AUDIT-FOLLOWUP) - UI would observe via IPC
+- Could reuse visualization for re-ingest or "catching up" scenarios
+
+**Reference:** Think Westwood Studios installers, not modern progress spinners.
+
+---
+
 ## Shell-Aware PATH Instructions for CLI Install
 
 **Status:** Not started
