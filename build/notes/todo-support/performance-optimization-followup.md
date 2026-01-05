@@ -163,3 +163,58 @@ These were investigated and rejected (don't repeat):
 5. **Incremental Ingest Performance**
    - Current benchmarks measure cold-start full ingest
    - Re-ingest of existing transcripts should be faster (deduplication)
+
+---
+
+## Sustained Performance Interventions
+
+The 72% degradation from burst (925/sec) to sustained (260/sec) suggests accumulating overhead. Possible interventions:
+
+### High-Impact (likely culprits)
+
+1. **Batch WAL Checkpointing**
+   - Current: checkpoint after every batch or auto-triggered
+   - Intervention: checkpoint every N batches or by size threshold
+   - Why: checkpointing is expensive, less frequent = faster throughput
+
+2. **preloadedEntryIds Set Growth**
+   - Current: grows unbounded (174k entries in Set by end)
+   - Intervention: use bloom filter or bounded LRU cache
+   - Why: Set memory and lookup cost grow O(n)
+
+3. **Defer FTS Indexing**
+   - Current: FTS triggers fire on every INSERT
+   - Intervention: disable triggers during bulk ingest, rebuild index at end
+   - Why: FTS overhead compounds with volume (24% of write time per profiling)
+
+### Medium-Impact
+
+4. **Batch Size Tuning**
+   - Test larger batches (2000, 5000) to reduce commit overhead
+   - Trade-off: memory vs throughput
+   - Earlier testing showed diminishing returns, but worth revisiting with P7
+
+5. **Memory Pressure Mitigation**
+   - Peak 1GB suggests possible GC pauses
+   - Stream/release entries after commit rather than holding references
+
+6. **Transaction Batching Across Transcripts**
+   - Group multiple transcripts into single transaction
+   - Reduces per-transcript transaction overhead
+
+### Diagnostic Approach
+
+Before implementing, run benchmark with fine-grained sampling to identify WHERE degradation occurs:
+
+```bash
+# Sample every 30s to see degradation curve
+0-30s:    ???/sec (fresh DB, baseline burst)
+30-60s:   ???/sec
+...
+600-660s: ???/sec (174k entries, final rate)
+```
+
+This reveals if degradation is:
+- **Linear**: suggests O(n) overhead (preloadedEntryIds, index size)
+- **Stepwise drops**: suggests periodic overhead (checkpointing, GC)
+- **Exponential**: suggests compounding issue (memory fragmentation)
