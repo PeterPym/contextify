@@ -34,3 +34,18 @@
 | P3.2 WITHOUT ROWID | 5-10% expected, high complexity | ❌ No |
 
 **Final ingest rate: ~750 entries/sec (3x improvement over baseline 237/s)**
+
+## Profiling Analysis (2026-01-04)
+
+Time Profiler analysis of the ingest pipeline revealed:
+
+| Component | % of Write Time | Notes |
+|-----------|-----------------|-------|
+| **FTS triggers** | 24% | `sqlite3DeleteFrom`, trigger execution |
+| **SQL parsing** | 25% | Statement preparation (GRDB caches these) |
+| **GRDB observation** | 13% | DatabaseRegion, StatementAuthorizer |
+| **Actual INSERT** | 38% | Core write operations |
+
+**Key finding:** FTS triggers are the main remaining bottleneck. JSON parsing did NOT appear in the profile, confirming it's not the bottleneck.
+
+**Remaining optimization opportunity:** FTS trigger deferral (disable during bulk, rebuild at end) could yield 20-30% additional improvement (~950-1000 entries/sec target). See `/tmp/profiling-analysis-20260104.md` for full analysis.
