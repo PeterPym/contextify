@@ -42,8 +42,8 @@ final class TimelineDecorationTests: XCTestCase {
   }
 
   private func insertEntry(_ pool: DatabasePool, id: String, transcriptId: String = "t1", projectId: String = "p1", kind: String = "assistant") throws {
-    // Use entry ID as content_sha256 to ensure uniqueness per (transcript_id, content_sha256)
-    // This respects the v35 UNIQUE constraint added for P5 optimization
+    // Use entry ID as content_sha256 to avoid accidental collisions in tests
+    // (unique per entry for robustness against future constraints)
     try pool.write { db in
       try db.execute(sql: """
         INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content,

@@ -92,26 +92,26 @@ struct BatchTimingStats {
   var parseTimeMs: Double = 0
   var hashTimeMs: Double = 0
   var projectResolutionTimeMs: Double = 0
-  var dbWriteTimeMs: Double = 0
+  var commitBatchTimeMs: Double = 0  // Total time in commitBatch (includes DB writes + overhead)
   var batchCount: Int = 0
   var entryCount: Int = 0
 
   func log(transcriptId: String, logger: Logger) {
     guard MonitorConfig.enableHooverTimingTracing else { return }
-    let total = parseTimeMs + hashTimeMs + projectResolutionTimeMs + dbWriteTimeMs
+    let total = parseTimeMs + hashTimeMs + projectResolutionTimeMs + commitBatchTimeMs
     guard total > 0 else { return }
     let parsePercent = (parseTimeMs / total) * 100
     let hashPercent = (hashTimeMs / total) * 100
     let projectPercent = (projectResolutionTimeMs / total) * 100
-    let dbWritePercent = (dbWriteTimeMs / total) * 100
+    let commitPercent = (commitBatchTimeMs / total) * 100
     // Extract values to avoid capturing self in OSLog autoclosure
-    let msg = String(format: "[HOOVER-TIMING] transcript=%@ batches=%d entries=%d total=%.0fms parse=%.0fms(%.1f%%) hash=%.0fms(%.1f%%) projectRes=%.0fms(%.1f%%) dbWrite=%.0fms(%.1f%%)",
+    let msg = String(format: "[HOOVER-TIMING] transcript=%@ batches=%d entries=%d total=%.0fms parse=%.0fms(%.1f%%) hash=%.0fms(%.1f%%) projectRes=%.0fms(%.1f%%) commit=%.0fms(%.1f%%)",
       transcriptId, batchCount, entryCount, total,
       parseTimeMs, parsePercent,
       hashTimeMs, hashPercent,
       projectResolutionTimeMs, projectPercent,
-      dbWriteTimeMs, dbWritePercent)
-    logger.info("\(msg)")
+      commitBatchTimeMs, commitPercent)
+    logger.warning("\(msg)")  // warning level so it appears in logs (info is filtered)
   }
 }
 
@@ -773,11 +773,16 @@ public final class HooverEngine {
     // P6 optimization: Preload all existing entry IDs for this transcript
     // This eliminates per-batch parent validation queries (was ~25% of SQL parsing overhead)
     // Memory cost: ~40 bytes per entry (UUID string + Set overhead), acceptable for most transcripts
+    // Uses cursor-based construction to avoid intermediate array allocation (per review feedback)
     var preloadedEntryIds: Set<String> = try db.read { db in
-      let ids = try String.fetchAll(db, sql: """
+      var result = Set<String>()
+      let cursor = try String.fetchCursor(db, sql: """
         SELECT id FROM transcript_entries WHERE transcript_id = ?
       """, arguments: [transcript.id])
-      return Set(ids)
+      while let id = try cursor.next() {
+        result.insert(id)
+      }
+      return result
     }
     log.debug("[HOOVER-P6] Preloaded \(preloadedEntryIds.count) existing entry IDs for parent validation")
 
@@ -985,8 +990,8 @@ public final class HooverEngine {
           totalEntriesInserted += inserted
 
           let duration = Date().timeIntervalSince(batchStart)
-          // Timing: db.write
-          timingStats.dbWriteTimeMs += duration * 1000
+          // Timing: commitBatch total (db.write + overhead)
+          timingStats.commitBatchTimeMs += duration * 1000
           timingStats.batchCount += 1
           timingStats.entryCount += batch.count
 
@@ -1123,8 +1128,8 @@ public final class HooverEngine {
         preloadedEntryIds: &preloadedEntryIds
       )
       totalEntriesInserted += inserted
-      // Timing: final batch db.write
-      timingStats.dbWriteTimeMs += Date().timeIntervalSince(finalBatchStart) * 1000
+      // Timing: final commitBatch total (db.write + overhead)
+      timingStats.commitBatchTimeMs += Date().timeIntervalSince(finalBatchStart) * 1000
       timingStats.batchCount += 1
       timingStats.entryCount += batch.count
     }
