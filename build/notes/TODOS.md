@@ -145,42 +145,58 @@ Image rendering feature is functional but needs UI polish:
 
 ---
 
-## Performance Audit - Proactive Optimization (5 phases)
+## Performance Audit - Proactive Optimization (COMPLETED)
 
-**Status:** Phase 1 in progress (benchmark infrastructure created)
+**Status:** Core optimization complete (P1.1, P6, P7 merged)
 **Priority:** P1 (performance/stability)
 **Discovered:** 2026-01-02
+**Completed:** 2026-01-05
 
 - [x] #PERF-AUDIT-INFRA: Create benchmark infrastructure (scripts, metrics, comparison tools)
-- [ ] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
-- [ ] #PERF-AUDIT-PHASE2: Quick wins (index audit, cache tuning, debounce tuning)
-- [ ] #PERF-AUDIT-PHASE3: Architectural improvements (parallelization, streaming)
-- [ ] #PERF-AUDIT-PHASE4: Low-level optimizations (parser, hashing, memory)
-- [ ] #PERF-AUDIT-PHASE5: User communication (status bar progress, settings panel)
+- [x] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
+- [x] #PERF-AUDIT-PHASE2: Quick wins - P1.1 PRAGMA tuning (+200%), P6 preloaded entry IDs
+- [x] #PERF-AUDIT-PHASE3: P7 observation-free bulk ingest (+100% CLI, +8% real app)
+- [~] #PERF-AUDIT-PHASE4: Low-level optimizations - deferred (diminishing returns)
+- [~] #PERF-AUDIT-PHASE5: User communication - not needed (ingest now fast enough)
 
-**Background:**
-Following P0 fixes for UI lag during ingest (commit `2f447097`), this is a proactive, holistic performance optimization effort. Primary goal: initial ingest experience must never feel sluggish.
+**Results:**
+- Baseline (v1.0.7): 237 lines/sec
+- Final (P7): ~925 entries/sec (CLI), ~480 entries/sec (real app)
+- Total improvement: ~4x over baseline
 
-**Strategic value:** Linux engine shipping soon - optimizations to shared code (ContextifyCore) benefit both macOS and Linux (2-3x impact).
-
-**Phase 1 - Measurement & Baselines (current):**
-- Benchmark harness using production transcript corpus
-- Metrics: startup time, ingest rate, memory peak, query latency
-- Comparison tools for before/after validation
-
-**Key commands:**
-```bash
-./scripts/performance/run-perf-suite.sh --full    # Run full benchmark (~16 min)
-./scripts/performance/set-baseline.sh             # Mark as baseline
-./scripts/performance/compare.sh                  # Compare to baseline
-```
+**Key finding:** 48% performance gap between CLI and real-app modes due to UI/observer overhead.
 
 **Documentation:**
-- **Plan:** `build/notes/todo-support/PERF-AUDIT-plan.md` (5 phases, 430+ lines)
-- **Guide:** `build/docs/performance/benchmark-guide.md`
 - **History:** `build/docs/performance/benchmark-history.md`
-- **Architecture:** `build/docs/architecture/data-pipeline-architecture.md`
-- **Ingestion:** `build/docs/architecture/ingestion-workflow.md`
+- **Follow-up:** `build/notes/todo-support/performance-optimization-followup.md`
+
+---
+
+## Performance - Headless Ingest Engine
+
+**Status:** Not started
+**Priority:** P2 (performance/architecture)
+**Discovered:** 2026-01-05
+
+- [ ] #PERF-AUDIT-FOLLOWUP: Investigate headless ingest to close CLI vs real-app performance gap
+
+**Problem:**
+P7 optimization achieves ~925 entries/sec in CLI mode but only ~480 entries/sec in real app mode (48% overhead). This gap is due to UI/observer coupling, not the ingest implementation.
+
+**Proposed solution:**
+Separate ingest engine from UI via XPC service:
+- Ingest runs in background XPC process (no UI overhead)
+- UI app communicates via XPC for status/results
+- Both installed together from App Store (XPC bundled in .app)
+- Architecture aligns with Linux engine (also headless)
+
+**Benefits:**
+- Faster ingest (~2x improvement expected)
+- UI remains responsive during ingest
+- Shared architecture with Linux engine
+- Cleaner separation of concerns
+
+**Reference:** `build/notes/todo-support/performance-optimization-followup.md`
 
 ---
 

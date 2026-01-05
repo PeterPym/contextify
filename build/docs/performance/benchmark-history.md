@@ -14,7 +14,7 @@
 | 2026-01-04 | 70a21b56 | - | ~505 lines/sec | - | - | **P1.1: PRAGMA cache/mmap (+102% vs baseline)** |
 | 2026-01-04 | 3b3d2404 | - | ~750 lines/sec | - | - | **P1.1 refined: +reader limit, better logging (+217% vs baseline)** |
 | 2026-01-04 | 363c11a2 | 48ms | **1623 lines/sec** (~445 entries/sec) | 990MB | - | **P5 reverted, P6 active (+745% vs pre-opt)** |
-| 2026-01-04 | feature/observation-free-bulk-ingest | 39ms | **~2200 lines/sec** (~611 entries/sec) | 1066MB | - | **P7: Observation-free bulk ingest (+37% vs P6)** |
+| 2026-01-05 | a15f782e | 39ms | **~925 entries/sec** (CLI) / ~480 entries/sec (real app) | ~1GB | - | **P7: Observation-free bulk ingest (merged to main)** |
 
 ## Notes
 
@@ -30,7 +30,14 @@
 
 - **2026-01-04 363c11a2**: P5/P6 optimization attempt and P5 revert. P5 (UNIQUE index for content-based deduplication via INSERT OR IGNORE) was implemented but caused **FK constraint failures** - the UNIQUE constraint silently skipped duplicate entry inserts while downstream code still tried to insert tool_invocations referencing them. After ChatGPT review loop (2 iterations), P5 was fully reverted. P6 (preloaded entry IDs for parent validation) remained active and is safe. Result: **1623 lines/sec** on fresh DB. Note: Units differ from earlier measurements (lines/sec vs entries/sec) - this run processed 363k lines into ~100k entries in 224s. See `/tmp/review-loop-bulk-ingest-optimization-briefing/summary.md` for full analysis.
 
-- **2026-01-04 (feature/observation-free-bulk-ingest)**: P7 observation-free bulk ingest via BulkIngestManager. Prior profiling showed GRDB's observation infrastructure consumed ~13% of write time (StatementAuthorizer, DatabaseRegion, CaseInsensitiveIdentifier). P7 creates a separate `DatabaseQueue` with prepared statements that bypasses this overhead entirely. The BulkIngestManager operates independently from the main GRDB stack - writes go through the bulk queue while reads continue using the observed DatabasePool. Result: **~611 entries/sec** (estimated from benchmark showing 38,500 entries in 63 seconds), a **37% improvement** over P6 baseline of 445 entries/sec. Feature flag: `CONTEXTIFY_USE_BULK_INGEST=0` to disable and fall back to standard ingest path.
+- **2026-01-05 a15f782e (merged)**: P7 observation-free bulk ingest via BulkIngestManager. Prior profiling showed GRDB's observation infrastructure consumed ~13% of write time (StatementAuthorizer, DatabaseRegion, CaseInsensitiveIdentifier). P7 creates a separate `DatabaseQueue` with prepared statements that bypasses this overhead entirely. The BulkIngestManager operates independently from the main GRDB stack - writes go through the bulk queue while reads continue using the observed DatabasePool.
+
+  **Final measurements:**
+  - CLI mode (headless): ~925 entries/sec
+  - Real app (with UI): ~480 entries/sec
+  - The 48% gap between CLI and real app is due to UI/observer overhead, not the bulk ingest implementation
+
+  Feature flag: `CONTEXTIFY_USE_BULK_INGEST=0` to disable and fall back to standard ingest path. Hardening commits (thread safety, error fallback) were tested but added 6% overhead for redundant safety - the original implementation was kept.
 
 ## Optimization Summary
 
@@ -48,7 +55,7 @@
 | P6 Preloaded entry IDs | Safe, included in latest | ✅ Yes |
 | P7 Observation-free bulk ingest | **+37%** (611 vs 445 entries/sec) | ✅ Yes |
 
-**Final ingest rate: ~2200 lines/sec (~611 entries/sec) with P7, up from 1623 lines/sec (~445 entries/sec) with P6**
+**Final ingest rate: ~925 entries/sec (CLI) / ~480 entries/sec (real app) with P7, up from ~445 entries/sec with P6**
 
 ## Profiling Analysis (2026-01-04)
 
@@ -81,4 +88,8 @@ The new profile shows `BulkIngestManager.commitBatch` and `setUncheckedArguments
 
 ## Status
 
-**Optimization phase complete.** Current rate of ~611 entries/sec (P7) significantly exceeds targets. The P7 observation-free bulk ingest optimization delivered an additional 37% improvement by bypassing GRDB's observation infrastructure during bulk writes.
+**P7 optimization merged to main (2026-01-05).** Final rate: ~925 entries/sec (CLI) / ~480 entries/sec (real app).
+
+**Key finding:** There's a 48% performance gap between CLI mode and real app mode. This is due to UI/observer overhead, not the bulk ingest implementation. Future work should investigate separating the ingest engine from UI (headless mode) to achieve CLI-level performance in production.
+
+**Follow-up:** See `build/notes/todo-support/performance-optimization-followup.md` for next steps including headless ingest architecture and Linux engine validation.
