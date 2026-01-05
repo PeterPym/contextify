@@ -171,6 +171,11 @@ actor TimelineCacheMissGenerator {
             log.debug("[GENERATOR] queueMisses cancelled; skipping \(misses.count) entries")
             return
         }
+        // Skip if --no-summaries flag is set (benchmark mode)
+        if LaunchArguments.shared.noSummaries {
+            log.info("[BENCH] Skipping \(misses.count) cache misses (--no-summaries flag active)")
+            return
+        }
         // Skip in lite mode - no LLM available for summaries
         if isLiteModeActive() {
             log.info("[LITE-MODE] Skipping \(misses.count) cache misses - summaries disabled")
@@ -570,22 +575,32 @@ actor TimelineCacheMissGenerator {
                 }
 
                 if case .decodingFailure = timelineError {
-                    log.error("Decoding failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    log.warning("Decoding failure for entry \(miss.entryId.prefix(8)) - attempting fallback summary")
+                    // Try to generate a rule-based fallback instead of giving up
+                    if let fallbackSummary = generateDecodingFallback(miss: miss) {
+                        log.info("Generated fallback summary for decoding failure: \(fallbackSummary.selectedForm.prefix(60), privacy: .public)")
+                        try await upsertCache(miss: miss, summary: fallbackSummary)
+                        return .generated
+                    }
+                    // If fallback also fails, write tombstone
+                    log.error("Fallback generation failed for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "decoding", error: timelineError)
                     // Don't trackError - show (i) icon but not status bar error
                     return .tombstone(reason: "decoding")
                 }
 
-                if case .validationFailure = timelineError {
-                    // Allow one retry for validation failures (may succeed with fresh session)
-                    if attempt >= 1 {
-                        log.info("Validation failure on retry for entry \(miss.entryId.prefix(8)) - writing tombstone")
-                        try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
-                        // Don't trackError - show (i) icon but not status bar error
-                        return .tombstone(reason: "validation")
+                if case .validationFailure(let reason) = timelineError {
+                    // Try fallback before giving up
+                    log.warning("Validation failure for entry \(miss.entryId.prefix(8)): \(reason, privacy: .public) - attempting fallback")
+                    if let fallbackSummary = generateDecodingFallback(miss: miss) {
+                        log.info("Generated fallback summary for validation failure: \(fallbackSummary.selectedForm.prefix(60), privacy: .public)")
+                        try await upsertCache(miss: miss, summary: fallbackSummary)
+                        return .generated
                     }
-                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - will retry with fresh session")
-                    // Fall through to retry logic
+                    // If fallback fails, write tombstone (no retry - fallback is our best shot)
+                    log.error("Fallback generation failed for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
+                    return .tombstone(reason: "validation")
                 }
 
                 if case .unexpected = timelineError {
@@ -1010,6 +1025,39 @@ actor TimelineCacheMissGenerator {
             }
             consecutiveSuccesses = 0  // Reset counter
         }
+    }
+
+    // MARK: - Decoding Failure Fallback
+
+    /// Generate a rule-based fallback summary when LLM decoding fails
+    /// This handles cases like markdown tables that confuse structured output
+    /// Uses shared utility for consistency with FoundationLLM validation fallback
+    private func generateDecodingFallback(miss: CacheMiss) -> GeneratedSummary? {
+        let content = miss.content
+        let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
+        let provider = TimelineSourceContext.Provider(rawValue: miss.provider) ?? .other
+        let assistantName = provider.displayName
+
+        let fallbackSummary: String
+
+        if kind == .user {
+            fallbackSummary = TimelineSummaryFallback.makeUserFallback(message: content, assistantName: assistantName)
+        } else {
+            fallbackSummary = TimelineSummaryFallback.makeAssistantFallback(message: content, assistantName: assistantName)
+        }
+
+        log.info("[DECODING-FALLBACK] Generated: \(fallbackSummary, privacy: .public)")
+
+        // Use neutral disposition and isCompletion=false for decoding fallback
+        // We can't reliably infer intent from failed decoding, so be conservative
+        return GeneratedSummary(
+            presentForm: fallbackSummary,
+            pastForm: fallbackSummary,
+            selectedForm: "present",  // Must be 'present' or 'past', not the text
+            disposition: "unknown",   // Neutral - can't reliably infer from decode failure
+            isDirective: false,       // Conservative default
+            isCompletion: false       // Conservative default - don't assume completion
+        )
     }
 
     // MARK: - Error Tombstone Writing

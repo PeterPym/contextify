@@ -1952,6 +1952,18 @@ extension FoundationLLM {
         let reason: String
     }
 
+    /// Generate a meaningful fallback summary for user messages that would otherwise be echoed
+    /// Delegates to shared utility for consistency with cache-miss fallback
+    func generateUserMessageFallback(message: String, assistantName: String) -> String {
+        TimelineSummaryFallback.makeUserFallback(message: message, assistantName: assistantName)
+    }
+
+    /// Generate a meaningful fallback summary for assistant messages that would otherwise be echoed/truncated
+    /// Delegates to shared utility for consistency with cache-miss fallback
+    func generateAssistantMessageFallback(message: String, assistantName: String) -> String {
+        TimelineSummaryFallback.makeAssistantFallback(message: message, assistantName: assistantName)
+    }
+
     /// Detect when a summary is just echoing the input with minimal transformation
     func detectEchoPattern(summary: String, message: String, kind: TimelineEntryKind, assistantName: String) -> EchoCheckResult {
         let normalizedSummary = collapseWhitespace(summary).lowercased()
@@ -1967,15 +1979,54 @@ extension FoundationLLM {
         // Strip the attribution prefix and compare
         if kind == .assistant {
             let prefixPattern = assistantName.lowercased() + " "
-            if normalizedSummary.hasPrefix(prefixPattern) {
-                let withoutPrefix = String(normalizedSummary.dropFirst(prefixPattern.count))
-                // If what remains is very similar to the original, it's an echo
-                if withoutPrefix == normalizedMessage || normalizedMessage.hasPrefix(withoutPrefix) {
-                    return EchoCheckResult(isEcho: true, reason: "literal echo with attribution prefix")
+            let possessivePattern = assistantName.lowercased() + "'s "
+
+            // Check for prefix patterns (including possessive form)
+            for pattern in [prefixPattern, possessivePattern] {
+                if normalizedSummary.hasPrefix(pattern) {
+                    let withoutPrefix = String(normalizedSummary.dropFirst(pattern.count))
+                    // If what remains is very similar to the original, it's an echo
+                    if withoutPrefix == normalizedMessage || normalizedMessage.hasPrefix(withoutPrefix) {
+                        return EchoCheckResult(isEcho: true, reason: "literal echo with attribution prefix")
+                    }
+                    // Check for ~90% substring match (truncated echo)
+                    if withoutPrefix.count >= 20 && normalizedMessage.contains(withoutPrefix.prefix(withoutPrefix.count - 3)) {
+                        return EchoCheckResult(isEcho: true, reason: "truncated literal echo")
+                    }
                 }
-                // Check for ~90% substring match (truncated echo)
-                if withoutPrefix.count >= 20 && normalizedMessage.contains(withoutPrefix.prefix(withoutPrefix.count - 3)) {
-                    return EchoCheckResult(isEcho: true, reason: "truncated literal echo")
+            }
+
+            // Check 2b: Direct echo for short assistant messages (no prefix)
+            // "Done." → "Done." should be caught
+            if message.count <= 20 && normalizedSummary == normalizedMessage {
+                return EchoCheckResult(isEcho: true, reason: "direct echo - short assistant message passed through")
+            }
+
+            // Check 2c: Truncated echo - summary is just the start of the message
+            // Catches cases like long message truncated to first ~140 chars
+            // Require stronger evidence: high length ratio OR truncation marker
+            if normalizedMessage.hasPrefix(normalizedSummary) && normalizedSummary.count >= 50 {
+                // Only flag as echo if summary is a significant portion of the message (>= 70%)
+                // OR the summary ends with truncation markers
+                let lengthRatio = Double(normalizedSummary.count) / Double(normalizedMessage.count)
+                let hasTruncationMarker = summary.hasSuffix("…") || summary.hasSuffix("...")
+                if lengthRatio >= 0.7 || hasTruncationMarker {
+                    return EchoCheckResult(isEcho: true, reason: "truncated echo - summary is prefix of message")
+                }
+            }
+            // Also catch when summary ends with ellipsis (explicit truncation indicator)
+            if summary.hasSuffix("…") || summary.hasSuffix("...") {
+                // Trim ellipsis and trailing whitespace/periods properly
+                var trimmedSummary = summary
+                if trimmedSummary.hasSuffix("…") {
+                    trimmedSummary = String(trimmedSummary.dropLast())
+                } else if trimmedSummary.hasSuffix("...") {
+                    trimmedSummary = String(trimmedSummary.dropLast(3))
+                }
+                trimmedSummary = trimmedSummary.trimmingCharacters(in: .whitespaces).lowercased()
+                // Require trimmed prefix to be non-trivial (>= 20 chars) before declaring echo
+                if trimmedSummary.count >= 20 && normalizedMessage.hasPrefix(trimmedSummary) {
+                    return EchoCheckResult(isEcho: true, reason: "truncated echo with ellipsis")
                 }
             }
         }
@@ -1997,6 +2048,16 @@ extension FoundationLLM {
                         }
                     }
                 }
+            }
+
+            // Check 4: Direct echo - summary is identical or nearly identical to message
+            // This catches cases where LLM just passes through the message with no transformation
+            if normalizedSummary == normalizedMessage {
+                return EchoCheckResult(isEcho: true, reason: "direct echo - summary identical to message")
+            }
+            // Also catch truncated direct echo (summary is prefix of message)
+            if message.count <= 50 && normalizedMessage.hasPrefix(normalizedSummary) && normalizedSummary.count >= normalizedMessage.count - 5 {
+                return EchoCheckResult(isEcho: true, reason: "truncated direct echo")
             }
         }
 
@@ -2086,14 +2147,66 @@ extension FoundationLLM {
         // ECHO DETECTION: Reject summaries that are just echoing the input (Examples 2, 3, 6, 14, 17)
         let echoCheckResult = detectEchoPattern(summary: summary, message: message, kind: kind, assistantName: assistantName)
         if echoCheckResult.isEcho {
-            log.warning("[VALIDATION-REJECT] Echo pattern detected: \(echoCheckResult.reason, privacy: .public)")
+            log.warning("[VALIDATION-ECHO] Echo pattern detected: \(echoCheckResult.reason, privacy: .public)")
+
+            // Generate bounded fallback for all echo cases (regardless of message length)
+            // The shared utility already applies hard caps to prevent unbounded summaries
+            if kind == .user {
+                let fallbackSummary = generateUserMessageFallback(message: message, assistantName: assistantName)
+                log.info("[VALIDATION-ECHO] Using fallback for user message: \(fallbackSummary, privacy: .public)")
+                let isDirective = payload.disposition == "directive"
+                return TimelineSummaryResult(
+                    summary: fallbackSummary,
+                    isCompletion: false,
+                    isDirective: isDirective,
+                    disposition: payload.disposition
+                )
+            }
+
+            if kind == .assistant {
+                // Generate appropriate fallback based on message length
+                let fallbackSummary: String
+                if message.count <= 30 {
+                    // For very short messages like "Done.", use simple template
+                    let clipped = TimelineSummaryFallback.clipForSummary(message, maxLength: 40)
+                    fallbackSummary = "\(assistantName) confirmed: \(clipped)"
+                } else {
+                    // For longer truncated echoes, summarize the topic
+                    fallbackSummary = generateAssistantMessageFallback(message: message, assistantName: assistantName)
+                }
+                log.info("[VALIDATION-ECHO] Using fallback for assistant message: \(fallbackSummary, privacy: .public)")
+                return TimelineSummaryResult(
+                    summary: fallbackSummary,
+                    isCompletion: payload.isCompletion,
+                    isDirective: false,
+                    disposition: payload.disposition
+                )
+            }
+
+            // For other cases, reject
             throw TimelineError.validationFailure(reason: echoCheckResult.reason)
         }
 
         // FORMAT VALIDATION: Reject summaries with problematic formatting (Examples 1, 4, 9, 15)
         if let formatIssue = detectFormatIssue(summary: summary) {
-            log.warning("[VALIDATION-REJECT] Format issue in summary: \(formatIssue, privacy: .public)")
-            throw TimelineError.validationFailure(reason: formatIssue)
+            log.warning("[VALIDATION-FORMAT] Format issue in summary: \(formatIssue, privacy: .public)")
+
+            // Generate fallback based on message content instead of failing
+            let fallbackSummary: String
+            if kind == .user {
+                fallbackSummary = generateUserMessageFallback(message: message, assistantName: assistantName)
+            } else {
+                fallbackSummary = generateAssistantMessageFallback(message: message, assistantName: assistantName)
+            }
+            log.info("[VALIDATION-FORMAT] Using fallback: \(fallbackSummary, privacy: .public)")
+
+            let isDirective = payload.disposition == "directive"
+            return TimelineSummaryResult(
+                summary: fallbackSummary,
+                isCompletion: kind == .assistant ? payload.isCompletion : false,
+                isDirective: isDirective,
+                disposition: payload.disposition
+            )
         }
 
         if kind == .assistant {

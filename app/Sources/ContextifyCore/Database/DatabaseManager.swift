@@ -4,6 +4,47 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager")
 
+// MARK: - SQLite Performance Constants
+
+/// SQLite page cache size in KiB (negative = KiB, positive = pages).
+/// 100MB cache significantly reduces disk I/O during ingestion.
+/// Applied per-connection; with 2 readers + 1 writer = ~300MB total.
+private let sqliteCacheSizeKiB: Int = -102400  // 100MB
+
+/// Maximum bytes SQLite will memory-map from the database file.
+/// Improves read performance for parent validation and deduplication lookups.
+/// This is an upper bound - actual mapping depends on file size and system limits.
+private let sqliteMmapSizeBytes: Int = 1_073_741_824  // 1GB
+
+/// Maximum concurrent reader connections in the GRDB pool.
+/// Reduced from default (5) to limit total cache memory footprint.
+private let grdbMaxReaderCount: Int = 2
+
+// MARK: - CLI Database Path Error
+
+/// Errors for CLI database path validation
+enum DatabasePathError: LocalizedError {
+  case pathExists(String)
+  case parentNotWritable(String)
+  case invalidPath(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .pathExists(let path):
+      return """
+        Database already exists at --database-path location: \(path)
+        Benchmark mode requires a fresh database. Either:
+          1. Delete the existing file at that path
+          2. Use a different path: --database-path /tmp/bench-\(UUID().uuidString.prefix(8)).db
+        """
+    case .parentNotWritable(let path):
+      return "Parent directory not writable for --database-path: \(path)"
+    case .invalidPath(let path):
+      return "Invalid --database-path: \(path)"
+    }
+  }
+}
+
 // MARK: - Onboarding Error
 
 /// Guard error for App Store builds attempting DB access before onboarding.
@@ -26,6 +67,11 @@ public final class DatabaseManager: @unchecked Sendable {
   private var securityScopedDirURL: URL?
   private var isMigrationInProgress = false
   private let overrideDatabaseURL: URL?
+
+  /// Cached CLI database URL after validation (set once at first resolution)
+  /// This prevents re-validation failing after the DB file is created
+  /// Access protected by poolLock (set in databasePath() which is called under lock)
+  private var validatedCLIDatabaseURL: URL?
 
   public var pool: DatabasePool {
     get throws {
@@ -128,11 +174,26 @@ public final class DatabaseManager: @unchecked Sendable {
     var config = Configuration()
     config.foreignKeysEnabled = true
     config.busyMode = .timeout(5.0)
+    config.maximumReaderCount = grdbMaxReaderCount
     config.prepareDatabase { db in
       try db.execute(sql: "PRAGMA journal_mode=WAL")
       try db.execute(sql: "PRAGMA synchronous=NORMAL")
       try db.execute(sql: "PRAGMA wal_autocheckpoint=1000")
       try db.execute(sql: "PRAGMA temp_store=MEMORY")
+      // Performance tuning (see constants at top of file for rationale)
+      try db.execute(sql: "PRAGMA cache_size=\(sqliteCacheSizeKiB)")
+      try db.execute(sql: "PRAGMA mmap_size=\(sqliteMmapSizeBytes)")
+
+      // Verify applied values (SQLite may clamp based on system limits)
+      // Note: cache_size returns page count, so we compute MiB from page_size
+      if let cachePages = try Int.fetchOne(db, sql: "PRAGMA cache_size"),
+         let pageSize = try Int.fetchOne(db, sql: "PRAGMA page_size"),
+         let appliedMmap = try Int.fetchOne(db, sql: "PRAGMA mmap_size") {
+        let cacheMiB = (abs(cachePages) * pageSize) / (1024 * 1024)
+        log.debug(
+          "[DB-PRAGMA] cache=\(cacheMiB, privacy: .public)MiB (\(cachePages, privacy: .public) pages) mmap=\(appliedMmap, privacy: .public)"
+        )
+      }
     }
 
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
@@ -186,6 +247,27 @@ public final class DatabaseManager: @unchecked Sendable {
       return overrideDatabaseURL
     }
 
+    // CLI override takes precedence (runtime-only)
+    // Use cached URL after first validation to avoid failing after DB creation
+    if let cachedURL = validatedCLIDatabaseURL {
+      return cachedURL
+    }
+    if let cliPath = LaunchArguments.shared.databasePath {
+      do {
+        try validateCLIDatabasePath(cliPath)
+      } catch let error as DatabasePathError {
+        // Fail-fast for CLI database path validation errors
+        let msg = error.errorDescription ?? error.localizedDescription
+        log.error("[BENCH] Database path validation failed: \(msg)")
+        fputs("Error: \(msg)\n", stderr)
+        exit(73)  // EX_CANTCREAT
+      }
+      let url = URL(fileURLWithPath: cliPath)
+      validatedCLIDatabaseURL = url
+      log.info("[BENCH] Using CLI database path: \(cliPath, privacy: .public)")
+      return url
+    }
+
     // Check for custom database location first
     if let customLocation = try customDatabasePath() {
       return customLocation
@@ -193,6 +275,33 @@ public final class DatabaseManager: @unchecked Sendable {
 
     // Fall back to default location
     return try defaultDatabasePath()
+  }
+
+  /// Validates CLI database path before use
+  private func validateCLIDatabasePath(_ cliPath: String) throws {
+    // App Store builds: reject path flags (security-scoped access required)
+    #if APPSTORE_BUILD
+    fputs("Error: --database-path is not supported in App Store builds\n", stderr)
+    exit(64)  // EX_USAGE
+    #endif
+
+    let url = URL(fileURLWithPath: cliPath)
+
+    // Validate: path must not exist (fresh benchmark DB)
+    if FileManager.default.fileExists(atPath: cliPath) {
+      throw DatabasePathError.pathExists(cliPath)
+    }
+
+    // Validate: parent directory must exist and be writable
+    let parentDir = url.deletingLastPathComponent()
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: parentDir.path, isDirectory: &isDir),
+          isDir.boolValue else {
+      throw DatabasePathError.invalidPath(cliPath)
+    }
+    guard FileManager.default.isWritableFile(atPath: parentDir.path) else {
+      throw DatabasePathError.parentNotWritable(cliPath)
+    }
   }
 
   /// Returns custom database path if configured
@@ -370,6 +479,80 @@ public final class DatabaseManager: @unchecked Sendable {
         }
         log.info("WAL checkpoint triggered: \(walMB)MB → truncated")
       }
+    }
+  }
+
+  /// Threshold for WAL checkpoint (5 batches worth of entries)
+  private static let walCheckpointThreshold = 5000
+
+  /// Cumulative entries written since last checkpoint (protected by poolLock)
+  private var entriesSinceLastCheckpoint = 0
+
+  /// Flag to prevent concurrent checkpoints (protected by poolLock)
+  private var checkpointInProgress = false
+
+  /// Checkpoint WAL after bulk ingest operations
+  /// Tracks cumulative entries across transcripts and triggers checkpoint when threshold reached.
+  /// Uses PASSIVE mode which doesn't block readers.
+  /// Thread-safe: uses poolLock to protect counter and pool access.
+  /// - Important: Must be called outside any active DatabasePool write closure.
+  public func checkpointAfterBulkWrites(entriesWritten: Int) {
+    guard entriesWritten > 0 else { return }
+    assert(!Thread.isMainThread, "checkpointAfterBulkWrites must not be called on main thread")
+
+    let pool: DatabasePool
+    var claimedCount = 0
+
+    // Acquire lock to safely update counter and check threshold
+    poolLock.lock()
+    entriesSinceLastCheckpoint += entriesWritten
+
+    // Skip if checkpoint already in progress or below threshold
+    guard !checkpointInProgress,
+          entriesSinceLastCheckpoint >= Self.walCheckpointThreshold,
+          let p = _pool
+    else {
+      poolLock.unlock()
+      return
+    }
+
+    // Claim checkpoint and reset counter before running
+    // New writes during checkpoint will accumulate from 0
+    checkpointInProgress = true
+    pool = p
+    claimedCount = entriesSinceLastCheckpoint
+    entriesSinceLastCheckpoint = 0
+    poolLock.unlock()
+
+    // Clear in-progress flag when done (success or failure)
+    defer {
+      poolLock.lock()
+      checkpointInProgress = false
+      poolLock.unlock()
+    }
+
+    // Perform checkpoint outside lock (blocking operation)
+    do {
+      // Use writeWithoutTransaction to avoid implicit transaction overhead
+      try pool.writeWithoutTransaction { db in
+        // PASSIVE checkpoint - returns (busy, log, checkpointed) counts
+        if let result = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)") {
+          let busy = result[0] as? Int ?? 0
+          let logPages = result[1] as? Int ?? 0
+          let checkpointed = result[2] as? Int ?? 0
+          if busy > 0 || checkpointed < logPages {
+            log.debug("[WAL-CHECKPOINT] Partial after \(claimedCount) entries: \(checkpointed)/\(logPages) pages, \(busy) busy")
+          } else {
+            log.debug("[WAL-CHECKPOINT] Complete after \(claimedCount) entries: \(checkpointed) pages")
+          }
+        }
+      }
+    } catch {
+      // Re-add claimed count on failure to preserve pressure for retry
+      poolLock.lock()
+      entriesSinceLastCheckpoint += claimedCount
+      poolLock.unlock()
+      log.debug("[WAL-CHECKPOINT] Skipped: \(error.localizedDescription)")
     }
   }
 

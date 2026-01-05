@@ -182,6 +182,17 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   ) throws {
     self.dbManager = dbManager
     self.accessProvider = accessProvider
+
+    // Validate CLI transcript path if provided
+    do {
+      try PassthroughAccessProvider.validateTranscriptPath()
+    } catch let error as TranscriptPathError {
+      let msg = error.errorDescription ?? error.localizedDescription
+      log.error("[BENCH] Transcript path validation failed: \(msg)")
+      fputs("Error: \(msg)\n", stderr)
+      exit(66)  // EX_NOINPUT
+    }
+
     let pool = try dbManager.pool
 
     // v23: Initialize write queue early (P0-3: non-optional let)
@@ -1126,6 +1137,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     } else {
       log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) (partial \(outcome.newEntries) entries)")
     }
+
+    // Checkpoint WAL after significant bulk writes to prevent WAL growth
+    dbManager.checkpointAfterBulkWrites(entriesWritten: outcome.newEntries)
 
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 

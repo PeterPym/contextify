@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-02 (Removed fixed P0s: #INGEST-UI-LAG, #WINDOW-CONTROLS-DISABLED)
+**Last Updated:** 2026-01-02 (Added #PERF-AUDIT-* performance optimization phases)
 **Status:** Active
 
 **Priority Levels:**
@@ -142,6 +142,45 @@ Image rendering feature is functional but needs UI polish:
 - Window loses size/position on close
 
 **Scope:** UI/UX polish only. Performance concerns tracked separately in #IMAGE-RENDER-*.
+
+---
+
+## Performance Audit - Proactive Optimization (5 phases)
+
+**Status:** Phase 1 in progress (benchmark infrastructure created)
+**Priority:** P1 (performance/stability)
+**Discovered:** 2026-01-02
+
+- [x] #PERF-AUDIT-INFRA: Create benchmark infrastructure (scripts, metrics, comparison tools)
+- [ ] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
+- [ ] #PERF-AUDIT-PHASE2: Quick wins (index audit, cache tuning, debounce tuning)
+- [ ] #PERF-AUDIT-PHASE3: Architectural improvements (parallelization, streaming)
+- [ ] #PERF-AUDIT-PHASE4: Low-level optimizations (parser, hashing, memory)
+- [ ] #PERF-AUDIT-PHASE5: User communication (status bar progress, settings panel)
+
+**Background:**
+Following P0 fixes for UI lag during ingest (commit `2f447097`), this is a proactive, holistic performance optimization effort. Primary goal: initial ingest experience must never feel sluggish.
+
+**Strategic value:** Linux engine shipping soon - optimizations to shared code (ContextifyCore) benefit both macOS and Linux (2-3x impact).
+
+**Phase 1 - Measurement & Baselines (current):**
+- Benchmark harness using production transcript corpus
+- Metrics: startup time, ingest rate, memory peak, query latency
+- Comparison tools for before/after validation
+
+**Key commands:**
+```bash
+./scripts/performance/run-perf-suite.sh --full    # Run full benchmark (~16 min)
+./scripts/performance/set-baseline.sh             # Mark as baseline
+./scripts/performance/compare.sh                  # Compare to baseline
+```
+
+**Documentation:**
+- **Plan:** `build/notes/todo-support/PERF-AUDIT-plan.md` (5 phases, 430+ lines)
+- **Guide:** `build/docs/performance/benchmark-guide.md`
+- **History:** `build/docs/performance/benchmark-history.md`
+- **Architecture:** `build/docs/architecture/data-pipeline-architecture.md`
+- **Ingestion:** `build/docs/architecture/ingestion-workflow.md`
 
 ---
 
@@ -2228,64 +2267,65 @@ Multiple branches created during late-night token burn session with speculative 
 
 ## LLM Summarization Quality (1 item)
 
-**Status:** Not Started
+**Status:** Fallback handling complete, prompt improvements pending
 **Priority:** P2 (Quality improvement - summaries misrepresenting user intent)
-**Effort:** 4-6 hours
+**Effort:** 2-3 hours remaining (prompt tuning)
 **Spec:** `build/notes/todo-support/SUMMARIZATION-FIX-spec.md`
 
-- [ ] #SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
+- [ ] #SUMMARIZATION-FIX: Improve LLM prompts for remaining attribution edge cases
 
-**Problem:**
-Timeline summaries sometimes reverse attribution, showing user action requests as assistant explanations. Example: User says "add a P1 todo" → Summary says "You explained how to add a todo."
+**Progress:**
+Rule-based fallback handling now covers most cases via `TimelineSummaryFallback.swift`:
+- Echo/passthrough detection with meaningful fallbacks
+- Format issue detection (tables, XML, CSS)
+- Pronoun confusion detection
+- Suggestion-as-request, multi-clause imperative, file-path-as-command detection
 
-**Root Cause:**
-- Summarizer doesn't distinguish action requests from explanations
-- Tool completion results not visible to summarizer (assistant doesn't relay in text)
-- Prompts lack explicit guidance on attribution preservation
+**Remaining Work:**
+3 edge cases still need prompt improvements (not fallback-solvable):
+- Example 5: "Let me find X" misread as question instead of investigation
+- Example 7: Nested JSON content confuses framing vs quoted text
+- Example 12: "Ready to implement" claimed as completed work
 
-**Solution:**
-1. Update LLM prompts with explicit attribution rules
-2. Ensure tool_result content available to summarizer
-3. Add examples of correct vs. incorrect attribution patterns
-
-**Test Cases:**
-- Entry `f268414b-31ca-431a-b4e6-383898844de0` - Primary example with detailed transcript analysis
-- Additional UUIDs in audit doc for validation
+**Validation:**
+Before further work, validate current fixes using the QA script:
+```bash
+bash build/notes/todo-support/summarization-validation-test.sh
+```
 
 **Files:**
-- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (prompts)
-- `app/Sources/ContextifyCore/Database/Models.swift` (structure)
-
-**Acceptance Criteria:**
-- Action requests correctly identified as "User asked to..." or "User requested..."
-- No reversed attribution (user actions attributed to assistant or vice versa)
-- Completed tasks reflected in summaries (not just requests)
-- Information requests distinguished from action requests
-
-**For full analysis**: See investigation document with transcript analysis, examples, and proposed prompt improvements
+- `Contextify/Contextify/TimelineSummaryFallback.swift` (shared fallback utility)
+- `Contextify/Contextify/FoundationLLM.swift` (validation + fallback)
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (decode fallback)
 
 ---
 
 ## Summarization Parsing Backlog (1 item)
 
-**Status:** Collecting examples
+**Status:** 14/17 examples handled, 3 remaining
 **Priority:** P2 (Quality - batch fix unparseable summaries)
-**Effort:** 2-4 hours per batch
+**Effort:** 1-2 hours for remaining prompt work
 
-- [ ] #SUMM-PARSING-BACKLOG: Fix messages that fail summarization parsing
+- [ ] #SUMM-PARSING-BACKLOG: Fix remaining 3 examples requiring prompt improvements
 
-**Problem:**
-Some transcript entries produce summaries that fail post-processing or contain unexpected formats. Rather than fixing these one-off as they appear, collect examples and fix in batches.
+**Progress:**
+14 of 17 blooper examples now handled by `TimelineSummaryFallback.swift`:
+- Markdown tables, CSS syntax, XML tags (format detection)
+- Echo/passthrough, truncated echoes, duplicate attribution
+- Pronoun confusion, suggestion-as-request, multi-clause imperatives, file paths
 
-**Workflow:**
-1. When encountering an unparseable summary, add to the backlog reference doc
-2. Periodically review backlog and identify patterns
-3. Fix root causes in parser/prompts/post-processing
-4. Validate fixes against collected examples
+**Remaining (3 examples):**
+- Example 5: Investigation misread as question
+- Example 7: Nested JSON confuses content vs framing
+- Example 12: Future work claimed as complete
+
+**Validation:**
+Before adding new examples or doing further work, validate current fixes:
+```bash
+bash build/notes/todo-support/summarization-validation-test.sh
+```
 
 **Reference:** `build/notes/todo-support/SUMM-PARSING-BACKLOG-examples.md`
-
-**Current Count:** 1 example (seed script markdown table output)
 
 ---
 
@@ -2851,6 +2891,37 @@ A 1.06 second hang was observed during agent decoration testing. Stack trace sho
 **Files:**
 - `Contextify/Contextify/TimelineEntryRow.swift:104` - hang location
 - `Contextify/Contextify/TimelineEntryRow.swift:366` - `formatWithBackticks()` function
+
+---
+
+## Scripts Directory Reorganization (1 item) [token-burn]
+
+**Status:** Not started
+**Priority:** P3 (housekeeping)
+**Effort:** 2-4 hours
+**Tags:** token-burn
+
+- [ ] #SCRIPTS-REORG: Audit and reorganize scripts/ directory structure
+
+**Background:**
+The scripts/ directory has grown organically and needs cleanup. Performance scripts were reorganized from `scripts/benchmarks/` to `scripts/performance/`. Similar organization may be needed for remaining scripts.
+
+**Tasks:**
+1. Audit all scripts in scripts/ root - categorize by purpose
+2. Move related scripts into subdirectories as appropriate
+3. Update scripts/README.md with complete directory structure
+4. Update any documentation referencing moved scripts
+5. Remove unused/obsolete scripts
+6. Add READMEs to subdirectories that lack them
+
+**Current Subdirectories:**
+- `performance/` - benchmarking, profiling
+- `qa/` - QA test suite
+- `logging/` - log capture and analysis
+- `transcripts/` - transcript analysis
+- `release/` - release management
+
+**Note:** Tagged `token-burn` for use when excess API quota needs consuming before expiry.
 
 ---
 

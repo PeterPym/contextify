@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-12-13
+**Last Updated:** 2026-01-03
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -1042,6 +1042,162 @@ struct ChildView: View {
 }
 ```
 
+### 6. Side Effects in Getters or Body
+
+**❌ ANTI-PATTERN:**
+
+```swift
+var body: some View {
+  let content = markdownContent  // Computed property with side effect
+  return Markdown(content)
+}
+
+private var markdownContent: MarkdownContent {
+  let content = MarkdownContent(entry.detail)
+  // NEVER mutate state in a getter!
+  DispatchQueue.main.async {
+    self.cachedContent = content
+  }
+  return content
+}
+```
+
+**✅ CORRECT:**
+
+```swift
+@State private var cachedContent: MarkdownContent?
+
+var body: some View {
+  if let content = cachedContent {
+    Markdown(content)
+  }
+}
+.onAppear { updateCacheIfNeeded() }
+.onChange(of: entry.detail) { _, _ in
+  invalidateCache()
+  updateCacheIfNeeded()
+}
+
+private func updateCacheIfNeeded() {
+  if cachedContent == nil {
+    cachedContent = MarkdownContent(entry.detail)
+  }
+}
+
+private func invalidateCache() {
+  cachedContent = nil
+}
+```
+
+**Why:** Getters (including `body`) should be pure - no state mutation, no side effects. Use explicit `onChange` handlers for cache management.
+
+**Implementation Reference:**
+- `Contextify/Contextify/TimelineEntryRow.swift:87-99` - Correct caching pattern with onChange
+
+### 7. Forgetting View Reuse with @State
+
+**❌ ANTI-PATTERN:**
+
+```swift
+struct ItemRow: View {
+  let item: Item
+  @State private var cachedData: ProcessedData?
+
+  var body: some View {
+    // cachedData may contain stale data from a DIFFERENT item
+    // if SwiftUI reuses this view instance
+    Text(cachedData?.text ?? "")
+  }
+  .onAppear { loadData() }
+  .onChange(of: item.content) { _, _ in
+    // Only invalidates when content changes, not when item identity changes!
+    cachedData = nil
+  }
+}
+```
+
+**✅ CORRECT:**
+
+```swift
+struct ItemRow: View {
+  let item: Item
+  @State private var cachedData: ProcessedData?
+
+  var body: some View {
+    Text(cachedData?.text ?? "")
+  }
+  .onAppear { loadData() }
+  .onChange(of: item.content) { _, _ in
+    cachedData = nil
+    loadData()
+  }
+  .onChange(of: item.id) { _, _ in
+    // Handle view reuse - SwiftUI may reuse this view for a different item
+    cachedData = nil
+    loadData()
+  }
+}
+```
+
+**Why:** In `ForEach`, SwiftUI may reuse view instances for different items. `@State` persists with the view instance, not the item. Always invalidate cached state when item identity changes.
+
+**Implementation Reference:**
+- `Contextify/Contextify/TimelineEntryRow.swift:188-192` - onChange(of: entry.id) for view reuse safety
+
+### 8. Relying Only on onChange for Initial State
+
+**❌ ANTI-PATTERN:**
+
+```swift
+@State private var cache: ParsedContent?
+
+var body: some View {
+  if let cache {
+    ContentView(cache)
+  }
+}
+.onChange(of: isExpanded) { _, newValue in
+  // PROBLEM: If isExpanded starts as true, onChange never fires!
+  if newValue {
+    cache = parseContent()
+  }
+}
+```
+
+**✅ CORRECT:**
+
+```swift
+@State private var cache: ParsedContent?
+
+var body: some View {
+  if let cache {
+    ContentView(cache)
+  }
+}
+.onAppear {
+  // Handle case where isExpanded is already true on first render
+  updateCacheIfNeeded()
+}
+.onChange(of: isExpanded) { _, newValue in
+  if newValue {
+    updateCacheIfNeeded()
+  } else {
+    cache = nil
+  }
+}
+
+private func updateCacheIfNeeded() {
+  if isExpanded && cache == nil {
+    cache = parseContent()
+  }
+}
+```
+
+**Why:** `onChange` only fires on *changes* after the view appears. If a value is already set when the view appears (e.g., restored state, parent-driven), `onChange` never fires. Use `onAppear` to handle the initial state.
+
+**Implementation Reference:**
+- `Contextify/Contextify/TimelineEntryRow.swift:156-173` - Combined onAppear + onChange pattern
+
 ---
 
 ## Migration from StateObject to Observable
@@ -1972,5 +2128,5 @@ Button("Next") { }
 ---
 
 **Document Status:** ✅ Complete
-**Last Code Verification:** 2025-11-26 (verified against 27 SwiftUI files, 6 @Observable classes, 16 views)
+**Last Code Verification:** 2026-01-03 (added anti-patterns 6-8 from MarkdownUI caching implementation)
 **Next Review:** After SwiftUI architecture changes or Swift 6 migration tasks

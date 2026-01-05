@@ -14,7 +14,26 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Ho
 
 public enum MonitorConfig {
   public static let fileWatcherDebounce: TimeInterval = 0.150
-  public static let batchLines: Int = 1000
+  /// Maximum batch size (clamped to prevent memory spikes and SQL parameter limit issues)
+  private static let maxBatchLines = 10000
+  /// Number of lines per batch commit. Default 1000, override via CONTEXTIFY_BATCH_LINES.
+  /// Larger batches reduce transaction overhead but increase memory usage.
+  /// P1.1: Clamped to maxBatchLines (10000) to prevent memory spikes and SQL issues.
+  public static let batchLines: Int = {
+    if let envValue = ProcessInfo.processInfo.environment["CONTEXTIFY_BATCH_LINES"],
+       let value = Int(envValue), value > 0 {
+      if value > maxBatchLines {
+        // Log when clamping - use OSLog directly since we're in static init
+        #if canImport(OSLog)
+        let clampLog = Logger(subsystem: "dev.contextify", category: "MonitorConfig")
+        clampLog.warning("[CONFIG] CONTEXTIFY_BATCH_LINES=\(value) exceeds max (\(maxBatchLines)), clamping")
+        #endif
+        return maxBatchLines
+      }
+      return value
+    }
+    return 1000
+  }()
   public static let checkpointEveryLines: Int = 1000
   public static let parseErrorMaxChars: Int = 1024
   public static let parseErrorRetentionPerTranscript: Int = 500
@@ -25,6 +44,11 @@ public enum MonitorConfig {
   }()
   public static let enableHooverStorageTracing: Bool = {
     ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_STORAGE"] == "1"
+  }()
+  /// Enable detailed timing breakdown for performance analysis
+  /// Set CONTEXTIFY_TRACE_HOOVER_TIMING=1 to see parse/hash/db.write time splits
+  public static let enableHooverTimingTracing: Bool = {
+    ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_TIMING"] == "1"
   }()
   /// Enable/disable queue message indicators in timeline
   /// Set CONTEXTIFY_SHOW_QUEUED=0 to hide queued message badges
@@ -58,6 +82,37 @@ public struct HooverOutcome {
   public let contentSha256: String?
   public let entriesSkipped: Int      // ParserError.skipEntry count
   public let entriesInserted: Int     // Actual DB inserts (from db.changesCount)
+}
+
+// MARK: - Timing Instrumentation
+
+/// Tracks time spent in each phase of batch processing for performance analysis.
+/// Enable with CONTEXTIFY_TRACE_HOOVER_TIMING=1
+struct BatchTimingStats {
+  var parseTimeMs: Double = 0
+  var hashTimeMs: Double = 0
+  var projectResolutionTimeMs: Double = 0
+  var commitBatchTimeMs: Double = 0  // Total time in commitBatch (includes DB writes + overhead)
+  var batchCount: Int = 0
+  var entryCount: Int = 0
+
+  func log(transcriptId: String, logger: Logger) {
+    guard MonitorConfig.enableHooverTimingTracing else { return }
+    let total = parseTimeMs + hashTimeMs + projectResolutionTimeMs + commitBatchTimeMs
+    guard total > 0 else { return }
+    let parsePercent = (parseTimeMs / total) * 100
+    let hashPercent = (hashTimeMs / total) * 100
+    let projectPercent = (projectResolutionTimeMs / total) * 100
+    let commitPercent = (commitBatchTimeMs / total) * 100
+    // Extract values to avoid capturing self in OSLog autoclosure
+    let msg = String(format: "[HOOVER-TIMING] transcript=%@ batches=%d entries=%d total=%.0fms parse=%.0fms(%.1f%%) hash=%.0fms(%.1f%%) projectRes=%.0fms(%.1f%%) commit=%.0fms(%.1f%%)",
+      transcriptId, batchCount, entryCount, total,
+      parseTimeMs, parsePercent,
+      hashTimeMs, hashPercent,
+      projectResolutionTimeMs, projectPercent,
+      commitBatchTimeMs, commitPercent)
+    logger.warning("\(msg)")  // warning level so it appears in logs (info is filtered)
+  }
 }
 
 // MARK: - Parsed Entry Insert
@@ -713,6 +768,23 @@ public final class HooverEngine {
     var totalEntriesSkipped = 0  // Track skipEntry count
     var totalEntriesInserted = 0  // Track actual DB inserts
     var projectCache = ProjectResolutionCache()  // P0 fix: cache project lookups per transcript
+    var timingStats = BatchTimingStats()  // Performance timing breakdown
+
+    // P6 optimization: Preload all existing entry IDs for this transcript
+    // This eliminates per-batch parent validation queries (was ~25% of SQL parsing overhead)
+    // Memory cost: ~40 bytes per entry (UUID string + Set overhead), acceptable for most transcripts
+    // Uses cursor-based construction to avoid intermediate array allocation (per review feedback)
+    var preloadedEntryIds: Set<String> = try db.read { db in
+      var result = Set<String>()
+      let cursor = try String.fetchCursor(db, sql: """
+        SELECT id FROM transcript_entries WHERE transcript_id = ?
+      """, arguments: [transcript.id])
+      while let id = try cursor.next() {
+        result.insert(id)
+      }
+      return result
+    }
+    log.debug("[HOOVER-P6] Preloaded \(preloadedEntryIds.count) existing entry IDs for parent validation")
 
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
@@ -789,7 +861,13 @@ public final class HooverEngine {
         let lineData = buffer[..<i]
         buffer.removeSubrange(..<buffer.index(after: i))
         lineNo += 1
+
+        // Timing: hash update
+        let hashStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
         transcriptHasher.update(lineData: lineData)
+        if let start = hashStart {
+          timingStats.hashTimeMs += Date().timeIntervalSince(start) * 1000
+        }
 
         guard let lineString = String(data: lineData, encoding: .utf8) else {
           errors.append((lineNo, "<invalid UTF-8>", "Line is not valid UTF-8"))
@@ -798,6 +876,8 @@ public final class HooverEngine {
 
         var entryId: String? = nil
         do {
+          // Timing: parse
+          let parseStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
           var entry = try parser.parse(
             line: lineString,
             lineNumber: lineNo,
@@ -806,14 +886,21 @@ public final class HooverEngine {
             provider: transcript.provider,
             sessionId: transcript.providerSessionId
           )
+          if let start = parseStart {
+            timingStats.parseTimeMs += Date().timeIntervalSince(start) * 1000
+          }
 
-          // Check if entry's CWD differs from transcript's project and reassign if needed
+          // Timing: project resolution
+          let projectStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
           let correctProjectId = try resolveProjectId(
             fromCwd: entry.cwd,
             transcriptProjectId: transcript.projectId,
             transcriptId: transcript.id,
             cache: &projectCache
           )
+          if let start = projectStart {
+            timingStats.projectResolutionTimeMs += Date().timeIntervalSince(start) * 1000
+          }
 
           // If project differs, use helper to create entry with corrected project ID
           if correctProjectId != entry.projectId {
@@ -897,11 +984,17 @@ public final class HooverEngine {
             errors: errors,
             lastProcessedLine: lineNo,
             lineCount: lineNo,
-            previousEntries: &previousEntries
+            previousEntries: &previousEntries,
+            preloadedEntryIds: &preloadedEntryIds
           )
           totalEntriesInserted += inserted
 
           let duration = Date().timeIntervalSince(batchStart)
+          // Timing: commitBatch total (db.write + overhead)
+          timingStats.commitBatchTimeMs += duration * 1000
+          timingStats.batchCount += 1
+          timingStats.entryCount += batch.count
+
           #if DEBUG
           log.debug("[HOOVER-BATCH-INSERT-DONE] Batch insertion completed in \(String(format: "%.0f", duration * 1000))ms")
           #endif
@@ -1023,6 +1116,7 @@ public final class HooverEngine {
 
     // Final batch
     if !batch.isEmpty || !errors.isEmpty || !metadataBatch.isEmpty {
+      let finalBatchStart = Date()
       let inserted = try commitBatch(
         transcriptId: transcript.id,
         entries: batch,
@@ -1030,10 +1124,18 @@ public final class HooverEngine {
         errors: errors,
         lastProcessedLine: lineNo,
         lineCount: lineNo,
-        previousEntries: &previousEntries
+        previousEntries: &previousEntries,
+        preloadedEntryIds: &preloadedEntryIds
       )
       totalEntriesInserted += inserted
+      // Timing: final commitBatch total (db.write + overhead)
+      timingStats.commitBatchTimeMs += Date().timeIntervalSince(finalBatchStart) * 1000
+      timingStats.batchCount += 1
+      timingStats.entryCount += batch.count
     }
+
+    // Log timing breakdown for this transcript
+    timingStats.log(transcriptId: transcript.id, logger: log)
 
     // ALWAYS update checkpoint, regardless of whether there were new entries
     // This ensures checkpoint is persisted even for already-processed transcripts
@@ -1107,6 +1209,9 @@ public final class HooverEngine {
   /// All operations are atomic within a single transaction
   /// Tracks previous entries for window SHA256 computation
   /// Returns the number of entries actually inserted to the database
+  ///
+  /// - Parameter preloadedEntryIds: P6 optimization - preloaded set of existing entry IDs
+  ///   for this transcript, used for parent validation. Updated in-place as new entries are inserted.
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
@@ -1114,11 +1219,23 @@ public final class HooverEngine {
     errors: [(lineNumber: Int, rawLine: String, error: String)],
     lastProcessedLine: Int,
     lineCount: Int,
-    previousEntries: inout [String]
+    previousEntries: inout [String],
+    preloadedEntryIds: inout Set<String>
   ) throws -> Int {
     var insertedCount = 0
     let now = Int(Date().timeIntervalSince1970)
     try db.write { db in
+      // P6 optimization: Use preloaded entry IDs for parent validation instead of per-batch queries
+      // The preloadedEntryIds set is maintained across batches and updated as entries are inserted
+      // This eliminates the chunked SELECT queries that contributed to ~25% SQL parsing overhead
+
+      // PERF: Collect tool result data for batch UPDATE after entry inserts
+      // Instead of per-entry UPDATEs, we batch them to reduce query overhead
+      var deferredToolResults: [(toolUseId: String, entryId: String, agentId: String?, timestamp: Int, status: String?)] = []
+      var deferredSidechainLinks: [(agentId: String, transcriptId: String)] = []
+      // PERF: Collect unique agentIds for deduped sidechain transcript linking
+      var sidechainAgentIds: Set<String> = []
+
       // Insert entries with window tracking
       for entry in entries {
         // Compute window from previous 2 entries
@@ -1131,14 +1248,11 @@ public final class HooverEngine {
         model.prev2Id = prev2
         model.windowSha256 = windowSha
 
-        // Check if parent exists before inserting (avoid FK constraint violation)
+        // Check if parent exists using preloaded entry IDs (P6 optimization)
         // This handles out-of-order entries where a child references a parent that hasn't been inserted yet
+        // The preloadedEntryIds set includes both pre-existing entries AND entries inserted earlier in this batch
         if let parentId = model.parentId {
-          let parentExists = try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM transcript_entries WHERE id = ?)
-          """, arguments: [parentId]) ?? false
-
-          if !parentExists {
+          if !preloadedEntryIds.contains(parentId) {
             if MonitorConfig.enableHooverStorageTracing {
               log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
             }
@@ -1153,6 +1267,9 @@ public final class HooverEngine {
           let inserted = db.changesCount > 0
           if inserted {
             insertedCount += 1
+            // P6: Add inserted entry to preloadedEntryIds so later entries (same batch or future batches)
+            // can find it as a valid parent (fixes same-batch parent links)
+            preloadedEntryIds.insert(model.id)
             previousEntries.append(entry.id)
             if previousEntries.count > 2 {
               previousEntries.removeFirst()
@@ -1201,51 +1318,75 @@ public final class HooverEngine {
           try tool.insert(db, onConflict: .ignore)
         }
 
-        // Update tool invocations with tool_result data (completion + agent linkage)
+        // PERF: Collect tool result data for deferred batch UPDATE
+        // Skip nil toolUseId - UPDATE WHERE tool_use_id = NULL won't match anything
         for result in entry.toolResultData {
-          try db.execute(sql: """
-            UPDATE tool_invocations
-            SET tool_result_entry_id = ?,
-                sidechain_agent_id = ?,
-                completed_at = ?,
-                status = COALESCE(?, status),
-                updated_at = ?
-            WHERE tool_use_id = ? AND transcript_id = ?
-          """, arguments: [
-            result.entryId,
-            result.agentId,
-            Int(result.timestamp.timeIntervalSince1970),
-            result.status,
-            now,
-            result.toolUseId,
-            transcriptId
-          ])
-
-          // Also link already-ingested sidechain transcripts (fixes race condition where
-          // agent transcript is ingested before tool_result sets sidechain_agent_id)
+          guard let toolUseId = result.toolUseId else { continue }
+          deferredToolResults.append((
+            toolUseId: toolUseId,
+            entryId: result.entryId,
+            agentId: result.agentId,
+            timestamp: Int(result.timestamp.timeIntervalSince1970),
+            status: result.status
+          ))
+          // Collect unique agentIds for deduped sidechain transcript linking
           if let agentId = result.agentId {
-            let sidechainTranscriptId = "agent-\(agentId)"
-            try db.execute(sql: """
-              UPDATE tool_invocations
-              SET sidechain_transcript_id = ?,
-                  updated_at = ?
-              WHERE sidechain_agent_id = ?
-                AND sidechain_transcript_id IS NULL
-                AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
-            """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+            sidechainAgentIds.insert(agentId)
           }
         }
 
-        // Link sidechain transcripts to parent invocations by agentId
+        // PERF: Collect sidechain link data for deferred batch UPDATE
         if entry.isSidechain, let agentId = entry.agentId {
-          try db.execute(sql: """
-            UPDATE tool_invocations
-            SET sidechain_transcript_id = ?,
-                updated_at = ?
-            WHERE sidechain_agent_id = ?
-              AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
-          """, arguments: [transcriptId, now, agentId, transcriptId])
+          deferredSidechainLinks.append((agentId: agentId, transcriptId: transcriptId))
         }
+      }
+
+      // PERF: Batch UPDATE tool invocations with tool_result data
+      // Uses chunked individual updates (avoiding CASE complexity) but after all inserts complete
+      // This improves SQLite page cache locality vs interleaving updates with inserts
+      for result in deferredToolResults {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET tool_result_entry_id = ?,
+              sidechain_agent_id = ?,
+              completed_at = ?,
+              status = COALESCE(?, status),
+              updated_at = ?
+          WHERE tool_use_id = ? AND transcript_id = ?
+        """, arguments: [
+          result.entryId,
+          result.agentId,
+          result.timestamp,
+          result.status,
+          now,
+          result.toolUseId,
+          transcriptId
+        ])
+      }
+
+      // PERF: Deduped sidechain transcript linking by unique agentIds
+      // Instead of one UPDATE per tool_result, one UPDATE per unique agentId
+      for agentId in sidechainAgentIds {
+        let sidechainTranscriptId = "agent-\(agentId)"
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND sidechain_transcript_id IS NULL
+            AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
+        """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+      }
+
+      // PERF: Batch UPDATE sidechain transcript links for sidechain entries
+      for link in deferredSidechainLinks {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
+        """, arguments: [link.transcriptId, now, link.agentId, link.transcriptId])
       }
 
       // HEURISTIC: Delete synthetic queue-XX entries when real message appears
