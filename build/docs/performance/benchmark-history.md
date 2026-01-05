@@ -1,10 +1,14 @@
 # Benchmark Results History
 
-> **IMPORTANT: Unit Clarification**
+> **IMPORTANT: Methodology Notes**
+>
+> **Units:**
 > - **lines/sec**: Raw JSONL lines processed per second (corpus size / time)
 > - **entries/sec**: Database entries created per second (entry count / time)
-> - Ratio varies by corpus (~3.6 lines/entry for current corpus)
-> - Earlier measurements labeled "entries/sec" may have been lines/sec - always verify against JSON metrics
+> - Ratio varies by corpus (~2 lines/entry for current corpus)
+>
+> **Historical data caveat (pre-2026-01-05):**
+> Earlier benchmarks were often stopped before completion to get quick readings. This methodology captured **burst rates** (early fast phase) rather than **sustained rates**. Since performance degrades ~72% from burst to sustained (925 → 260 entries/sec), historical numbers are optimistically skewed. The P7 benchmark (9bc86252, 2026-01-05) is the first complete run and provides the true sustained baseline.
 
 | Date | Commit | Startup | Ingest Rate | Peak Memory | Switch Time | Notes |
 |------|--------|---------|-------------|-------------|-------------|-------|
