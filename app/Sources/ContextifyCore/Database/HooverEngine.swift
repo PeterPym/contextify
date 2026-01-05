@@ -45,6 +45,11 @@ public enum MonitorConfig {
   public static let enableHooverStorageTracing: Bool = {
     ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_STORAGE"] == "1"
   }()
+  /// Enable detailed timing breakdown for performance analysis
+  /// Set CONTEXTIFY_TRACE_HOOVER_TIMING=1 to see parse/hash/db.write time splits
+  public static let enableHooverTimingTracing: Bool = {
+    ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_TIMING"] == "1"
+  }()
   /// Enable/disable queue message indicators in timeline
   /// Set CONTEXTIFY_SHOW_QUEUED=0 to hide queued message badges
   /// Default: enabled (shows QUEUED badges for messages sent while Claude is busy)
@@ -77,6 +82,37 @@ public struct HooverOutcome {
   public let contentSha256: String?
   public let entriesSkipped: Int      // ParserError.skipEntry count
   public let entriesInserted: Int     // Actual DB inserts (from db.changesCount)
+}
+
+// MARK: - Timing Instrumentation
+
+/// Tracks time spent in each phase of batch processing for performance analysis.
+/// Enable with CONTEXTIFY_TRACE_HOOVER_TIMING=1
+struct BatchTimingStats {
+  var parseTimeMs: Double = 0
+  var hashTimeMs: Double = 0
+  var projectResolutionTimeMs: Double = 0
+  var dbWriteTimeMs: Double = 0
+  var batchCount: Int = 0
+  var entryCount: Int = 0
+
+  func log(transcriptId: String, logger: Logger) {
+    guard MonitorConfig.enableHooverTimingTracing else { return }
+    let total = parseTimeMs + hashTimeMs + projectResolutionTimeMs + dbWriteTimeMs
+    guard total > 0 else { return }
+    let parsePercent = (parseTimeMs / total) * 100
+    let hashPercent = (hashTimeMs / total) * 100
+    let projectPercent = (projectResolutionTimeMs / total) * 100
+    let dbWritePercent = (dbWriteTimeMs / total) * 100
+    // Extract values to avoid capturing self in OSLog autoclosure
+    let msg = String(format: "[HOOVER-TIMING] transcript=%@ batches=%d entries=%d total=%.0fms parse=%.0fms(%.1f%%) hash=%.0fms(%.1f%%) projectRes=%.0fms(%.1f%%) dbWrite=%.0fms(%.1f%%)",
+      transcriptId, batchCount, entryCount, total,
+      parseTimeMs, parsePercent,
+      hashTimeMs, hashPercent,
+      projectResolutionTimeMs, projectPercent,
+      dbWriteTimeMs, dbWritePercent)
+    logger.info("\(msg)")
+  }
 }
 
 // MARK: - Parsed Entry Insert
@@ -732,6 +768,7 @@ public final class HooverEngine {
     var totalEntriesSkipped = 0  // Track skipEntry count
     var totalEntriesInserted = 0  // Track actual DB inserts
     var projectCache = ProjectResolutionCache()  // P0 fix: cache project lookups per transcript
+    var timingStats = BatchTimingStats()  // Performance timing breakdown
 
     // P6 optimization: Preload all existing entry IDs for this transcript
     // This eliminates per-batch parent validation queries (was ~25% of SQL parsing overhead)
@@ -819,7 +856,13 @@ public final class HooverEngine {
         let lineData = buffer[..<i]
         buffer.removeSubrange(..<buffer.index(after: i))
         lineNo += 1
+
+        // Timing: hash update
+        let hashStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
         transcriptHasher.update(lineData: lineData)
+        if let start = hashStart {
+          timingStats.hashTimeMs += Date().timeIntervalSince(start) * 1000
+        }
 
         guard let lineString = String(data: lineData, encoding: .utf8) else {
           errors.append((lineNo, "<invalid UTF-8>", "Line is not valid UTF-8"))
@@ -828,6 +871,8 @@ public final class HooverEngine {
 
         var entryId: String? = nil
         do {
+          // Timing: parse
+          let parseStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
           var entry = try parser.parse(
             line: lineString,
             lineNumber: lineNo,
@@ -836,14 +881,21 @@ public final class HooverEngine {
             provider: transcript.provider,
             sessionId: transcript.providerSessionId
           )
+          if let start = parseStart {
+            timingStats.parseTimeMs += Date().timeIntervalSince(start) * 1000
+          }
 
-          // Check if entry's CWD differs from transcript's project and reassign if needed
+          // Timing: project resolution
+          let projectStart = MonitorConfig.enableHooverTimingTracing ? Date() : nil
           let correctProjectId = try resolveProjectId(
             fromCwd: entry.cwd,
             transcriptProjectId: transcript.projectId,
             transcriptId: transcript.id,
             cache: &projectCache
           )
+          if let start = projectStart {
+            timingStats.projectResolutionTimeMs += Date().timeIntervalSince(start) * 1000
+          }
 
           // If project differs, use helper to create entry with corrected project ID
           if correctProjectId != entry.projectId {
@@ -933,6 +985,11 @@ public final class HooverEngine {
           totalEntriesInserted += inserted
 
           let duration = Date().timeIntervalSince(batchStart)
+          // Timing: db.write
+          timingStats.dbWriteTimeMs += duration * 1000
+          timingStats.batchCount += 1
+          timingStats.entryCount += batch.count
+
           #if DEBUG
           log.debug("[HOOVER-BATCH-INSERT-DONE] Batch insertion completed in \(String(format: "%.0f", duration * 1000))ms")
           #endif
@@ -1054,6 +1111,7 @@ public final class HooverEngine {
 
     // Final batch
     if !batch.isEmpty || !errors.isEmpty || !metadataBatch.isEmpty {
+      let finalBatchStart = Date()
       let inserted = try commitBatch(
         transcriptId: transcript.id,
         entries: batch,
@@ -1065,7 +1123,14 @@ public final class HooverEngine {
         preloadedEntryIds: &preloadedEntryIds
       )
       totalEntriesInserted += inserted
+      // Timing: final batch db.write
+      timingStats.dbWriteTimeMs += Date().timeIntervalSince(finalBatchStart) * 1000
+      timingStats.batchCount += 1
+      timingStats.entryCount += batch.count
     }
+
+    // Log timing breakdown for this transcript
+    timingStats.log(transcriptId: transcript.id, logger: log)
 
     // ALWAYS update checkpoint, regardless of whether there were new entries
     // This ensures checkpoint is persisted even for already-processed transcripts
