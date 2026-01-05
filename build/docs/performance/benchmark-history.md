@@ -1,13 +1,19 @@
 # Benchmark Results History
 
+> **IMPORTANT: Unit Clarification**
+> - **lines/sec**: Raw JSONL lines processed per second (corpus size / time)
+> - **entries/sec**: Database entries created per second (entry count / time)
+> - Ratio varies by corpus (~3.6 lines/entry for current corpus)
+> - Earlier measurements labeled "entries/sec" may have been lines/sec - always verify against JSON metrics
+
 | Date | Commit | Startup | Ingest Rate | Peak Memory | Switch Time | Notes |
 |------|--------|---------|-------------|-------------|-------------|-------|
 | 2026-01-03 | c667d59f | 43ms | 237 lines/sec | 864MB | - | Baseline v1.0.7 with CLI flags |
 | 2026-01-03 | e253f9f1 | 53ms | 256 lines/sec | 897MB | - | P1: batch parent validation (+8%) |
 | 2026-01-03 | 972adb39 | 44ms | 244 lines/sec | 847MB | - | P0/P1/P2 fixes, batch=2000 (+3% vs baseline) |
-| 2026-01-04 | 70a21b56 | - | **505 entries/sec** | - | - | **P1.1: PRAGMA cache/mmap (+102% vs baseline)** |
-| 2026-01-04 | 3b3d2404 | - | **750 entries/sec** | - | - | **P1.1 refined: +reader limit, better logging (+217% vs baseline)** |
-| 2026-01-04 | 363c11a2 | 48ms | **1623 lines/sec** | 990MB | - | **P5 reverted, P6 active: FK constraint fix (+745% vs pre-opt baseline)** |
+| 2026-01-04 | 70a21b56 | - | ~505 lines/sec | - | - | **P1.1: PRAGMA cache/mmap (+102% vs baseline)** |
+| 2026-01-04 | 3b3d2404 | - | ~750 lines/sec | - | - | **P1.1 refined: +reader limit, better logging (+217% vs baseline)** |
+| 2026-01-04 | 363c11a2 | 48ms | **1623 lines/sec** (~445 entries/sec) | 990MB | - | **P5 reverted, P6 active (+745% vs pre-opt)** |
 
 ## Notes
 
@@ -38,9 +44,7 @@
 | P5 UNIQUE dedupe index | **FK constraint failures** | ❌ Reverted |
 | P6 Preloaded entry IDs | Safe, included in latest | ✅ Yes |
 
-**Final ingest rate: ~1623 lines/sec (8.4x vs pre-optimization 192 lines/sec)**
-
-> **Note on units:** Earlier benchmarks reported entries/sec; recent benchmarks report lines/sec. The conversion ratio depends on transcript structure (~3.6 lines/entry for current corpus). The 1623 lines/sec result corresponds to ~445 entries/sec based on final entry count.
+**Final ingest rate: 1623 lines/sec / 445 entries/sec (8.4x vs pre-optimization 192 lines/sec)**
 
 ## Profiling Analysis (2026-01-04)
 

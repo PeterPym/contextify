@@ -480,6 +480,18 @@ phase_ingest() {
         log "  Ingest rate: ${lines_per_sec} lines/sec"
         add_metric "ingest_lines" "$total_lines"
         add_metric "ingest_lines_per_sec" "$lines_per_sec"
+
+        # Also calculate entries/sec from actual DB entry count
+        if [[ -f "$BENCH_DB_PATH" ]]; then
+            local entry_count=$(sqlite3 "$BENCH_DB_PATH" "SELECT COUNT(*) FROM transcript_entries;" 2>/dev/null || echo "0")
+            if [[ $entry_count -gt 0 ]]; then
+                local entries_per_sec=$((entry_count * 1000 / ingest_duration))
+                local lines_per_entry=$((total_lines / entry_count))
+                log "  Entry rate: ${entries_per_sec} entries/sec (${entry_count} entries, ~${lines_per_entry} lines/entry)"
+                add_metric "ingest_entries" "$entry_count"
+                add_metric "ingest_entries_per_sec" "$entries_per_sec"
+            fi
+        fi
     fi
 }
 
