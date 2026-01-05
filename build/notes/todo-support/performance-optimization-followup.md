@@ -8,29 +8,34 @@
 
 ## Summary
 
-Performance optimization phases P1-P7 completed with significant gains:
-- **Baseline (v1.0.7):** 237 lines/sec
-- **Final (P7 merged):** ~925 entries/sec (CLI), ~500 entries/sec (real app)
-- **Total improvement:** ~4x over baseline
+Performance optimization phases P1-P7 completed. Full benchmark results:
 
-However, a significant gap exists between CLI-mode performance and real-app performance that warrants investigation.
+| Metric | Baseline (v1.0.7) | P7 (main) |
+|--------|-------------------|-----------|
+| Corpus | 363k lines | 363k lines |
+| Entries created | ~65k | 174k |
+| Total time | ~27 min | 11.1 min |
+| Entry rate | ~40 entries/sec | 260 entries/sec |
+| Line rate | 237 lines/sec | 544 lines/sec |
+
+**Key finding:** Short burst tests (20s) show ~925 entries/sec, but sustained full-corpus ingest is 260 entries/sec. Performance degrades as database grows.
 
 ---
 
 ## Performance Gap Analysis
 
-| Mode | Rate | Notes |
-|------|------|-------|
-| CLI with flags (`--database-path /tmp/test.db --no-summaries --quiet`) | ~925 entries/sec | Headless, minimal overhead |
-| Real app (cleanrun) | ~480 entries/sec | Full UI, observers, lifecycle |
-| **Gap** | **48%** | Real app is ~half CLI speed |
+| Test Type | Rate | Duration | Notes |
+|-----------|------|----------|-------|
+| 20s burst (CLI flags) | ~925 entries/sec | 20s | Fresh DB, minimal entries |
+| Full benchmark (CLI flags) | 260 entries/sec | 11.1 min | 174k entries, sustained |
+| **Degradation** | **72%** | - | Performance drops 3.5x over time |
 
 **Potential causes to investigate:**
-1. UI thread contention during ingest
-2. GRDB ValueObservation overhead on the main pool (separate from bulk ingest)
-3. Memory pressure from UI components
-4. SwiftUI view updates triggered by database changes
-5. Background task scheduling differences
+1. Database size effects - INSERT slows as table grows
+2. WAL checkpointing overhead - periodic checkpoints cause pauses
+3. Memory pressure - peak 1GB, may trigger GC/compaction
+4. FTS index maintenance - triggers fire on every INSERT
+5. preloadedEntryIds set growth - O(n) memory and lookup cost
 
 ---
 
