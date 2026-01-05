@@ -11,7 +11,7 @@ set -euo pipefail
 # If no run-id provided, uses the most recent benchmark run.
 #
 # Creates:
-#   scripts/benchmarks/baseline.json -> results/benchmark-XXXXXX.json (symlink)
+#   scripts/performance/baseline.json -> results/benchmark-XXXXXX.json (symlink)
 #
 # =============================================================================
 

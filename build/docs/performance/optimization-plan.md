@@ -128,7 +128,7 @@ The codebase is structured with explicit platform separation:
 
 **Completed:**
 
-1. **Benchmark Harness** - `scripts/benchmarks/run-perf-suite.sh`
+1. **Benchmark Harness** - `scripts/performance/run-perf-suite.sh`
    - Full ingest benchmark with live transcripts (360k+ lines)
    - CLI flags for isolated testing: `--database-path`, `--no-summaries`, `--quiet`
    - JSON metrics output and markdown reports

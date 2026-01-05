@@ -14,6 +14,7 @@
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-transcript-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
 | **Testing** | QA & testing workflows | [First-Run QA Guide](testing/first-run-qa-guide.md) |
+| **Performance** | Benchmarking & profiling | [Benchmark Guide](performance/benchmark-guide.md), [History](performance/benchmark-history.md) |
 | **Design** | Design decisions | [Color Scheme](design/color-scheme.md), [Help System](design/help-tooltip-ux-system.md) |
 | **Operations** | Release & deployment | [App Store](operations/app-store/), [Marketing](operations/marketing/) |
 | **Archive** | Historical context | [Investigations](archive/investigations/), [Feature Specs](archive/feature-specs/) |
@@ -101,6 +102,16 @@ Design decisions. Color scheme, typography, help system UX.
 - [Error Handling Philosophy](design/error-handling-philosophy.md) - **NEW** throws vs Result<>, error types, recovery strategies
 - [Color Scheme](design/color-scheme.md) - Color palette and usage
 - [Help System](design/help-tooltip-ux-system.md) - Help tooltip UX system
+
+### performance/
+Benchmarking, profiling, and optimization documentation.
+
+**Key docs:**
+- [README](performance/README.md) - Overview and quick links
+- [Benchmark Guide](performance/benchmark-guide.md) - How to run and interpret benchmarks
+- [Benchmark History](performance/benchmark-history.md) - Historical results, optimization journey
+
+**Scripts:** [`scripts/performance/`](../../scripts/performance/) - Benchmark and profiling tools
 
 ### operations/
 Release management, app store submission, marketing materials.

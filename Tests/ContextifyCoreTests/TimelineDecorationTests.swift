@@ -42,12 +42,14 @@ final class TimelineDecorationTests: XCTestCase {
   }
 
   private func insertEntry(_ pool: DatabasePool, id: String, transcriptId: String = "t1", projectId: String = "p1", kind: String = "assistant") throws {
+    // Use entry ID as content_sha256 to avoid accidental collisions in tests
+    // (unique per entry for robustness against future constraints)
     try pool.write { db in
       try db.execute(sql: """
         INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content,
           content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued)
-        VALUES (?, ?, ?, 'claude.code', ?, 1000, 'test content', 'sha', 1, 0, 1000, 1000, 0)
-      """, arguments: [id, transcriptId, projectId, kind])
+        VALUES (?, ?, ?, 'claude.code', ?, 1000, 'test content', ?, 1, 0, 1000, 1000, 0)
+      """, arguments: [id, transcriptId, projectId, kind, "sha-\(id)"])
     }
   }
 

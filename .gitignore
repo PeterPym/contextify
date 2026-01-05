@@ -100,6 +100,6 @@ build/marketing-assets
 core
 
 # Benchmark results (machine-specific, large files)
-scripts/benchmarks/results/*
-!scripts/benchmarks/results/.gitignore
-!scripts/benchmarks/results/.gitkeep
+scripts/performance/results/*
+!scripts/performance/results/.gitignore
+!scripts/performance/results/.gitkeep

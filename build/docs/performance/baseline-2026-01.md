@@ -15,7 +15,7 @@ The fixes addressed:
 
 ## Baseline Metrics
 
-*Run `./scripts/benchmarks/run-perf-suite.sh --full` to populate these values.*
+*Run `./scripts/performance/run-perf-suite.sh --full` to populate these values.*
 
 ### Corpus Size
 

@@ -19,7 +19,7 @@ enum TranscriptPathError: LocalizedError {
           \(path)/.codex/sessions/   (for Codex CLI transcripts)
 
         At least one provider directory must exist.
-        See: scripts/benchmarks/create-snapshot.sh
+        See: scripts/performance/create-snapshot.sh
         """
     }
   }

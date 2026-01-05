@@ -170,9 +170,9 @@ Following P0 fixes for UI lag during ingest (commit `2f447097`), this is a proac
 
 **Key commands:**
 ```bash
-./scripts/benchmarks/run-perf-suite.sh --full    # Run full benchmark (~16 min)
-./scripts/benchmarks/set-baseline.sh             # Mark as baseline
-./scripts/benchmarks/compare.sh                  # Compare to baseline
+./scripts/performance/run-perf-suite.sh --full    # Run full benchmark (~16 min)
+./scripts/performance/set-baseline.sh             # Mark as baseline
+./scripts/performance/compare.sh                  # Compare to baseline
 ```
 
 **Documentation:**
@@ -2891,6 +2891,37 @@ A 1.06 second hang was observed during agent decoration testing. Stack trace sho
 **Files:**
 - `Contextify/Contextify/TimelineEntryRow.swift:104` - hang location
 - `Contextify/Contextify/TimelineEntryRow.swift:366` - `formatWithBackticks()` function
+
+---
+
+## Scripts Directory Reorganization (1 item) [token-burn]
+
+**Status:** Not started
+**Priority:** P3 (housekeeping)
+**Effort:** 2-4 hours
+**Tags:** token-burn
+
+- [ ] #SCRIPTS-REORG: Audit and reorganize scripts/ directory structure
+
+**Background:**
+The scripts/ directory has grown organically and needs cleanup. Performance scripts were reorganized from `scripts/benchmarks/` to `scripts/performance/`. Similar organization may be needed for remaining scripts.
+
+**Tasks:**
+1. Audit all scripts in scripts/ root - categorize by purpose
+2. Move related scripts into subdirectories as appropriate
+3. Update scripts/README.md with complete directory structure
+4. Update any documentation referencing moved scripts
+5. Remove unused/obsolete scripts
+6. Add READMEs to subdirectories that lack them
+
+**Current Subdirectories:**
+- `performance/` - benchmarking, profiling
+- `qa/` - QA test suite
+- `logging/` - log capture and analysis
+- `transcripts/` - transcript analysis
+- `release/` - release management
+
+**Note:** Tagged `token-burn` for use when excess API quota needs consuming before expiry.
 
 ---
 

@@ -2,6 +2,16 @@
 
 Utility scripts for Contextify development and maintenance.
 
+## Subdirectories
+
+| Directory | Purpose |
+|-----------|---------|
+| [`performance/`](performance/) | Benchmarking and profiling tools |
+| [`qa/`](qa/) | QA test suite |
+| [`logging/`](logging/) | Log capture and analysis |
+| [`transcripts/`](transcripts/) | Transcript analysis tools |
+| [`release/`](release/) | Release management |
+
 ## Available Scripts
 
 ### `migrate-transcripts.sh`

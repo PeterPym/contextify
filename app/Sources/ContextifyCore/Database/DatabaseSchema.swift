@@ -1025,6 +1025,16 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v34] Tab grouping migration complete")
     }
 
+    // MARK: - v35: Cleanup P5 UNIQUE index (reverted due to FK constraint failures)
+    // This migration removes the P5 optimization index from any dev DBs that may have
+    // been created while the broken P5 branch was active. See review loop documentation
+    // at /tmp/review-loop-bulk-ingest-optimization-briefing/ for full analysis.
+    migrator.registerMigration("v35_cleanup_p5_index") { db in
+      logger.info("[MIGRATION-v35] Cleaning up P5 UNIQUE index if present")
+      try db.execute(sql: "DROP INDEX IF EXISTS idx_entries_transcript_content_sha")
+      logger.info("[MIGRATION-v35] P5 cleanup complete")
+    }
+
     return migrator
   }
 
