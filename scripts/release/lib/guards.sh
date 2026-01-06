@@ -121,6 +121,16 @@ artifact_exists() {
         pkg)
             [ -f "${ROOT_DIR}/build/archives/v${version}/appstore/Contextify-${version}.pkg" ]
             ;;
+        linux-x86_64)
+            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-ingest-linux-x86_64.tar.gz" ]
+            ;;
+        linux-arm64)
+            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-ingest-linux-arm64.tar.gz" ]
+            ;;
+        linux)
+            # Both architectures must exist
+            artifact_exists "$version" linux-x86_64 && artifact_exists "$version" linux-arm64
+            ;;
         *)
             return 1
             ;;
@@ -249,11 +259,55 @@ check_can_reject() {
     return 0
 }
 
+# Precondition check for mark-shipped.sh --linux
+check_can_ship_linux() {
+    local version="$1"
+
+    # Must target Linux channel
+    if ! is_channel_targeted "$version" linux; then
+        echo "Error: v$version does not target the Linux channel" >&2
+        echo "  target_channels: $(get_target_channels "$version")" >&2
+        return 1
+    fi
+
+    local status=$(get_channel_status "$version" "linux")
+
+    # Already shipped - allow idempotent re-run
+    if [ "$status" = "shipped" ]; then
+        echo "Note: Linux already marked as shipped (idempotent re-run)" >&2
+        return 0
+    fi
+
+    # Must be built (or pending with artifacts from legacy flow)
+    if [ "$status" != "built" ] && [ "$status" != "pending" ]; then
+        echo "Error: Cannot ship Linux - status is '$status'" >&2
+        return 1
+    fi
+
+    # Must have both architecture artifacts
+    if ! artifact_exists "$version" linux-x86_64; then
+        echo "Error: Linux x86_64 archive not found" >&2
+        echo "  Expected: build/archives/v${version}/linux/contextify-ingest-linux-x86_64.tar.gz" >&2
+        echo "  Run: ./scripts/release/build.sh $version" >&2
+        return 1
+    fi
+
+    if ! artifact_exists "$version" linux-arm64; then
+        echo "Error: Linux arm64 archive not found" >&2
+        echo "  Expected: build/archives/v${version}/linux/contextify-ingest-linux-arm64.tar.gz" >&2
+        echo "  Run: ./scripts/release/build.sh $version" >&2
+        return 1
+    fi
+
+    return 0
+}
+
 # Warning for init.sh --reset when already shipped
 check_reset_safety() {
     local version="$1"
     local dmg_status=$(get_channel_status "$version" "dmg")
     local as_status=$(get_channel_status "$version" "appstore")
+    local linux_status=$(get_channel_status "$version" "linux")
 
     if [ "$dmg_status" = "shipped" ]; then
         echo "Warning: DMG v${version} is already shipped" >&2
@@ -263,6 +317,11 @@ check_reset_safety() {
     if [ "$as_status" = "approved" ]; then
         echo "Warning: App Store v${version} is already approved" >&2
         echo "  Consider starting a new version instead" >&2
+    fi
+
+    if [ "$linux_status" = "shipped" ]; then
+        echo "Warning: Linux v${version} is already shipped" >&2
+        echo "  Reset will only affect macOS builds" >&2
     fi
 
     return 0

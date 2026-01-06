@@ -35,8 +35,14 @@ Each release goes through 6 phases. Work through them in order:
 # App Store-only release
 ./scripts/release/init.sh X.Y.Z --appstore
 
-# Both channels
+# Linux-only release (CLI tool)
+./scripts/release/init.sh X.Y.Z --linux
+
+# DMG + App Store (no Linux)
 ./scripts/release/init.sh X.Y.Z --both
+
+# All channels (DMG + App Store + Linux)
+./scripts/release/init.sh X.Y.Z --all
 ```
 
 **You must specify which channels to target.** This is immutable after initialization.
@@ -79,7 +85,9 @@ After completing each phase:
 # Start a new release (must specify target channels)
 ./scripts/release/init.sh 1.0.0 --dmg        # DMG only
 ./scripts/release/init.sh 1.0.0 --appstore   # App Store only
-./scripts/release/init.sh 1.0.0 --both       # Both channels
+./scripts/release/init.sh 1.0.0 --linux      # Linux CLI only
+./scripts/release/init.sh 1.0.0 --both       # DMG + App Store
+./scripts/release/init.sh 1.0.0 --all        # All channels (DMG + App Store + Linux)
 
 # Reset existing release for new build (preserves notes, target_channels, bumps build number)
 ./scripts/release/init.sh 1.0.0 --reset
@@ -95,18 +103,23 @@ After completing each phase:
 ### Building
 
 ```bash
-# Build both DMG and App Store (recommended)
+# Build all targeted channels (recommended)
 ./scripts/release/build.sh 1.0.0
 
-# Build App Store only
-./scripts/release/build.sh 1.0.0 --skip-dmg
+# Build App Store only (skip DMG and Linux)
+./scripts/release/build.sh 1.0.0 --skip-dmg --skip-linux
 
-# Build DMG only
-./scripts/release/build.sh 1.0.0 --skip-appstore
+# Build DMG only (skip App Store and Linux)
+./scripts/release/build.sh 1.0.0 --skip-appstore --skip-linux
+
+# Build macOS only (skip Linux)
+./scripts/release/build.sh 1.0.0 --skip-linux
 
 # Dry run (preview without building)
 ./scripts/release/build.sh 1.0.0 --dry-run
 ```
+
+**Note:** Linux builds are done via GitHub Actions CI. The build script triggers the workflow, waits for completion (10-20 minutes), and downloads the artifacts. Both x86_64 and arm64 architectures are built.
 
 ### Status & Tracking
 
@@ -120,17 +133,18 @@ After completing each phase:
 # What's currently in production?
 ./scripts/release/status.sh --shipped
 
-# What's in production for DMG only?
+# What's in production for a specific channel?
 ./scripts/release/status.sh --shipped --dmg
-
-# What's in production for App Store only?
 ./scripts/release/status.sh --shipped --appstore
+./scripts/release/status.sh --shipped --linux
 
 # What releases need work? (in progress, rejected, etc.)
 ./scripts/release/status.sh --active
 
-# App Store status across all versions
+# Channel status across all versions
+./scripts/release/status.sh --dmg
 ./scripts/release/status.sh --appstore
+./scripts/release/status.sh --linux
 ```
 
 ### Recording App Store Submissions
@@ -167,12 +181,17 @@ After rejection, fix the issues and reset for a new build:
 # Mark App Store as approved (requires submitted status)
 ./scripts/release/mark-shipped.sh 1.0.0 --appstore --build 5
 
+# Mark Linux as shipped (creates GitHub Release with artifacts)
+./scripts/release/mark-shipped.sh 1.0.0 --linux
+
 # Bypass guards if needed
 ./scripts/release/mark-shipped.sh 1.0.0 --dmg --force
 
 # Mark as skipped (decided not to ship this version)
 ./scripts/release/mark-shipped.sh 1.0.0 --dmg --skipped
 ```
+
+**Note:** The `--linux` option creates a GitHub Release (or uploads to an existing one) with both x86_64 and arm64 tarballs. This requires `gh` CLI to be authenticated.
 
 ### Validation
 

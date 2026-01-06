@@ -13,6 +13,7 @@
 # Options:
 #   --skip-dmg       Skip DMG build
 #   --skip-appstore  Skip App Store build
+#   --skip-linux     Skip Linux build
 #   --dry-run        Show what would be done without executing
 #   --no-notarize    Skip notarization (faster for testing)
 #
@@ -51,6 +52,7 @@ NC='\033[0m'
 VERSION=""
 SKIP_DMG=false
 SKIP_APPSTORE=false
+SKIP_LINUX=false
 DRY_RUN=false
 NO_NOTARIZE=false
 BUILD_ARGS=""
@@ -65,6 +67,9 @@ for arg in "$@"; do
       SKIP_APPSTORE=true
       BUILD_ARGS="$BUILD_ARGS --skip-appstore"
       ;;
+    --skip-linux)
+      SKIP_LINUX=true
+      ;;
     --dry-run)
       DRY_RUN=true
       ;;
@@ -73,13 +78,14 @@ for arg in "$@"; do
       BUILD_ARGS="$BUILD_ARGS --no-notarize"
       ;;
     --help|-h)
-      echo "Usage: $0 X.Y.Z [--skip-dmg] [--skip-appstore] [--dry-run] [--no-notarize]"
+      echo "Usage: $0 X.Y.Z [--skip-dmg] [--skip-appstore] [--skip-linux] [--dry-run] [--no-notarize]"
       echo ""
       echo "Release workflow build with version tracking and archiving."
       echo ""
       echo "Options:"
       echo "  --skip-dmg       Skip DMG build"
       echo "  --skip-appstore  Skip App Store build"
+      echo "  --skip-linux     Skip Linux build"
       echo "  --dry-run        Show what would be done without executing"
       echo "  --no-notarize    Skip notarization (faster for testing)"
       echo ""
@@ -123,12 +129,15 @@ fi
 TARGET_CHANNELS=$(get_target_channels "$VERSION")
 DMG_TARGETED=false
 APPSTORE_TARGETED=false
+LINUX_TARGETED=false
 [[ " $TARGET_CHANNELS " == *" dmg "* ]] && DMG_TARGETED=true
 [[ " $TARGET_CHANNELS " == *" appstore "* ]] && APPSTORE_TARGETED=true
+[[ " $TARGET_CHANNELS " == *" linux "* ]] && LINUX_TARGETED=true
 
 # Track skip reasons for logging
 DMG_SKIP_REASON=""
 APPSTORE_SKIP_REASON=""
+LINUX_SKIP_REASON=""
 
 # Auto-skip non-targeted channels (override any manual flags)
 if [ "$DMG_TARGETED" = false ]; then
@@ -143,6 +152,13 @@ if [ "$APPSTORE_TARGETED" = false ]; then
   APPSTORE_SKIP_REASON="not targeted"
 elif [ "$SKIP_APPSTORE" = true ]; then
   APPSTORE_SKIP_REASON="--skip-appstore"
+fi
+
+if [ "$LINUX_TARGETED" = false ]; then
+  SKIP_LINUX=true
+  LINUX_SKIP_REASON="not targeted"
+elif [ "$SKIP_LINUX" = true ]; then
+  LINUX_SKIP_REASON="--skip-linux"
 fi
 
 # Rebuild BUILD_ARGS with actual skip flags
@@ -190,6 +206,13 @@ elif [ "$APPSTORE_TARGETED" = true ] && [ "$SKIP_APPSTORE" = true ]; then
 else
   echo -e "    App Store: ${YELLOW}not targeted, skipping${NC}"
 fi
+if [ "$LINUX_TARGETED" = true ] && [ "$SKIP_LINUX" = false ]; then
+  echo -e "    Linux:     ${GREEN}targeted, building${NC}"
+elif [ "$LINUX_TARGETED" = true ] && [ "$SKIP_LINUX" = true ]; then
+  echo -e "    Linux:     ${YELLOW}targeted, skipped by $LINUX_SKIP_REASON${NC}"
+else
+  echo -e "    Linux:     ${YELLOW}not targeted, skipping${NC}"
+fi
 echo ""
 echo "  Dry run:  $([ "$DRY_RUN" = true ] && echo 'Yes' || echo 'No')"
 echo ""
@@ -214,8 +237,9 @@ echo -e "${BLUE}==>${NC} Creating archive directories..."
 if [ "$DRY_RUN" = false ]; then
   mkdir -p "$ARCHIVE_DIR/appstore"
   mkdir -p "$ARCHIVE_DIR/dmg"
+  mkdir -p "$ARCHIVE_DIR/linux"
 else
-  echo -e "${YELLOW}[dry-run]${NC} mkdir -p $ARCHIVE_DIR/{appstore,dmg}"
+  echo -e "${YELLOW}[dry-run]${NC} mkdir -p $ARCHIVE_DIR/{appstore,dmg,linux}"
 fi
 
 # Run canonical build script
@@ -252,6 +276,94 @@ else
   echo -e "${YELLOW}[dry-run]${NC} cp artifacts to $ARCHIVE_DIR/{appstore,dmg}/"
 fi
 
+# Build Linux via GitHub Actions
+if [ "$SKIP_LINUX" = false ]; then
+  echo -e "${BLUE}==>${NC} Building Linux via GitHub Actions..."
+  if [ "$DRY_RUN" = false ]; then
+    # Trigger the workflow
+    echo "  Triggering linux-release.yml workflow with version=$VERSION..."
+    gh workflow run linux-release.yml -f version="$VERSION"
+
+    # Wait a moment for the workflow to start
+    sleep 5
+
+    # Get the run ID for the workflow we just triggered
+    echo "  Waiting for workflow to start..."
+    RUN_ID=""
+    for i in {1..12}; do
+      RUN_ID=$(gh run list --workflow=linux-release.yml --limit 5 --json databaseId,status,headBranch,createdAt \
+        | python3 -c "import json,sys; runs=json.load(sys.stdin); print(next((r['databaseId'] for r in runs if r['status'] in ['queued','in_progress','pending']), ''))" 2>/dev/null)
+      if [ -n "$RUN_ID" ]; then
+        break
+      fi
+      sleep 5
+    done
+
+    if [ -z "$RUN_ID" ]; then
+      echo -e "${RED}Error: Could not find triggered workflow run${NC}"
+      echo "  Check manually: gh run list --workflow=linux-release.yml"
+      exit 1
+    fi
+
+    echo "  Workflow run ID: $RUN_ID"
+    echo "  Waiting for workflow to complete (this may take 10-20 minutes)..."
+
+    # Wait for the workflow to complete
+    if ! gh run watch "$RUN_ID" --exit-status; then
+      echo -e "${RED}Error: Linux build failed${NC}"
+      echo "  Check logs: gh run view $RUN_ID --log"
+      exit 1
+    fi
+
+    echo -e "${GREEN}OK${NC} Linux build completed"
+
+    # Download artifacts
+    echo "  Downloading Linux artifacts..."
+    cd "$ARCHIVE_DIR/linux"
+
+    # Download both architecture artifacts
+    gh run download "$RUN_ID" --name contextify-ingest-linux-x86_64 --dir . || {
+      echo -e "${RED}Error: Failed to download x86_64 artifact${NC}"
+      exit 1
+    }
+    gh run download "$RUN_ID" --name contextify-ingest-linux-arm64 --dir . || {
+      echo -e "${RED}Error: Failed to download arm64 artifact${NC}"
+      exit 1
+    }
+
+    # The artifacts are downloaded as directories, move the files up
+    if [ -f "contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz" ]; then
+      mv contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz .
+      rmdir contextify-ingest-linux-x86_64 2>/dev/null || true
+    fi
+    if [ -f "contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz" ]; then
+      mv contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz .
+      rmdir contextify-ingest-linux-arm64 2>/dev/null || true
+    fi
+
+    cd "$ROOT_DIR"
+
+    # Verify artifacts exist
+    if [ -f "$ARCHIVE_DIR/linux/contextify-ingest-linux-x86_64.tar.gz" ]; then
+      echo -e "${GREEN}OK${NC} Archived: linux/contextify-ingest-linux-x86_64.tar.gz"
+    else
+      echo -e "${RED}Error: x86_64 artifact not found${NC}"
+      exit 1
+    fi
+
+    if [ -f "$ARCHIVE_DIR/linux/contextify-ingest-linux-arm64.tar.gz" ]; then
+      echo -e "${GREEN}OK${NC} Archived: linux/contextify-ingest-linux-arm64.tar.gz"
+    else
+      echo -e "${RED}Error: arm64 artifact not found${NC}"
+      exit 1
+    fi
+  else
+    echo -e "${YELLOW}[dry-run]${NC} gh workflow run linux-release.yml -f version=$VERSION"
+    echo -e "${YELLOW}[dry-run]${NC} gh run watch <run-id>"
+    echo -e "${YELLOW}[dry-run]${NC} gh run download <run-id> to $ARCHIVE_DIR/linux/"
+  fi
+fi
+
 # Update release.json
 echo -e "${BLUE}==>${NC} Updating release.json..."
 if [ "$DRY_RUN" = false ]; then
@@ -271,6 +383,7 @@ data['phases']['build']['status'] = 'complete'
 
 skip_appstore = '$SKIP_APPSTORE' == 'true'
 skip_dmg = '$SKIP_DMG' == 'true'
+skip_linux = '$SKIP_LINUX' == 'true'
 no_notarize = '$NO_NOTARIZE' == 'true'
 
 if not skip_appstore:
@@ -284,6 +397,30 @@ if not skip_dmg:
     data['phases']['build']['dmg']['path'] = 'dist/Contextify-${VERSION}.dmg'
     data['phases']['build']['dmg']['signed'] = True
     data['phases']['build']['dmg']['notarized'] = not no_notarize
+
+if not skip_linux:
+    import os
+    import hashlib
+    linux_dir = '$ARCHIVE_DIR/linux'
+    data['phases']['build']['linux']['built'] = True
+
+    # x86_64
+    x86_path = os.path.join(linux_dir, 'contextify-ingest-linux-x86_64.tar.gz')
+    if os.path.exists(x86_path):
+        data['phases']['build']['linux']['x86_64']['built'] = True
+        data['phases']['build']['linux']['x86_64']['path'] = x86_path
+        data['phases']['build']['linux']['x86_64']['size_bytes'] = os.path.getsize(x86_path)
+        with open(x86_path, 'rb') as f:
+            data['phases']['build']['linux']['x86_64']['sha256'] = hashlib.sha256(f.read()).hexdigest()
+
+    # arm64
+    arm64_path = os.path.join(linux_dir, 'contextify-ingest-linux-arm64.tar.gz')
+    if os.path.exists(arm64_path):
+        data['phases']['build']['linux']['arm64']['built'] = True
+        data['phases']['build']['linux']['arm64']['path'] = arm64_path
+        data['phases']['build']['linux']['arm64']['size_bytes'] = os.path.getsize(arm64_path)
+        with open(arm64_path, 'rb') as f:
+            data['phases']['build']['linux']['arm64']['sha256'] = hashlib.sha256(f.read()).hexdigest()
 
 # Add note
 data['notes'].append({
@@ -318,10 +455,15 @@ if '$VERSION' not in data.get('releases', {}):
         'created': str(date.today()),
         'status': 'in_progress',
         'dmg': {},
-        'appstore': {}
+        'appstore': {},
+        'linux': {}
     }
 
 release = data['releases']['$VERSION']
+
+# Ensure linux dict exists (backward compat)
+if 'linux' not in release:
+    release['linux'] = {}
 
 # Update git info - track the commit this build is from
 release['git_commit'] = '$COMMIT'
@@ -337,6 +479,11 @@ if '$SKIP_APPSTORE' != 'true':
     release['appstore']['status'] = 'built'
     release['appstore']['build_number'] = int('$BUILD_NUMBER')
     release['appstore']['built_at'] = str(date.today())
+
+# Update Linux status
+if '$SKIP_LINUX' != 'true':
+    release['linux']['status'] = 'built'
+    release['linux']['built_at'] = str(date.today())
 
 with open('$MANIFEST', 'w') as f:
     json.dump(data, f, indent=2)
@@ -386,6 +533,10 @@ if [ "$SKIP_APPSTORE" = false ] && [ "$APPSTORE_TARGETED" = true ]; then
 fi
 if [ "$SKIP_DMG" = false ] && [ "$DMG_TARGETED" = true ]; then
   echo "  $STEP. Update appcast.xml and deploy to website"
+  STEP=$((STEP + 1))
+fi
+if [ "$SKIP_LINUX" = false ] && [ "$LINUX_TARGETED" = true ]; then
+  echo "  $STEP. Ship Linux: ./scripts/release/mark-shipped.sh $VERSION --linux"
   STEP=$((STEP + 1))
 fi
 if [ "$APPSTORE_TARGETED" = true ]; then

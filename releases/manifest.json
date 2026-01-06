@@ -145,6 +145,31 @@
         "changelog_published": false,
         "announcement_posted": false
       }
+    },
+    "1.1.0": {
+      "created": "2026-01-06",
+      "status": "in_progress",
+      "target_channels": [
+        "dmg",
+        "appstore",
+        "linux"
+      ],
+      "git_tag": "v1.1.0",
+      "git_commit": "9ad83e211ae6f73ea262d614f111057a2f6a0df1",
+      "dmg": {
+        "status": "pending"
+      },
+      "appstore": {
+        "status": "pending",
+        "build_number": 1
+      },
+      "linux": {
+        "status": "pending"
+      },
+      "marketing": {
+        "changelog_published": false,
+        "announcement_posted": false
+      }
     }
   }
 }

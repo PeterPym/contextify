@@ -26,6 +26,16 @@
       "upload_command": "bash scripts/xc.sh upload",
       "archive_path": "build/Contextify.xcarchive",
       "archive_preserve_path": "build/archives/v{version}.xcarchive"
+    },
+    "linux": {
+      "target": "contextify-ingest",
+      "product": "contextify-ingest",
+      "architectures": ["x86_64", "arm64"],
+      "build_command": "gh workflow run linux-release.yml -f version={version}",
+      "local_build_command": "bash scripts/docker-linux-build.sh",
+      "artifact_pattern": "contextify-ingest-linux-{arch}.tar.gz",
+      "archive_path": "build/archives/v{version}/linux",
+      "github_release": true
     }
   },
 

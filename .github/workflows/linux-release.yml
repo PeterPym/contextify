@@ -3,7 +3,8 @@ name: Linux Release
 on:
   push:
     tags:
-      - 'cli-v*.*.*'
+      - 'v*.*.*'      # Unified versioning (preferred)
+      - 'cli-v*.*.*'  # Legacy CLI versioning (backward compat)
   workflow_dispatch:
     inputs:
       version:
@@ -27,8 +28,11 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            # Extract from tag (cli-v1.0.0 -> 1.0.0)
-            echo "version=${GITHUB_REF_NAME#cli-v}" >> $GITHUB_OUTPUT
+            # Extract from tag (v1.0.0 -> 1.0.0 or cli-v1.0.0 -> 1.0.0)
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"        # Remove 'v' prefix
+            VERSION="${VERSION#cli-}" # Remove 'cli-' prefix if still present
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up Docker Buildx
@@ -108,7 +112,11 @@ VEOF
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "version=${GITHUB_REF_NAME#cli-v}" >> $GITHUB_OUTPUT
+            # Extract from tag (v1.0.0 -> 1.0.0 or cli-v1.0.0 -> 1.0.0)
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"        # Remove 'v' prefix
+            VERSION="${VERSION#cli-}" # Remove 'cli-' prefix if still present
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up QEMU
@@ -177,64 +185,47 @@ VEOF
           name: contextify-ingest-linux-arm64
           path: dist/contextify-ingest-linux-arm64.tar.gz
 
-  create-release:
-    needs: [build-linux-amd64, build-linux-arm64]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "tag=cli-v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF_NAME#cli-v}" >> $GITHUB_OUTPUT
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: CLI v${{ steps.version.outputs.version }}
-          body: |
-            ## Contextify Ingest CLI v${{ steps.version.outputs.version }}
-
-            Linux CLI for ingesting Claude Code and Codex transcripts into a SQLite database.
-
-            ### Installation
-
-            ```bash
-            # x86_64
-            curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/contextify-ingest-linux-x86_64.tar.gz | tar xz
-            sudo mv contextify-ingest /usr/local/bin/
-
-            # arm64
-            curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/contextify-ingest-linux-arm64.tar.gz | tar xz
-            sudo mv contextify-ingest /usr/local/bin/
-            ```
-
-            ### Usage
-
-            ```bash
-            contextify-ingest ingest --db ~/contextify.db
-            contextify-ingest verify --db ~/contextify.db
-            ```
-
-            ### Compatibility
-
-            Run `contextify-ingest --version` to see the embedded schema version.
-          files: |
-            artifacts/contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz
-            artifacts/contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz
-          draft: false
-          prerelease: false
+  # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
+  # This job is disabled to avoid duplicate releases.
+  # To re-enable automatic releases on tag push, uncomment this job.
+  #
+  # create-release:
+  #   needs: [build-linux-amd64, build-linux-arm64]
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Determine version
+  #       id: version
+  #       run: |
+  #         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+  #           echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+  #           echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+  #         else
+  #           TAG="${GITHUB_REF_NAME}"
+  #           VERSION="${TAG#v}"
+  #           VERSION="${VERSION#cli-}"
+  #           echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #           echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+  #         fi
+  #
+  #     - name: Download artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts
+  #
+  #     - name: Create Release
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         tag_name: ${{ steps.version.outputs.tag }}
+  #         name: v${{ steps.version.outputs.version }}
+  #         body: |
+  #           ## Contextify v${{ steps.version.outputs.version }}
+  #           ...
+  #         files: |
+  #           artifacts/contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz
+  #           artifacts/contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz
+  #         draft: false
+  #         prerelease: false
