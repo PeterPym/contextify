@@ -1,9 +1,20 @@
 import Foundation
 
-// Swift 6 concurrency-safe references to standard streams
-// These are effectively thread-safe for our purposes (single-threaded CLI output)
-private nonisolated(unsafe) let standardOutput = stdout
-private nonisolated(unsafe) let standardError = stderr
+// MARK: - Cross-platform stdio helpers
+
+/// Write to standard error (Swift 6 concurrency-safe via FileHandle)
+private func writeStderr(_ message: String) {
+  if let data = message.data(using: .utf8) {
+    FileHandle.standardError.write(data)
+  }
+}
+
+/// Write to standard output (Swift 6 concurrency-safe via FileHandle)
+private func writeStdout(_ message: String) {
+  if let data = message.data(using: .utf8) {
+    FileHandle.standardOutput.write(data)
+  }
+}
 
 /// Runtime CLI arguments for benchmark and test modes.
 /// These are ephemeral - never persisted to UserDefaults.
@@ -54,11 +65,11 @@ public struct LaunchArguments: Sendable {
         }
       }
     } catch let error as ArgumentError {
-      fputs("Error: \(error.message)\n", standardError)
-      Self.printUsage(to: standardError)
+      writeStderr("Error: \(error.message)\n")
+      Self.printUsage(to: .stderr)
       exit(64)  // EX_USAGE
     } catch {
-      fputs("Error: \(error.localizedDescription)\n", standardError)
+      writeStderr("Error: \(error.localizedDescription)\n")
       exit(1)
     }
   }
@@ -102,8 +113,14 @@ public struct LaunchArguments: Sendable {
     return url.standardizedFileURL.path
   }
 
+  /// Standard stream selection for printUsage
+  private enum StandardStream {
+    case stdout
+    case stderr
+  }
+
   /// Print usage to specified stream (stdout for --help, stderr for errors)
-  private static func printUsage(to stream: UnsafeMutablePointer<FILE> = standardOutput) {
+  private static func printUsage(to stream: StandardStream = .stdout) {
     let usage = """
     Contextify Benchmark Mode Options:
       --database-path <path>    Use temporary database (must not exist)
@@ -120,7 +137,12 @@ public struct LaunchArguments: Sendable {
     Note: --transcript-path and --database-path are disabled in App Store builds.
 
     """
-    fputs(usage, stream)
+    switch stream {
+    case .stdout:
+      writeStdout(usage)
+    case .stderr:
+      writeStderr(usage)
+    }
   }
 }
 
