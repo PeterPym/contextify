@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// Runtime CLI arguments for benchmark and test modes.
 /// These are ephemeral - never persisted to UserDefaults.
@@ -34,13 +33,13 @@ public struct LaunchArguments: Sendable {
 
       // Log benchmark mode activation
       if isBenchmarkMode {
-        let log = Logger(subsystem: "dev.contextify", category: "Benchmark")
+        let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Benchmark")
         log.info("[BENCH] Benchmark mode active")
         if let dbPath = databasePath {
-          log.info("[BENCH] --database-path: \(dbPath, privacy: .public)")
+          log.info("[BENCH] --database-path: \(dbPath)")
         }
         if let txPath = transcriptPath {
-          log.info("[BENCH] --transcript-path: \(txPath, privacy: .public)")
+          log.info("[BENCH] --transcript-path: \(txPath)")
         }
         if noSummaries {
           log.info("[BENCH] --no-summaries: enabled")

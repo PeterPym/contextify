@@ -91,6 +91,7 @@ let linuxSources: [String] = [
   "Platform/IngestionEventSink.swift",
   "Platform/PlatformSandbox.swift",
   // Database layer
+  "Database/BulkIngestManager.swift",   // Bulk write optimization
   "Database/DatabaseSchema.swift",
   "Database/KeyGeneration.swift",
   "Database/Models.swift",
@@ -105,6 +106,7 @@ let linuxSources: [String] = [
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
+  "LaunchArguments.swift",              // CLI argument parsing
   "LoggingConfig.swift",
   "ProjectIdentity.swift",
   "Projects/ProjectModels.swift",

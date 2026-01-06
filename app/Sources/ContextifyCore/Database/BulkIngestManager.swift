@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import os
 
 // MARK: - BulkIngestManager
 
@@ -39,7 +38,7 @@ public final class BulkIngestManager: @unchecked Sendable {
   private var entryInsertStmt: Statement?
   private var toolInvocationStmt: Statement?
 
-  private static let log = Logger(
+  private static let log = CrossPlatformLogger(
     subsystem: "dev.contextify",
     category: "BulkIngestManager"
   )
