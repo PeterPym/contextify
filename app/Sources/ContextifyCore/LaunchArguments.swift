@@ -1,5 +1,10 @@
 import Foundation
 
+// Swift 6 concurrency-safe references to standard streams
+// These are effectively thread-safe for our purposes (single-threaded CLI output)
+private nonisolated(unsafe) let standardOutput = stdout
+private nonisolated(unsafe) let standardError = stderr
+
 /// Runtime CLI arguments for benchmark and test modes.
 /// These are ephemeral - never persisted to UserDefaults.
 /// Thread-safe: immutable after initialization.
@@ -49,11 +54,11 @@ public struct LaunchArguments: Sendable {
         }
       }
     } catch let error as ArgumentError {
-      fputs("Error: \(error.message)\n", stderr)
-      Self.printUsage(to: stderr)
+      fputs("Error: \(error.message)\n", standardError)
+      Self.printUsage(to: standardError)
       exit(64)  // EX_USAGE
     } catch {
-      fputs("Error: \(error.localizedDescription)\n", stderr)
+      fputs("Error: \(error.localizedDescription)\n", standardError)
       exit(1)
     }
   }
@@ -98,7 +103,7 @@ public struct LaunchArguments: Sendable {
   }
 
   /// Print usage to specified stream (stdout for --help, stderr for errors)
-  private static func printUsage(to stream: UnsafeMutablePointer<FILE> = stdout) {
+  private static func printUsage(to stream: UnsafeMutablePointer<FILE> = standardOutput) {
     let usage = """
     Contextify Benchmark Mode Options:
       --database-path <path>    Use temporary database (must not exist)
