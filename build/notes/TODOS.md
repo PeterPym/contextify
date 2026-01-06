@@ -52,36 +52,6 @@ See tracking file for current branches in flight and review status.
 
 ---
 
-# P0 (Launch Critical)
-
----
-
-## Reduce/Eliminate AI Thinking Messages in Timeline (1 item)
-
-**Status:** Not started
-**Priority:** P0 (regression from side chain feature)
-**Discovered:** 2025-12-27
-
-- [ ] #THINKING-FILTER: Filter out AI thinking messages from timeline display
-
-**Background:**
-AI thinking messages (extended thinking blocks) used to be filtered out of the timeline.
-When side chains and agent messages were added, thinking messages were accidentally
-brought back into the timeline view. This creates noise and clutter.
-
-**Requirements:**
-1. Restore previous behavior: don't show individual thinking entries in main timeline
-2. Keep side chain messages visible (agent spawns, tool results, etc.)
-3. Thinking content can still appear within agent/side chain context if appropriate
-4. Main timeline should show user messages, assistant responses, and tool use - not thinking
-
-**Investigation needed:**
-- Find where thinking messages started appearing (side chain feature commits)
-- Identify the transcript record types being shown (thinking vs other)
-- Determine filtering logic needed in timeline data loading
-
----
-
 # P1 (High Priority)
 
 ---
