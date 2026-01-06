@@ -1,4 +1,5 @@
 name: Linux Release
+# Workflow for building Linux CLI binaries (x86_64 and arm64)
 
 on:
   push:
