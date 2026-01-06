@@ -187,6 +187,36 @@ python3 scripts/release.py --version 1.0.0 --dry-run --yes
 
 **Solution:** This is fine! The script will auto-detect and use the first valid one. If you want to be specific, you can remove the older one from Keychain Access.
 
+### Verifying NotaryProfile exists (IMPORTANT)
+
+**Wrong way to check:**
+```bash
+# DO NOT USE - will always say "not found" even if profile exists!
+security find-generic-password -s "NotaryProfile"
+```
+
+**Right way to check:**
+```bash
+# This is the ONLY reliable way to verify notarytool profiles
+xcrun notarytool history --keychain-profile NotaryProfile
+```
+
+notarytool profiles are stored differently than generic keychain passwords. The `security` command will not find them. Always use `xcrun notarytool` to verify.
+
+### Transient notarization failures
+
+**Problem:** Build fails with "Notarization profile not configured" but profile exists
+
+**Possible causes:**
+1. Keychain was locked (unlock with Keychain Access or `security unlock-keychain`)
+2. Network issue prevented connection to Apple's servers
+3. Apple's notarization service was temporarily unavailable
+
+**Solution:** Try the build again. If it persists, verify with:
+```bash
+xcrun notarytool history --keychain-profile NotaryProfile
+```
+
 ## Security Notes
 
 - App-specific password is stored in macOS Keychain (encrypted)
