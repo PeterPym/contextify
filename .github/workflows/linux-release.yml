@@ -1,0 +1,232 @@
+name: Linux Release
+# Workflow for building Linux CLI binaries (x86_64 and arm64)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'      # Unified versioning (preferred)
+      - 'cli-v*.*.*'  # Legacy CLI versioning (backward compat)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+
+env:
+  SQLITE_VERSION: "3450100"
+
+jobs:
+  build-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For version detection
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Extract from tag (v1.0.0 -> 1.0.0 or cli-v1.0.0 -> 1.0.0)
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"        # Remove 'v' prefix
+            VERSION="${VERSION#cli-}" # Remove 'cli-' prefix if still present
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build for x86_64
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/workspace:rw \
+            -e CLI_VERSION="${{ steps.version.outputs.version }}" \
+            -w /workspace \
+            --platform linux/amd64 \
+            swift:6.0-noble \
+            bash -c '
+              set -e
+
+              # Install build dependencies
+              apt-get update -qq
+              apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+
+              # Build SQLite with ENABLE_SNAPSHOT (static library only)
+              cd /tmp
+              curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${{ env.SQLITE_VERSION }}.tar.gz" | tar xz
+              cd sqlite-autoconf-*
+              CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
+                ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
+              make -j$(nproc) --quiet
+              make install --quiet
+              ldconfig
+
+              # Generate Version.swift with resolved version
+              cd /workspace
+              CLI_VERSION="${CLI_VERSION:-0.0.0}"
+              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
+// Generated at build time - do not edit
+let generatedCLIVersion = "$CLI_VERSION"
+VEOF
+
+              # Build CLI with static Swift stdlib and generated version flag
+              swift build -c release --product contextify-ingest \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
+
+              # Verify no dynamic SQLite dependency
+              echo "Verifying static linking..."
+              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-ingest
+                exit 1
+              fi
+              echo "Static linking verified - no dynamic SQLite dependency"
+
+              # Create tarball
+              mkdir -p dist
+              cp .build/release/contextify-ingest dist/
+              cd dist
+              tar -czvf contextify-ingest-linux-x86_64.tar.gz contextify-ingest
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextify-ingest-linux-x86_64
+          path: dist/contextify-ingest-linux-x86_64.tar.gz
+
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Extract from tag (v1.0.0 -> 1.0.0 or cli-v1.0.0 -> 1.0.0)
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"        # Remove 'v' prefix
+            VERSION="${VERSION#cli-}" # Remove 'cli-' prefix if still present
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build for arm64
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/workspace:rw \
+            -e CLI_VERSION="${{ steps.version.outputs.version }}" \
+            -w /workspace \
+            --platform linux/arm64 \
+            swift:6.0-noble \
+            bash -c '
+              set -e
+
+              # Install build dependencies
+              apt-get update -qq
+              apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+
+              # Build SQLite with ENABLE_SNAPSHOT (static library only)
+              cd /tmp
+              curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-${{ env.SQLITE_VERSION }}.tar.gz" | tar xz
+              cd sqlite-autoconf-*
+              CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
+                ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu --disable-shared --quiet
+              make -j$(nproc) --quiet
+              make install --quiet
+              ldconfig
+
+              # Generate Version.swift with resolved version
+              cd /workspace
+              CLI_VERSION="${CLI_VERSION:-0.0.0}"
+              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
+// Generated at build time - do not edit
+let generatedCLIVersion = "$CLI_VERSION"
+VEOF
+
+              # Build CLI with static Swift stdlib and generated version flag
+              swift build -c release --product contextify-ingest \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
+
+              # Verify no dynamic SQLite dependency
+              echo "Verifying static linking..."
+              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-ingest
+                exit 1
+              fi
+              echo "Static linking verified - no dynamic SQLite dependency"
+
+              # Create tarball
+              mkdir -p dist
+              cp .build/release/contextify-ingest dist/
+              cd dist
+              tar -czvf contextify-ingest-linux-arm64.tar.gz contextify-ingest
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextify-ingest-linux-arm64
+          path: dist/contextify-ingest-linux-arm64.tar.gz
+
+  # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
+  # This job is disabled to avoid duplicate releases.
+  # To re-enable automatic releases on tag push, uncomment this job.
+  #
+  # create-release:
+  #   needs: [build-linux-amd64, build-linux-arm64]
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Determine version
+  #       id: version
+  #       run: |
+  #         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+  #           echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+  #           echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+  #         else
+  #           TAG="${GITHUB_REF_NAME}"
+  #           VERSION="${TAG#v}"
+  #           VERSION="${VERSION#cli-}"
+  #           echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #           echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+  #         fi
+  #
+  #     - name: Download artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts
+  #
+  #     - name: Create Release
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         tag_name: ${{ steps.version.outputs.tag }}
+  #         name: v${{ steps.version.outputs.version }}
+  #         body: |
+  #           ## Contextify v${{ steps.version.outputs.version }}
+  #           ...
+  #         files: |
+  #           artifacts/contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz
+  #           artifacts/contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz
+  #         draft: false
+  #         prerelease: false
