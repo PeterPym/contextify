@@ -1692,6 +1692,9 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   // Find sources - plugin and user skill
   let sources = try findPluginSources()
 
+  // Track Codex installation status for output message
+  var codexInstalled = false
+
   // 1. Install user skill to ~/.claude/skills/total-recall/
   if let userSkillSource = sources.userSkill {
     let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
@@ -1709,14 +1712,30 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
       fputs("Skill installed to default ~/.codex/skills/ - you may need to copy manually.\n", stderr)
     }
 
+    // Install Codex skill using copy-by-content to guarantee a real file (not symlink)
     let codexSkillsDir = home.appendingPathComponent(".codex/skills/total-recall")
     do {
       try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
       let codexSkillDest = codexSkillsDir.appendingPathComponent("SKILL.md")
+
+      // Read source content (dereferences symlinks)
+      let skillData = try Data(contentsOf: skillFile)
+
+      // Remove existing file if present
       if FileManager.default.fileExists(atPath: codexSkillDest.path) {
         try FileManager.default.removeItem(at: codexSkillDest)
       }
-      try FileManager.default.copyItem(at: skillFile, to: codexSkillDest)
+
+      // Write atomically to ensure complete file
+      try skillData.write(to: codexSkillDest, options: .atomic)
+
+      // Verify destination is not a symlink
+      let resourceValues = try codexSkillDest.resourceValues(forKeys: [.isSymbolicLinkKey])
+      if resourceValues.isSymbolicLink == true {
+        fputs("Warning: Codex skill unexpectedly created as symlink\n", stderr)
+      } else {
+        codexInstalled = true
+      }
     } catch {
       fputs("Warning: Failed to install Codex CLI skill at \(codexSkillsDir.path): \(error.localizedDescription)\n", stderr)
     }
@@ -1765,7 +1784,11 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   try ContextifyQueryCLI.printResponse(type: "pluginInstalled", data: payload, json: options.jsonOutput) {
     print("Contextify Total Recall installed!")
     print("  Claude Code: \(home.appendingPathComponent(".claude/skills/total-recall").path)")
-    print("  Codex CLI:   \(home.appendingPathComponent(".codex/skills/total-recall").path)")
+    if codexInstalled {
+      print("  Codex CLI:   \(home.appendingPathComponent(".codex/skills/total-recall").path)")
+    } else {
+      print("  Codex CLI:   (failed - see warnings)")
+    }
     print("")
     print("Restart your CLI tool, then use /total-recall to search history.")
   }
@@ -1783,9 +1806,14 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
     try FileManager.default.removeItem(at: userSkillDir)
   }
 
+  // Remove Codex skill (best-effort - don't fail if this fails)
   let codexUserSkillDir = home.appendingPathComponent(".codex/skills/total-recall")
-  if FileManager.default.fileExists(atPath: codexUserSkillDir.path) {
-    try FileManager.default.removeItem(at: codexUserSkillDir)
+  do {
+    if FileManager.default.fileExists(atPath: codexUserSkillDir.path) {
+      try FileManager.default.removeItem(at: codexUserSkillDir)
+    }
+  } catch {
+    fputs("Warning: Failed to remove Codex skill at \(codexUserSkillDir.path): \(error.localizedDescription)\n", stderr)
   }
 
   // Remove old user skill name (if exists)
