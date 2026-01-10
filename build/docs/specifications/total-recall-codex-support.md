@@ -1589,7 +1589,7 @@ Install: `brew install PeterPym/contextify/contextify-query && contextify-query 
 
 **Thread (3 tweets):**
 
-1. "Contextify Total Recall now works with @OpenAI Codex CLI
+1. "Contextify Total Recall now works with @OpenAI Codex CLI 🎉
 
 Search your past AI coding sessions from Claude Code OR Codex - same database, same skill.
 
