@@ -1,16 +1,89 @@
+---
+title: Contextify Scripts Index
+purpose: Primary entry point for script discovery and common workflows.
+audience: Contributors and automation (including AI agents).
+status: active
+---
+
 # Contextify Scripts
 
 Utility scripts for Contextify development and maintenance.
 
+This file is the entry point for script discovery. It lists common tasks,
+high-traffic scripts, and the best README for each subdirectory.
+
+## Common Tasks
+
+| Task | Script(s) |
+|------|-----------|
+| Build app | `bash scripts/xc.sh build` |
+| Run tests | `swift test` |
+| Manage database | `scripts/db_manager.sh` (see `scripts/DATABASE-MANAGEMENT.md`) |
+| Run benchmarks | `scripts/performance/run-perf-suite.sh` (see `scripts/performance/README.md`) |
+| Profile performance | `scripts/performance/profile.sh` |
+| QA suite | `scripts/qa/README.md` |
+| Log capture/analysis | `scripts/logging/README.md` |
+| Transcript repair | `scripts/transcript-repair/README.md` |
+| Transcript conversion | `scripts/TRANSCRIPT_CONVERTER_README.md` |
+| Website deploy | `scripts/deploy-website.sh` |
+| Release workflow | `scripts/RELEASE.md` and `releases/WORKFLOW.md` |
+
 ## Subdirectories
 
-| Directory | Purpose |
+| Directory | Purpose | README |
 |-----------|---------|
-| [`performance/`](performance/) | Benchmarking and profiling tools |
-| [`qa/`](qa/) | QA test suite |
-| [`logging/`](logging/) | Log capture and analysis |
-| [`transcripts/`](transcripts/) | Transcript analysis tools |
-| [`release/`](release/) | Release management |
+| [`performance/`](performance/) | Benchmarking and profiling tools | `scripts/performance/README.md` |
+| [`qa/`](qa/) | QA test suite | `scripts/qa/README.md` |
+| [`logging/`](logging/) | Log capture and analysis | `scripts/logging/README.md` |
+| [`transcripts/`](transcripts/) | Transcript analysis tools | `scripts/transcripts/README.md` |
+| [`transcript-repair/`](transcript-repair/) | Transcript repair tools | `scripts/transcript-repair/README.md` |
+| [`screenshots/`](screenshots/) | Screenshot tooling | `scripts/screenshots/README.md` |
+| [`sparkle/`](sparkle/) | Sparkle update tooling | `scripts/sparkle/README.md` |
+| [`release/`](release/) | Release management | `scripts/release/README.md` |
+| [`lib/`](lib/) | Shared helper functions | `scripts/lib/README.md` |
+| [`build/`](build/) | Script-generated artifacts | `scripts/build/README.md` |
+
+## High-Use Scripts (Top Level)
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/xc.sh` | Xcode build/test/clean wrapper |
+| `scripts/db_manager.sh` | Database operations and safety rails |
+| `scripts/migrate-transcripts.sh` | Migrate transcript paths after repo moves |
+| `scripts/deploy-website.sh` | Deploy static site |
+| `scripts/trigger-ci-build.sh` | Trigger CI build |
+| `scripts/build-release.sh` | Build release artifacts |
+| `scripts/sign_and_notarize.py` | Signing and notarization |
+| `scripts/install-cli.sh` | Install CLI tools |
+| `scripts/install-shell-bindings.sh` | Shell bindings for CLI |
+| `scripts/remove_test_transcripts.sh` | Cleanup QA fixtures |
+| `scripts/build-and-capture-logs.sh` | Build + log capture helper |
+| `scripts/capture-recent-logs.sh` | Snapshot recent logs |
+| `scripts/stream-logs.sh` | Stream app logs |
+| `scripts/run-timeline-validation.sh` | Timeline validation runner |
+
+## Legacy Paths
+
+Some historical paths no longer exist. Use the new locations:
+
+| Old | New |
+|-----|-----|
+| `scripts/profile.sh` | `scripts/performance/profile.sh` |
+| `scripts/compare-performance.sh` | `scripts/performance/compare.sh` |
+| `scripts/benchmarks/` | `scripts/performance/` |
+
+## Frontmatter Convention
+
+Script READMEs use YAML frontmatter at the top so tools can parse metadata.
+
+```yaml
+---
+title: Short, descriptive title
+purpose: One-line description of what the scripts in this folder do.
+audience: Who should read it (e.g., contributors, release engineers).
+status: active | deprecated | internal
+---
+```
 
 ## Available Scripts
 

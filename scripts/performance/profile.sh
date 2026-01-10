@@ -1,19 +1,19 @@
 #!/bin/bash
 # Performance profiling wrapper for Contextify
-# Usage: ./scripts/profile.sh [options]
+# Usage: ./scripts/performance/profile.sh [options]
 #
 # Examples:
-#   ./scripts/profile.sh                      # Time Profiler, 60s, launch app
-#   ./scripts/profile.sh -t 30                # Time Profiler, 30s
-#   ./scripts/profile.sh -T "Energy Log" -t 120  # Energy profiling, 120s
-#   ./scripts/profile.sh -a                   # Attach to running app
-#   ./scripts/profile.sh -s                   # Use 'sample' command instead
-#   ./scripts/profile.sh -s -t 10             # Sample for 10s
+#   ./scripts/performance/profile.sh                      # Time Profiler, 60s, launch app
+#   ./scripts/performance/profile.sh -t 30                # Time Profiler, 30s
+#   ./scripts/performance/profile.sh -T "Energy Log" -t 120  # Energy profiling, 120s
+#   ./scripts/performance/profile.sh -a                   # Attach to running app
+#   ./scripts/performance/profile.sh -s                   # Use 'sample' command instead
+#   ./scripts/performance/profile.sh -s -t 10             # Sample for 10s
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Defaults
 TEMPLATE="Time Profiler"
@@ -66,7 +66,7 @@ TEMPLATE_SLUG=$(echo "$TEMPLATE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
 # Build app if launching and it doesn't exist
 if [[ "$MODE" == "launch" && ! -d "$APP_PATH" ]]; then
     echo "Building app..."
-    bash "$SCRIPT_DIR/xc.sh" build
+    bash "$PROJECT_ROOT/scripts/xc.sh" build
 fi
 
 if [[ "$USE_SAMPLE" == true ]]; then

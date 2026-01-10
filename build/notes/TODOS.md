@@ -515,7 +515,7 @@ Add a periodic check (every 5-10 minutes) or event-driven trigger:
 
 **Optional Remaining Work:**
 1. **Add os_signpost instrumentation** - for future debugging
-2. **Create profiling script** - `scripts/profile.sh`
+2. **Create profiling script** - `scripts/performance/profile.sh`
 3. **Validate with profiling** - before/after comparison
 
 **Acceptance Criteria (verified by log analysis fixes):**
@@ -2902,6 +2902,7 @@ A 1.06 second hang was observed during agent decoration testing. Stack trace sho
 **Tags:** token-burn
 
 - [ ] #SCRIPTS-REORG: Audit and reorganize scripts/ directory structure
+- [ ] #SCRIPTS-FRONTMATTER: Add YAML frontmatter to all remaining scripts documentation (README and top-level guides)
 
 **Background:**
 The scripts/ directory has grown organically and needs cleanup. Performance scripts were reorganized from `scripts/benchmarks/` to `scripts/performance/`. Similar organization may be needed for remaining scripts.
@@ -2913,6 +2914,8 @@ The scripts/ directory has grown organically and needs cleanup. Performance scri
 4. Update any documentation referencing moved scripts
 5. Remove unused/obsolete scripts
 6. Add READMEs to subdirectories that lack them
+7. Backfill YAML frontmatter across `scripts/*.md` and `scripts/**/README.md` where missing
+8. Decide on legacy path shims vs removals; update docs accordingly
 
 **Current Subdirectories:**
 - `performance/` - benchmarking, profiling
