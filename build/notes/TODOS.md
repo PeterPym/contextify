@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-02 (Added #PERF-AUDIT-* performance optimization phases)
+**Last Updated:** 2026-01-05 (Expanded #EMAIL-COLLECTION to 5 actionable items with #REPORT-FUNKY-SUMMARY)
 **Status:** Active
 
 **Priority Levels:**
@@ -1670,38 +1670,66 @@ Implement server-side redirects or static file forwarders:
 
 ---
 
-## Website Email Collection (1 item)
+## User Communication & Email Collection (5 items)
 
 **Status:** Not Started
-**Priority:** P2 (growth/marketing)
-**Effort:** 2-4 hours
-
-- [ ] #EMAIL-COLLECTION: Add email signup for release notifications on website
+**Priority:** P1 (growth/marketing - pre-release)
+**Effort:** 4-6 hours total
+**Strategy doc:** `/tmp/email-collection-strategy.md`
 
 **Problem:**
-Users interested in Contextify may want to be notified about new features and releases. Email list enables direct communication with interested users.
+Zero direct communication channel with users. Cannot announce releases, gather feedback, or build community. Leaving growth on the table.
 
-**Context:**
-Lite Mode for macOS 15 is now shipped. Email list would still be useful for announcing new features, major releases, and other updates.
+**Approach:** Write emails to server file (`/var/www/contextify/subscribers.txt`), manually send until proper solution. No third-party service needed yet.
 
-**Solution:**
-Add email signup form to website for release/update notifications.
+### P1 Items (Ship with next release)
 
-**Options:**
-1. **Buttondown** (recommended) - Simple, cheap, good for small lists
-2. **Mailchimp** - More features, free tier available
-3. **Self-hosted** - More work, full control
+- [ ] #EMAIL-WEBSITE-FOOTER: Add newsletter signup form to website footer
+  - All pages: `website/index.html`, `website/download/index.html`, etc.
+  - Copy: "Get notified when new versions ship. No spam, just releases."
+  - Simple form POST to `/api/subscribe` endpoint
+  - Server: tiny PHP/Python script appends email + timestamp to `subscribers.txt`
+  - Effort: 1-2 hours (form + server script)
 
-**Implementation:**
-- Add signup form to website (footer or dedicated section)
-- "Get notified about new releases and features"
-- Privacy-focused messaging (no spam, release announcements only)
+- [ ] #EMAIL-DOWNLOAD-CTA: Add signup CTA on download page
+  - After download buttons: "Want to know when updates ship?"
+  - Higher-intent users who just downloaded
+  - File: `website/download/index.html`
+  - Effort: 30 min
+
+- [ ] #EMAIL-HELP-MENU: Add "Subscribe to Updates..." menu item
+  - In Help menu, opens browser to website signup page
+  - Non-intrusive, user-initiated
+  - File: `Contextify/Contextify/ContextifyApp.swift` (`HelpCommands`)
+  - Effort: 30 min
+
+- [ ] #REPORT-FUNKY-SUMMARY: Add "Report Summary Issue..." to timeline context menu
+  - Opens `mailto:feedback@contextify.sh` with pre-filled body
+  - Includes: original message, generated summary, entry ID, transcript path
+  - Envelope icon to indicate email (won't auto-send data)
+  - File: `Contextify/Contextify/TimelineEntryRow.swift`
+  - Effort: 1 hour
+
+### P2 Items (Post-release)
+
+- [ ] #EMAIL-ONBOARDING: Add newsletter opt-in during App Store onboarding
+  - Optional checkbox: "Keep me updated on new features"
+  - Unchecked by default (GDPR safe)
+  - File: `Contextify/Contextify/AppStoreOnboardingView.swift`
+  - Effort: 2 hours
 
 **Acceptance criteria:**
-- [ ] Email signup form on contextify.sh
-- [ ] Confirmation email on signup
-- [ ] Unsubscribe link in all emails
-- [ ] Privacy policy updated if needed
+- [ ] Server endpoint `/api/subscribe` writes to `subscribers.txt`
+- [ ] Email signup form on contextify.sh footer (all pages)
+- [ ] Download page has signup CTA
+- [ ] Help menu has "Subscribe to Updates..." item
+- [ ] Context menu has "Report Summary Issue..." with mailto:
+- [ ] Privacy policy mentions email collection
+
+**Future (P3):**
+- In-app release notes with subscribe CTA
+- "What's New" modal after updates with subscribe option
+- SES for transactional email when list grows
 
 ---
 
