@@ -72,37 +72,12 @@ xctrace record --template 'System Trace' --attach "Contextify" --time-limit 30s
 
 ### Automation Script
 
-Create `scripts/profile.sh`:
+Use `scripts/performance/profile.sh` (wrapper for `xctrace`/`sample`):
 
 ```bash
-#!/bin/bash
-# Usage: ./scripts/profile.sh [template] [duration]
-# Example: ./scripts/profile.sh "Time Profiler" 60
-
-TEMPLATE="${1:-Time Profiler}"
-DURATION="${2:-60}"
-APP_PATH=".derived-dmg/Build/Products/Debug/Contextify.app"
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-OUTPUT="build/profiles/${TIMESTAMP}-$(echo $TEMPLATE | tr ' ' '-').trace"
-
-mkdir -p build/profiles
-
-# Build if app doesn't exist
-if [ ! -d "$APP_PATH" ]; then
-    echo "Building app..."
-    bash scripts/xc.sh build
-fi
-
-echo "Profiling with '$TEMPLATE' for ${DURATION}s..."
-xctrace record \
-  --template "$TEMPLATE" \
-  --launch "$APP_PATH" \
-  --time-limit "${DURATION}s" \
-  --output "$OUTPUT"
-
-echo ""
-echo "Trace saved: $OUTPUT"
-echo "Open with: open '$OUTPUT'"
+./scripts/performance/profile.sh -t 60
+./scripts/performance/profile.sh -T "Energy Log" -t 120
+./scripts/performance/profile.sh -s -t 10
 ```
 
 ---
@@ -371,7 +346,7 @@ jobs:
       - name: Run performance tests
         run: swift test --filter Performance
       - name: Compare to baseline
-        run: ./scripts/compare-performance.sh
+        run: ./scripts/performance/compare.sh
 ```
 
 ---

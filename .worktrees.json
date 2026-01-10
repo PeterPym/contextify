@@ -35,6 +35,12 @@
       "meta": {}
     },
     {
+      "name": "wb3",
+      "path": "~/code/projects/contextify-wb3",
+      "landingBranch": "main-wb3",
+      "meta": {}
+    },
+    {
       "name": "liquid-glass",
       "path": "~/code/projects/contextify-liquid-glass",
       "landingBranch": "feat/liquid-glass-implementation",
