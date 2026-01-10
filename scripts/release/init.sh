@@ -8,12 +8,14 @@
 #   an existing release for a new build attempt (preserving history).
 #
 # Usage:
-#   ./scripts/release/init.sh X.Y.Z (--dmg | --appstore | --both | --reset)
+#   ./scripts/release/init.sh X.Y.Z (--dmg | --appstore | --linux | --both | --all | --reset)
 #
 # Options:
 #   --dmg       Target DMG channel only
 #   --appstore  Target App Store channel only
-#   --both      Target both DMG and App Store channels
+#   --linux     Target Linux channel only
+#   --both      Target both DMG and App Store channels (no Linux)
+#   --all       Target all channels (DMG, App Store, Linux)
 #   --reset     Reset existing release for new build (preserves notes, target_channels)
 #
 # Note: Exactly one option is required.
@@ -48,6 +50,7 @@ VERSION="${1}"
 RESET_MODE=false
 TARGET_DMG=false
 TARGET_APPSTORE=false
+TARGET_LINUX=false
 
 # Parse arguments
 for arg in "$@"; do
@@ -61,20 +64,30 @@ for arg in "$@"; do
     --appstore)
       TARGET_APPSTORE=true
       ;;
+    --linux)
+      TARGET_LINUX=true
+      ;;
     --both)
       TARGET_DMG=true
       TARGET_APPSTORE=true
+      ;;
+    --all)
+      TARGET_DMG=true
+      TARGET_APPSTORE=true
+      TARGET_LINUX=true
       ;;
   esac
 done
 
 if [ -z "$VERSION" ]; then
-  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --both | --reset)"
+  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --linux | --both | --all | --reset)"
   echo ""
   echo "For new releases:"
   echo "  $0 1.0.1 --dmg       # DMG only"
   echo "  $0 1.0.2 --appstore  # App Store only"
-  echo "  $0 1.1.0 --both      # Both channels"
+  echo "  $0 1.0.3 --linux     # Linux CLI only"
+  echo "  $0 1.1.0 --both      # DMG + App Store (no Linux)"
+  echo "  $0 1.1.0 --all       # DMG + App Store + Linux"
   echo ""
   echo "For existing releases:"
   echo "  $0 1.0.0 --reset     # Reset for new build"
@@ -84,8 +97,8 @@ fi
 # Validate mutually exclusive options
 # --reset cannot be combined with targeting flags
 if [ "$RESET_MODE" = true ]; then
-  if [ "$TARGET_DMG" = true ] || [ "$TARGET_APPSTORE" = true ]; then
-    echo "Error: --reset cannot be combined with --dmg, --appstore, or --both"
+  if [ "$TARGET_DMG" = true ] || [ "$TARGET_APPSTORE" = true ] || [ "$TARGET_LINUX" = true ]; then
+    echo "Error: --reset cannot be combined with --dmg, --appstore, --linux, --both, or --all"
     echo ""
     echo "  --reset preserves existing target_channels and only regenerates checklists."
     echo "  If you need to change channel targeting, create a new version instead."
@@ -93,31 +106,33 @@ if [ "$RESET_MODE" = true ]; then
   fi
 fi
 
-# Count targeting options (--dmg alone, --appstore alone, or --both)
-OPT_COUNT=0
-[ "$RESET_MODE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
-[ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
-[ "$TARGET_APPSTORE" = true ] && [ "$TARGET_DMG" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
-[ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
+# Determine if any targeting option was provided
+# We need exactly one "targeting intent": a single channel, --both, --all, or --reset
+TARGETING_PROVIDED=false
+if [ "$TARGET_DMG" = true ] || [ "$TARGET_APPSTORE" = true ] || [ "$TARGET_LINUX" = true ] || [ "$RESET_MODE" = true ]; then
+  TARGETING_PROVIDED=true
+fi
 
-# Enforce exactly one option
-if [ "$OPT_COUNT" -ne 1 ]; then
-  echo "Error: Exactly one of --dmg, --appstore, --both, or --reset is required"
+# Enforce that some option was provided
+if [ "$TARGETING_PROVIDED" = false ]; then
+  echo "Error: One of --dmg, --appstore, --linux, --both, --all, or --reset is required"
   echo ""
-  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --both | --reset)"
+  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --linux | --both | --all | --reset)"
   exit 1
 fi
 
 # Build target_channels array string for JSON
-if [ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = true ]; then
-  TARGET_CHANNELS='["dmg", "appstore"]'
-  TARGET_CHANNELS_DISPLAY="dmg, appstore"
-elif [ "$TARGET_DMG" = true ]; then
-  TARGET_CHANNELS='["dmg"]'
-  TARGET_CHANNELS_DISPLAY="dmg"
-elif [ "$TARGET_APPSTORE" = true ]; then
-  TARGET_CHANNELS='["appstore"]'
-  TARGET_CHANNELS_DISPLAY="appstore"
+# Build array dynamically based on flags
+CHANNELS_ARRAY=()
+[ "$TARGET_DMG" = true ] && CHANNELS_ARRAY+=("dmg")
+[ "$TARGET_APPSTORE" = true ] && CHANNELS_ARRAY+=("appstore")
+[ "$TARGET_LINUX" = true ] && CHANNELS_ARRAY+=("linux")
+
+# Convert to JSON array and display string
+if [ ${#CHANNELS_ARRAY[@]} -gt 0 ]; then
+  # Build JSON array with proper quoting
+  TARGET_CHANNELS=$(printf '%s\n' "${CHANNELS_ARRAY[@]}" | jq -R . | jq -s .)
+  TARGET_CHANNELS_DISPLAY=$(IFS=', '; echo "${CHANNELS_ARRAY[*]}")
 fi
 
 RELEASE_DIR="releases/v${VERSION}"
@@ -147,18 +162,20 @@ if [ -d "$RELEASE_DIR" ]; then
     # Preserve target_channels from existing release
     TARGET_CHANNELS=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); tc=d.get('target_channels', ['dmg','appstore']); print(json.dumps(tc))" 2>/dev/null || echo '["dmg", "appstore"]')
     TARGET_CHANNELS_DISPLAY=$(python3 -c "import json; tc=$TARGET_CHANNELS; print(', '.join(tc))" 2>/dev/null || echo "dmg, appstore")
-    # Set TARGET_DMG and TARGET_APPSTORE based on preserved target_channels
+    # Set TARGET_DMG, TARGET_APPSTORE, and TARGET_LINUX based on preserved target_channels
     TARGET_DMG=$(python3 -c "import json; tc=$TARGET_CHANNELS; print('true' if 'dmg' in tc else 'false')" 2>/dev/null || echo "true")
     TARGET_APPSTORE=$(python3 -c "import json; tc=$TARGET_CHANNELS; print('true' if 'appstore' in tc else 'false')" 2>/dev/null || echo "true")
+    TARGET_LINUX=$(python3 -c "import json; tc=$TARGET_CHANNELS; print('true' if 'linux' in tc else 'false')" 2>/dev/null || echo "false")
   else
     EXISTING_NOTES="[]"
     NOTES_COUNT=0
     NEW_BUILD=1
-    # Default to both channels if no release.json exists
-    TARGET_CHANNELS='["dmg", "appstore"]'
-    TARGET_CHANNELS_DISPLAY="dmg, appstore"
+    # Default to all channels if no release.json exists
+    TARGET_CHANNELS='["dmg", "appstore", "linux"]'
+    TARGET_CHANNELS_DISPLAY="dmg, appstore, linux"
     TARGET_DMG=true
     TARGET_APPSTORE=true
+    TARGET_LINUX=true
   fi
 
   echo "  Preserving $NOTES_COUNT notes"
@@ -360,6 +377,24 @@ cat > "$RELEASE_DIR/release.json" << EOF
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
+      },
+      "linux": {
+        "built": false,
+        "shipped": false,
+        "shipped_at": null,
+        "github_release_url": null,
+        "x86_64": {
+          "built": false,
+          "path": null,
+          "sha256": null,
+          "size_bytes": null
+        },
+        "arm64": {
+          "built": false,
+          "path": null,
+          "sha256": null,
+          "size_bytes": null
+        }
       }
     },
 
@@ -509,6 +544,7 @@ else:
     # Set channel statuses based on targeting
     dmg_status = 'pending' if 'dmg' in target_channels else 'skipped'
     appstore_status = 'pending' if 'appstore' in target_channels else 'skipped'
+    linux_status = 'pending' if 'linux' in target_channels else 'skipped'
 
     data['releases']['$VERSION'] = {
         'created': str(date.today()),
@@ -522,6 +558,9 @@ else:
         'appstore': {
             'status': appstore_status,
             'build_number': $NEW_BUILD
+        },
+        'linux': {
+            'status': linux_status
         },
         'marketing': {
             'changelog_published': False,

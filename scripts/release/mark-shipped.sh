@@ -8,11 +8,12 @@
 #   or approved for production. Updates both tracking files consistently.
 #
 # Usage:
-#   ./scripts/release/mark-shipped.sh X.Y.Z --dmg|--appstore [OPTIONS]
+#   ./scripts/release/mark-shipped.sh X.Y.Z --dmg|--appstore|--linux [OPTIONS]
 #
 # Options:
 #   --dmg          Mark DMG as shipped
 #   --appstore     Mark App Store as approved/shipped
+#   --linux        Mark Linux as shipped (creates GitHub Release)
 #   --build N      Specify build number (App Store)
 #   --date DATE    Override date (default: today, format: YYYY-MM-DD)
 #   --skipped      Mark as skipped (not shipped)
@@ -57,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --appstore)
       CHANNEL="appstore"
+      shift
+      ;;
+    --linux)
+      CHANNEL="linux"
       shift
       ;;
     --build)
@@ -121,7 +126,7 @@ fi
 if [ "$SKIPPED" = true ]; then
   STATUS="skipped"
 else
-  if [ "$CHANNEL" = "dmg" ]; then
+  if [ "$CHANNEL" = "dmg" ] || [ "$CHANNEL" = "linux" ]; then
     STATUS="shipped"
   else
     STATUS="approved"
@@ -141,6 +146,11 @@ if [ "$SKIPPED" = false ] && [ "$FORCE" != true ]; then
     fi
   elif [ "$CHANNEL" = "appstore" ]; then
     if ! check_can_ship_appstore "$VERSION"; then
+      echo "Use --force to override"
+      exit 1
+    fi
+  elif [ "$CHANNEL" = "linux" ]; then
+    if ! check_can_ship_linux "$VERSION"; then
       echo "Use --force to override"
       exit 1
     fi
@@ -194,7 +204,7 @@ if '$CHANNEL' == 'dmg':
         release['dmg']['released_at'] = '$DATE'
     elif '$STATUS' == 'skipped':
         release['dmg']['skipped_at'] = '$DATE'
-else:
+elif '$CHANNEL' == 'appstore':
     release['appstore']['status'] = '$STATUS'
     if '$STATUS' == 'approved':
         release['appstore']['approved_at'] = '$DATE'
@@ -202,11 +212,21 @@ else:
         release['appstore']['skipped_at'] = '$DATE'
     if '$BUILD_NUM':
         release['appstore']['build_number'] = int('$BUILD_NUM')
+elif '$CHANNEL' == 'linux':
+    if 'linux' not in release:
+        release['linux'] = {}
+    release['linux']['status'] = '$STATUS'
+    if '$STATUS' == 'shipped':
+        release['linux']['shipped_at'] = '$DATE'
+    elif '$STATUS' == 'skipped':
+        release['linux']['skipped_at'] = '$DATE'
 
-# Update overall status if both channels complete
-dmg_done = release.get('dmg', {}).get('status') in ['shipped', 'skipped']
-as_done = release.get('appstore', {}).get('status') in ['approved', 'skipped']
-if dmg_done and as_done:
+# Update overall status if all targeted channels complete
+target_channels = release.get('target_channels', ['dmg', 'appstore'])
+dmg_done = 'dmg' not in target_channels or release.get('dmg', {}).get('status') in ['shipped', 'skipped']
+as_done = 'appstore' not in target_channels or release.get('appstore', {}).get('status') in ['approved', 'skipped']
+linux_done = 'linux' not in target_channels or release.get('linux', {}).get('status') in ['shipped', 'skipped']
+if dmg_done and as_done and linux_done:
     release['status'] = 'complete'
 
 # Update current_version if this is a shipped (not skipped) status
@@ -254,14 +274,21 @@ if '$STATUS' == 'approved':
     data['phases']['submission']['status'] = 'approved'
     data['phases']['submission']['approved_at'] = '$DATE'
 elif '$STATUS' == 'shipped':
-    # For DMG, mark build phase as complete
-    data['phases']['build']['dmg']['shipped'] = True
-    data['phases']['build']['dmg']['shipped_at'] = '$DATE'
+    if '$CHANNEL' == 'dmg':
+        # For DMG, mark build phase as complete
+        data['phases']['build']['dmg']['shipped'] = True
+        data['phases']['build']['dmg']['shipped_at'] = '$DATE'
+    elif '$CHANNEL' == 'linux':
+        # For Linux, mark as shipped
+        data['phases']['build']['linux']['shipped'] = True
+        data['phases']['build']['linux']['shipped_at'] = '$DATE'
 elif '$STATUS' == 'skipped':
     if '$CHANNEL' == 'appstore':
         data['phases']['submission']['status'] = 'skipped'
-    else:
+    elif '$CHANNEL' == 'dmg':
         data['phases']['build']['dmg']['skipped'] = True
+    elif '$CHANNEL' == 'linux':
+        data['phases']['build']['linux']['skipped'] = True
 
 # Add note
 force_note = ' (guard bypassed)' if '$FORCE' == 'true' else ''
@@ -276,6 +303,70 @@ with open('$RELEASE_JSON', 'w') as f:
 
 print('Updated release.json')
 EOF
+fi
+
+# Create GitHub Release for Linux
+if [ "$CHANNEL" = "linux" ] && [ "$STATUS" = "shipped" ] && [ "$DRY_RUN" = false ]; then
+  echo ""
+  echo "Creating GitHub Release for Linux..."
+
+  ARCHIVE_DIR="$ROOT_DIR/build/archives/v${VERSION}/linux"
+  X86_ARTIFACT="$ARCHIVE_DIR/contextify-ingest-linux-x86_64.tar.gz"
+  ARM64_ARTIFACT="$ARCHIVE_DIR/contextify-ingest-linux-arm64.tar.gz"
+
+  # Check if release already exists
+  if gh release view "v${VERSION}" &>/dev/null; then
+    echo "  GitHub Release v${VERSION} already exists, uploading Linux artifacts..."
+    # Upload artifacts to existing release
+    gh release upload "v${VERSION}" "$X86_ARTIFACT" "$ARM64_ARTIFACT" --clobber
+  else
+    echo "  Creating new GitHub Release v${VERSION}..."
+    # Create release with Linux artifacts
+    gh release create "v${VERSION}" \
+      --title "v${VERSION}" \
+      --notes "## Contextify v${VERSION}
+
+### Downloads
+
+**macOS:**
+- DMG: Download from [contextify.sh](https://contextify.sh)
+- App Store: [Mac App Store](https://apps.apple.com/app/contextify/id6753190666)
+
+**Linux CLI (contextify-ingest):**
+\`\`\`bash
+# x86_64
+curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-ingest-linux-x86_64.tar.gz | tar xz
+sudo mv contextify-ingest /usr/local/bin/
+
+# arm64
+curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-ingest-linux-arm64.tar.gz | tar xz
+sudo mv contextify-ingest /usr/local/bin/
+\`\`\`
+
+### Usage
+\`\`\`bash
+contextify-ingest ingest --db ~/contextify.db
+contextify-ingest verify --db ~/contextify.db
+\`\`\`
+" \
+      "$X86_ARTIFACT" "$ARM64_ARTIFACT"
+  fi
+
+  # Update release.json with GitHub Release URL
+  RELEASE_URL=$(gh release view "v${VERSION}" --json url -q '.url')
+  if [ -n "$RELEASE_URL" ]; then
+    python3 << EOF
+import json
+with open('$RELEASE_JSON', 'r') as f:
+    data = json.load(f)
+data['phases']['build']['linux']['github_release_url'] = '$RELEASE_URL'
+with open('$RELEASE_JSON', 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    echo "  GitHub Release URL: $RELEASE_URL"
+  fi
+
+  echo "  GitHub Release created/updated successfully"
 fi
 
 # Show new status

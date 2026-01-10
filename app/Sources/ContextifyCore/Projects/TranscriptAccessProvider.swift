@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// Errors for CLI transcript path validation
 enum TranscriptPathError: LocalizedError {

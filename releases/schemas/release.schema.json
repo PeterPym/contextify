@@ -15,7 +15,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["dmg", "appstore"]
+        "enum": ["dmg", "appstore", "linux"]
       },
       "uniqueItems": true,
       "minItems": 1,
@@ -149,6 +149,33 @@
             "exported": { "type": "boolean" },
             "uploaded": { "type": "boolean" },
             "upload_receipt": { "type": ["string", "null"] }
+          }
+        },
+        "linux": {
+          "type": "object",
+          "properties": {
+            "built": { "type": "boolean" },
+            "shipped": { "type": "boolean" },
+            "shipped_at": { "type": ["string", "null"] },
+            "github_release_url": { "type": ["string", "null"] },
+            "x86_64": {
+              "type": "object",
+              "properties": {
+                "built": { "type": "boolean" },
+                "path": { "type": ["string", "null"] },
+                "sha256": { "type": ["string", "null"] },
+                "size_bytes": { "type": ["integer", "null"] }
+              }
+            },
+            "arm64": {
+              "type": "object",
+              "properties": {
+                "built": { "type": "boolean" },
+                "path": { "type": ["string", "null"] },
+                "sha256": { "type": ["string", "null"] },
+                "size_bytes": { "type": ["integer", "null"] }
+              }
+            }
           }
         }
       }

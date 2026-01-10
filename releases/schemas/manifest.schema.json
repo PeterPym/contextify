@@ -37,7 +37,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["dmg", "appstore"]
+            "enum": ["dmg", "appstore", "linux"]
           },
           "uniqueItems": true,
           "minItems": 1,
@@ -66,6 +66,9 @@
         },
         "appstore": {
           "$ref": "#/definitions/AppStoreChannel"
+        },
+        "linux": {
+          "$ref": "#/definitions/LinuxChannel"
         },
         "marketing": {
           "$ref": "#/definitions/Marketing"
@@ -155,6 +158,46 @@
         "approved_at": {
           "type": ["string", "null"],
           "format": "date-time"
+        }
+      }
+    },
+
+    "LinuxChannel": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "built", "shipped", "skipped"],
+          "description": "Linux distribution status"
+        },
+        "built_at": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "shipped_at": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "github_release_url": {
+          "type": ["string", "null"],
+          "description": "URL to GitHub Release containing Linux artifacts"
+        },
+        "x86_64": {
+          "type": "object",
+          "properties": {
+            "artifact_path": { "type": ["string", "null"] },
+            "sha256": { "type": ["string", "null"] },
+            "size_bytes": { "type": ["integer", "null"] }
+          }
+        },
+        "arm64": {
+          "type": "object",
+          "properties": {
+            "artifact_path": { "type": ["string", "null"] },
+            "sha256": { "type": ["string", "null"] },
+            "size_bytes": { "type": ["integer", "null"] }
+          }
         }
       }
     },

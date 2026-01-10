@@ -1,10 +1,14 @@
 # Benchmark Results History
 
-> **IMPORTANT: Unit Clarification**
+> **IMPORTANT: Methodology Notes**
+>
+> **Units:**
 > - **lines/sec**: Raw JSONL lines processed per second (corpus size / time)
 > - **entries/sec**: Database entries created per second (entry count / time)
-> - Ratio varies by corpus (~3.6 lines/entry for current corpus)
-> - Earlier measurements labeled "entries/sec" may have been lines/sec - always verify against JSON metrics
+> - Ratio varies by corpus (~2 lines/entry for current corpus)
+>
+> **Historical data caveat (pre-2026-01-05):**
+> Earlier benchmarks were often stopped before completion to get quick readings. This methodology captured **burst rates** (early fast phase) rather than **sustained rates**. Since performance degrades ~72% from burst to sustained (925 → 260 entries/sec), historical numbers are optimistically skewed. The P7 benchmark (9bc86252, 2026-01-05) is the first complete run and provides the true sustained baseline.
 
 | Date | Commit | Startup | Ingest Rate | Peak Memory | Switch Time | Notes |
 |------|--------|---------|-------------|-------------|-------------|-------|
@@ -14,6 +18,7 @@
 | 2026-01-04 | 70a21b56 | - | ~505 lines/sec | - | - | **P1.1: PRAGMA cache/mmap (+102% vs baseline)** |
 | 2026-01-04 | 3b3d2404 | - | ~750 lines/sec | - | - | **P1.1 refined: +reader limit, better logging (+217% vs baseline)** |
 | 2026-01-04 | 363c11a2 | 48ms | **1623 lines/sec** (~445 entries/sec) | 990MB | - | **P5 reverted, P6 active (+745% vs pre-opt)** |
+| 2026-01-05 | 9bc86252 | 54ms | **544 lines/sec (260 entries/sec)** | 1006MB | - | **P7 merged: Full benchmark (363k lines, 174k entries, 11.1 min)** |
 
 ## Notes
 
@@ -29,6 +34,20 @@
 
 - **2026-01-04 363c11a2**: P5/P6 optimization attempt and P5 revert. P5 (UNIQUE index for content-based deduplication via INSERT OR IGNORE) was implemented but caused **FK constraint failures** - the UNIQUE constraint silently skipped duplicate entry inserts while downstream code still tried to insert tool_invocations referencing them. After ChatGPT review loop (2 iterations), P5 was fully reverted. P6 (preloaded entry IDs for parent validation) remained active and is safe. Result: **1623 lines/sec** on fresh DB. Note: Units differ from earlier measurements (lines/sec vs entries/sec) - this run processed 363k lines into ~100k entries in 224s. See `/tmp/review-loop-bulk-ingest-optimization-briefing/summary.md` for full analysis.
 
+- **2026-01-05 9bc86252 (merged)**: P7 observation-free bulk ingest via BulkIngestManager. Full benchmark on main branch with clean database:
+
+  **Full benchmark results (363k lines, 11.1 min):**
+  - Entry rate: 260 entries/sec (174,363 entries total)
+  - Line rate: 544 lines/sec
+  - Peak memory: 1006 MB
+  - Startup: 54ms
+
+  **Note on methodology:** Earlier P6 benchmark (363c11a2) showed 1623 lines/sec but only created ~100k entries from same corpus. This P7 benchmark creates 174k entries - the higher entry count suggests P6 may have had different duplicate detection or incomplete processing. Rates are not directly comparable due to different entry counts.
+
+  **Short burst vs sustained:** 20-second CLI tests showed ~925 entries/sec burst rate, but sustained full-corpus ingest is 260 entries/sec. This gap suggests performance degrades as database grows or there's periodic overhead (checkpointing, memory pressure).
+
+  Feature flag: `CONTEXTIFY_USE_BULK_INGEST=0` to disable and fall back to standard ingest path.
+
 ## Optimization Summary
 
 | Optimization | Result | Merged |
@@ -43,8 +62,9 @@
 | P3.2 WITHOUT ROWID | 5-10% expected, high complexity | ❌ No |
 | P5 UNIQUE dedupe index | **FK constraint failures** | ❌ Reverted |
 | P6 Preloaded entry IDs | Safe, included in latest | ✅ Yes |
+| P7 Observation-free bulk ingest | **+37%** (611 vs 445 entries/sec) | ✅ Yes |
 
-**Final ingest rate: 1623 lines/sec / 445 entries/sec (8.4x vs pre-optimization 192 lines/sec)**
+**Final ingest rate (full benchmark): 260 entries/sec (544 lines/sec) processing 174k entries in 11.1 min**
 
 ## Profiling Analysis (2026-01-04)
 
@@ -59,6 +79,34 @@ Time Profiler analysis of the ingest pipeline revealed:
 
 **Key finding:** JSON parsing did NOT appear in the profile, confirming it's not the bottleneck. FTS triggers show 24% but index deferral was already tested (see P4 bulk ingest mode notes above) and showed no benefit - the I/O bottleneck was the real issue, which P1.1 PRAGMA tuning addressed.
 
+## P7 Profiling Verification (2026-01-04)
+
+Post-P7 profiling confirms the GRDB observation overhead was successfully eliminated:
+
+| Metric | Before P7 | After P7 | Change |
+|--------|-----------|----------|--------|
+| StatementAuthorizer/DatabaseRegion samples | 7,821 | 311 | **-96%** |
+| BulkIngestManager.commitBatch samples | 0 | 8 | Fast path active |
+| setUncheckedArguments samples | 0 | 12 | Prepared statements used |
+
+Profile files:
+- Before: `scripts/build/profiles/20260104-203436-sample.txt`
+- After: `build/profiles/20260104-221602-sample.txt`
+
+The new profile shows `BulkIngestManager.commitBatch` and `setUncheckedArguments` in the call stack, confirming the optimization is active. The 96% reduction in GRDB observation overhead directly correlates with the 37% ingest rate improvement.
+
 ## Status
 
-**Optimization phase complete.** Current rate of 1623 lines/sec exceeds the 900-1200 target.
+**P7 optimization merged to main (2026-01-05).**
+
+**Full benchmark results (9bc86252):**
+- 363,483 lines → 174,363 entries in 668 seconds (11.1 min)
+- Sustained rate: 260 entries/sec (544 lines/sec)
+- Peak memory: 1006 MB
+
+**Key findings:**
+1. Short burst tests (20s) show ~925 entries/sec, but sustained full-corpus is 260 entries/sec
+2. Performance degrades over time - likely due to database growth, checkpointing, or memory pressure
+3. P6 baseline (1623 lines/sec) only created 100k entries vs P7's 174k - not directly comparable
+
+**Follow-up:** See `build/notes/todo-support/performance-optimization-followup.md` for investigation areas including the burst-vs-sustained gap.

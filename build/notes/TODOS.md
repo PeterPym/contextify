@@ -52,36 +52,6 @@ See tracking file for current branches in flight and review status.
 
 ---
 
-# P0 (Launch Critical)
-
----
-
-## Reduce/Eliminate AI Thinking Messages in Timeline (1 item)
-
-**Status:** Not started
-**Priority:** P0 (regression from side chain feature)
-**Discovered:** 2025-12-27
-
-- [ ] #THINKING-FILTER: Filter out AI thinking messages from timeline display
-
-**Background:**
-AI thinking messages (extended thinking blocks) used to be filtered out of the timeline.
-When side chains and agent messages were added, thinking messages were accidentally
-brought back into the timeline view. This creates noise and clutter.
-
-**Requirements:**
-1. Restore previous behavior: don't show individual thinking entries in main timeline
-2. Keep side chain messages visible (agent spawns, tool results, etc.)
-3. Thinking content can still appear within agent/side chain context if appropriate
-4. Main timeline should show user messages, assistant responses, and tool use - not thinking
-
-**Investigation needed:**
-- Find where thinking messages started appearing (side chain feature commits)
-- Identify the transcript record types being shown (thinking vs other)
-- Determine filtering logic needed in timeline data loading
-
----
-
 # P1 (High Priority)
 
 ---
@@ -145,42 +115,92 @@ Image rendering feature is functional but needs UI polish:
 
 ---
 
-## Performance Audit - Proactive Optimization (5 phases)
+## Performance Audit - Proactive Optimization (COMPLETED)
 
-**Status:** Phase 1 in progress (benchmark infrastructure created)
+**Status:** Core optimization complete (P1.1, P6, P7 merged)
 **Priority:** P1 (performance/stability)
 **Discovered:** 2026-01-02
+**Completed:** 2026-01-05
 
 - [x] #PERF-AUDIT-INFRA: Create benchmark infrastructure (scripts, metrics, comparison tools)
-- [ ] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
-- [ ] #PERF-AUDIT-PHASE2: Quick wins (index audit, cache tuning, debounce tuning)
-- [ ] #PERF-AUDIT-PHASE3: Architectural improvements (parallelization, streaming)
-- [ ] #PERF-AUDIT-PHASE4: Low-level optimizations (parser, hashing, memory)
-- [ ] #PERF-AUDIT-PHASE5: User communication (status bar progress, settings panel)
+- [x] #PERF-AUDIT-BASELINE: Run full benchmark and establish January 2026 baseline
+- [x] #PERF-AUDIT-PHASE2: Quick wins - P1.1 PRAGMA tuning (+200%), P6 preloaded entry IDs
+- [x] #PERF-AUDIT-PHASE3: P7 observation-free bulk ingest (+100% CLI, +8% real app)
+- [~] #PERF-AUDIT-PHASE4: Low-level optimizations - deferred (diminishing returns)
+- [~] #PERF-AUDIT-PHASE5: User communication - not needed (ingest now fast enough)
 
-**Background:**
-Following P0 fixes for UI lag during ingest (commit `2f447097`), this is a proactive, holistic performance optimization effort. Primary goal: initial ingest experience must never feel sluggish.
+**Results:**
+- Baseline (v1.0.7): 237 lines/sec
+- Final (P7): ~925 entries/sec (CLI), ~480 entries/sec (real app)
+- Total improvement: ~4x over baseline
 
-**Strategic value:** Linux engine shipping soon - optimizations to shared code (ContextifyCore) benefit both macOS and Linux (2-3x impact).
-
-**Phase 1 - Measurement & Baselines (current):**
-- Benchmark harness using production transcript corpus
-- Metrics: startup time, ingest rate, memory peak, query latency
-- Comparison tools for before/after validation
-
-**Key commands:**
-```bash
-./scripts/performance/run-perf-suite.sh --full    # Run full benchmark (~16 min)
-./scripts/performance/set-baseline.sh             # Mark as baseline
-./scripts/performance/compare.sh                  # Compare to baseline
-```
+**Key finding:** 48% performance gap between CLI and real-app modes due to UI/observer overhead.
 
 **Documentation:**
-- **Plan:** `build/notes/todo-support/PERF-AUDIT-plan.md` (5 phases, 430+ lines)
-- **Guide:** `build/docs/performance/benchmark-guide.md`
 - **History:** `build/docs/performance/benchmark-history.md`
-- **Architecture:** `build/docs/architecture/data-pipeline-architecture.md`
-- **Ingestion:** `build/docs/architecture/ingestion-workflow.md`
+- **Follow-up:** `build/notes/todo-support/performance-optimization-followup.md`
+
+---
+
+## Performance - Headless Ingest Engine
+
+**Status:** Not started
+**Priority:** P2 (performance/architecture)
+**Discovered:** 2026-01-05
+
+- [ ] #PERF-AUDIT-FOLLOWUP: Investigate headless ingest to close CLI vs real-app performance gap
+
+**Problem:**
+P7 optimization achieves ~925 entries/sec in CLI mode but only ~480 entries/sec in real app mode (48% overhead). This gap is due to UI/observer coupling, not the ingest implementation.
+
+**Proposed solution:**
+Separate ingest engine from UI via XPC service:
+- Ingest runs in background XPC process (no UI overhead)
+- UI app communicates via XPC for status/results
+- Both installed together from App Store (XPC bundled in .app)
+- Architecture aligns with Linux engine (also headless)
+
+**Benefits:**
+- Faster ingest (~2x improvement expected)
+- UI remains responsive during ingest
+- Shared architecture with Linux engine
+- Cleaner separation of concerns
+
+**Reference:** `build/notes/todo-support/performance-optimization-followup.md`
+
+---
+
+## First-Run Ingest Experience
+
+**Status:** Not started
+**Priority:** P2 (UX/delight)
+**Discovered:** 2026-01-05
+
+- [ ] #INGEST-EXPERIENCE: Create engaging visualization for initial transcript ingest
+
+**Problem:**
+First-run ingest takes ~11 minutes for a full corpus (174k entries). Currently there's minimal visual feedback - just a progress indicator. This is a missed opportunity to create a memorable first impression.
+
+**Inspiration:**
+Classic PC game installers (Command & Conquer, Westwood games) turned wait time into entertainment with:
+- Animated visuals that told a story
+- Interesting statistics/facts displayed during wait
+- Progress that felt meaningful, not just a bar filling
+
+**Proposed elements:**
+1. **Visual timeline building** - Show conversations appearing on a timeline as they're ingested
+2. **Live statistics** - "Processing conversation from 3 days ago...", entry counts, transcript counts
+3. **Project discovery** - Animate project cards appearing as they're found
+4. **Milestone celebrations** - "1,000 entries indexed!", "Found 50 projects!"
+5. **Estimated time remaining** - Based on current rate and corpus size
+6. **Fun facts** - "Your longest conversation was 2,847 messages" (calculated as we go)
+
+**Technical notes:**
+- Must not slow down ingest (UI updates should be batched/throttled)
+- Consider headless ingest (#PERF-AUDIT-FOLLOWUP) - UI would observe via IPC
+- Could reuse visualization for re-ingest or "catching up" scenarios
+
+**Reference:** Think Westwood Studios installers, not modern progress spinners.
 
 ---
 

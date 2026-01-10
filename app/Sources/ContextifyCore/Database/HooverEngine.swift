@@ -309,6 +309,8 @@ public final class HooverEngine {
   private let systemEventRepo: SystemEventRepository
   private let assistantUsageRepo: AssistantUsageRepository
   private let metadataParser: TranscriptMetadataParser
+  // Performance: Bulk ingest manager bypasses GRDB observation overhead
+  private let bulkIngestManager: BulkIngestManager?
 
   public init(
     db: DatabasePool,
@@ -322,7 +324,8 @@ public final class HooverEngine {
     transcriptSummaryRepo: TranscriptSummaryRepository,
     systemEventRepo: SystemEventRepository,
     assistantUsageRepo: AssistantUsageRepository,
-    metadataParser: TranscriptMetadataParser
+    metadataParser: TranscriptMetadataParser,
+    bulkIngestManager: BulkIngestManager? = nil
   ) {
     self.db = db
     self.transcriptRepo = transcriptRepo
@@ -336,6 +339,12 @@ public final class HooverEngine {
     self.systemEventRepo = systemEventRepo
     self.assistantUsageRepo = assistantUsageRepo
     self.metadataParser = metadataParser
+    // Check feature flag for bulk ingest (can be disabled via CONTEXTIFY_USE_BULK_INGEST=0)
+    let useBulkIngest = ProcessInfo.processInfo.environment["CONTEXTIFY_USE_BULK_INGEST"] != "0"
+    self.bulkIngestManager = useBulkIngest ? bulkIngestManager : nil
+    if bulkIngestManager != nil && !useBulkIngest {
+      log.info("[HOOVER] Bulk ingest disabled via CONTEXTIFY_USE_BULK_INGEST=0")
+    }
   }
 
   // MARK: - Project Resolution Cache (P0 fix: avoid per-entry DB lookups)
@@ -1222,6 +1231,23 @@ public final class HooverEngine {
     previousEntries: inout [String],
     preloadedEntryIds: inout Set<String>
   ) throws -> Int {
+    // Fast path: Use BulkIngestManager for high-volume entry/tool inserts
+    // This bypasses GRDB observation overhead (~25-40% improvement expected)
+    if let bulkManager = bulkIngestManager, !entries.isEmpty {
+      return try commitBatchFast(
+        bulkManager: bulkManager,
+        transcriptId: transcriptId,
+        entries: entries,
+        metadata: metadata,
+        errors: errors,
+        lastProcessedLine: lastProcessedLine,
+        lineCount: lineCount,
+        previousEntries: &previousEntries,
+        preloadedEntryIds: &preloadedEntryIds
+      )
+    }
+
+    // Standard path: Use GRDB pool with observation
     var insertedCount = 0
     let now = Int(Date().timeIntervalSince1970)
     try db.write { db in
@@ -1594,6 +1620,362 @@ public final class HooverEngine {
       // NOTE: Checkpoint UPDATE removed - now handled unconditionally in hooverTranscript()
       // This ensures checkpoint is persisted even when batch is empty (already-processed transcripts)
     }
+    return insertedCount
+  }
+
+  // MARK: - Fast Path (BulkIngestManager)
+
+  /// Fast path using BulkIngestManager for high-volume entry/tool inserts.
+  /// Bypasses GRDB observation overhead (StatementAuthorizer, DatabaseRegion).
+  /// Uses separate DatabaseQueue with prepared statements for maximum throughput.
+  ///
+  /// Strategy:
+  /// 1. Build TranscriptEntry and ToolInvocation models with window tracking
+  /// 2. Use BulkIngestManager for INSERTs (separate connection, no observation)
+  /// 3. Use standard db.write for UPDATEs, DELETEs, metadata (must be after INSERTs)
+  private func commitBatchFast(
+    bulkManager: BulkIngestManager,
+    transcriptId: String,
+    entries: [EntryInsert],
+    metadata: MetadataBatch,
+    errors: [(lineNumber: Int, rawLine: String, error: String)],
+    lastProcessedLine: Int,
+    lineCount: Int,
+    previousEntries: inout [String],
+    preloadedEntryIds: inout Set<String>
+  ) throws -> Int {
+    let now = Int(Date().timeIntervalSince1970)
+
+    // Phase 1: Build models with window tracking
+    var entryModels: [TranscriptEntry] = []
+    var toolModels: [ToolInvocation] = []
+
+    // Collect deferred UPDATE data (processed after INSERTs)
+    var deferredToolResults: [(toolUseId: String, entryId: String, agentId: String?, timestamp: Int, status: String?)] = []
+    var deferredSidechainLinks: [(agentId: String, transcriptId: String)] = []
+    var sidechainAgentIds: Set<String> = []
+
+    for entry in entries {
+      // Compute window from previous 2 entries (same logic as standard path)
+      let prev1 = previousEntries.last
+      let prev2 = previousEntries.count >= 2 ? previousEntries[previousEntries.count - 2] : nil
+      let windowSha = SHA256Utils.computeWindowSHA256(prev2: prev2, prev1: prev1)
+
+      var model = entry.toModel()
+      model.prev1Id = prev1
+      model.prev2Id = prev2
+      model.windowSha256 = windowSha
+
+      // P6: Parent validation using preloaded entry IDs
+      if let parentId = model.parentId {
+        if !preloadedEntryIds.contains(parentId) {
+          if MonitorConfig.enableHooverStorageTracing {
+            log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
+          }
+          model.parentId = nil
+        }
+      }
+
+      entryModels.append(model)
+
+      // Update tracking for next entry's window computation
+      // Note: We optimistically add to previousEntries even for potential duplicates.
+      // This is acceptable because: (a) duplicates are rare in normal operation,
+      // (b) window tracking only affects timeline cache keys, not data integrity.
+      previousEntries.append(entry.id)
+      if previousEntries.count > 2 {
+        previousEntries.removeFirst()
+      }
+      preloadedEntryIds.insert(model.id)
+
+      // Build tool invocations
+      for invocation in entry.toolInvocations {
+        let startedAt = invocation.startedAt.map { Int($0.timeIntervalSince1970) }
+        let tool = ToolInvocation(
+          id: "\(entry.id)-\(invocation.toolUseId ?? UUID().uuidString)",
+          entryId: entry.id,
+          transcriptId: transcriptId,
+          parentInvocationId: nil,
+          toolName: invocation.toolName,
+          toolKey: invocation.toolKey,
+          toolUseId: invocation.toolUseId,
+          toolResultEntryId: nil,
+          sidechainTranscriptId: nil,
+          sidechainAgentId: nil,
+          startedAt: startedAt,
+          completedAt: nil,
+          status: "unknown",
+          isContextify: invocation.isContextify ? 1 : 0,
+          metadataJson: invocation.metadataJson,
+          createdAt: now,
+          updatedAt: now
+        )
+        toolModels.append(tool)
+      }
+
+      // Collect deferred UPDATE data
+      for result in entry.toolResultData {
+        guard let toolUseId = result.toolUseId else { continue }
+        deferredToolResults.append((
+          toolUseId: toolUseId,
+          entryId: result.entryId,
+          agentId: result.agentId,
+          timestamp: Int(result.timestamp.timeIntervalSince1970),
+          status: result.status
+        ))
+        if let agentId = result.agentId {
+          sidechainAgentIds.insert(agentId)
+        }
+      }
+
+      if entry.isSidechain, let agentId = entry.agentId {
+        deferredSidechainLinks.append((agentId: agentId, transcriptId: transcriptId))
+      }
+    }
+
+    // Phase 2: Bulk INSERT entries and tools (fast path)
+    let insertedCount = try bulkManager.commitBatch(
+      entries: entryModels,
+      toolInvocations: toolModels
+    )
+
+    // Phase 3: Standard db.write for UPDATEs, DELETEs, metadata
+    // These must run AFTER INSERTs for FK integrity
+    try db.write { db in
+      // Batch UPDATE tool invocations with tool_result data
+      for result in deferredToolResults {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET tool_result_entry_id = ?,
+              sidechain_agent_id = ?,
+              completed_at = ?,
+              status = COALESCE(?, status),
+              updated_at = ?
+          WHERE tool_use_id = ? AND transcript_id = ?
+        """, arguments: [
+          result.entryId,
+          result.agentId,
+          result.timestamp,
+          result.status,
+          now,
+          result.toolUseId,
+          transcriptId
+        ])
+      }
+
+      // Deduped sidechain transcript linking
+      for agentId in sidechainAgentIds {
+        let sidechainTranscriptId = "agent-\(agentId)"
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND sidechain_transcript_id IS NULL
+            AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
+        """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+      }
+
+      // Sidechain transcript links for sidechain entries
+      for link in deferredSidechainLinks {
+        try db.execute(sql: """
+          UPDATE tool_invocations
+          SET sidechain_transcript_id = ?,
+              updated_at = ?
+          WHERE sidechain_agent_id = ?
+            AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
+        """, arguments: [link.transcriptId, now, link.agentId, link.transcriptId])
+      }
+
+      // Queue cleanup: Delete synthetic queue entries when real message appears
+      for entry in entries where entry.kind == "user" && !entry.id.hasPrefix("queue-") {
+        try db.execute(sql: """
+          DELETE FROM transcript_entries
+          WHERE transcript_id = ?
+            AND content_sha256 = ?
+            AND id LIKE 'queue-%'
+            AND is_queued = 1
+        """, arguments: [transcriptId, entry.contentSha256])
+
+        let deletedCount = db.changesCount
+        if deletedCount > 0 {
+          log.debug("[QUEUE-HEURISTIC] Deleted \(deletedCount) synthetic queue entry (real message appeared) content_sha256=\(entry.contentSha256.prefix(8))")
+        }
+      }
+
+      // v7: Insert metadata (less frequent than entries, standard path is fine)
+      for snapshot in metadata.fileSnapshots {
+        try snapshot.insert(db, onConflict: .ignore)
+      }
+      for file in metadata.trackedFiles {
+        try file.insert(db, onConflict: .ignore)
+      }
+      for summary in metadata.transcriptSummaries {
+        try summary.insert(db, onConflict: .ignore)
+      }
+      for event in metadata.systemEvents {
+        try event.insert(db, onConflict: .ignore)
+      }
+
+      // FK-safe usage insert
+      for usage in metadata.assistantUsages {
+        let normalizedRequestId: String = {
+          let trimmed = usage.requestId.trimmingCharacters(in: .whitespacesAndNewlines)
+          return trimmed.isEmpty ? usage.entryId : trimmed
+        }()
+
+        let stmt = try db.makeStatement(sql: """
+          WITH entry_check AS (SELECT 1 FROM transcript_entries WHERE id = ? LIMIT 1)
+          INSERT OR IGNORE INTO assistant_usage (
+            entry_id, request_id, model, input_tokens, output_tokens,
+            cache_creation_tokens, cache_read_tokens, service_tier,
+            ephemeral_5m_tokens, ephemeral_1h_tokens
+          )
+          SELECT ?,?,?,?,?,?,?,?,?,? FROM entry_check
+          RETURNING entry_id;
+          """)
+        try stmt.execute(arguments: [
+          usage.entryId,
+          usage.entryId, normalizedRequestId, usage.model,
+          usage.inputTokens, usage.outputTokens,
+          usage.cacheCreationTokens, usage.cacheReadTokens,
+          usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
+        ])
+
+        let inserted = db.changesCount > 0
+        if !inserted {
+          try db.execute(sql: """
+            INSERT OR REPLACE INTO assistant_usage_pending (
+              entry_id, request_id, model, input_tokens, output_tokens,
+              cache_creation_tokens, cache_read_tokens, service_tier,
+              ephemeral_5m_tokens, ephemeral_1h_tokens
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            """,
+            arguments: [
+              usage.entryId, normalizedRequestId, usage.model,
+              usage.inputTokens, usage.outputTokens,
+              usage.cacheCreationTokens, usage.cacheReadTokens,
+              usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
+            ]
+          )
+          if MonitorConfig.enableHooverStorageTracing {
+            log.debug("Staged usage for entry \(usage.entryId) (entry not yet present)")
+          }
+        }
+      }
+
+      // Queue operations
+      if !metadata.queueOperations.isEmpty {
+        for op in metadata.queueOperations {
+          guard !op.sessionId.isEmpty else {
+            log.warning("[QUEUE-OP] Skipping queue operation with empty sessionId for transcript \(op.transcriptId)")
+            continue
+          }
+
+          switch op.kind {
+          case .dequeue, .popAll:
+            try db.execute(sql: """
+              UPDATE transcript_entries
+              SET is_queued = 0
+              WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
+            """, arguments: [op.transcriptId, op.sessionId])
+
+            let changes = db.changesCount
+            let elapsed = Date().timeIntervalSince(op.timestamp)
+            log.info("[QUEUE-OP-CLEAR] \(op.kind.rawValue) cleared \(changes) entries after \(String(format: "%.1f", elapsed))s transcript=\(op.transcriptId.prefix(8))")
+
+          case .remove:
+            try db.execute(sql: """
+              UPDATE transcript_entries
+              SET is_queued = 0
+              WHERE id = (
+                SELECT id FROM transcript_entries
+                WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
+                ORDER BY timestamp ASC
+                LIMIT 1
+              )
+            """, arguments: [op.transcriptId, op.sessionId])
+
+            let changes = db.changesCount
+            let elapsed = Date().timeIntervalSince(op.timestamp)
+            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes) entries (FIFO) after \(String(format: "%.1f", elapsed))s transcript=\(op.transcriptId.prefix(8))")
+          }
+        }
+
+        // Notify UI to refresh entries after queue operations
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        if !metadata.queueOperations.isEmpty {
+          let projectId = try String.fetchOne(db, sql: "SELECT project_id FROM transcripts WHERE id = ?", arguments: [transcriptId])
+          if let projectId {
+            DispatchQueue.main.async {
+              NotificationCenter.default.post(
+                name: Notification.Name("QueueOperationsProcessed"),
+                object: nil,
+                userInfo: ["projectId": projectId, "transcriptId": transcriptId]
+              )
+            }
+          }
+        }
+        #endif
+      }
+
+      // Insert errors
+      if !errors.isEmpty {
+        let stmt = try db.makeStatement(sql: """
+          INSERT INTO parse_errors (id, transcript_id, line_number, raw_line, error_message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        """)
+        for error in errors {
+          let truncated = String(error.rawLine.prefix(MonitorConfig.parseErrorMaxChars))
+          try stmt.execute(arguments: [
+            UUID().uuidString,
+            transcriptId,
+            error.lineNumber,
+            truncated,
+            error.error,
+            now
+          ])
+        }
+      }
+
+      // Prune old errors
+      try db.execute(sql: """
+        DELETE FROM parse_errors
+        WHERE id IN (
+          SELECT id FROM parse_errors
+          WHERE transcript_id = ?
+          ORDER BY created_at DESC
+          LIMIT -1 OFFSET ?
+        )
+      """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
+
+      // Reconcile assistant_usage_pending
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO assistant_usage (
+          entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens, service_tier,
+          ephemeral_5m_tokens, ephemeral_1h_tokens
+        )
+        SELECT
+          p.entry_id,
+          COALESCE(NULLIF(p.request_id, ''), p.entry_id) AS request_id,
+          p.model, p.input_tokens, p.output_tokens,
+          p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
+          p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
+        FROM assistant_usage_pending p
+        INNER JOIN transcript_entries e ON e.id = p.entry_id
+      """)
+
+      try db.execute(sql: """
+        DELETE FROM assistant_usage_pending
+        WHERE EXISTS (
+          SELECT 1 FROM assistant_usage au
+          WHERE au.entry_id = assistant_usage_pending.entry_id
+            AND au.request_id = COALESCE(NULLIF(assistant_usage_pending.request_id, ''), assistant_usage_pending.entry_id)
+        )
+      """)
+    }
+
     return insertedCount
   }
 }
