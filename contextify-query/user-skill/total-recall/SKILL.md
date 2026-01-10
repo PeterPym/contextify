@@ -27,6 +27,7 @@ Then provide the search results with citations.
 ## Preconditions
 
 This skill requires the Contextify app and CLI.
+It works with Claude Code and Codex CLI.
 
 1) Check CLI availability:
 
