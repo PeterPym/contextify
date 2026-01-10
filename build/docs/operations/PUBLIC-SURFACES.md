@@ -330,7 +330,37 @@ Hashes MUST match. If they don't, the wrong file was uploaded.
 
 ---
 
-### 12. Blog
+### 12. Hacker News Engagement
+
+**Purpose:** Community engagement via comments on relevant threads. Not Show HN launches (see `build/marketing/launch/show-hn/`), but organic participation in discussions.
+
+**Guidance:** `build/marketing/launch/show-hn/technical-notes/03-show-hn-talking-points.md`
+
+**Successful posts:** `build/marketing/launch/show-hn/examples/`
+
+**Key principles (from talking points doc):**
+- Informative, not promotional
+- Lead with technical depth or unique insight
+- Link to product naturally, not as the point
+- First-person, understated tone
+- Concrete numbers and specifics
+
+**Successful Examples:**
+
+**2026-01-09: "How to code Claude Code in 200 lines of code"**
+- Result: 19 points, generated discussion, drove traffic
+- Post demonstrated: Led with technical insight, concrete details, natural product mention
+- Full post archived in: `build/marketing/launch/show-hn/examples/2026-01-09-200-lines-comment.md`
+
+**2025-12-15: "Ask HN: What Are You Working On?"**
+- Thread: https://news.ycombinator.com/item?id=46266705
+- Result: Generated B2B lead (Noah Zoschke / nzoschke)
+- Outcome: First explicit request for hosted team version, led to email follow-up
+- Key insight: "A central service. Hosted, secure, frontier model is fine... maybe it starts local with an app like yours anyway."
+
+---
+
+### 13. Blog
 
 **URL:** https://contextify.sh/blog/
 

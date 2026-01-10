@@ -6,6 +6,7 @@ Documentation for Contextify business operations, investor relations, and fundra
 
 ```
 business/
+├── contacts/                  # Key contacts (investors, legal, consultants)
 ├── investor-communications/   # Correspondence with investors/VCs
 ├── fundraising/               # Pitch decks, term sheets, etc. (future)
 └── financials/                # Financial projections, runway (future)
@@ -18,8 +19,12 @@ business/
 
 ## Key Contacts
 
+### Investors
 - **Tim Draper** - Draper Associates (existing investor in Perch Innovations)
 - **Adam Draper** - Boost VC
+
+### Legal / Consultants
+- **Kyle E. Mitchell** - California attorney specializing in software licensing, sales contracts, ToS, open source strategy. Intro via Chris. See `contacts/kyle-mitchell.md`
 
 ## Notes
 

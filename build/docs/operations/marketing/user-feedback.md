@@ -34,10 +34,23 @@ Track notable user feedback, feature requests, and interactions.
 
 ## Noah Zoschke (noah@housecat.com)
 
-**Source:** Email
-**First Contact:** 2025-12-26
+**Source:** HN, then Email
+**HN Username:** nzoschke
+**First Contact:** 2025-12-15 (HN), 2025-12-26 (email)
 
-### 2025-12-26: Initial email - Sequoia support, schema questions
+### 2025-12-15: HN thread - Team/hosted version request
+
+**Thread:** https://news.ycombinator.com/item?id=46266705 (Ask HN: What Are You Working On?)
+
+**Feedback:**
+- "For my small software shop I'd like a team version of this"
+- Wants: collect prompts/chats from all devs, store in cloud, summarize into feed/digest
+- "A central service. Hosted, secure, frontier model is fine."
+- But also: "maybe it starts local with an app like yours anyway. I do a lot of solo hacking I don't want to share with the team too. Then there is some sort of way to push up subsets of data."
+
+**Impact:** First explicit request for hosted/SaaS team version. Suggests hybrid model: local-first with selective cloud sync.
+
+### 2025-12-26: Email follow-up - Sequoia support, schema questions
 
 **Context:** Got Contextify running from DMG on Sequoia, had questions about workflow
 
