@@ -26,7 +26,16 @@ These cause real problems when violated:
 9. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
    - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
    - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
-10. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat.
+10. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
+    ```yaml
+    ---
+    branch: feature/example
+    worktree: /Users/rob/code/projects/contextify-wb1
+    repo: banagale/contextify
+    date: 2026-01-10
+    status: draft|in-progress|ready-for-review|ready-for-merge
+    ---
+    ```
 
 ---
 
