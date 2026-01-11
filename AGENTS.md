@@ -135,13 +135,21 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 **Apple Developer docs:** When you need to reference Apple documentation, fetch the Markdown version via `https://sosumi.ai/documentation/...` (same path as the Apple URL) and use that copy for reading or testing.
 
+**Architecture docs are essential context.** Before working on any major subsystem, read the relevant architecture document in `build/docs/architecture/`. These documents explain:
+- Why the system is designed this way
+- Component interactions and data flow
+- Failure modes and edge cases
+- Code locations for key operations
+
+Skipping architecture docs leads to incomplete implementations and repeated mistakes.
+
 **Before starting work, read the relevant documentation:**
 
 **Database work:**
 - `build/docs/architecture/sql-backend.md` - Schema, migrations, repositories
 - `build/docs/architecture/COMPONENTS.md` - Database layer components
 - `build/docs/operations/DATABASE-LOCATIONS.md` - Custom locations, discovery
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v32)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v33)
 
 **LLM/Timeline work:**
 - `build/docs/architecture/llm-processing.md` - LLM queue architecture (start here)
@@ -164,12 +172,18 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - **Rule:** All FileManager ops must use `accessProvider.withAccess()`
 
 **CLI tool work (contextify-query):**
-- `build/docs/specifications/total-recall-codex-support.md` - **Reference implementation** for CLI skill/plugin changes
+- `build/docs/architecture/cli-tool-architecture.md` - **START HERE** for CLI work
+  - Component model (shim, cache, manifest, skills, agents)
+  - Platform support matrix and how to add new platforms
+  - State detection logic and failure modes
+  - Code location reference for all CLI operations
+- `build/docs/specifications/total-recall-codex-support.md` - Deep dive on Codex integration
   - Validation proof requirements (what proof to capture)
   - Codex CLI integration testing patterns
   - Success criteria and proof document format
 - `build/docs/guides/cli-installation.md` - User-facing installation guide
 - `Sources/ContextifyQueryCLI/main.swift` - CLI implementation
+- `Contextify/Contextify/CLICoordinator.swift` - App-side state detection and installation
 - **Rule:** CLI changes require actual tool invocation proof, not just file existence checks
 
 **Build/CI/Release:**
