@@ -200,6 +200,18 @@ public final class CLICoordinator: ObservableObject {
       return
     }
 
+    // Update v2 manifest in case it was missing
+    // (install-plugin only writes v1 manifest)
+    let version = readBundledVersion()
+    let pluginPath = pluginCachePath()
+    do {
+      try updatePluginManifest(version: version, pluginPath: pluginPath)
+      log.info("[CLI-REPAIR] Updated v2 manifest")
+    } catch {
+      log.warning("[CLI-REPAIR] Failed to update manifest: \(error.localizedDescription)")
+      // Non-fatal: skills are installed, user can still use CLI
+    }
+
     refreshState(force: true)
     log.info("[CLI-REPAIR-COMPLETE]")
   }
