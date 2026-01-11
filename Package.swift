@@ -172,6 +172,23 @@ let targets: [Target] = [
 ]
 #endif
 
+// Platform-conditional dependencies
+// swift-syntax is only used by tests (macOS only)
+#if os(macOS)
+let packageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+  .package(url: "https://github.com/apple/swift-syntax.git", from: "510.0.0"),
+  .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+  .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
+]
+#else
+let packageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+  .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+  .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
+]
+#endif
+
 let package = Package(
   name: "ContextifySPM",
   // NOTE: platforms stanza only affects Apple platforms. Linux builds are unaffected.
@@ -180,11 +197,6 @@ let package = Package(
     .macOS(.v14)
   ],
   products: products,
-  dependencies: [
-    .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
-    .package(url: "https://github.com/apple/swift-syntax.git", from: "510.0.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
-    .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
-  ],
+  dependencies: packageDependencies,
   targets: targets
 )
