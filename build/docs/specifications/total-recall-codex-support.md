@@ -485,7 +485,7 @@ Automated validation uses headless CLI execution to verify skill installation an
 | Claude Code | `-p` (print mode) | `--dangerously-skip-permissions` |
 | Codex CLI | `codex exec` | `--dangerously-bypass-approvals-and-sandbox` |
 
-**Note:** Codex skills are gated behind `--enable-skills` flag.
+**Note:** Codex skills are loaded automatically from `~/.codex/skills/`. No feature flag required.
 
 ### State Clearing (Pre-Validation)
 
@@ -709,10 +709,10 @@ fi
 
 # === TEST: Codex skill discovery (headless) ===
 # Uses `codex exec` with --dangerously-bypass-approvals-and-sandbox for non-interactive
-# Skills require --enable-skills flag (feature is currently gated)
+# Skills are loaded automatically from ~/.codex/skills/
 # See: appstore-metadata/review-materials/generate-transcripts.sh
 echo "Testing Codex skill discovery..."
-CODEX_DISCOVERY=$(codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox "List all available skills. Output as a JSON array of skill names." 2>/dev/null || echo "CODEX_NOT_AVAILABLE")
+CODEX_DISCOVERY=$(codex exec --dangerously-bypass-approvals-and-sandbox "List all available skills. Output as a JSON array of skill names." 2>/dev/null || echo "CODEX_NOT_AVAILABLE")
 
 if echo "$CODEX_DISCOVERY" | grep -qi "total-recall"; then
   pass "Codex CLI discovers total-recall skill"
@@ -750,7 +750,7 @@ fi
 
 # === TEST: Codex skill execution (headless) ===
 echo "Testing Codex skill execution..."
-CODEX_EXEC=$(cd /tmp && codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \
+CODEX_EXEC=$(cd /tmp && codex exec --dangerously-bypass-approvals-and-sandbox \
   "Use /total-recall to search for 'test query validation'. Report what happened." 2>/dev/null || echo "CODEX_NOT_AVAILABLE")
 
 if echo "$CODEX_EXEC" | grep -qiE "(Contextify|Total Recall|search|found|no results|database)"; then
@@ -1178,6 +1178,155 @@ The implementation is successful when:
 
 ---
 
+## Validation Proof Requirements
+
+**IMPORTANT:** Validation is not complete until proof is captured and documented. File checks alone are insufficient - the actual CLI tools must be invoked to verify end-to-end functionality.
+
+### Required Proof Artifacts
+
+All validation runs MUST produce a proof document (`/tmp/codex-skill-validation-proof.md`) containing:
+
+#### 1. Build Validation
+```bash
+bash scripts/xc.sh build 2>&1 | tail -10
+# Expected: "** BUILD SUCCEEDED **" with 0 warnings
+```
+
+#### 2. Test Suite
+```bash
+swift test 2>&1 | tail -20
+# Expected: "Executed N tests, with 0 failures"
+```
+
+#### 3. File Installation Checks
+```bash
+# Install
+contextify-query install-plugin
+# Expected: Exit code 0, success message
+
+# Claude skill exists
+ls -la ~/.claude/skills/total-recall/
+# Expected: SKILL.md file listed
+
+# Codex skill exists
+ls -la ~/.codex/skills/total-recall/
+# Expected: SKILL.md file listed
+
+# Codex skill is NOT a symlink
+file ~/.codex/skills/total-recall/SKILL.md
+# Expected: "Unicode text" or "ASCII text", NOT "symbolic link"
+
+# Content matches
+md5 -q ~/.claude/skills/total-recall/SKILL.md
+md5 -q ~/.codex/skills/total-recall/SKILL.md
+# Expected: Identical hashes
+```
+
+#### 4. Codex CLI Integration Test (CRITICAL)
+
+**This is the key validation step that proves the skill actually works in Codex.**
+
+```bash
+# Test 1: Skill Discovery
+codex exec --dangerously-bypass-approvals-and-sandbox \
+  "What skills do you have available? List them."
+
+# Expected output must include:
+# - "total-recall" in the skill list
+# Example:
+#   Available skills:
+#   - total-recall  ← REQUIRED
+#   - crawl
+#   - ...
+```
+
+```bash
+# Test 2: Skill Execution
+codex exec --dangerously-bypass-approvals-and-sandbox \
+  "Use /total-recall to search for 'test query'. Report what you found."
+
+# Expected output must show:
+# 1. Codex reading the SKILL.md file
+# 2. Codex executing contextify-query commands
+# 3. Search results or "no results" message
+# Example:
+#   exec: cat /Users/.../.codex/skills/total-recall/SKILL.md succeeded
+#   exec: contextify-query search "test query" ... succeeded
+#   **Contextify Total Recall**
+#   Count: N results found
+```
+
+**Why this matters:** If the SKILL.md were a symlink (which Codex ignores), or if the file format were wrong, these tests would fail. File existence checks alone cannot catch these issues.
+
+#### 5. Uninstall Verification
+```bash
+contextify-query uninstall-plugin
+# Expected: Exit code 0
+
+ls ~/.claude/skills/total-recall 2>&1
+ls ~/.codex/skills/total-recall 2>&1
+# Expected: Both "No such file or directory"
+```
+
+### Proof Document Format
+
+The validation proof document MUST include:
+
+```yaml
+---
+branch: <branch-name>
+worktree: <worktree-path>
+repo: <repo-name>
+date: <YYYY-MM-DD>
+generated: <ISO-8601 timestamp>
+---
+```
+
+Followed by sections with **actual command output** (not just "PASS/FAIL"):
+
+1. Build Validation (with output)
+2. Test Suite (with summary line)
+3. Functional Validation (with each command's output)
+4. Codex CLI Integration Test (with discovery and execution output)
+5. Git State (branch, commit, clean status)
+6. Summary table
+
+### Example Proof (Codex Integration Section)
+
+```markdown
+## 5. Codex CLI Integration Test
+
+### 5.1 Skill Discovery
+codex exec --dangerously-bypass-approvals-and-sandbox "What skills do you have available?"
+
+Result: Codex listed available skills including:
+- total-recall  ← OUR SKILL
+- crawl
+- implementing-autonomously
+...
+
+### 5.2 Skill Invocation
+codex exec --dangerously-bypass-approvals-and-sandbox "Use /total-recall to search for 'Codex'"
+
+Codex actions:
+1. Read skill file: cat /Users/rob/.codex/skills/total-recall/SKILL.md
+2. Executed: contextify-query status --json
+3. Executed: contextify-query search "Codex" --project . --days 30
+
+Result: **Contextify Total Recall**
+Count: 1568 occurrences of "Codex" across the full database
+
+### 5.3 Proof Points
+- [x] Codex discovered total-recall skill from ~/.codex/skills/
+- [x] Codex read SKILL.md (not a symlink - would fail if symlink)
+- [x] Codex executed contextify-query commands successfully
+- [x] Search returned actual results from database
+
+**PASS: Codex CLI integration fully functional**
+```
+
+---
+
 ## API/CLI Interface Changes
 
 ### Changed Commands
@@ -1344,7 +1493,7 @@ The SKILL.md contains a "Delegating to researcher agent" section that only works
 ```bash
 # === TEST: Delegation section gracefully ignored ===
 echo "Testing delegation gracefully ignored in Codex..."
-CODEX_DELEG=$(cd /tmp && codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \
+CODEX_DELEG=$(cd /tmp && codex exec --dangerously-bypass-approvals-and-sandbox \
   "Use the contextify-researcher agent to search for 'test'. Report what happened - did an agent spawn?" 2>&1 || echo "CODEX_NOT_AVAILABLE")
 
 if echo "$CODEX_DELEG" | grep -qiE "(error|failed|not found|cannot spawn)"; then
