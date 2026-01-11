@@ -1,6 +1,6 @@
 # CLI Installation Guide
 
-The `contextify-query` CLI enables Contextify skills in Claude Code, providing deterministic search and context reinjection capabilities.
+The `contextify-query` CLI enables Contextify skills in Claude Code and Codex CLI, providing deterministic search and context reinjection capabilities.
 
 ## Installation by Build Type
 
@@ -28,12 +28,12 @@ contextify-query status
    brew install PeterPym/contextify/contextify-query
    ```
 
-2. Install the Claude Code plugin:
+2. Install the Total Recall skill:
    ```bash
    contextify-query install-plugin
    ```
 
-3. Restart Claude Code
+3. Restart Claude Code or Codex CLI
 
 4. Verify installation:
    ```bash
@@ -67,10 +67,10 @@ contextify-query context <uuid>
 ### Plugin Commands
 
 ```bash
-# Install/update Claude Code plugin
+# Install/update Total Recall skill for Claude Code and Codex CLI
 contextify-query install-plugin
 
-# Remove Claude Code plugin
+# Remove Total Recall skill from Claude Code and Codex CLI
 contextify-query uninstall-plugin
 ```
 
@@ -106,10 +106,20 @@ The Total Recall user skill is installed to:
 ~/.claude/skills/total-recall/
 ```
 
+The Codex CLI skill is installed to:
+```
+~/.codex/skills/total-recall/
+```
+
 Plugin registration is stored in:
 ```
 ~/.claude/plugins/installed_plugins.json
 ```
+
+## Codex CLI Notes
+
+- Codex CLI requires `--enable-skills` to load skills.
+- The `contextify-researcher` agent is only available in Claude Code (Codex has no Task tool).
 
 ## App Store Permission Requirements
 
@@ -216,6 +226,15 @@ contextify-query install-plugin  # Re-run to update plugin
 │   - /total-recall: Search past conversations & decisions    │
 │ Plugin provides background agents and session hooks         │
 │ Skills call contextify-query CLI for database access        │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    Codex CLI Integration                     │
+├─────────────────────────────────────────────────────────────┤
+│ User skill (discoverable):                                   │
+│   - /total-recall: Search past conversations & decisions    │
+│ Skill runs contextify-query CLI for database access         │
+│ No agent delegation (Codex lacks Task tool)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 

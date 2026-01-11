@@ -144,13 +144,21 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 **Apple Developer docs:** When you need to reference Apple documentation, fetch the Markdown version via `https://sosumi.ai/documentation/...` (same path as the Apple URL) and use that copy for reading or testing.
 
+**Architecture docs are essential context.** Before working on any major subsystem, read the relevant architecture document in `build/docs/architecture/`. These documents explain:
+- Why the system is designed this way
+- Component interactions and data flow
+- Failure modes and edge cases
+- Code locations for key operations
+
+Skipping architecture docs leads to incomplete implementations and repeated mistakes.
+
 **Before starting work, read the relevant documentation:**
 
 **Database work:**
 - `build/docs/architecture/sql-backend.md` - Schema, migrations, repositories
 - `build/docs/architecture/COMPONENTS.md` - Database layer components
 - `build/docs/operations/DATABASE-LOCATIONS.md` - Custom locations, discovery
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v32)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v33)
 
 **LLM/Timeline work:**
 - `build/docs/architecture/llm-processing.md` - LLM queue architecture (start here)
@@ -172,6 +180,21 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/docs/architecture/transcript-access-security.md` - Security-scoped access
 - **Rule:** All FileManager ops must use `accessProvider.withAccess()`
 
+**CLI tool work (contextify-query):**
+- `build/docs/architecture/cli-tool-architecture.md` - **START HERE** for CLI work
+  - Component model (shim, cache, manifest, skills, agents)
+  - Platform support matrix and how to add new platforms
+  - State detection logic and failure modes
+  - Code location reference for all CLI operations
+- `build/docs/specifications/total-recall-codex-support.md` - Deep dive on Codex integration
+  - Validation proof requirements (what proof to capture)
+  - Codex CLI integration testing patterns
+  - Success criteria and proof document format
+- `build/docs/guides/cli-installation.md` - User-facing installation guide
+- `Sources/ContextifyQueryCLI/main.swift` - CLI implementation
+- `Contextify/Contextify/CLICoordinator.swift` - App-side state detection and installation
+- **Rule:** CLI changes require actual tool invocation proof, not just file existence checks
+
 **Build/CI/Release:**
 - `build/docs/guides/DEVELOPMENT.md` - Complete build commands
 - `build/docs/guides/linux-ci-builds.md` - GitHub Actions workflow
@@ -184,21 +207,9 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 **Design/Website work:**
 - `build/design/README.md` - **START HERE** for design work
 - `build/design/brand/colors.md` - Canonical color tokens (website CSS must stay in sync)
-- `build/design/website/specimens/website-comparator.html` - Interactive design tool
+
 **Assets:**
-- `build/assets/` - **START HERE** for any visual asset
-- `build/assets/MANIFEST.yaml` - Structured metadata (query by keywords, version, purpose)
-- `build/assets/README.md` - Human-readable index
-
-Browsable via symlinks:
-- `build/assets/website/` → Website images
-- `build/assets/appstore/` → App Store screenshots
-
-Real files:
-- `build/assets/promotional/v{VERSION}/` → Social/docs screenshots
-- `build/assets/video/` → Demo videos
-- `build/assets/dmg/` → DMG build assets
-- `build/design/brand/` → Colors, logo, provider icons
+- `build/assets/README.md` - **START HERE** for any visual asset
 
 ## UI Testing Gaps
 
@@ -296,103 +307,25 @@ Use the hybrid model (optimistic for user-visible changes, database-driven for b
 
 ## Releases
 
-**Strategy:** DMG leads, App Store follows. Both built from same commit. DMG ships immediately; App Store ships after Apple review (24-48h).
+Three channels, same commit, same version:
 
-**Release Management System:** `releases/` directory at repo root
-- `releases/WORKFLOW.md` - LLM-guided release workflow (start here)
-- `releases/config.json` - Release configuration
-- `releases/manifest.json` - Release history and current state
-- `releases/v{X.Y.Z}/` - Per-release directories with checklists, state, artifacts
+| Channel | Distribution | Ships |
+|---------|--------------|-------|
+| DMG | GitHub releases (+ Sparkle updates) | Immediately |
+| App Store | App Store | After Apple review |
+| Linux CLI | GitHub releases | With DMG |
 
-**Two distribution channels:**
+Marketing waits for App Store approval.
 
-| Channel | Target | Updates | Build Flag |
-|---------|-----------|---------|------------|
-| **DMG** | Contextify | Sparkle auto-updates | `--dist=dmg` |
-| **App Store** | Contextify AppStore | Apple updates | `--dist=appstore` |
+**Start here:** `releases/WORKFLOW.md`
 
-### Quick Commands
-
+**Quick commands:**
 ```bash
-# Session context (run when starting release work)
-./scripts/release/context.sh              # Shows active release, targets, next action
-
-# Initialize release (must specify target channels)
-./scripts/release/init.sh X.Y.Z --dmg     # DMG-only release
-./scripts/release/init.sh X.Y.Z --appstore # App Store-only release
-./scripts/release/init.sh X.Y.Z --both    # Both channels
-./scripts/release/init.sh X.Y.Z --reset   # Reset for new build (preserves targets)
-
-# Build (auto-skips non-targeted channels)
-./scripts/release/build.sh X.Y.Z
-
-# Check status
-./scripts/release/status.sh               # All releases summary
-./scripts/release/status.sh X.Y.Z         # Specific version (shows next steps)
-./scripts/release/status.sh --shipped     # What's in production?
-./scripts/release/status.sh --active      # What needs work?
-
-# Upload to App Store
-bash scripts/xc.sh upload
-
-# Record App Store submission
-./scripts/release/mark-submitted.sh X.Y.Z --build 5
-
-# If rejected by Apple
-./scripts/release/mark-rejected.sh X.Y.Z --interactive
-
-# Mark as shipped (has guards - use --force to bypass)
-./scripts/release/mark-shipped.sh X.Y.Z --dmg
-./scripts/release/mark-shipped.sh X.Y.Z --appstore --build 5
-
-# Check state consistency
-./scripts/release/check-consistency.sh
+./scripts/release/status.sh --active  # What needs work?
+./scripts/release/init.sh X.Y.Z --all # Start new release
 ```
 
-### Build Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/xc.sh` | Development builds, Xcode operations |
-| `scripts/build-release.sh` | Release builds (DMG + App Store) |
-| `scripts/release/build.sh` | Release workflow build (with tracking) |
-
-**Full command reference:** See `releases/WORKFLOW.md`
-
-### Pre-Release Validation
-
-```bash
-./scripts/release/validate-pre-release.sh X.Y.Z
-```
-
-Or manually:
-1. P0 blockers resolved: `grep "P0" TODOS.md`
-2. Tests pass: `swift test`
-3. Build clean: `bash scripts/xc.sh build` (zero warnings)
-4. Working directory clean: `git status`
-
-### Changelog Generation
-
-Release notes are generated via LLM analysis of git history:
-
-```bash
-./scripts/release/generate-release-notes.sh X.Y.Z
-```
-
-**Key points:**
-- Scoped to app code only (see `releases/config/app-paths.txt`)
-- Generates `releases/vX.Y.Z/assets/changelog.llm.md`
-- Human review required before finalizing
-- Produces CHANGELOG.md entry, Sparkle HTML, App Store text
-
-### Release References
-
-The complete release playbook (version sync rules, rejection handling, backdating constraints, checklists) lives in:
-- `releases/WORKFLOW.md` - LLM-guided workflow, status commands, reset/resubmit guidance
-- `build/docs/operations/release/RELEASE-CHECKLIST.md` - Step-by-step checklists, including rejections
-- `build/docs/guides/APP-STORE-SUBMISSION.md` - App Store submission and appeal details
-- `build/docs/operations/release/sparkle-updates.md` - Sparkle/DMG specifics
-- `build/docs/operations/release/README.md` - Release operations overview
+**Build scripts:** `scripts/xc.sh` (dev), `scripts/release/build.sh` (release)
 
 ## Transcript Access (App Store Builds)
 
@@ -456,6 +389,26 @@ QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
 - `build/docs/testing/first-run-qa-guide.md` - Manual CLI-based QA toolkit
 
 **Important:** Fixture mode installs test transcripts alongside real data. See "Cleanup After Local Runs" in `scripts/qa/README.md` if the app appears stuck on a test project.
+
+### Feature-Specific QA Scripts
+
+Before creating new validation/QA work, check `scripts/qa/` for existing patterns:
+
+```bash
+ls -la scripts/qa/
+```
+
+Feature validation scripts live in subdirectories (e.g., `scripts/qa/codex-support/`). Each typically includes:
+- `VALIDATION-PLAN.md` - Phases, status tracking, proof requirements
+- `interactive-qa.sh` - CLI-based interactive test script
+- `interactive-qa-app.sh` - App UI test script (builds dev app, runs tests)
+- `clear-state.sh` - Reset test state
+- `validate-install.sh` - Automated validation checks
+
+**When asked about validation or QA:**
+1. Check `scripts/qa/` for existing scripts in the relevant area
+2. Follow established patterns (build dev app, clear state, capture proof)
+3. QA scripts should build and run the dev build, not rely on installed apps
 
 ## Git Hooks (Pre-commit Build Guard)
 

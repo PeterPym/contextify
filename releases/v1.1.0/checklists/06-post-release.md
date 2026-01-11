@@ -98,6 +98,81 @@ curl -sL "https://github.com/PeterPym/contextify/releases/download/v1.1.0/Contex
 - [ ] Verify Sparkle updates work for existing users
 - [ ] Test update from previous version
 
+## Homebrew Formula Update
+
+**Repo:** `~/code/projects/homebrew-contextify`
+**Branch:** `feature/codex-skill-support` (pre-staged with caveats update)
+
+### Update Formula
+```bash
+cd ~/code/projects/homebrew-contextify
+git checkout feature/codex-skill-support
+
+# Update version
+sed -i '' 's/version ".*"/version "1.1.0"/' Formula/contextify-query.rb
+
+# Get SHA256 from release tarball
+curl -sL "https://github.com/PeterPym/contextify/releases/download/v1.1.0/contextify-query-arm64.tar.gz" | shasum -a 256
+# Update sha256 in formula with the output
+
+# Commit version bump
+git add -A && git commit -m "chore(formula): bump to v1.1.0"
+```
+
+### Merge and Push
+- [ ] Version updated to 1.1.0
+- [ ] SHA256 updated for new tarball
+- [ ] Merge branch to main
+- [ ] Push to origin: `git push origin main`
+
+### Verification
+```bash
+brew update
+brew upgrade contextify-query  # or brew install if not installed
+contextify-query --version     # Should show 1.1.0
+contextify-query install-plugin
+ls ~/.claude/skills/total-recall/SKILL.md  # Should exist
+ls ~/.codex/skills/total-recall/SKILL.md   # Should exist (new in 1.1.0)
+```
+
+- [ ] Homebrew install/upgrade works
+- [ ] Both Claude and Codex skills installed
+- [ ] Codex skill is real file (not symlink)
+
+## Architecture Documentation Updates (v1.1.0 Linux)
+
+This release closes the Linux Total Recall gap. Update documentation to reflect this.
+
+### Cross-Platform Architecture Doc
+**File:** `build/docs/architecture/cross-platform-architecture.md`
+
+- [ ] Update Feature Parity Matrix:
+  - Change `| **Total Recall skill** | Yes | **NO** |` to `| **Total Recall skill** | Yes | Yes |`
+  - Change `| **contextify-query CLI** | Yes | **NO** |` to `| **contextify-query CLI** | Yes | Yes |`
+- [ ] Remove or update "Critical Gap: Total Recall on Linux" section
+- [ ] Update "Why Linux Has Fewer Features" if needed
+
+### TODOS.md Cleanup
+- [ ] Mark `#LINUX-TOTAL-RECALL` items as complete
+- [ ] Mark `#CLI-DOCTOR` as complete
+- [ ] Remove completed items per TODO policy
+
+### Spec Status Update
+**File:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+
+- [ ] Update front matter `status: active` → `status: complete`
+- [ ] Or move to `build/docs/` as permanent reference
+
+### Validation Plan Closure
+**File:** `scripts/qa/codex-support/VALIDATION-PLAN.md`
+
+- [ ] Mark Phases 10-13 as COMPLETE
+- [ ] Update front matter `status: complete`
+
+### CLI Documentation
+- [ ] Update `build/docs/guides/cli-installation.md` for Linux instructions
+- [ ] Add Linux section to website CLI docs (if exists)
+
 ## Cleanup
 
 ### Archive Release Materials

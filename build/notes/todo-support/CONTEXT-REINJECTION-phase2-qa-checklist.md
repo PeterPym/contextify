@@ -168,7 +168,7 @@ Note: `claude plugin marketplace add .` is rejected; use `./`.
 Verification (on-disk):
 
 - Marketplace config: `~/.claude/plugins/known_marketplaces.json` contains `contextify`.
-- Installed plugin record: `~/.claude/plugins/installed_plugins_v2.json` contains `query@contextify`.
+- Installed plugin record: `~/.claude/plugins/installed_plugins.json` contains `query@contextify`.
 - Plugin cache path exists:
   - `~/.claude/plugins/cache/contextify/query/<version>/`
 - Skills exist in cache:

@@ -3,7 +3,17 @@
 **Created:** 2026-01-06
 **Status:** In Progress
 **Build:** 1
-**Targeting:** Both (DMG + App Store)
+**Targeting:** DMG + App Store + Linux
+
+## P0 Blockers (Linux)
+
+Linux release requires Total Recall to be useful. These must be complete before release:
+
+- [ ] `contextify-query` builds on Linux
+- [ ] `contextify-query doctor` command implemented
+- [ ] `install-plugin` creates skill files on Linux
+
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
 
 ## Quick Status
 

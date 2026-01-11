@@ -150,7 +150,7 @@ else
 fi
 
 # Validate manifest
-if grep -q "query@contextify" ~/.claude/plugins/installed_plugins_v2.json 2>/dev/null; then
+if grep -q "query@contextify" ~/.claude/plugins/installed_plugins.json 2>/dev/null; then
   echo "✓ Plugin manifest updated"
 else
   echo "❌ Plugin manifest not updated"

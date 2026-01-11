@@ -1,7 +1,7 @@
 # Architecture Documentation
 
-**Last Updated:** 2025-11-18
-**Context:** Updated to reflect lazy loading architecture refactor
+**Last Updated:** 2026-01-10
+**Context:** Added CLI Tool Architecture documentation
 
 **Start Here:** [COMPONENTS.md](COMPONENTS.md) - "Application State Coordination" section
 
@@ -108,6 +108,15 @@ This directory contains high-level architectural documentation that explains:
 - Main HUD, Transcripts, Projects, Settings
 - Window management patterns
 - **Note:** iTerm2 integration removed in commit 35ce380
+
+### [CLI Tool Architecture](cli-tool-architecture.md)
+**Topics:** contextify-query CLI, skills, and AI CLI integration
+- Component model: shim, plugin cache, manifest, skills, agents
+- Platform support matrix (Claude Code, Codex CLI, future platforms)
+- Installation flows (DMG auto-install, Homebrew, Linux tarball)
+- State detection logic and failure mode matrix
+- **Critical for:** CLI work, adding new AI CLI platform support
+- **Start here** for any contextify-query or skill installation work
 
 ---
 

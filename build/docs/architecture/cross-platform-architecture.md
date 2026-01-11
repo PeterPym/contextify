@@ -179,6 +179,8 @@ The CLI implements this with `CLIEventSink` for human-readable or JSONL output.
 | **Database creation** | Yes | Yes |
 | **Full-text search index** | Yes | Yes |
 | **Project discovery** | Yes | Yes (lightweight) |
+| **Total Recall skill** | Yes | **NO** (see gap below) |
+| **contextify-query CLI** | Yes | **NO** (see gap below) |
 | **Real-time file watching** | Yes | No |
 | **LLM summaries** | Yes (macOS 26+) | No |
 | **Timeline cache generation** | Yes | No |
@@ -186,6 +188,18 @@ The CLI implements this with `CLIEventSink` for human-readable or JSONL output.
 | **Transcript metadata (LLM)** | Yes | No |
 | **Security-scoped bookmarks** | Yes | N/A |
 | **Background indexing** | Yes | N/A (batch mode) |
+
+### Critical Gap: Total Recall on Linux
+
+**Problem:** Total Recall is Contextify's primary feature for Claude Code/Codex users, but it doesn't work on Linux.
+
+- The `/total-recall` skill requires `contextify-query`
+- `contextify-query` is only built for macOS (not in Linux targets)
+- Linux users can ingest transcripts but cannot search them via the skill
+
+**Impact:** Anyone running Claude Code or Codex on Linux cannot use the primary feature that makes Contextify valuable.
+
+**Tracked in:** TODOS.md `#LINUX-TOTAL-RECALL`
 
 ### Why Linux Has Fewer Features
 
