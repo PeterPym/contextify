@@ -6,6 +6,7 @@
 #
 # Usage: ./scripts/qa/codex-support/interactive-qa-app.sh
 #        ./scripts/qa/codex-support/interactive-qa-app.sh --v2-migration
+#        ./scripts/qa/codex-support/interactive-qa-app.sh --repair-only
 
 set -e
 
@@ -172,6 +173,164 @@ if [ "$1" = "--v2-migration" ]; then
   echo -e "${GREEN}${BOLD}V2 Migration Test PASSED${NC}"
   echo ""
   exit 0
+fi
+
+# --- Repair UI Only Test ---
+
+if [ "$1" = "--repair-only" ]; then
+  header "Repair UI Tests Only"
+
+  echo "This test validates the Repair button functionality when skills are missing."
+  echo ""
+
+  # Build the dev app first
+  step "Building dev app..."
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+  if ! bash "$REPO_ROOT/scripts/xc.sh" build 2>&1 | tail -5; then
+    echo -e "${RED}Build failed${NC}"
+    exit 1
+  fi
+
+  DEV_APP="$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app"
+  if [ ! -d "$DEV_APP" ]; then
+    echo -e "${RED}Dev app not found at $DEV_APP${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ Build succeeded${NC}"
+
+  # Launch app
+  step "Launching dev app..."
+  open "$DEV_APP"
+  sleep 2
+
+  # Initialize proof file
+  cat > "$PROOF_FILE" << EOF
+---
+feature: codex-skill-support
+test-type: repair-ui-only
+branch: $(git branch --show-current 2>/dev/null || echo "unknown")
+date: $(date +%Y-%m-%d)
+generated: $(date -Iseconds)
+---
+
+# Repair UI Tests
+
+EOF
+
+  echo "Proof file: $PROOF_FILE"
+  echo ""
+
+  # Ensure both skills exist first
+  step "Ensuring skills are installed..."
+  if [ ! -f ~/.claude/skills/total-recall/SKILL.md ] || [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+    prompt_action "Skills not fully installed. Please:
+  1. Open Settings (Cmd+,)
+  2. Go to CLI tab
+  3. Click 'Enable' to install both skills"
+  fi
+
+  if [ ! -f ~/.claude/skills/total-recall/SKILL.md ] || [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+    echo -e "${RED}Skills still not installed. Cannot proceed.${NC}"
+    exit 1
+  fi
+  pass "Both skills installed"
+
+  # Test 1: Remove Codex skill
+  header "Test 1: Codex Skill Missing → Repair"
+
+  echo "## Test 1: Codex Skill Missing" >> "$PROOF_FILE"
+  echo "" >> "$PROOF_FILE"
+
+  step "Removing Codex skill..."
+  rm -rf ~/.codex/skills/total-recall
+  sleep 1
+
+  prompt_action "In Contextify.app:
+  1. Close Settings (Cmd+W) and reopen (Cmd+,) to refresh state
+  2. Go to CLI tab - should show:
+     - Yellow warning icon
+     - 'Codex CLI skill missing' warning
+     - 'Repair' button
+  3. Click 'Repair' button"
+
+  step "Verifying repair restored both skills..."
+  check_skill_exists ~/.claude/skills/total-recall/SKILL.md "Claude"
+  check_skill_exists ~/.codex/skills/total-recall/SKILL.md "Codex"
+
+  if [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
+    check_not_symlink ~/.codex/skills/total-recall/SKILL.md
+  fi
+
+  if [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+    echo -e "${RED}Repair did not restore Codex skill${NC}"
+    exit 1
+  fi
+  echo "" >> "$PROOF_FILE"
+
+  # Test 2: Remove Claude skill
+  header "Test 2: Claude Skill Missing → Repair"
+
+  echo "## Test 2: Claude Skill Missing" >> "$PROOF_FILE"
+  echo "" >> "$PROOF_FILE"
+
+  step "Removing Claude skill..."
+  rm -rf ~/.claude/skills/total-recall
+  sleep 1
+
+  prompt_action "In Contextify.app:
+  1. Close Settings (Cmd+W) and reopen (Cmd+,) to refresh state
+  2. Go to CLI tab - should show:
+     - Yellow warning icon
+     - 'Claude Code skill missing' warning
+     - 'Repair' button
+  3. Click 'Repair' button"
+
+  step "Verifying repair restored both skills..."
+  check_skill_exists ~/.claude/skills/total-recall/SKILL.md "Claude"
+  check_skill_exists ~/.codex/skills/total-recall/SKILL.md "Codex"
+
+  if [ ! -f ~/.claude/skills/total-recall/SKILL.md ]; then
+    echo -e "${RED}Repair did not restore Claude skill${NC}"
+    exit 1
+  fi
+  echo "" >> "$PROOF_FILE"
+
+  # Summary
+  header "Summary"
+
+  cat >> "$PROOF_FILE" << EOF
+
+---
+
+## Summary
+
+| Metric | Count |
+|--------|-------|
+| Passed | $PASS_COUNT |
+| Failed | $FAIL_COUNT |
+
+EOF
+
+  echo -e "${BOLD}Results:${NC}"
+  echo -e "  ${GREEN}Passed:  $PASS_COUNT${NC}"
+  echo -e "  ${RED}Failed:  $FAIL_COUNT${NC}"
+  echo ""
+
+  if [ $FAIL_COUNT -eq 0 ]; then
+    echo "**Result: ALL TESTS PASSED**" >> "$PROOF_FILE"
+    echo -e "${GREEN}${BOLD}✓ REPAIR UI TESTS PASSED${NC}"
+  else
+    echo "**Result: $FAIL_COUNT TEST(S) FAILED**" >> "$PROOF_FILE"
+    echo -e "${RED}${BOLD}✗ $FAIL_COUNT TEST(S) FAILED${NC}"
+  fi
+
+  echo ""
+  echo -e "${BOLD}Proof file:${NC} $PROOF_FILE"
+  echo ""
+
+  exit $FAIL_COUNT
 fi
 
 # --- Initialize Proof File ---

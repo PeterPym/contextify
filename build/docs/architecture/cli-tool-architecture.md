@@ -1,6 +1,6 @@
 # CLI Tool Architecture
 
-**Last Updated:** 2026-01-10
+**Last Updated:** 2026-01-11
 **Status:** Active
 
 This document describes the architecture of `contextify-query`, the CLI tool that enables AI coding assistants to search Contextify's conversation database. It covers the component model, platform support, installation flows, state detection, and how to add support for new platforms.
@@ -416,12 +416,21 @@ contextify-query install-plugin      # Install skills for all supported CLIs
 contextify-query uninstall-plugin    # Remove skills from all CLIs
 ```
 
-### Future Commands (Planned)
+### Health Check Commands
 ```bash
-contextify-query doctor              # Health check (see LINUX-TOTAL-RECALL-spec.md)
-contextify-query doctor --json       # Machine-readable health check
-contextify-query doctor --fix        # Auto-repair issues
+contextify-query doctor              # Health check of CLI installation
+contextify-query doctor --json       # Machine-readable health check output
 ```
+
+**Repair:** If doctor reports issues, run `contextify-query install-plugin` to fix.
+
+The doctor command uses `CLIHealthChecker` to verify all installation components:
+- Shim binary exists and is on PATH
+- Plugin manifest entry exists
+- Claude Code skill file exists
+- Codex CLI skill file exists
+
+On Linux, doctor checks skills only (no shim/manifest - binary runs directly).
 
 ---
 
@@ -448,5 +457,4 @@ contextify-query doctor --fix        # Auto-repair issues
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2025-Q4 | Initial release, Claude Code only |
-| 1.1.0 | 2026-01 | Added Codex CLI support |
-| 1.1.x | TBD | Linux support, doctor command |
+| 1.1.0 | 2026-01 | Added Codex CLI support, doctor command, Linux support |

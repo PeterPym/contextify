@@ -33,7 +33,7 @@
       "architectures": ["x86_64", "arm64"],
       "build_command": "gh workflow run linux-release.yml -f version={version}",
       "local_build_command": "bash scripts/docker-linux-build.sh",
-      "artifact_pattern": "contextify-ingest-linux-{arch}.tar.gz",
+      "artifact_pattern": "contextify-linux-{arch}.tar.gz",
       "archive_path": "build/archives/v{version}/linux",
       "github_release": true
     }

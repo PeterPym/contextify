@@ -122,10 +122,10 @@ artifact_exists() {
             [ -f "${ROOT_DIR}/build/archives/v${version}/appstore/Contextify-${version}.pkg" ]
             ;;
         linux-x86_64)
-            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-ingest-linux-x86_64.tar.gz" ]
+            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-linux-x86_64.tar.gz" ]
             ;;
         linux-arm64)
-            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-ingest-linux-arm64.tar.gz" ]
+            [ -f "${ROOT_DIR}/build/archives/v${version}/linux/contextify-linux-arm64.tar.gz" ]
             ;;
         linux)
             # Both architectures must exist
@@ -287,14 +287,14 @@ check_can_ship_linux() {
     # Must have both architecture artifacts
     if ! artifact_exists "$version" linux-x86_64; then
         echo "Error: Linux x86_64 archive not found" >&2
-        echo "  Expected: build/archives/v${version}/linux/contextify-ingest-linux-x86_64.tar.gz" >&2
+        echo "  Expected: build/archives/v${version}/linux/contextify-linux-x86_64.tar.gz" >&2
         echo "  Run: ./scripts/release/build.sh $version" >&2
         return 1
     fi
 
     if ! artifact_exists "$version" linux-arm64; then
         echo "Error: Linux arm64 archive not found" >&2
-        echo "  Expected: build/archives/v${version}/linux/contextify-ingest-linux-arm64.tar.gz" >&2
+        echo "  Expected: build/archives/v${version}/linux/contextify-linux-arm64.tar.gz" >&2
         echo "  Run: ./scripts/release/build.sh $version" >&2
         return 1
     fi

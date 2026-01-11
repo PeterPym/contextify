@@ -315,70 +315,100 @@ public final class CLICoordinator: ObservableObject {
       return .disabled
     }
 
-    // DMG builds: Check for shim + plugin installation
+    // DMG builds: Check for shim with QA override support
     guard let shimPath = findInstalledShim() else {
       log.info("[CLI-COMPUTE-STATE] No shim found, returning disabled")
       return .disabled
     }
     log.info("[CLI-COMPUTE-STATE] Shim found at: \(shimPath, privacy: .public)")
 
-    // ============================================================================
-    // Check installation components and determine repair state
-    // TODO: #CLI-DOCTOR - Replace with `contextify-query doctor --json` integration
-    // See: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md
-    // ============================================================================
+    // Trigger v2 -> v1 manifest migration if needed (legacy compat)
+    // Must run BEFORE checkHealth() so the health report reflects current state
+    triggerManifestMigrationIfNeeded()
 
-    let fileManager = FileManager.default
-    let homeDir = fileManager.homeDirectoryForCurrentUser
+    // Use shared CLIHealthChecker for component health
+    let report = CLIHealthChecker.checkHealth()
+    log.info("[CLI-COMPUTE-STATE] Health report: overall=\(report.overall.rawValue, privacy: .public)")
+    log.info("[CLI-COMPUTE-STATE] Manifest: \(report.components.manifest.present ? (report.components.manifest.version ?? "unknown") : "MISSING", privacy: .public)")
+    log.info("[CLI-COMPUTE-STATE] Skills: claude=\(report.components.skills.claudeSkillPresent) codex=\(report.components.skills.codexSkillPresent)")
 
-    // Check manifest for version (may be missing in partial install)
-    let pluginVersion = readInstalledPluginVersion()
-    let manifestMissing = (pluginVersion == nil)
-    log.info("[CLI-COMPUTE-STATE] Manifest: \(manifestMissing ? "MISSING" : pluginVersion!, privacy: .public)")
+    // Map health report to repair reason
+    let repairIssue = mapHealthReportToRepairReason(report)
 
-    // Check skill files
-    let claudeSkillPath = homeDir.appendingPathComponent(".claude/skills/total-recall/SKILL.md").path
-    let codexSkillPath = homeDir.appendingPathComponent(".codex/skills/total-recall/SKILL.md").path
-
-    let claudeSkillExists = fileManager.fileExists(atPath: claudeSkillPath)
-    let codexSkillExists = fileManager.fileExists(atPath: codexSkillPath)
-
-    log.info("[CLI-COMPUTE-STATE] Skills: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
-
-    // Determine repair reason (if any)
-    let repairIssue: RepairReason?
-    if manifestMissing && !claudeSkillExists && !codexSkillExists {
-      // Everything broken except shim - treat as disabled
+    // Check for completely broken state (shim exists but nothing else)
+    if !report.components.manifest.present &&
+       !report.components.skills.claudeSkillPresent &&
+       !report.components.skills.codexSkillPresent {
       log.warning("[CLI-COMPUTE-STATE] Manifest and all skills missing, returning disabled")
       return .disabled
-    } else if manifestMissing {
-      // Manifest missing but at least one skill works
-      repairIssue = .manifestMissing
-      log.warning("[CLI-COMPUTE-STATE] Manifest missing, needs repair")
-    } else if !claudeSkillExists && !codexSkillExists {
-      // Both skills missing
-      repairIssue = .bothSkillsMissing
-      log.warning("[CLI-COMPUTE-STATE] Both skills missing, needs repair")
-    } else if !claudeSkillExists {
-      repairIssue = .claudeSkillMissing
-      log.warning("[CLI-COMPUTE-STATE] Claude skill missing, needs repair")
-    } else if !codexSkillExists {
-      repairIssue = .codexSkillMissing
-      log.warning("[CLI-COMPUTE-STATE] Codex skill missing, needs repair")
+    }
+
+    if let repair = repairIssue {
+      log.warning("[CLI-COMPUTE-STATE] Needs repair: \(String(describing: repair))")
     } else {
-      repairIssue = nil
       log.info("[CLI-COMPUTE-STATE] All components present")
     }
 
     // Check if shim's parent directory is on PATH
-    // Note: Homebrew paths work in user shells even if not in GUI app's PATH
+    // Note: CLIHealthChecker also checks this, but we need to handle the QA override path
     let shimDir = URL(fileURLWithPath: shimPath).deletingLastPathComponent().path
-    let isHomebrewPath = shimDir == "/opt/homebrew/bin" || shimDir == "/usr/local/bin"
-    let pathWarning = !isHomebrewPath && !isDirectoryOnPath(shimDir)
+    let isHomebrewPath = CLIHealthChecker.homebrewPaths.contains(shimDir)
+    let pathWarning = !isHomebrewPath && !report.components.shim.onPath
 
-    // Use placeholder version if manifest is missing
-    let version = pluginVersion ?? "unknown"
+    // Use version from manifest or placeholder
+    let version = report.components.manifest.version ?? "unknown"
     return .enabled(version: version, pathWarning: pathWarning, repairIssue: repairIssue)
+  }
+
+  /// Trigger migration from v2 manifest to v1 if needed (legacy compat)
+  private static func triggerManifestMigrationIfNeeded() {
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser
+    let v1ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins.json")
+    let v2ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+
+    // Only migrate if v1 doesn't exist and v2 does
+    guard !FileManager.default.fileExists(atPath: v1ManifestURL.path),
+          FileManager.default.fileExists(atPath: v2ManifestURL.path) else {
+      return
+    }
+
+    // Read v2 manifest to get version and installPath
+    guard let data = try? Data(contentsOf: v2ManifestURL),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let plugins = json["plugins"] as? [String: Any],
+          let pluginEntries = plugins["query@contextify"] as? [[String: Any]],
+          let firstEntry = pluginEntries.first,
+          let version = firstEntry["version"] as? String,
+          let installPath = firstEntry["installPath"] as? String else {
+      return
+    }
+
+    do {
+      try updatePluginManifest(version: version, pluginPath: URL(fileURLWithPath: installPath))
+      log.info("[CLI-MANIFEST-MIGRATE] Migrated v2 manifest to v1")
+    } catch {
+      log.warning("[CLI-MANIFEST-MIGRATE] Failed: \(error.localizedDescription)")
+    }
+  }
+
+  /// Map CLIHealthChecker.HealthReport to RepairReason
+  private static func mapHealthReportToRepairReason(_ report: CLIHealthChecker.HealthReport) -> RepairReason? {
+    let manifest = report.components.manifest
+    let skills = report.components.skills
+
+    if !manifest.present {
+      return .manifestMissing
+    }
+    if !skills.claudeSkillPresent && !skills.codexSkillPresent {
+      return .bothSkillsMissing
+    }
+    if !skills.claudeSkillPresent {
+      return .claudeSkillMissing
+    }
+    if !skills.codexSkillPresent {
+      return .codexSkillMissing
+    }
+    return nil
   }
 
   /// Find contextify-query at known Homebrew paths
@@ -810,51 +840,6 @@ exit 1
     return nil
   }
 
-  /// Read installed plugin version from manifest (v1 preferred, v2 fallback)
-  private static func readInstalledPluginVersion() -> String? {
-    let homeDir = FileManager.default.homeDirectoryForCurrentUser
-    let v1ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins.json")
-    let v2ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
-
-    if let entry = readPluginManifestEntry(at: v1ManifestURL) {
-      return entry.version
-    }
-
-    if let entry = readPluginManifestEntry(at: v2ManifestURL) {
-      migrateLegacyManifestIfNeeded(version: entry.version, installPath: entry.installPath)
-      return entry.version
-    }
-
-    return nil
-  }
-
-  private struct PluginManifestEntry {
-    let version: String
-    let installPath: String?
-  }
-
-  private static func readPluginManifestEntry(at url: URL) -> PluginManifestEntry? {
-    guard let data = try? Data(contentsOf: url),
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let plugins = json["plugins"] as? [String: Any],
-          let pluginEntries = plugins["query@contextify"] as? [[String: Any]],
-          let firstEntry = pluginEntries.first,
-          let version = firstEntry["version"] as? String else {
-      return nil
-    }
-
-    let installPath = firstEntry["installPath"] as? String
-    return PluginManifestEntry(version: version, installPath: installPath)
-  }
-
-  /// Check if a directory is on the system PATH
-  private static func isDirectoryOnPath(_ dir: String) -> Bool {
-    let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-    // Normalize the directory path (remove trailing slash) for comparison
-    let normalizedDir = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
-    return path.split(separator: ":").contains { String($0) == normalizedDir }
-  }
-
   /// Determine where to install shim (DMG: homebrew/local/admin, App Store: user-selected folder)
   /// Returns tuple: (url: final install path, requiresAdmin: whether to use osascript)
   private func determineShimPath() async throws -> (url: URL, requiresAdmin: Bool) {
@@ -1010,21 +995,6 @@ exit 1
     try jsonData.write(to: manifestURL)
 
     log.info("[CLI-MANIFEST-UPDATE] version=\(version) path=\(pluginPath.path)")
-  }
-
-  private static func migrateLegacyManifestIfNeeded(version: String, installPath: String?) {
-    guard let installPath else { return }
-
-    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins.json")
-    guard !FileManager.default.fileExists(atPath: manifestURL.path) else { return }
-
-    do {
-      try updatePluginManifest(version: version, pluginPath: URL(fileURLWithPath: installPath))
-      log.info("[CLI-MANIFEST-MIGRATE] Migrated v2 manifest to v1")
-    } catch {
-      log.warning("[CLI-MANIFEST-MIGRATE] Failed: \(error.localizedDescription)")
-    }
   }
 
   /// Remove plugin entry from manifest

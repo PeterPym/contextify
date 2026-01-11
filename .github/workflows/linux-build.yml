@@ -94,6 +94,11 @@ jobs:
           swift build --product contextify-ingest 2>&1
           echo "Build succeeded!"
 
+      - name: Build contextify-query CLI
+        run: |
+          swift build --product contextify-query 2>&1
+          echo "Build succeeded!"
+
       - name: Verify CLI runs
         run: |
           .build/debug/contextify-ingest --help
@@ -103,6 +108,13 @@ jobs:
           .build/debug/contextify-ingest verify --help
           .build/debug/contextify-ingest --version
           echo "CLI verification passed!"
+
+      - name: Verify contextify-query health check
+        run: |
+          .build/debug/contextify-query install-plugin
+          .build/debug/contextify-query doctor
+          .build/debug/contextify-query doctor --json
+          echo "contextify-query verification passed!"
 
       - name: E2E ingest test
         run: |
