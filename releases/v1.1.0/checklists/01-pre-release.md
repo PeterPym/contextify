@@ -50,6 +50,52 @@
 **Blockers:**
 - (none)
 
+---
+
+## v1.1.0 Feature Blockers (P0)
+
+This release targets Linux. Linux requires Total Recall to be useful.
+
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+
+### Linux Total Recall Support
+
+- [ ] #LINUX-QUERY-SOURCES: Add contextify-query to Linux Package.swift targets
+- [ ] #LINUX-QUERY-BUILD: Get contextify-query building on Linux
+- [ ] #LINUX-QUERY-CI: Add contextify-query to Linux CI workflow
+- [ ] #LINUX-SKILL-INSTALL: Verify install-plugin creates both skill files on Linux
+
+### CLI Installation Health Check
+
+- [ ] #CLI-DOCTOR: Implement `contextify-query doctor` command
+  - Check shim on PATH
+  - Check plugin manifest
+  - Check skill files (Claude + Codex)
+  - Check database connectivity
+  - JSON output for app integration (`--json`)
+  - Self-repair option (`--fix`)
+
+### Validation
+
+```bash
+# Linux build test (Docker)
+bash scripts/docker-linux-build.sh --e2e
+
+# Doctor command test
+contextify-query doctor
+contextify-query doctor --json
+
+# Linux skill installation test (in Docker)
+./contextify-query install-plugin
+ls ~/.claude/skills/total-recall/SKILL.md
+ls ~/.codex/skills/total-recall/SKILL.md
+```
+
+- [ ] Linux contextify-query builds successfully
+- [ ] Doctor command reports healthy on full install
+- [ ] Doctor command detects missing skills
+- [ ] install-plugin creates both skill files on Linux
+
 ## Validation
 
 Run validation script:

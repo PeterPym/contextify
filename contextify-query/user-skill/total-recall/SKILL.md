@@ -27,6 +27,7 @@ Then provide the search results with citations.
 ## Preconditions
 
 This skill requires the Contextify app and CLI.
+It works with Claude Code and Codex CLI.
 
 1) Check CLI availability:
 
@@ -110,10 +111,12 @@ If search returns 0 results:
 
 ## Delegating to researcher agent
 
-For complex multi-query searches, delegate to `contextify-researcher` agent:
+**Claude Code only:** For complex multi-query searches, delegate to `contextify-researcher` agent:
 
 ```
 Use the contextify-researcher agent to thoroughly search for [topic]
 ```
 
 The researcher agent will perform multiple searches and synthesize results.
+
+**Codex CLI:** Agent delegation is not available. Instead, run multiple searches manually and synthesize results yourself.

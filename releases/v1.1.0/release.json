@@ -114,6 +114,11 @@
       "date": "2026-01-06",
       "author": "system",
       "note": "Release initialized"
+    },
+    {
+      "date": "2026-01-10",
+      "author": "claude",
+      "note": "Added P0 blockers for Linux: contextify-query must build on Linux with Total Recall skill support. Also requires CLI doctor command for installation health checking. See spec: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md"
     }
   ]
 }
