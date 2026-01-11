@@ -251,7 +251,7 @@ struct CLISkillsSettingsTab: View {
                   // DMG: Simple text
                   Text("Not installed")
                     .font(.body)
-                  Text("The CLI shim and Claude Code plugin are not installed. Click Enable to install automatically.")
+                  Text("The CLI shim and skills are not installed. Click Enable to install automatically.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
@@ -272,7 +272,7 @@ struct CLISkillsSettingsTab: View {
                     .font(.body)
                 }
 
-                Text("The CLI shim and Claude Code plugin are installed and managed automatically.")
+                Text("The CLI shim and skills are installed and managed automatically.")
                   .font(.caption)
                   .foregroundStyle(.secondary)
 
