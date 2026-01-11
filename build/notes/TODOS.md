@@ -3048,4 +3048,19 @@ The scripts/ directory has grown organically and needs cleanup. Performance scri
 
 ---
 
+## SwiftPM Linux Warning Cleanup (1 item) [token-burner]
+
+**Status:** Not started
+**Priority:** P3 (deferred - warning noise only)
+**Effort:** 4-8 hours (directory split) or 1-2 hours (exclude lists, brittle)
+**Reference:** `build/notes/todo-support/SWIFTPM-LINUX-WARNINGS-reference.md`
+
+- [ ] #SWIFTPM-LINUX-WARNINGS: Reduce SwiftPM “unhandled files” warnings in Linux builds
+
+**Goal:** Eliminate SwiftPM warnings by moving Linux sources to dedicated directories or maintaining excludes.
+
+**Note:** Tagged `token-burner` for low-priority maintenance.
+
+---
+
 **End of TODO List**

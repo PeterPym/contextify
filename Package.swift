@@ -75,38 +75,40 @@ let targets: [Target] = [
   ),
 ]
 #else
-// Linux: Cross-platform ingestion only
+// Linux: Cross-platform ingestion and query CLI
 let products: [Product] = [
   .library(name: "ContextifyIngestionCore", targets: ["ContextifyIngestionCore"]),
+  .library(name: "ContextifyQueryCore", targets: ["ContextifyQueryCore"]),
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
+  .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
 ]
 
-// Files included in Linux build
+// Files included in Linux ingestion build (requires GRDB)
 // Paths are relative to app/Sources/ContextifyCore/
-let linuxSources: [String] = [
+let linuxIngestionSources: [String] = [
   // Platform abstractions (cross-platform)
   "Platform/CrossPlatformCrypto.swift",
   "Platform/CrossPlatformLock.swift",
   "Platform/CrossPlatformLogger.swift",
   "Platform/IngestionEventSink.swift",
   "Platform/PlatformSandbox.swift",
-  // Database layer
-  "Database/BulkIngestManager.swift",   // Bulk write optimization
+  // Database layer (ingestion only - no OSLog privacy modifiers)
+  "Database/BulkIngestManager.swift",
   "Database/DatabaseSchema.swift",
   "Database/KeyGeneration.swift",
   "Database/Models.swift",
   "Database/PathNormalizer.swift",
-  "Database/Repositories.swift",        // Repository protocols and implementations
-  "Database/HooverEngine.swift",        // Transcript parsing engine
-  "Database/TranscriptParsers.swift",   // Line parsers and metadata parsers
-  "Database/IngestProgress.swift",      // Progress reporting protocol
-  "Database/Utilities/TimeUnits.swift", // Time unit conversion helpers
+  "Database/Repositories.swift",
+  "Database/HooverEngine.swift",
+  "Database/TranscriptParsers.swift",
+  "Database/IngestProgress.swift",
+  "Database/Utilities/TimeUnits.swift",
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
-  "LaunchArguments.swift",              // CLI argument parsing
+  "LaunchArguments.swift",
   "LoggingConfig.swift",
   "ProjectIdentity.swift",
   "Projects/ProjectModels.swift",
@@ -114,8 +116,15 @@ let linuxSources: [String] = [
   "Projects/TranscriptProviderID.swift",
 ]
 
+// Minimal files for query CLI (doctor command only - no GRDB needed)
+// Paths are relative to app/Sources/ContextifyCore/
+let linuxQuerySources: [String] = [
+  // Installation (CLI health checking) - no dependencies
+  "Installation/CLIHealthChecker.swift",
+]
+
 let targets: [Target] = [
-  // Cross-platform ingestion library (explicit source list for Linux)
+  // Cross-platform ingestion library (requires GRDB for database operations)
   .target(
     name: "ContextifyIngestionCore",
     dependencies: [
@@ -123,10 +132,21 @@ let targets: [Target] = [
       .product(name: "Crypto", package: "swift-crypto"),
     ],
     path: "app/Sources/ContextifyCore",
-    sources: linuxSources,
+    sources: linuxIngestionSources,
     swiftSettings: [
       .define("SWIFT_PACKAGE"),
       .define("INGESTION_CORE"),  // Flag for conditional compilation
+    ]
+  ),
+  // Lightweight query library (no GRDB - doctor command only)
+  .target(
+    name: "ContextifyQueryCore",
+    dependencies: [],
+    path: "app/Sources/ContextifyCore",
+    sources: linuxQuerySources,
+    swiftSettings: [
+      .define("SWIFT_PACKAGE"),
+      .define("QUERY_CORE"),  // Flag for conditional compilation
     ]
   ),
   // Cross-platform CLI - on Linux, depends on ContextifyIngestionCore
@@ -141,6 +161,31 @@ let targets: [Target] = [
       .unsafeFlags(["-parse-as-library"])
     ]
   ),
+  // Query CLI for Linux - doctor command only (no GRDB needed)
+  .executableTarget(
+    name: "ContextifyQueryCLI",
+    dependencies: [
+      "ContextifyQueryCore",
+    ],
+    path: "Sources/ContextifyQueryCLI"
+  ),
+]
+#endif
+
+// Platform-conditional dependencies
+// swift-syntax is only used by tests (macOS only)
+#if os(macOS)
+let packageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+  .package(url: "https://github.com/apple/swift-syntax.git", from: "510.0.0"),
+  .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+  .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
+]
+#else
+let packageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+  .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+  .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
 ]
 #endif
 
@@ -152,11 +197,6 @@ let package = Package(
     .macOS(.v14)
   ],
   products: products,
-  dependencies: [
-    .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
-    .package(url: "https://github.com/apple/swift-syntax.git", from: "510.0.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
-    .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
-  ],
+  dependencies: packageDependencies,
   targets: targets
 )

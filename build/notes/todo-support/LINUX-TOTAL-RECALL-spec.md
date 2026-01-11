@@ -3,7 +3,7 @@ todo_id: LINUX-TOTAL-RECALL
 title: CLI Installation Health Check - Technical Specification
 type: spec
 date: 2026-01-10
-status: active
+status: superseded
 description: Unified approach to verifying CLI tool and skill installation across platforms
 ---
 
@@ -13,7 +13,7 @@ description: Unified approach to verifying CLI tool and skill installation acros
 
 During validation of Codex skill support, we discovered that Contextify lacks a unified method for verifying that all CLI components are properly installed. The app and CLI have divergent, incomplete health checks, leading to situations where the UI shows "Enabled" but the actual functionality is broken.
 
-This specification proposes a unified `contextify-query doctor` command that provides comprehensive installation health checking, usable by both the CLI (for user debugging) and the app (for accurate UI state).
+Contextify now provides a unified `contextify-query doctor` command that provides comprehensive installation health checking, usable by both the CLI (for user debugging) and the app (for accurate UI state). The app and CLI share `CLIHealthChecker` in ContextifyCore. Repair flows use `contextify-query install-plugin`; `doctor --fix` is deferred.
 
 ---
 
@@ -93,17 +93,18 @@ The problem is compounded on Linux:
 
 ---
 
-## Proposed Solution: `contextify-query doctor`
+## Solution: `contextify-query doctor`
 
 ### Command Design
 
 ```bash
-contextify-query doctor [--json] [--fix]
+contextify-query doctor [--json]
 ```
 
 **Options:**
 - `--json`: Output as JSON for programmatic consumption (app integration)
-- `--fix`: Attempt to repair missing components (runs install-plugin if needed)
+
+**Repair:** If issues are reported, run `contextify-query install-plugin`. The `--fix` flag is deferred.
 
 ### Output Format (Human)
 
@@ -281,61 +282,31 @@ Installed (v1.1.0) - Some issues detected
 [Repair]  [Disable]
 ```
 
-The "Repair" button runs `contextify-query doctor --fix` or `install-plugin`.
+The "Repair" button runs `contextify-query install-plugin`.
 
 ---
 
-## Implementation Plan
+## Implementation Status
 
-### Temporary Fix in Place
+### Phase 0: CLIHealthChecker extraction (complete)
+- [x] `CLIHealthChecker` lives in ContextifyCore with platform-aware checks
+- [x] `CLICoordinator.computeState()` uses `CLIHealthChecker`
+- [x] Unit tests cover component presence and platform behavior
+- [x] Settings > CLI mirrors health checks
 
-A quick fix was added to `CLICoordinator.computeState()` to check for skill file existence:
+### Phase 1: CLI doctor command (complete)
+- [x] Doctor command is available
+- [x] Human-readable output and JSON output are supported
+- [ ] `--fix` flag is deferred; use `contextify-query install-plugin`
 
-**Location:** `Contextify/Contextify/CLICoordinator.swift:255-277`
+### Phase 2: Linux build (complete, CI pending)
+- [x] `contextify-query` ships in Linux products
+- [x] `install-plugin` creates skills on Linux
+- [ ] Linux CI covers `contextify-query` (tracked in `scripts/qa/codex-support/VALIDATION-PLAN.md`)
 
-**What it does:**
-- Checks if `~/.claude/skills/total-recall/SKILL.md` exists
-- Checks if `~/.codex/skills/total-recall/SKILL.md` exists
-- Returns `.disabled` if either is missing
-
-**To be replaced by:** Phase 3 (App integration with doctor command)
-
-Search for `TEMPORARY FIX: Skill file existence check` or `#CLI-DOCTOR` to find it.
-
----
-
-### Phase 1: CLI doctor command (P0 for Linux release)
-
-1. Add `doctor` case to Command enum
-2. Implement component checks:
-   - `checkShim()` - find shim, verify version, check PATH
-   - `checkPlugin()` - verify cache dir, manifest entry, agent file
-   - `checkSkills()` - verify both skill files, check not symlink, compare hashes
-   - `checkDatabase()` - existing status logic
-3. Aggregate into overall status
-4. Format output (human-readable and JSON)
-5. Add `--fix` flag to run `install-plugin` if issues detected
-
-### Phase 2: Linux build (P0 for Linux release)
-
-1. Add `contextify-query` to Linux Package.swift targets
-2. Resolve Darwin-specific dependencies
-3. Add to Linux CI workflow
-4. Verify `install-plugin` creates skill files on Linux
-
-### Phase 3: App integration (P1)
-
-1. Add `DoctorResult` model to parse JSON
-2. Update `CLICoordinator.computeState()` to use doctor
-3. Add `.degraded` state to `CLICoordinator.State`
-4. Update `CLISkillsSettingsTab` UI for degraded state
-5. Add "Repair" button
-
-### Phase 4: Unified health check spec (P2)
-
-1. Document canonical paths in a shared location
-2. Ensure CLI and app check same components
-3. Add version compatibility checking (CLI version vs expected)
+### App integration and unified spec (complete)
+- [x] App uses `CLIHealthChecker` directly (no subprocess)
+- [x] CLIHealthChecker defines canonical paths for app and CLI
 
 ---
 
@@ -358,7 +329,7 @@ Search for `TEMPORARY FIX: Skill file existence check` or `#CLI-DOCTOR` to find 
   - Run doctor → healthy
   - Remove one skill
   - Run doctor → degraded with correct issue
-  - Run doctor --fix
+  - Run install-plugin
   - Run doctor → healthy
 
 ### Platform Tests
@@ -377,7 +348,7 @@ Search for `TEMPORARY FIX: Skill file existence check` or `#CLI-DOCTOR` to find 
 
 3. **Database location discovery**: On Linux, where should the database live? Should doctor check multiple locations?
 
-4. **Repair scope**: Should `--fix` only run install-plugin, or also attempt to fix PATH issues?
+4. **Repair scope**: Should a future `--fix` only run install-plugin, or also attempt to fix PATH issues?
 
 5. **Caching**: Should app cache doctor results to avoid repeated CLI calls?
 
