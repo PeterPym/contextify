@@ -1905,7 +1905,7 @@ private struct PluginManifest: Codable {
     var version: String
     var installedAt: String
     var lastUpdated: String
-    var isLocal: Bool
+    var isLocal: Bool?  // Optional: external plugins may not have this field
   }
 }
 
