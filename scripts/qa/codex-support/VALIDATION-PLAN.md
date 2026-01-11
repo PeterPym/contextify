@@ -72,7 +72,13 @@ Run the interactive QA script:
 - [x] `~/.claude/skills/total-recall/` removed
 - [x] `~/.codex/skills/total-recall/` removed
 
-**Outcome:** All checks pass via interactive QA script.
+### 4.5 Settings UI Toggle (DMG Build Only)
+- [ ] Open Contextify.app > Settings > CLI tab
+- [ ] Click "Disable" - verify both skills removed
+- [ ] Click "Enable" - verify both skills installed
+- [ ] Verify Codex skill is real file (not symlink) after Enable
+
+**Outcome:** All checks pass via interactive QA script. Settings UI toggle pending manual verification.
 
 ---
 
