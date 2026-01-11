@@ -54,6 +54,14 @@ This creates `releases/vX.Y.Z/` with:
 
 **Note:** For DMG-only releases, Phases 3 and 4 are automatically marked complete (no App Store review materials or submission needed).
 
+### Incremental Shipping
+
+If you need to ship channels separately (e.g., App Store first, DMG later):
+- Use skip flags: `./scripts/release/build.sh 1.0.0 --skip-dmg --skip-linux`
+- Or re-initialize with subset: `./scripts/release/init.sh 1.0.0 --appstore --reset`
+
+The release remains valid for later channel builds - just run build.sh again without the skip flags.
+
 ### 2. Follow Phase Checklists
 
 Work through each checklist in `releases/vX.Y.Z/checklists/`:

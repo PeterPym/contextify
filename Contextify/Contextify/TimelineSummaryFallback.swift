@@ -15,8 +15,7 @@ enum TimelineSummaryFallback {
     // Using inline constant due to Swift 6 actor isolation inference
 
     // Precompiled regex for issue/PR references (e.g., #1234)
-    // Using nonisolated(unsafe) since NSRegularExpression is immutable after creation
-    private nonisolated(unsafe) static let issueRefPattern = try! NSRegularExpression(pattern: #"#\d{1,6}"#)
+    nonisolated private static let issueRefPattern = try! NSRegularExpression(pattern: #"#\d{1,6}"#)
 
     // MARK: - Public API
 
