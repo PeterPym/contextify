@@ -242,8 +242,8 @@ ls .build-linux/debug/contextify-query
 - [x] Binary is executable
 
 ### 10.3 CI Integration
-- [ ] Add contextify-query to `.github/workflows/linux-build.yml` (pending)
-- [ ] CI builds both contextify-ingest AND contextify-query (pending)
+- [x] Add contextify-query to `.github/workflows/linux-build.yml`
+- [x] CI builds both contextify-ingest AND contextify-query
 - [x] Local Docker verification passed
 
 ---
