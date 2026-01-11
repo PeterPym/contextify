@@ -205,7 +205,7 @@ public final class CLICoordinator: ObservableObject {
     let version = readBundledVersion()
     let pluginPath = pluginCachePath()
     do {
-      try updatePluginManifest(version: version, pluginPath: pluginPath)
+      try Self.updatePluginManifest(version: version, pluginPath: pluginPath)
       log.info("[CLI-REPAIR] Updated v2 manifest")
     } catch {
       log.warning("[CLI-REPAIR] Failed to update manifest: \(error.localizedDescription)")
@@ -559,7 +559,7 @@ exit 1
     try fileManager.moveItem(at: tempPluginURL, to: finalPluginURL)
 
     // 9. Update plugin manifest
-    try updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
+    try Self.updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
 
     // 10. For DMG builds: run install-plugin to install user skill
     // This installs /total-recall to ~/.claude/skills/total-recall/
@@ -810,12 +810,31 @@ exit 1
     return nil
   }
 
-  /// Read installed plugin version from manifest
+  /// Read installed plugin version from manifest (v1 preferred, v2 fallback)
   private static func readInstalledPluginVersion() -> String? {
-    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins.json")
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser
+    let v1ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins.json")
+    let v2ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
 
-    guard let data = try? Data(contentsOf: manifestURL),
+    if let entry = readPluginManifestEntry(at: v1ManifestURL) {
+      return entry.version
+    }
+
+    if let entry = readPluginManifestEntry(at: v2ManifestURL) {
+      migrateLegacyManifestIfNeeded(version: entry.version, installPath: entry.installPath)
+      return entry.version
+    }
+
+    return nil
+  }
+
+  private struct PluginManifestEntry {
+    let version: String
+    let installPath: String?
+  }
+
+  private static func readPluginManifestEntry(at url: URL) -> PluginManifestEntry? {
+    guard let data = try? Data(contentsOf: url),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let plugins = json["plugins"] as? [String: Any],
           let pluginEntries = plugins["query@contextify"] as? [[String: Any]],
@@ -824,7 +843,8 @@ exit 1
       return nil
     }
 
-    return version
+    let installPath = firstEntry["installPath"] as? String
+    return PluginManifestEntry(version: version, installPath: installPath)
   }
 
   /// Check if a directory is on the system PATH
@@ -954,7 +974,7 @@ exit 1
   }
 
   /// Update installed_plugins.json manifest
-  private func updatePluginManifest(version: String, pluginPath: URL) throws {
+  private static func updatePluginManifest(version: String, pluginPath: URL) throws {
     let manifestURL = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/plugins/installed_plugins.json")
 
@@ -990,6 +1010,21 @@ exit 1
     try jsonData.write(to: manifestURL)
 
     log.info("[CLI-MANIFEST-UPDATE] version=\(version) path=\(pluginPath.path)")
+  }
+
+  private static func migrateLegacyManifestIfNeeded(version: String, installPath: String?) {
+    guard let installPath else { return }
+
+    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/installed_plugins.json")
+    guard !FileManager.default.fileExists(atPath: manifestURL.path) else { return }
+
+    do {
+      try updatePluginManifest(version: version, pluginPath: URL(fileURLWithPath: installPath))
+      log.info("[CLI-MANIFEST-MIGRATE] Migrated v2 manifest to v1")
+    } catch {
+      log.warning("[CLI-MANIFEST-MIGRATE] Failed: \(error.localizedDescription)")
+    }
   }
 
   /// Remove plugin entry from manifest
