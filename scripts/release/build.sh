@@ -322,37 +322,37 @@ if [ "$SKIP_LINUX" = false ]; then
     cd "$ARCHIVE_DIR/linux"
 
     # Download both architecture artifacts
-    gh run download "$RUN_ID" --name contextify-ingest-linux-x86_64 --dir . || {
+    gh run download "$RUN_ID" --name contextify-linux-x86_64 --dir . || {
       echo -e "${RED}Error: Failed to download x86_64 artifact${NC}"
       exit 1
     }
-    gh run download "$RUN_ID" --name contextify-ingest-linux-arm64 --dir . || {
+    gh run download "$RUN_ID" --name contextify-linux-arm64 --dir . || {
       echo -e "${RED}Error: Failed to download arm64 artifact${NC}"
       exit 1
     }
 
     # The artifacts are downloaded as directories, move the files up
-    if [ -f "contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz" ]; then
-      mv contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz .
-      rmdir contextify-ingest-linux-x86_64 2>/dev/null || true
+    if [ -f "contextify-linux-x86_64/contextify-linux-x86_64.tar.gz" ]; then
+      mv contextify-linux-x86_64/contextify-linux-x86_64.tar.gz .
+      rmdir contextify-linux-x86_64 2>/dev/null || true
     fi
-    if [ -f "contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz" ]; then
-      mv contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz .
-      rmdir contextify-ingest-linux-arm64 2>/dev/null || true
+    if [ -f "contextify-linux-arm64/contextify-linux-arm64.tar.gz" ]; then
+      mv contextify-linux-arm64/contextify-linux-arm64.tar.gz .
+      rmdir contextify-linux-arm64 2>/dev/null || true
     fi
 
     cd "$ROOT_DIR"
 
     # Verify artifacts exist
-    if [ -f "$ARCHIVE_DIR/linux/contextify-ingest-linux-x86_64.tar.gz" ]; then
-      echo -e "${GREEN}OK${NC} Archived: linux/contextify-ingest-linux-x86_64.tar.gz"
+    if [ -f "$ARCHIVE_DIR/linux/contextify-linux-x86_64.tar.gz" ]; then
+      echo -e "${GREEN}OK${NC} Archived: linux/contextify-linux-x86_64.tar.gz"
     else
       echo -e "${RED}Error: x86_64 artifact not found${NC}"
       exit 1
     fi
 
-    if [ -f "$ARCHIVE_DIR/linux/contextify-ingest-linux-arm64.tar.gz" ]; then
-      echo -e "${GREEN}OK${NC} Archived: linux/contextify-ingest-linux-arm64.tar.gz"
+    if [ -f "$ARCHIVE_DIR/linux/contextify-linux-arm64.tar.gz" ]; then
+      echo -e "${GREEN}OK${NC} Archived: linux/contextify-linux-arm64.tar.gz"
     else
       echo -e "${RED}Error: arm64 artifact not found${NC}"
       exit 1
@@ -405,7 +405,7 @@ if not skip_linux:
     data['phases']['build']['linux']['built'] = True
 
     # x86_64
-    x86_path = os.path.join(linux_dir, 'contextify-ingest-linux-x86_64.tar.gz')
+    x86_path = os.path.join(linux_dir, 'contextify-linux-x86_64.tar.gz')
     if os.path.exists(x86_path):
         data['phases']['build']['linux']['x86_64']['built'] = True
         data['phases']['build']['linux']['x86_64']['path'] = x86_path
@@ -414,7 +414,7 @@ if not skip_linux:
             data['phases']['build']['linux']['x86_64']['sha256'] = hashlib.sha256(f.read()).hexdigest()
 
     # arm64
-    arm64_path = os.path.join(linux_dir, 'contextify-ingest-linux-arm64.tar.gz')
+    arm64_path = os.path.join(linux_dir, 'contextify-linux-arm64.tar.gz')
     if os.path.exists(arm64_path):
         data['phases']['build']['linux']['arm64']['built'] = True
         data['phases']['build']['linux']['arm64']['path'] = arm64_path

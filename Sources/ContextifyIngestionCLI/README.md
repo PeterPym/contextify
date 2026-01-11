@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/in
 curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/install-cli.sh | bash -s -- 1.0.0
 
 # Manual download
-curl -fsSL https://github.com/banagale/contextify/releases/download/cli-v1.0.0/contextify-ingest-linux-x86_64.tar.gz | tar xz
+curl -fsSL https://github.com/banagale/contextify/releases/download/cli-v1.0.0/contextify-linux-x86_64.tar.gz | tar xz
 sudo mv contextify-ingest /usr/local/bin/
 ```
 

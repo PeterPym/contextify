@@ -88,6 +88,12 @@ VEOF
                 exit 1
               fi
               echo "Static linking verified - no dynamic SQLite dependency"
+              if ldd .build/release/contextify-query 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-query
+                exit 1
+              fi
+              echo "Static linking verified for contextify-query"
 
               # Create tarball
               mkdir -p dist
@@ -95,14 +101,14 @@ VEOF
               cp .build/release/contextify-query dist/
               cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-ingest-linux-x86_64.tar.gz contextify-ingest contextify-query user-skill
+              tar -czvf contextify-linux-x86_64.tar.gz contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: contextify-ingest-linux-x86_64
-          path: dist/contextify-ingest-linux-x86_64.tar.gz
+          name: contextify-linux-x86_64
+          path: dist/contextify-linux-x86_64.tar.gz
 
   build-linux-arm64:
     runs-on: ubuntu-latest
@@ -180,6 +186,12 @@ VEOF
                 exit 1
               fi
               echo "Static linking verified - no dynamic SQLite dependency"
+              if ldd .build/release/contextify-query 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: Binary has dynamic SQLite dependency!"
+                ldd .build/release/contextify-query
+                exit 1
+              fi
+              echo "Static linking verified for contextify-query"
 
               # Create tarball
               mkdir -p dist
@@ -187,14 +199,14 @@ VEOF
               cp .build/release/contextify-query dist/
               cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-ingest-linux-arm64.tar.gz contextify-ingest contextify-query user-skill
+              tar -czvf contextify-linux-arm64.tar.gz contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: contextify-ingest-linux-arm64
-          path: dist/contextify-ingest-linux-arm64.tar.gz
+          name: contextify-linux-arm64
+          path: dist/contextify-linux-arm64.tar.gz
 
   # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
   # This job is disabled to avoid duplicate releases.
@@ -236,7 +248,7 @@ VEOF
   #           ## Contextify v${{ steps.version.outputs.version }}
   #           ...
   #         files: |
-  #           artifacts/contextify-ingest-linux-x86_64/contextify-ingest-linux-x86_64.tar.gz
-  #           artifacts/contextify-ingest-linux-arm64/contextify-ingest-linux-arm64.tar.gz
+  #           artifacts/contextify-linux-x86_64/contextify-linux-x86_64.tar.gz
+  #           artifacts/contextify-linux-arm64/contextify-linux-arm64.tar.gz
   #         draft: false
   #         prerelease: false

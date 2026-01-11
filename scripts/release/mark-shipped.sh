@@ -311,8 +311,8 @@ if [ "$CHANNEL" = "linux" ] && [ "$STATUS" = "shipped" ] && [ "$DRY_RUN" = false
   echo "Creating GitHub Release for Linux..."
 
   ARCHIVE_DIR="$ROOT_DIR/build/archives/v${VERSION}/linux"
-  X86_ARTIFACT="$ARCHIVE_DIR/contextify-ingest-linux-x86_64.tar.gz"
-  ARM64_ARTIFACT="$ARCHIVE_DIR/contextify-ingest-linux-arm64.tar.gz"
+  X86_ARTIFACT="$ARCHIVE_DIR/contextify-linux-x86_64.tar.gz"
+  ARM64_ARTIFACT="$ARCHIVE_DIR/contextify-linux-arm64.tar.gz"
 
   # Check if release already exists
   if gh release view "v${VERSION}" &>/dev/null; then
@@ -335,11 +335,11 @@ if [ "$CHANNEL" = "linux" ] && [ "$STATUS" = "shipped" ] && [ "$DRY_RUN" = false
 **Linux CLI (contextify-ingest):**
 \`\`\`bash
 # x86_64
-curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-ingest-linux-x86_64.tar.gz | tar xz
+curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-linux-x86_64.tar.gz | tar xz
 sudo mv contextify-ingest /usr/local/bin/
 
 # arm64
-curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-ingest-linux-arm64.tar.gz | tar xz
+curl -fsSL https://github.com/banagale/contextify/releases/download/v${VERSION}/contextify-linux-arm64.tar.gz | tar xz
 sudo mv contextify-ingest /usr/local/bin/
 \`\`\`
 
