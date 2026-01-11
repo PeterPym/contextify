@@ -73,6 +73,42 @@ capture_output() {
   echo "" >> "$PROOF_FILE"
 }
 
+command_exists() {
+  command -v "$1" &> /dev/null
+}
+
+timeout_command() {
+  if command_exists timeout; then
+    echo "timeout"
+  elif command_exists gtimeout; then
+    echo "gtimeout"
+  else
+    echo ""
+  fi
+}
+
+run_with_timeout() {
+  local duration="$1"
+  shift
+  local tcmd
+  tcmd=$(timeout_command)
+  if [ -n "$tcmd" ]; then
+    "$tcmd" "$duration" "$@"
+  else
+    "$@"
+  fi
+}
+
+run_capture() {
+  local output
+  set +e
+  output="$("$@" 2>&1)"
+  local exit_code=$?
+  set -e
+  printf "%s" "$output"
+  return $exit_code
+}
+
 # --- Initialize Proof File ---
 
 cat > "$PROOF_FILE" << EOF
@@ -102,7 +138,7 @@ echo "" >> "$PROOF_FILE"
 
 # Check contextify-query
 step "Checking contextify-query availability..."
-if command -v contextify-query &> /dev/null; then
+if command_exists contextify-query; then
   VERSION=$(contextify-query --version 2>&1 | grep -E "^contextify-query" | head -1 || echo "unknown")
   pass "contextify-query found: $VERSION"
   echo "Version: $VERSION" | capture_output
@@ -114,7 +150,7 @@ fi
 
 # Check Codex CLI
 step "Checking Codex CLI availability..."
-if command -v codex &> /dev/null; then
+if command_exists codex; then
   CODEX_VERSION=$(codex --version 2>&1 | head -1 || echo "unknown")
   pass "Codex CLI found: $CODEX_VERSION"
   CODEX_AVAILABLE=true
@@ -159,7 +195,7 @@ step "Running: contextify-query install-plugin"
 echo "Command: \`contextify-query install-plugin\`" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
-INSTALL_OUTPUT=$(contextify-query install-plugin 2>&1)
+INSTALL_OUTPUT=$(run_capture contextify-query install-plugin)
 INSTALL_EXIT=$?
 
 echo "$INSTALL_OUTPUT"
@@ -247,28 +283,56 @@ header "Codex CLI Integration Test"
 echo "## Codex CLI Integration Test" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
+if command_exists claude; then
+  step "Testing Claude Code skill discovery..."
+  echo "### Claude Skill Discovery" >> "$PROOF_FILE"
+  echo "" >> "$PROOF_FILE"
+  echo "Command: \`claude -p --dangerously-skip-permissions \"/skills\"\`" >> "$PROOF_FILE"
+  echo "" >> "$PROOF_FILE"
+
+  CLAUDE_OUTPUT=$(run_capture claude -p --dangerously-skip-permissions "/skills")
+  CLAUDE_EXIT=$?
+
+  echo "$CLAUDE_OUTPUT" | head -60
+  echo "$CLAUDE_OUTPUT" | head -120 | capture_output
+
+  if [ $CLAUDE_EXIT -ne 0 ]; then
+    fail "Claude Code skill discovery failed (exit code $CLAUDE_EXIT)"
+  elif echo "$CLAUDE_OUTPUT" | grep -qi "total-recall"; then
+    pass "Claude Code discovered total-recall skill"
+  else
+    fail "Claude Code did NOT discover total-recall skill"
+  fi
+else
+  skip "Claude Code not installed (skill discovery skipped)"
+  echo "*Claude Code not installed - skill discovery skipped*" >> "$PROOF_FILE"
+  echo "" >> "$PROOF_FILE"
+fi
+
 if [ "$CODEX_AVAILABLE" = true ]; then
 
   # Skill Discovery
   step "Testing Codex skill discovery..."
   echo "### Skill Discovery" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
-  echo "Command: \`codex exec --dangerously-bypass-approvals-and-sandbox \"List your available skills\"\`" >> "$PROOF_FILE"
+  echo "Command: \`codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \"/skills\"\`" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
 
   info "This will invoke Codex CLI and may take 30-60 seconds..."
   echo ""
 
-  DISCOVERY_OUTPUT=$(timeout 120 codex exec --dangerously-bypass-approvals-and-sandbox \
-    "What skills do you have available? Just list the skill names, nothing else." 2>&1 || echo "TIMEOUT_OR_ERROR")
+  DISCOVERY_OUTPUT=$(run_capture run_with_timeout 120 codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox "/skills")
+  DISCOVERY_EXIT=$?
 
   echo "$DISCOVERY_OUTPUT" | head -40
   echo "$DISCOVERY_OUTPUT" | head -60 | capture_output
 
-  if echo "$DISCOVERY_OUTPUT" | grep -qi "total-recall"; then
+  if [ $DISCOVERY_EXIT -eq 124 ]; then
+    fail "Codex CLI timed out during skill discovery (120s)"
+  elif [ $DISCOVERY_EXIT -ne 0 ]; then
+    fail "Codex CLI errored during skill discovery (exit code $DISCOVERY_EXIT)"
+  elif echo "$DISCOVERY_OUTPUT" | grep -qi "total-recall"; then
     pass "Codex discovered total-recall skill"
-  elif [ "$DISCOVERY_OUTPUT" = "TIMEOUT_OR_ERROR" ]; then
-    fail "Codex CLI timed out or errored"
   else
     fail "Codex did NOT discover total-recall skill"
   fi
@@ -279,22 +343,25 @@ if [ "$CODEX_AVAILABLE" = true ]; then
   step "Testing Codex skill execution..."
   echo "### Skill Execution" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
-  echo "Command: \`codex exec ... \"Use /total-recall to search for 'test'\"\`" >> "$PROOF_FILE"
+  echo "Command: \`codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \"Use /total-recall to search for 'validation test'\"\`" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
 
   info "This will invoke the skill and may take 60-90 seconds..."
   echo ""
 
-  EXEC_OUTPUT=$(timeout 180 codex exec --dangerously-bypass-approvals-and-sandbox \
-    "Use /total-recall to search for 'validation test'. Just tell me how many results." 2>&1 || echo "TIMEOUT_OR_ERROR")
+  EXEC_OUTPUT=$(run_capture run_with_timeout 180 codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \
+    "Use /total-recall to search for 'validation test'. Just tell me how many results.")
+  EXEC_EXIT=$?
 
   echo "$EXEC_OUTPUT" | head -60
   echo "$EXEC_OUTPUT" | head -80 | capture_output
 
-  if echo "$EXEC_OUTPUT" | grep -qiE "(contextify|total.recall|search|results|found|count)"; then
+  if [ $EXEC_EXIT -eq 124 ]; then
+    fail "Codex CLI timed out during skill execution (180s)"
+  elif [ $EXEC_EXIT -ne 0 ]; then
+    fail "Codex CLI errored during skill execution (exit code $EXEC_EXIT)"
+  elif echo "$EXEC_OUTPUT" | grep -qiE "(contextify|total.recall|search|results|found|count)"; then
     pass "Codex executed total-recall skill successfully"
-  elif [ "$EXEC_OUTPUT" = "TIMEOUT_OR_ERROR" ]; then
-    fail "Codex CLI timed out or errored during execution"
   else
     fail "Codex skill execution did not produce expected output"
   fi
@@ -318,7 +385,7 @@ step "Running: contextify-query uninstall-plugin"
 echo "Command: \`contextify-query uninstall-plugin\`" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
-UNINSTALL_OUTPUT=$(contextify-query uninstall-plugin 2>&1)
+UNINSTALL_OUTPUT=$(run_capture contextify-query uninstall-plugin)
 UNINSTALL_EXIT=$?
 
 echo "$UNINSTALL_OUTPUT"
