@@ -457,6 +457,26 @@ QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
 
 **Important:** Fixture mode installs test transcripts alongside real data. See "Cleanup After Local Runs" in `scripts/qa/README.md` if the app appears stuck on a test project.
 
+### Feature-Specific QA Scripts
+
+Before creating new validation/QA work, check `scripts/qa/` for existing patterns:
+
+```bash
+ls -la scripts/qa/
+```
+
+Feature validation scripts live in subdirectories (e.g., `scripts/qa/codex-support/`). Each typically includes:
+- `VALIDATION-PLAN.md` - Phases, status tracking, proof requirements
+- `interactive-qa.sh` - CLI-based interactive test script
+- `interactive-qa-app.sh` - App UI test script (builds dev app, runs tests)
+- `clear-state.sh` - Reset test state
+- `validate-install.sh` - Automated validation checks
+
+**When asked about validation or QA:**
+1. Check `scripts/qa/` for existing scripts in the relevant area
+2. Follow established patterns (build dev app, clear state, capture proof)
+3. QA scripts should build and run the dev build, not rely on installed apps
+
 ## Git Hooks (Pre-commit Build Guard)
 
 Enable hooks: `git config core.hooksPath .githooks` or `make hooks-setup`
