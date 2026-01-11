@@ -123,45 +123,64 @@ header "Pre-Flight"
 echo "## Pre-Flight" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
-# Check app is running
-step "Checking if Contextify.app is running..."
-if pgrep -x "Contextify" > /dev/null; then
-  pass "Contextify.app is running"
-else
-  info "Contextify.app is not running"
-  echo ""
-  read -p "Start Contextify.app now? [Y/n] " start_app
-  if [ "$start_app" != "n" ] && [ "$start_app" != "N" ]; then
-    open -a Contextify
-    sleep 2
-    if pgrep -x "Contextify" > /dev/null; then
-      pass "Contextify.app started"
-    else
-      fail "Failed to start Contextify.app"
-      exit 1
-    fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+DEV_APP="$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app"
+
+# Build the feature branch
+step "Building feature branch..."
+echo "Build output:" >> "$PROOF_FILE"
+if bash "$REPO_ROOT/scripts/xc.sh" build > /tmp/qa-build-output.txt 2>&1; then
+  if grep -q "BUILD SUCCEEDED" /tmp/qa-build-output.txt; then
+    pass "Build succeeded"
+    echo "- Build: SUCCEEDED" >> "$PROOF_FILE"
   else
-    fail "Contextify.app not running"
+    fail "Build did not report success"
+    cat /tmp/qa-build-output.txt
     exit 1
   fi
+else
+  fail "Build failed"
+  cat /tmp/qa-build-output.txt
+  exit 1
 fi
 
-# Check build type
-step "Checking build type..."
+# Verify dev build exists
+if [ ! -d "$DEV_APP" ]; then
+  fail "Dev build not found at $DEV_APP"
+  exit 1
+fi
+pass "Dev build exists"
+
+# Kill any running Contextify
+step "Stopping any running Contextify..."
+if pgrep -x "Contextify" > /dev/null; then
+  pkill -x "Contextify" 2>/dev/null || true
+  sleep 1
+  info "Stopped existing Contextify process"
+fi
+
+# Start the dev build
+step "Starting dev build..."
+open "$DEV_APP"
+sleep 3
+
+# Verify it's the right build
+step "Verifying correct build is running..."
 APP_PATH=$(ps aux | grep "Contextify.app" | grep -v grep | head -1 | sed 's/.*\(\/.*Contextify\.app\).*/\1/' || echo "")
 if echo "$APP_PATH" | grep -q "derived-dmg"; then
-  pass "DMG build detected (can test Enable/Disable)"
-  echo "Build: DMG (unsandboxed)" >> "$PROOF_FILE"
+  pass "DMG dev build running"
+  echo "Build: DMG dev build (unsandboxed)" >> "$PROOF_FILE"
+  echo "Path: $APP_PATH" >> "$PROOF_FILE"
 elif echo "$APP_PATH" | grep -q "derived-appstore"; then
-  info "App Store build detected - Enable/Disable managed via Homebrew"
-  echo "Build: App Store (sandboxed)" >> "$PROOF_FILE"
-  echo ""
-  echo "App Store builds require Homebrew installation."
-  echo "Run: brew install PeterPym/contextify/contextify-query"
-  exit 0
+  fail "Wrong build type - App Store build running instead of DMG"
+  echo "Build: App Store (wrong)" >> "$PROOF_FILE"
+  exit 1
 else
-  info "Could not determine build type"
-  echo "Build: Unknown" >> "$PROOF_FILE"
+  fail "Wrong build running: $APP_PATH"
+  echo "Expected: .derived-dmg build"
+  echo "Got: $APP_PATH"
+  exit 1
 fi
 
 echo "" >> "$PROOF_FILE"
