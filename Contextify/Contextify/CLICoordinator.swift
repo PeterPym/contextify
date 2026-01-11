@@ -69,11 +69,19 @@ private func dmgInstallDirOverride() -> URL? {
 public final class CLICoordinator: ObservableObject {
   public static let shared = CLICoordinator()
 
+  /// Reasons why CLI installation needs repair
+  public enum RepairReason: Equatable {
+    case claudeSkillMissing
+    case codexSkillMissing
+    case bothSkillsMissing
+    case manifestMissing
+  }
+
   /// CLI state - computed from filesystem, not stored separately
   public enum State: Equatable {
     case disabled
     case installing
-    case enabled(version: String, pathWarning: Bool)
+    case enabled(version: String, pathWarning: Bool, repairIssue: RepairReason?)
     case enabledViaHomebrew(version: String)  // App Store: CLI installed via Homebrew
     case upgrading(from: String, to: String)
     case failed(error: String)
@@ -108,10 +116,23 @@ public final class CLICoordinator: ObservableObject {
   /// Returns true if PATH warning should be shown
   /// Only relevant when enabled and shim is in ~/bin
   public var needsPathWarning: Bool {
-    if case .enabled(_, let pathWarning) = state {
+    if case .enabled(_, let pathWarning, _) = state {
       return pathWarning
     }
     return false
+  }
+
+  /// Returns the repair reason if CLI needs repair, nil otherwise
+  public var repairReason: RepairReason? {
+    if case .enabled(_, _, let repairIssue) = state {
+      return repairIssue
+    }
+    return nil
+  }
+
+  /// Returns true if CLI needs repair (partial installation)
+  public var needsRepair: Bool {
+    return repairReason != nil
   }
 
   /// Enable CLI - installs shim and plugin
@@ -141,6 +162,46 @@ public final class CLICoordinator: ObservableObject {
     removeShimAndPlugin()
     refreshState(force: true)  // Force refresh after operation completes
     log.info("[CLI-DISABLE-COMPLETE]")
+  }
+
+  /// Repair CLI - reinstalls skills without full reinstall
+  /// Used when skills are missing but shim exists
+  public func repair() async {
+    isHandlingOperation = true
+    defer { isHandlingOperation = false }
+
+    log.info("[CLI-REPAIR-START]")
+
+    // Find the shim to run install-plugin
+    guard let shimPath = Self.findInstalledShim() else {
+      log.error("[CLI-REPAIR-FAILED] No shim found")
+      state = .failed(error: "CLI shim not found - try Disable then Enable")
+      return
+    }
+
+    // Run install-plugin to reinstall skills
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: shimPath)
+    process.arguments = ["install-plugin"]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+      if process.terminationStatus == 0 {
+        log.info("[CLI-REPAIR-SUCCESS] Skills reinstalled")
+      } else {
+        log.warning("[CLI-REPAIR] install-plugin exited with status \(process.terminationStatus)")
+      }
+    } catch {
+      log.error("[CLI-REPAIR-FAILED] \(error.localizedDescription)")
+      state = .failed(error: "Repair failed: \(error.localizedDescription)")
+      return
+    }
+
+    refreshState(force: true)
+    log.info("[CLI-REPAIR-COMPLETE]")
   }
 
   /// Check for installation/upgrades and install if needed
@@ -183,7 +244,7 @@ public final class CLICoordinator: ObservableObject {
         log.info("[CLI-AUTO-INSTALL-SKIP] No writable paths, requires manual enable")
       }
 
-    case .enabled(let installedVersion, _):
+    case .enabled(let installedVersion, _, _):
       // Check if upgrade needed
       guard bundledVersion != installedVersion else {
         log.info("[CLI-UPGRADE-SKIP] version=\(bundledVersion) (already installed)")
@@ -249,41 +310,53 @@ public final class CLICoordinator: ObservableObject {
     }
     log.info("[CLI-COMPUTE-STATE] Shim found at: \(shimPath, privacy: .public)")
 
-    // Check if plugin exists
-    guard let pluginVersion = readInstalledPluginVersion() else {
-      log.info("[CLI-COMPUTE-STATE] No plugin version in manifest, returning disabled")
-      return .disabled
-    }
-    log.info("[CLI-COMPUTE-STATE] Plugin version: \(pluginVersion, privacy: .public)")
-
     // ============================================================================
-    // TEMPORARY FIX: Skill file existence check
+    // Check installation components and determine repair state
     // TODO: #CLI-DOCTOR - Replace with `contextify-query doctor --json` integration
-    //
-    // This is a quick fix to detect missing skills. The proper solution is the
-    // CLI doctor command which provides comprehensive health checking.
     // See: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md
-    //
-    // Keywords: health check, skill detection, doctor command, installation state
     // ============================================================================
+
     let fileManager = FileManager.default
     let homeDir = fileManager.homeDirectoryForCurrentUser
+
+    // Check manifest for version (may be missing in partial install)
+    let pluginVersion = readInstalledPluginVersion()
+    let manifestMissing = (pluginVersion == nil)
+    log.info("[CLI-COMPUTE-STATE] Manifest: \(manifestMissing ? "MISSING" : pluginVersion!, privacy: .public)")
+
+    // Check skill files
     let claudeSkillPath = homeDir.appendingPathComponent(".claude/skills/total-recall/SKILL.md").path
     let codexSkillPath = homeDir.appendingPathComponent(".codex/skills/total-recall/SKILL.md").path
-
-    log.info("[CLI-COMPUTE-STATE] Checking skills: claude=\(claudeSkillPath, privacy: .public) codex=\(codexSkillPath, privacy: .public)")
 
     let claudeSkillExists = fileManager.fileExists(atPath: claudeSkillPath)
     let codexSkillExists = fileManager.fileExists(atPath: codexSkillPath)
 
-    log.info("[CLI-COMPUTE-STATE] Skill check: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
+    log.info("[CLI-COMPUTE-STATE] Skills: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
 
-    if !claudeSkillExists || !codexSkillExists {
-      log.warning("[CLI-COMPUTE-STATE] Skills missing, returning disabled")
+    // Determine repair reason (if any)
+    let repairIssue: RepairReason?
+    if manifestMissing && !claudeSkillExists && !codexSkillExists {
+      // Everything broken except shim - treat as disabled
+      log.warning("[CLI-COMPUTE-STATE] Manifest and all skills missing, returning disabled")
       return .disabled
+    } else if manifestMissing {
+      // Manifest missing but at least one skill works
+      repairIssue = .manifestMissing
+      log.warning("[CLI-COMPUTE-STATE] Manifest missing, needs repair")
+    } else if !claudeSkillExists && !codexSkillExists {
+      // Both skills missing
+      repairIssue = .bothSkillsMissing
+      log.warning("[CLI-COMPUTE-STATE] Both skills missing, needs repair")
+    } else if !claudeSkillExists {
+      repairIssue = .claudeSkillMissing
+      log.warning("[CLI-COMPUTE-STATE] Claude skill missing, needs repair")
+    } else if !codexSkillExists {
+      repairIssue = .codexSkillMissing
+      log.warning("[CLI-COMPUTE-STATE] Codex skill missing, needs repair")
+    } else {
+      repairIssue = nil
+      log.info("[CLI-COMPUTE-STATE] All components present")
     }
-    log.info("[CLI-COMPUTE-STATE] All skills present")
-    // ============================================================================
 
     // Check if shim's parent directory is on PATH
     // Note: Homebrew paths work in user shells even if not in GUI app's PATH
@@ -291,7 +364,9 @@ public final class CLICoordinator: ObservableObject {
     let isHomebrewPath = shimDir == "/opt/homebrew/bin" || shimDir == "/usr/local/bin"
     let pathWarning = !isHomebrewPath && !isDirectoryOnPath(shimDir)
 
-    return .enabled(version: pluginVersion, pathWarning: pathWarning)
+    // Use placeholder version if manifest is missing
+    let version = pluginVersion ?? "unknown"
+    return .enabled(version: version, pathWarning: pathWarning, repairIssue: repairIssue)
   }
 
   /// Find contextify-query at known Homebrew paths
