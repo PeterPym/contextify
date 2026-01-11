@@ -84,6 +84,9 @@ let products: [Product] = [
 
 // Files included in Linux build
 // Paths are relative to app/Sources/ContextifyCore/
+//
+// NOTE: This is a minimal set for contextify-ingest and contextify-query doctor command.
+// Database query commands are NOT supported on Linux - they require macOS for full functionality.
 let linuxSources: [String] = [
   // Platform abstractions (cross-platform)
   "Platform/CrossPlatformCrypto.swift",
@@ -91,40 +94,25 @@ let linuxSources: [String] = [
   "Platform/CrossPlatformLogger.swift",
   "Platform/IngestionEventSink.swift",
   "Platform/PlatformSandbox.swift",
-  // Database layer
-  "Database/BulkIngestManager.swift",   // Bulk write optimization
-  "Database/ContextifyQueryService.swift",  // Query service for CLI
-  "Database/DatabaseManager.swift",     // Database connection management
-  "Database/DatabaseMigration.swift",   // Schema migrations
+  // Database layer (ingestion only - no OSLog privacy modifiers)
+  "Database/BulkIngestManager.swift",
   "Database/DatabaseSchema.swift",
-  "Database/EntryFilter.swift",         // Entry filtering
   "Database/KeyGeneration.swift",
   "Database/Models.swift",
   "Database/PathNormalizer.swift",
-  "Database/QueryContentTruncator.swift",  // Content truncation
-  "Database/QueryTimeFilters.swift",    // Time range filtering
-  "Database/Repositories.swift",        // Repository protocols and implementations
-  "Database/HooverEngine.swift",        // Transcript parsing engine
-  "Database/TranscriptOrchestrator.swift",  // High-level DB API
-  "Database/TranscriptParsers.swift",   // Line parsers and metadata parsers
-  "Database/IngestProgress.swift",      // Progress reporting protocol
-  "Database/Utilities/TimeUnits.swift", // Time unit conversion helpers
+  "Database/Repositories.swift",
+  "Database/HooverEngine.swift",
+  "Database/TranscriptParsers.swift",
+  "Database/IngestProgress.swift",
+  "Database/Utilities/TimeUnits.swift",
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
   // Installation (CLI health checking)
   "Installation/CLIHealthChecker.swift",
-  // Query CLI support
-  "QueryCLI/ContextifyQueryShimMarker.swift",
-  "QueryCLI/FeedbackInbox.swift",
-  // Search
-  "Search/ConversationSearchService.swift",
-  // Worktree detection
-  "Worktree/WorktreeConfig.swift",
-  "Worktree/WorktreeDetector.swift",
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
-  "LaunchArguments.swift",              // CLI argument parsing
+  "LaunchArguments.swift",
   "LoggingConfig.swift",
   "ProjectIdentity.swift",
   "Projects/ProjectModels.swift",

@@ -1,4 +1,8 @@
+#if os(macOS)
 import ContextifyCore
+#else
+import ContextifyIngestionCore
+#endif
 import Foundation
 
 #if canImport(Darwin)
@@ -66,6 +70,7 @@ private struct ProjectScope {
 @main
 struct ContextifyQueryCLI {
   enum Command: String {
+    #if os(macOS)
     case search
     case activity
     case projects
@@ -79,6 +84,7 @@ struct ContextifyQueryCLI {
     case version
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
+    #endif
     case doctor
   }
 
@@ -292,6 +298,7 @@ struct ContextifyQueryCLI {
 
       // Commands that don't need database connection
       switch command {
+      #if os(macOS)
       case .installPlugin:
         try runInstallPlugin(options: options)
         return
@@ -299,16 +306,20 @@ struct ContextifyQueryCLI {
       case .uninstallPlugin:
         try runUninstallPlugin(options: options)
         return
+      #endif
 
       case .doctor:
         try runDoctor(options: options)
         return
 
+      #if os(macOS)
       default:
         break
+      #endif
       }
 
-      // All other commands need database
+      #if os(macOS)
+      // All other commands need database (macOS only)
       let dbURL = try resolveDatabaseURL(options: options)
       let service = try ContextifyQueryService(databaseURL: dbURL)
       let versionInfo = try service.versionInfo()
@@ -563,43 +574,53 @@ struct ContextifyQueryCLI {
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
+      #endif  // os(macOS)
     } catch let cliError as CLIError {
       emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
-    } catch let error as ContextifyQueryService.QueryError {
-      switch error {
-      case let .featureUnavailable(_, message):
-        let cliError = CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+    } catch {
+      // Handle platform-specific error types
+      #if os(macOS)
+      if let error = error as? ContextifyQueryService.QueryError {
+        switch error {
+        case let .featureUnavailable(_, message):
+          let cliError = CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+          emitError(cliError, json: jsonWanted)
+          exit(cliError.exitCode.rawValue)
+        }
+      }
+      if let error = error as? QueryCLIFeedbackError {
+        let cliError: CLIError
+        switch error {
+        case let .notFound(id):
+          cliError = CLIError(code: "invalidArgs", message: "No feedback with id '\(id)'", exitCode: .invalidArgs)
+        case let .invalidArgs(message):
+          cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+        case let .ioError(message):
+          cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+        }
         emitError(cliError, json: jsonWanted)
         exit(cliError.exitCode.rawValue)
       }
-    } catch let error as QueryCLIFeedbackError {
-      let cliError: CLIError
-      switch error {
-      case let .notFound(id):
-        cliError = CLIError(code: "invalidArgs", message: "No feedback with id '\(id)'", exitCode: .invalidArgs)
-      case let .invalidArgs(message):
-        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
-      case let .ioError(message):
-        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+      if let error = error as? QueryTimeParseError {
+        let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
+        emitError(cliError, json: jsonWanted)
+        exit(cliError.exitCode.rawValue)
       }
-      emitError(cliError, json: jsonWanted)
-      exit(cliError.exitCode.rawValue)
-    } catch let error as QueryTimeParseError {
-      let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
-      emitError(cliError, json: jsonWanted)
-      exit(cliError.exitCode.rawValue)
-    } catch let error as DatabaseError {
-      let mapped = mapDatabaseError(error)
-      emitError(mapped, json: jsonWanted)
-      exit(mapped.exitCode.rawValue)
-    } catch {
+      if let error = error as? DatabaseError {
+        let mapped = mapDatabaseError(error)
+        emitError(mapped, json: jsonWanted)
+        exit(mapped.exitCode.rawValue)
+      }
+      #endif
+      // Fallback for unhandled errors
       let cliError = CLIError(code: "unknown", message: error.localizedDescription, exitCode: .unknown)
       emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
     }
   }
 
+  #if os(macOS)
   private static func resolveDatabaseURL(options: Options) throws -> URL {
     if let dbPath = options.dbPath {
       let url = URL(fileURLWithPath: dbPath)
@@ -845,6 +866,27 @@ struct ContextifyQueryCLI {
     )
     exit(message == nil ? 0 : 1)
   }
+  #else
+  // Linux: simplified usage for doctor command only
+  private static func usage(_ message: String?) -> Never {
+    if let message = message {
+      FileHandle.standardError.write(Data("Error: \(message)\n\n".utf8))
+    }
+    FileHandle.standardError.write(Data("""
+      Usage: contextify-query <command>
+
+      Commands:
+        doctor    Check CLI installation health
+
+      Options:
+        --json    Emit JSON output
+
+      Note: Full query commands require macOS.
+      """.utf8))
+    FileHandle.standardError.write(Data("\n".utf8))
+    exit(message == nil ? 0 : 1)
+  }
+  #endif  // os(macOS) - static methods
 }
 
 private func isRegularFile(_ url: URL) -> Bool {
@@ -853,6 +895,7 @@ private func isRegularFile(_ url: URL) -> Bool {
   return !isDirectory.boolValue
 }
 
+#if os(macOS)
 private func printVersionInfo(_ info: ContextifyQueryService.VersionInfo) {
   print("db_schema_version: \(info.sqliteUserVersion)")
   print("expected_schema_version: \(info.expectedSchemaVersion)")
@@ -1593,6 +1636,7 @@ private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSugg
   object["name"] = project.name.map(JSONValue.string) ?? .null
   return .object(object)
 }
+#endif  // os(macOS)
 
 private func emitError(_ cliError: CLIError, json: Bool) {
   if json {
@@ -1604,10 +1648,10 @@ private func emitError(_ cliError: CLIError, json: Bool) {
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
     } catch {
-      fputs("Error: \(cliError.message)\n", stderr)
+      FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
     }
   } else {
-    fputs("Error: \(cliError.message)\n", stderr)
+    FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
   }
 }
 
@@ -1690,6 +1734,7 @@ private func parseMissingTableName(message: String) -> String? {
 // MARK: - Plugin Installation
 
 private let pluginVersion = ContextifyQueryCLI.cliVersion
+#if os(macOS)
 private let pluginName = "query"
 private let pluginNamespace = "contextify"
 private let pluginIdentifier = "\(pluginName)@\(pluginNamespace)"
@@ -2025,6 +2070,7 @@ private struct PluginInstallPayload: Encodable {
   let version: String
   let path: String
 }
+#endif  // os(macOS)
 
 // MARK: - Doctor Command
 
