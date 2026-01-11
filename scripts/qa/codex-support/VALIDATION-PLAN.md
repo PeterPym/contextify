@@ -73,20 +73,30 @@ Run the interactive QA script:
 - [x] `~/.codex/skills/total-recall/` removed
 
 ### 4.5 Settings UI Toggle (DMG Build Only)
-**Status: PENDING**
+**Status: IN PROGRESS**
 
 Run the app UI QA script:
 ```bash
 ./scripts/qa/codex-support/interactive-qa-app.sh
 ```
 
-- [ ] Open Contextify.app > Settings > CLI tab
-- [ ] Click "Enable" - verify both skills installed
-- [ ] Verify Codex skill is real file (not symlink) after Enable
-- [ ] Click "Disable" - verify both skills removed
-- [ ] Click "Enable" again - verify idempotency
+**Basic Flow (DONE):**
+- [x] Auto-install on launch creates both skills
+- [x] Click "Disable" - removes both skills
+- [x] Click "Enable" - reinstalls both skills
+- [x] Verify Codex skill is real file (not symlink)
 
-**Outcome:** Pending manual verification via app UI QA script.
+**Edge Cases (PENDING):**
+- [ ] Remove just Codex skill → verify app shows Disabled
+- [ ] Click Enable → verify both restored
+- [ ] Remove just Claude skill → verify app shows Disabled
+- [ ] Click Enable → verify both restored
+
+**Bugs fixed during validation:**
+- `removeShimAndPlugin()` was not removing skill directories (fixed)
+- `computeState()` was not checking skill file existence (fixed with temporary check)
+
+**Outcome:** Basic flow passes. Edge case tests not yet added to script.
 
 ---
 
@@ -124,8 +134,8 @@ Codex CLI integration verified via interactive QA script:
 
 ---
 
-## Phase 8: Final Merge Readiness
-**Status: PENDING APP UI TEST**
+## Phase 8: Final Merge Readiness (macOS)
+**Status: PENDING EDGE CASE TESTS**
 
 Pre-merge checklist:
 - [x] Build passes (0 warnings)
@@ -135,9 +145,11 @@ Pre-merge checklist:
 - [x] CLI integration tested (Codex discovers and executes skill)
 - [x] Bug fix cherry-picked to main
 - [x] Branch rebased on main
-- [ ] **Settings UI toggle tested** (`./scripts/qa/codex-support/interactive-qa-app.sh`)
+- [ ] **Settings UI toggle tested** - basic flow done, edge cases pending
 
-**Pending:** App UI toggle test before merge.
+**Pending:** Add edge case tests (partial install states) to QA script, then run again.
+
+Note: Linux phases (10-13) are tracked separately as P0 blockers for v1.1.0 release.
 
 ---
 
@@ -318,11 +330,11 @@ tar xzf contextify-linux-arm64.tar.gz
 | 1. Code Review | COMPLETE |
 | 2. Build Validation | COMPLETE |
 | 3. Unit Tests | COMPLETE |
-| 4. Functional Validation | PENDING (4.5 App UI) |
+| 4. Functional Validation | IN PROGRESS (edge cases) |
 | 5. CLI Integration | COMPLETE |
 | 6. Edge Cases | COMPLETE |
 | 7. Documentation | COMPLETE |
-| 8. Merge Readiness | PENDING APP UI TEST |
+| 8. Merge Readiness | PENDING EDGE CASES |
 | 9. Homebrew Update | PENDING RELEASE |
 | 10. Linux Build | NOT STARTED |
 | 11. Linux Skill Install | NOT STARTED |
