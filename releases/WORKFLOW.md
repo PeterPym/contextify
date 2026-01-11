@@ -22,7 +22,7 @@ Each release goes through 6 phases. Work through them in order:
 | 3 | `03-review-materials.md` | Demo video, sample data for App Store |
 | 4 | `04-submission.md` | Upload, metadata, review notes |
 | 5 | `05-marketing.md` | Changelog, announcements, press |
-| 6 | `06-post-release.md` | Monitoring, feedback, documentation |
+| 6 | `06-post-release.md` | Monitoring, feedback, documentation, Homebrew |
 
 ## Starting a New Release
 
@@ -326,16 +326,17 @@ If App Store rejects the submission:
 4. Re-run relevant checklist items
 5. Update `release.json` with new build number and resubmission
 
-## Two-Channel Release Strategy
+## Release Strategy
 
-Contextify ships via two channels:
+Contextify ships via three channels:
 
-| Channel | Target | Updates | Status |
-|---------|--------|---------|--------|
-| **DMG** | Contextify | Sparkle auto-updates | Ships immediately |
-| **App Store** | Contextify AppStore | Apple updates | Ships after Apple review |
+| Channel | Distribution | Ships |
+|---------|--------------|-------|
+| **DMG** | GitHub releases (+ Sparkle updates) | Immediately |
+| **App Store** | App Store | After Apple review |
+| **Linux CLI** | GitHub releases | With DMG |
 
-**Strategy:** DMG leads, App Store follows. Both built from same commit.
+**Strategy:** All channels built from same commit, same version. DMG and Linux ship immediately when built. Marketing waits for App Store approval.
 
 ### Build Both Distributions (Recommended)
 
@@ -545,6 +546,53 @@ When state appears in multiple places, these are the authoritative sources:
 When files disagree, `manifest.json` wins for guards; `release.json` wins for human review.
 
 See `STATUS-VALUES.md` for allowed status values.
+
+## Homebrew Formula Updates
+
+The CLI tool (`contextify-query`) is distributed via Homebrew for App Store users who can't get it bundled with the app (sandbox restrictions).
+
+**Repo:** `~/code/projects/homebrew-contextify` (public: `github.com/PeterPym/homebrew-contextify`)
+
+### When to Update
+
+Update the Homebrew formula in Phase 6 (Post-Release), after:
+1. Release tarball is uploaded to GitHub Releases
+2. SHA256 is known
+3. Caveats text matches new binary behavior
+
+### Update Process
+
+```bash
+cd ~/code/projects/homebrew-contextify
+
+# Update version
+sed -i '' 's/version ".*"/version "X.Y.Z"/' Formula/contextify-query.rb
+
+# Get SHA256 from release tarball
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-query-arm64.tar.gz" | shasum -a 256
+
+# Update sha256 in Formula with output
+# Edit Formula/contextify-query.rb manually
+
+# Commit and push
+git add -A && git commit -m "chore(formula): bump to vX.Y.Z"
+git push origin main
+```
+
+### Verification
+
+```bash
+brew update
+brew upgrade contextify-query
+contextify-query --version
+contextify-query install-plugin
+```
+
+### Important Notes
+
+- **Caveats must match binary behavior** - don't update caveats before the release binary exists
+- **Pre-stage caveats changes** - for feature releases (new CLI behavior), create a branch with caveats updates ready to merge post-release
+- **SHA256 is critical** - wrong hash = broken installs
 
 ## Detailed Documentation
 

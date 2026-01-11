@@ -26,7 +26,7 @@ Automatically install and upgrade the Contextify Claude Code plugin to eliminate
 **Installed location:**
 - Path: `~/.claude/plugins/cache/contextify/query/{version}/`
 - Manifests:
-  - `~/.claude/plugins/installed_plugins_v2.json` - tracks installed plugins
+  - `~/.claude/plugins/installed_plugins.json` - tracks installed plugins
   - `~/.claude/plugins/known_marketplaces.json` - tracks marketplace sources (optional for local installs)
 
 ### Build Types
@@ -49,14 +49,14 @@ Automatically install and upgrade the Contextify Claude Code plugin to eliminate
 
 1. **Check if auto-install needed:**
    - Read bundled version from `Contents/Resources/contextify-query/claude-plugin/.claude-plugin/plugin.json`
-   - Read installed version from `~/.claude/plugins/installed_plugins_v2.json`
+   - Read installed version from `~/.claude/plugins/installed_plugins.json`
    - Compare: not installed OR installed version < bundled version
 
 2. **Install/upgrade plugin:**
    ```
    - Create directory: ~/.claude/plugins/cache/contextify/query/{version}/
    - Copy contents: {app bundle}/claude-plugin/* → {install path}
-   - Update installed_plugins_v2.json:
+   - Update installed_plugins.json:
      {
        "version": 2,
        "plugins": {
@@ -300,8 +300,8 @@ Update `scripts/xc.sh` function `reset_state_for_bid()` to clean CLI installatio
   echo "  Cleaning Claude Code plugin..."
   rm -rf "$HOME/.claude/plugins/cache/contextify" 2>/dev/null || true
 
-  # Update installed_plugins_v2.json to remove our plugin entry
-  local plugins_manifest="$HOME/.claude/plugins/installed_plugins_v2.json"
+  # Update installed_plugins.json to remove our plugin entry
+  local plugins_manifest="$HOME/.claude/plugins/installed_plugins.json"
   if [[ -f "$plugins_manifest" ]]; then
     if command -v jq >/dev/null 2>&1; then
       local temp_manifest="/tmp/contextify-plugins-$$.json"
@@ -791,7 +791,7 @@ All failures fall back to showing manual installation instructions in Settings U
 
 1. **Fresh install** - plugin auto-installs on first launch
    - Verify: Plugin files in `~/.claude/plugins/cache/contextify/query/{version}/`
-   - Verify: `installed_plugins_v2.json` updated
+   - Verify: `installed_plugins.json` updated
    - Verify: Skills available in Claude Code
    - Check logs: `[PLUGIN-AUTO-INSTALL-SUCCESS]`
 
@@ -858,8 +858,8 @@ rm -rf ~/.claude/plugins/cache/contextify/
 
 # 3. Verify installation
 test -d ~/.claude/plugins/cache/contextify/query/0.0.1/
-test -f ~/.claude/plugins/installed_plugins_v2.json
-grep -q "query@contextify" ~/.claude/plugins/installed_plugins_v2.json
+test -f ~/.claude/plugins/installed_plugins.json
+grep -q "query@contextify" ~/.claude/plugins/installed_plugins.json
 
 # 4. Test upgrade
 # (Replace bundled plugin with newer version, relaunch)
@@ -908,7 +908,7 @@ Add validation for plugin permission UI:
 ```
 [PLUGIN-AUTO-INSTALL-ERROR] error=bundleNotFound
 [PLUGIN-AUTO-INSTALL-ERROR] mode=appstore error=permissionDenied
-[PLUGIN-AUTO-INSTALL-ERROR] error=manifestWriteFailed path=~/.claude/plugins/installed_plugins_v2.json
+[PLUGIN-AUTO-INSTALL-ERROR] error=manifestWriteFailed path=~/.claude/plugins/installed_plugins.json
 ```
 
 ### Testing Timeline
@@ -1003,7 +1003,7 @@ a plugin that provides advanced search and context features.
 
 What we do:
 - Install plugin files to ~/.claude/plugins/cache/contextify/
-- Update ~/.claude/plugins/installed_plugins_v2.json manifest
+- Update ~/.claude/plugins/installed_plugins.json manifest
 - Files are read by Claude Code when user runs /skill commands
 
 Why we need permission:

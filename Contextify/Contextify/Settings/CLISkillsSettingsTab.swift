@@ -200,7 +200,9 @@ struct CLISkillsSettingsTab: View {
 
   private var statusState: CLIStepState {
     switch coordinator.state {
-    case .enabled, .enabledViaHomebrew:
+    case .enabled(_, _, let repairIssue):
+      return repairIssue != nil ? .warning : .completed
+    case .enabledViaHomebrew:
       return .completed
     case .failed, .upgrading:
       return .warning
@@ -221,6 +223,15 @@ struct CLISkillsSettingsTab: View {
             } else if coordinator.isHandlingOperation {
               ProgressView()
                 .controlSize(.small)
+            } else if coordinator.needsRepair {
+              Button("Repair") {
+                log.info("[CLI-REPAIR-START]")
+                Task {
+                  await coordinator.repair()
+                }
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyYellow)
             } else if coordinator.isEnabled {
               Button("Disable") {
                 log.info("[CLI-DISABLE-START]")
@@ -251,7 +262,7 @@ struct CLISkillsSettingsTab: View {
                   // DMG: Simple text
                   Text("Not installed")
                     .font(.body)
-                  Text("The CLI shim and Claude Code plugin are not installed. Click Enable to install automatically.")
+                  Text("The CLI shim and skills are not installed. Click Enable to install automatically.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
@@ -264,17 +275,34 @@ struct CLISkillsSettingsTab: View {
                     .font(.body)
                 }
 
-              case .enabled(let version, let pathWarning):
+              case .enabled(let version, let pathWarning, let repairIssue):
                 HStack(spacing: 6) {
-                  Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                  if repairIssue != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                      .foregroundStyle(Color.contextifyYellow)
+                  } else {
+                    Image(systemName: "checkmark.circle.fill")
+                      .foregroundStyle(.green)
+                  }
                   Text("Installed (v\(version))")
                     .font(.body)
                 }
 
-                Text("The CLI shim and Claude Code plugin are installed and managed automatically.")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+                // Show repair warning if needed
+                if let repairIssue = repairIssue {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text(repairWarningMessage(for: repairIssue))
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    Text("Click Repair to fix.")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                } else {
+                  Text("The CLI shim and skills are installed and managed automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
 
                 if pathWarning {
                   VStack(alignment: .leading, spacing: 8) {
@@ -387,5 +415,19 @@ struct CLISkillsSettingsTab: View {
   }
   .padding()
   .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// Returns user-facing message for repair reason
+  private func repairWarningMessage(for reason: CLICoordinator.RepairReason) -> String {
+    switch reason {
+    case .claudeSkillMissing:
+      return "Claude Code skill missing - Total Recall won't work in Claude Code."
+    case .codexSkillMissing:
+      return "Codex CLI skill missing - Total Recall won't work in Codex CLI."
+    case .bothSkillsMissing:
+      return "CLI skills missing - Total Recall won't work."
+    case .manifestMissing:
+      return "Installation incomplete - plugin manifest missing."
+    }
   }
 }

@@ -440,6 +440,78 @@ These must be done before CLI is usable:
 **Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
+---
+
+## Linux Total Recall Support (contextify-query)
+
+**Status:** NOT STARTED - Major gap
+**Priority:** P1
+**Tag:** #LINUX-QUERY
+
+- [ ] #LINUX-TOTAL-RECALL: Build contextify-query for Linux to enable Total Recall skill
+
+**Problem:** Total Recall is Contextify's star feature, but it doesn't work on Linux. The `/total-recall` skill requires `contextify-query`, which is only built for macOS.
+
+**Current State:**
+- `contextify-ingest` builds on Linux (ingestion only)
+- `contextify-query` is macOS-only (not in Linux build targets)
+- Linux Claude Code/Codex users cannot use Total Recall
+
+**Impact:** Anyone running Claude Code or Codex on Linux cannot use the primary feature that makes Contextify valuable.
+
+---
+
+### P0 - Core Build
+
+- [ ] #LINUX-QUERY-SOURCES: Add contextify-query to Linux Package.swift targets
+  - Add ContextifyQueryCLI to Linux products
+  - Identify which sources need cross-platform adapters
+
+- [ ] #LINUX-QUERY-BUILD: Get contextify-query building on Linux
+  - Resolve any Darwin-specific dependencies
+  - May need Platform/* adapters similar to ingestion CLI
+
+- [ ] #LINUX-QUERY-CI: Add contextify-query to Linux CI workflow
+  - Build both CLIs in linux-build.yml
+  - E2E test: install-plugin → skill files exist
+
+---
+
+### P1 - Distribution & Integration
+
+- [ ] #LINUX-QUERY-RELEASE: Include contextify-query in Linux releases
+  - .tar.gz contains both binaries
+  - Or separate downloads per CLI
+
+- [ ] #LINUX-SKILL-INSTALL: Ensure install-plugin works on Linux
+  - Creates ~/.claude/skills/total-recall/
+  - Creates ~/.codex/skills/total-recall/
+
+- [ ] #LINUX-QUERY-DOCS: Document Linux Total Recall setup
+  - Installation steps
+  - Verify skill works in Claude Code/Codex
+
+---
+
+### P2 - Health Check (unified implementation)
+
+- [ ] #CLI-DOCTOR: Add `contextify-query doctor` command
+  - Check shim on PATH
+  - Check plugin manifest
+  - Check skill files (Claude + Codex)
+  - Check database connectivity
+  - Works on both macOS and Linux
+
+- [ ] #APP-HEALTH-CHECK: App uses CLI doctor for comprehensive status
+  - Call `contextify-query doctor --json` if CLI available
+  - Fall back to basic checks if CLI missing
+  - Surface partial install states in UI
+
+---
+
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+**Related:** #LINUX-CLI (ingestion), cross-platform architecture doc
+
 ## Periodic Ingestion Check for Resilience
 
 **Status:** Not started

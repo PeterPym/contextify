@@ -159,7 +159,7 @@ Local development validation:
 Observed on-disk behavior (Claude Code 2.0.65):
 
 - Marketplaces persisted at `~/.claude/plugins/known_marketplaces.json`
-- Installed plugins persisted at `~/.claude/plugins/installed_plugins_v2.json`
+- Installed plugins persisted at `~/.claude/plugins/installed_plugins.json`
 - Installed plugin cache copied to:
   - `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`
 

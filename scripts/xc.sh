@@ -343,8 +343,8 @@ reset_state_for_bid() {
   echo "  Cleaning Claude Code plugin..."
   rm -rf "$HOME/.claude/plugins/cache/contextify" 2>/dev/null || true
 
-  # Update installed_plugins_v2.json to remove our plugin entry
-  local plugins_manifest="$HOME/.claude/plugins/installed_plugins_v2.json"
+  # Update installed_plugins.json to remove our plugin entry
+  local plugins_manifest="$HOME/.claude/plugins/installed_plugins.json"
   if [[ -f "$plugins_manifest" ]]; then
     # Use jq to remove query@contextify entry if available
     if command -v jq >/dev/null 2>&1; then
