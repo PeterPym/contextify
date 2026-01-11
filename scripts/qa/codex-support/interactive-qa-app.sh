@@ -5,6 +5,7 @@
 # Guides user through Settings > CLI tab toggle testing.
 #
 # Usage: ./scripts/qa/codex-support/interactive-qa-app.sh
+#        ./scripts/qa/codex-support/interactive-qa-app.sh --v2-migration
 
 set -e
 
@@ -94,6 +95,84 @@ check_not_symlink() {
     return 0
   fi
 }
+
+# --- V2 Migration Test (standalone) ---
+
+if [ "$1" = "--v2-migration" ]; then
+  header "V2 Manifest Migration Test"
+
+  echo "This test verifies the app correctly handles v2-only manifest installs."
+  echo ""
+
+  # Build the dev app first
+  step "Building dev app..."
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+  if ! bash "$REPO_ROOT/scripts/xc.sh" build 2>&1 | tail -5; then
+    echo -e "${RED}Build failed${NC}"
+    exit 1
+  fi
+
+  DEV_APP="$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app"
+  if [ ! -d "$DEV_APP" ]; then
+    echo -e "${RED}Dev app not found at $DEV_APP${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ Build succeeded${NC}"
+
+  # Launch app
+  step "Launching dev app..."
+  open "$DEV_APP"
+  sleep 2
+
+  V1_MANIFEST="$HOME/.claude/plugins/installed_plugins.json"
+  V2_MANIFEST="$HOME/.claude/plugins/installed_plugins_v2.json"
+
+  # Check preconditions
+  if [ ! -f "$V2_MANIFEST" ]; then
+    echo -e "${RED}ERROR: No v2 manifest found at $V2_MANIFEST${NC}"
+    echo "This test requires a v2 manifest to exist. Run full QA first or create one."
+    exit 1
+  fi
+
+  step "Backing up v1 manifest (if exists)..."
+  if [ -f "$V1_MANIFEST" ]; then
+    cp "$V1_MANIFEST" "/tmp/installed_plugins_backup.json"
+    echo "Backed up to /tmp/installed_plugins_backup.json"
+  fi
+
+  step "Removing v1 manifest to simulate v2-only state..."
+  rm -f "$V1_MANIFEST"
+
+  if [ -f "$V1_MANIFEST" ]; then
+    echo -e "${RED}FAIL: Could not remove v1 manifest${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ v1 manifest removed${NC}"
+
+  prompt_action "Now in Contextify.app:
+  1. Close Settings (Cmd+W) and reopen (Cmd+,) to refresh state
+  2. Go to CLI tab
+  3. Should show 'Enabled' (NOT 'Repair' or 'Disabled')
+  4. Verify the version number shows correctly"
+
+  step "Checking if v1 manifest was recreated..."
+  if [ -f "$V1_MANIFEST" ]; then
+    echo -e "${GREEN}✓ PASS: v1 manifest recreated by app${NC}"
+    echo "Contents:"
+    head -20 "$V1_MANIFEST"
+  else
+    echo -e "${RED}✗ FAIL: v1 manifest was NOT recreated${NC}"
+    echo "The app should auto-migrate v2 to v1"
+    exit 1
+  fi
+
+  echo ""
+  echo -e "${GREEN}${BOLD}V2 Migration Test PASSED${NC}"
+  echo ""
+  exit 0
+fi
 
 # --- Initialize Proof File ---
 
