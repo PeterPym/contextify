@@ -167,7 +167,7 @@ sleep 3
 
 # Verify it's the right build
 step "Verifying correct build is running..."
-APP_PATH=$(ps aux | grep "Contextify.app" | grep -v grep | head -1 | sed 's/.*\(\/.*Contextify\.app\).*/\1/' || echo "")
+APP_PATH=$(ps aux | grep "Contextify.app/Contents/MacOS" | grep -v grep | head -1 | awk '{for(i=11;i<=NF;i++) printf $i" "; print ""}' | sed 's|/Contents/MacOS/Contextify.*||' || echo "")
 if echo "$APP_PATH" | grep -q "derived-dmg"; then
   pass "DMG dev build running"
   echo "Build: DMG dev build (unsandboxed)" >> "$PROOF_FILE"
