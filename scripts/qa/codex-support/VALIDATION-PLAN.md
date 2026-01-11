@@ -86,17 +86,24 @@ Run the app UI QA script:
 - [x] Click "Enable" - reinstalls both skills
 - [x] Verify Codex skill is real file (not symlink)
 
-**Edge Cases (PENDING):**
-- [ ] Remove just Codex skill → verify app shows Disabled
-- [ ] Click Enable → verify both restored
-- [ ] Remove just Claude skill → verify app shows Disabled
-- [ ] Click Enable → verify both restored
+**Edge Cases (TESTS ADDED, PENDING RUN):**
+- [ ] Remove just Codex skill → verify app shows Repair button
+- [ ] Click Repair → verify both restored
+- [ ] Remove just Claude skill → verify app shows Repair button
+- [ ] Click Repair → verify both restored
 
 **Bugs fixed during validation:**
 - `removeShimAndPlugin()` was not removing skill directories (fixed)
-- `computeState()` was not checking skill file existence (fixed with temporary check)
+- `computeState()` was not checking skill file existence (fixed with repair state)
 
-**Outcome:** Basic flow passes. Edge case tests not yet added to script.
+**Implementation complete:**
+- Added `RepairReason` enum with cases: `claudeSkillMissing`, `codexSkillMissing`, `bothSkillsMissing`, `manifestMissing`
+- Updated `State.enabled` to include `repairIssue: RepairReason?`
+- Updated `computeState()` to detect partial installs and return appropriate repair reason
+- Added `repair()` method that runs `contextify-query install-plugin`
+- Updated UI to show yellow warning icon and "Repair" button when repair needed
+
+**Outcome:** Implementation complete. QA script updated with edge case tests. Ready to run.
 
 ---
 

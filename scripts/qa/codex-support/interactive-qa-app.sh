@@ -373,6 +373,164 @@ fi
 
 echo "" >> "$PROOF_FILE"
 
+# --- Edge Case: Codex Skill Missing ---
+
+header "Edge Case: Codex Skill Missing"
+
+echo "## Edge Case: Codex Skill Missing" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+# First, ensure both skills exist (re-enable if needed)
+if [ ! -f ~/.claude/skills/total-recall/SKILL.md ] || [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  prompt_action "First, click 'Enable' to install both skills"
+fi
+
+step "Removing Codex skill to simulate partial install..."
+rm -rf ~/.codex/skills/total-recall
+sleep 1
+
+prompt_action "In Contextify.app:
+  1. Close Settings (Cmd+W) and reopen (Cmd+,) to refresh state
+  2. Go to CLI tab - should now show:
+     - Yellow warning icon (not green checkmark)
+     - 'Codex CLI skill missing' warning message
+     - 'Repair' button (not 'Disable')
+  3. Verify you see the Repair button"
+
+step "Verifying app state after removing Codex skill..."
+if [ -f ~/.claude/skills/total-recall/SKILL.md ]; then
+  pass "Claude skill still exists"
+else
+  fail "Claude skill was unexpectedly removed"
+fi
+
+if [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  pass "Codex skill confirmed missing"
+else
+  fail "Codex skill still exists (expected missing)"
+fi
+
+echo "" >> "$PROOF_FILE"
+
+# --- Edge Case: Repair from Codex Missing ---
+
+header "Edge Case: Repair (Codex Missing)"
+
+echo "## Edge Case: Repair (Codex Missing)" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+prompt_action "In Contextify.app:
+  1. Settings > CLI tab
+  2. Click 'Repair' button"
+
+step "Verifying both skills restored after Repair..."
+
+echo "### After Repair (Codex Missing)" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+check_skill_exists ~/.claude/skills/total-recall/SKILL.md "Claude"
+check_skill_exists ~/.codex/skills/total-recall/SKILL.md "Codex"
+
+if [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  check_not_symlink ~/.codex/skills/total-recall/SKILL.md
+fi
+
+echo "" >> "$PROOF_FILE"
+
+# Fail early if Repair didn't restore Codex skill
+if [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  echo ""
+  echo -e "${RED}${BOLD}Repair did not restore Codex skill${NC}"
+  echo ""
+  echo "Proof file: $PROOF_FILE"
+  exit 1
+fi
+
+# --- Edge Case: Claude Skill Missing ---
+
+header "Edge Case: Claude Skill Missing"
+
+echo "## Edge Case: Claude Skill Missing" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+step "Removing Claude skill to simulate partial install..."
+rm -rf ~/.claude/skills/total-recall
+sleep 1
+
+prompt_action "In Contextify.app:
+  1. Close Settings (Cmd+W) and reopen (Cmd+,) to refresh state
+  2. Go to CLI tab - should now show:
+     - Yellow warning icon (not green checkmark)
+     - 'Claude Code skill missing' warning message
+     - 'Repair' button (not 'Disable')
+  3. Verify you see the Repair button"
+
+step "Verifying app state after removing Claude skill..."
+if [ ! -f ~/.claude/skills/total-recall/SKILL.md ]; then
+  pass "Claude skill confirmed missing"
+else
+  fail "Claude skill still exists (expected missing)"
+fi
+
+if [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  pass "Codex skill still exists"
+else
+  fail "Codex skill was unexpectedly removed"
+fi
+
+echo "" >> "$PROOF_FILE"
+
+# --- Edge Case: Repair from Claude Missing ---
+
+header "Edge Case: Repair (Claude Missing)"
+
+echo "## Edge Case: Repair (Claude Missing)" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+prompt_action "In Contextify.app:
+  1. Settings > CLI tab
+  2. Click 'Repair' button"
+
+step "Verifying both skills restored after Repair..."
+
+echo "### After Repair (Claude Missing)" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+check_skill_exists ~/.claude/skills/total-recall/SKILL.md "Claude"
+check_skill_exists ~/.codex/skills/total-recall/SKILL.md "Codex"
+
+if [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  check_not_symlink ~/.codex/skills/total-recall/SKILL.md
+fi
+
+echo "" >> "$PROOF_FILE"
+
+# Fail early if Repair didn't restore Claude skill
+if [ ! -f ~/.claude/skills/total-recall/SKILL.md ]; then
+  echo ""
+  echo -e "${RED}${BOLD}Repair did not restore Claude skill${NC}"
+  echo ""
+  echo "Proof file: $PROOF_FILE"
+  exit 1
+fi
+
+# --- Final Cleanup: Leave in disabled state ---
+
+header "Final Cleanup"
+
+echo "## Final Cleanup" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+prompt_action "In Contextify.app:
+  1. Settings > CLI tab
+  2. Click 'Disable' button to clean up"
+
+step "Verifying final cleanup..."
+check_skill_removed ~/.claude/skills/total-recall "Claude"
+check_skill_removed ~/.codex/skills/total-recall "Codex"
+
+echo "" >> "$PROOF_FILE"
+
 # --- Summary ---
 
 header "Summary"
