@@ -169,6 +169,148 @@ ls ~/.codex/skills/total-recall/SKILL.md  # Should exist
 
 ---
 
+## Phase 10: Linux Build Validation
+**Status: NOT STARTED**
+
+**Prerequisite:** contextify-query must be added to Linux Package.swift targets.
+
+### 10.1 Package.swift Updates
+- [ ] Add ContextifyQueryCLI to Linux products
+- [ ] Add required sources to linuxSources array
+- [ ] Add Platform/* adapters if needed
+
+### 10.2 Local Build Test
+```bash
+# Docker-based Linux build
+bash scripts/docker-linux-build.sh
+
+# Verify binary exists
+ls build/linux/contextify-query
+```
+- [ ] Build succeeds without errors
+- [ ] Binary is executable
+
+### 10.3 CI Integration
+- [ ] Add contextify-query to `.github/workflows/linux-build.yml`
+- [ ] CI builds both contextify-ingest AND contextify-query
+- [ ] CI runs E2E test for contextify-query
+
+---
+
+## Phase 11: Linux Skill Installation
+**Status: NOT STARTED**
+
+Verify `install-plugin` works correctly on Linux.
+
+### 11.1 Skill Installation
+```bash
+# In Docker or Linux VM
+./contextify-query install-plugin
+
+# Verify skills created
+ls -la ~/.claude/skills/total-recall/SKILL.md
+ls -la ~/.codex/skills/total-recall/SKILL.md
+```
+- [ ] install-plugin exits 0
+- [ ] Claude skill file created
+- [ ] Codex skill file created
+- [ ] Codex skill is real file (not symlink)
+
+### 11.2 Skill Uninstallation
+```bash
+./contextify-query uninstall-plugin
+
+ls ~/.claude/skills/total-recall/  # Should not exist
+ls ~/.codex/skills/total-recall/   # Should not exist
+```
+- [ ] uninstall-plugin exits 0
+- [ ] Both skill directories removed
+
+### 11.3 Database Connectivity (Linux)
+```bash
+# Create test database
+./contextify-ingest ingest --db /tmp/test.db --input ~/.claude/projects/
+
+# Query via contextify-query
+./contextify-query --db /tmp/test.db status
+./contextify-query --db /tmp/test.db search "test"
+```
+- [ ] contextify-query can read Linux-created database
+- [ ] Search returns results
+
+---
+
+## Phase 12: CLI Doctor Command
+**Status: NOT STARTED**
+
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+
+### 12.1 Implementation
+- [ ] Add `doctor` command to ContextifyQueryCLI
+- [ ] Check shim on PATH
+- [ ] Check plugin manifest entry
+- [ ] Check Claude skill file
+- [ ] Check Codex skill file
+- [ ] Check database connectivity
+- [ ] JSON output (`--json` flag)
+- [ ] Self-repair option (`--fix` flag)
+
+### 12.2 Validation (macOS)
+```bash
+# Full install - should be healthy
+contextify-query install-plugin
+contextify-query doctor
+contextify-query doctor --json
+
+# Remove one skill - should detect
+rm -rf ~/.codex/skills/total-recall/
+contextify-query doctor  # Should show degraded
+
+# Repair
+contextify-query doctor --fix
+contextify-query doctor  # Should show healthy
+```
+- [ ] Reports healthy on full install
+- [ ] Detects missing Codex skill
+- [ ] `--fix` repairs missing skill
+- [ ] JSON output is valid and parseable
+
+### 12.3 Validation (Linux)
+```bash
+# In Docker
+./contextify-query install-plugin
+./contextify-query doctor
+./contextify-query doctor --json
+```
+- [ ] Doctor works on Linux
+- [ ] Reports correct status for Linux environment
+- [ ] JSON output matches macOS format
+
+---
+
+## Phase 13: Linux Release Artifacts
+**Status: NOT STARTED**
+
+### 13.1 Release Tarball Contents
+- [ ] Linux tarball includes BOTH binaries:
+  - `contextify-ingest` (existing)
+  - `contextify-query` (new)
+- [ ] Both x86_64 and arm64 architectures
+
+### 13.2 Installation Verification
+```bash
+# Simulate user installation
+tar xzf contextify-linux-arm64.tar.gz
+./contextify-query --version
+./contextify-query install-plugin
+./contextify-query doctor
+```
+- [ ] Extraction succeeds
+- [ ] Both binaries work
+- [ ] Skill installation works
+
+---
+
 ## Summary
 
 | Phase | Status |
@@ -182,14 +324,22 @@ ls ~/.codex/skills/total-recall/SKILL.md  # Should exist
 | 7. Documentation | COMPLETE |
 | 8. Merge Readiness | PENDING APP UI TEST |
 | 9. Homebrew Update | PENDING RELEASE |
+| 10. Linux Build | NOT STARTED |
+| 11. Linux Skill Install | NOT STARTED |
+| 12. CLI Doctor | NOT STARTED |
+| 13. Linux Release | NOT STARTED |
 
 ---
 
 ## Related Files
 
-- **Spec:** `build/docs/specifications/total-recall-codex-support.md`
-- **QA Script:** `scripts/qa/codex-support/interactive-qa.sh`
+- **Codex Spec:** `build/docs/specifications/total-recall-codex-support.md`
+- **Linux/Doctor Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+- **QA Script (CLI):** `scripts/qa/codex-support/interactive-qa.sh`
+- **QA Script (App UI):** `scripts/qa/codex-support/interactive-qa-app.sh`
 - **State Clearing:** `scripts/qa/codex-support/clear-state.sh`
 - **Validation Script:** `scripts/qa/codex-support/validate-install.sh`
 - **Unit Tests:** `Tests/ContextifyCoreTests/PluginManifestDecodingTests.swift`
 - **Homebrew Formula:** `~/code/projects/homebrew-contextify/Formula/contextify-query.rb`
+- **Docker Build:** `scripts/docker-linux-build.sh`
+- **Linux CI:** `.github/workflows/linux-build.yml`
