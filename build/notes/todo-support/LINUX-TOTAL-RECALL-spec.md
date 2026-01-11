@@ -287,6 +287,23 @@ The "Repair" button runs `contextify-query doctor --fix` or `install-plugin`.
 
 ## Implementation Plan
 
+### Temporary Fix in Place
+
+A quick fix was added to `CLICoordinator.computeState()` to check for skill file existence:
+
+**Location:** `Contextify/Contextify/CLICoordinator.swift:255-277`
+
+**What it does:**
+- Checks if `~/.claude/skills/total-recall/SKILL.md` exists
+- Checks if `~/.codex/skills/total-recall/SKILL.md` exists
+- Returns `.disabled` if either is missing
+
+**To be replaced by:** Phase 3 (App integration with doctor command)
+
+Search for `TEMPORARY FIX: Skill file existence check` or `#CLI-DOCTOR` to find it.
+
+---
+
 ### Phase 1: CLI doctor command (P0 for Linux release)
 
 1. Add `doctor` case to Command enum

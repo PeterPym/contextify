@@ -252,6 +252,30 @@ public final class CLICoordinator: ObservableObject {
       return .disabled
     }
 
+    // ============================================================================
+    // TEMPORARY FIX: Skill file existence check
+    // TODO: #CLI-DOCTOR - Replace with `contextify-query doctor --json` integration
+    //
+    // This is a quick fix to detect missing skills. The proper solution is the
+    // CLI doctor command which provides comprehensive health checking.
+    // See: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md
+    //
+    // Keywords: health check, skill detection, doctor command, installation state
+    // ============================================================================
+    let fileManager = FileManager.default
+    let homeDir = fileManager.homeDirectoryForCurrentUser
+    let claudeSkillPath = homeDir.appendingPathComponent(".claude/skills/total-recall/SKILL.md").path
+    let codexSkillPath = homeDir.appendingPathComponent(".codex/skills/total-recall/SKILL.md").path
+
+    let claudeSkillExists = fileManager.fileExists(atPath: claudeSkillPath)
+    let codexSkillExists = fileManager.fileExists(atPath: codexSkillPath)
+
+    if !claudeSkillExists || !codexSkillExists {
+      log.warning("[CLI-STATE] Skills missing: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
+      return .disabled
+    }
+    // ============================================================================
+
     // Check if shim's parent directory is on PATH
     // Note: Homebrew paths work in user shells even if not in GUI app's PATH
     let shimDir = URL(fileURLWithPath: shimPath).deletingLastPathComponent().path
