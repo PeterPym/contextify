@@ -79,6 +79,7 @@ struct ContextifyQueryCLI {
     case version
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
+    case doctor
   }
 
   struct Options {
@@ -297,6 +298,10 @@ struct ContextifyQueryCLI {
 
       case .uninstallPlugin:
         try runUninstallPlugin(options: options)
+        return
+
+      case .doctor:
+        try runDoctor(options: options)
         return
 
       default:
@@ -554,7 +559,7 @@ struct ContextifyQueryCLI {
           printVersionInfo(versionInfo)
         }
 
-      case .installPlugin, .uninstallPlugin:
+      case .installPlugin, .uninstallPlugin, .doctor:
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
@@ -811,6 +816,7 @@ struct ContextifyQueryCLI {
         version              Database version info
         install-plugin       Install Claude Code and Codex CLI skills
         uninstall-plugin     Remove Claude Code and Codex CLI skills
+        doctor               Check CLI installation health
 
       Search query syntax (FTS5):
         Use OR/AND/NOT operators (e.g. "bug OR fix"), or quoted phrases ("memory leak").
@@ -2018,4 +2024,110 @@ private struct PluginInstallPayload: Encodable {
   let identifier: String
   let version: String
   let path: String
+}
+
+// MARK: - Doctor Command
+
+private func runDoctor(options: ContextifyQueryCLI.Options) throws {
+  let report = CLIHealthChecker.checkHealth()
+
+  if options.jsonOutput {
+    // JSON output: encode the full health report
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    let payload = SuccessEnvelope(
+      type: "doctor",
+      schemaVersion: ResponseConstants.schemaVersion,
+      data: report,
+      metadata: nil
+    )
+    let data = try encoder.encode(payload)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    // Human-readable output
+    printDoctorReport(report)
+  }
+
+  // Exit with non-zero if not healthy
+  switch report.overall {
+  case .healthy:
+    break
+  case .degraded:
+    exit(1)
+  case .broken, .unconfigured:
+    exit(2)
+  }
+}
+
+private func printDoctorReport(_ report: CLIHealthChecker.HealthReport) {
+  // Header with overall status
+  let statusEmoji: String
+  let statusText: String
+  switch report.overall {
+  case .healthy:
+    statusEmoji = "ok"
+    statusText = "healthy"
+  case .degraded:
+    statusEmoji = "!!"
+    statusText = "degraded"
+  case .broken:
+    statusEmoji = "XX"
+    statusText = "broken"
+  case .unconfigured:
+    statusEmoji = "--"
+    statusText = "unconfigured"
+  }
+
+  print("Contextify CLI Health Check")
+  print("===========================")
+  print("")
+  print("Status: [\(statusEmoji)] \(statusText)")
+  print("Platform: \(report.platform)")
+  print("")
+
+  // Components section
+  print("Components:")
+
+  // Shim
+  let shimStatus = report.components.shim.installed ? "installed" : "not installed"
+  print("  Shim: \(shimStatus)")
+  if let path = report.components.shim.path {
+    print("    Path: \(path)")
+    print("    On PATH: \(report.components.shim.onPath ? "yes" : "no")")
+  }
+
+  // Manifest
+  let manifestStatus = report.components.manifest.present ? "present" : "missing"
+  print("  Manifest: \(manifestStatus)")
+  if let version = report.components.manifest.version {
+    print("    Version: \(version)")
+  }
+
+  // Skills
+  print("  Skills:")
+  print("    Claude Code: \(report.components.skills.claudeSkillPresent ? "installed" : "missing")")
+  if let path = report.components.skills.claudeSkillPath {
+    print("      Path: \(path)")
+  }
+  print("    Codex CLI: \(report.components.skills.codexSkillPresent ? "installed" : "missing")")
+  if let path = report.components.skills.codexSkillPath {
+    print("      Path: \(path)")
+  }
+
+  // Issues section
+  if !report.issues.isEmpty {
+    print("")
+    print("Issues:")
+    for issue in report.issues {
+      let severityMarker = issue.severity == .error ? "[ERROR]" : "[WARN]"
+      print("  \(severityMarker) \(issue.code): \(issue.message)")
+      if let fix = issue.fix {
+        print("    Fix: \(fix)")
+      }
+    }
+  }
+
+  print("")
 }
