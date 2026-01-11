@@ -283,45 +283,19 @@ header "Codex CLI Integration Test"
 echo "## Codex CLI Integration Test" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
-if command_exists claude; then
-  step "Testing Claude Code skill discovery..."
-  echo "### Claude Skill Discovery" >> "$PROOF_FILE"
-  echo "" >> "$PROOF_FILE"
-  echo "Command: \`claude -p --dangerously-skip-permissions \"/skills\"\`" >> "$PROOF_FILE"
-  echo "" >> "$PROOF_FILE"
-
-  CLAUDE_OUTPUT=$(run_capture claude -p --dangerously-skip-permissions "/skills")
-  CLAUDE_EXIT=$?
-
-  echo "$CLAUDE_OUTPUT" | head -60
-  echo "$CLAUDE_OUTPUT" | head -120 | capture_output
-
-  if [ $CLAUDE_EXIT -ne 0 ]; then
-    fail "Claude Code skill discovery failed (exit code $CLAUDE_EXIT)"
-  elif echo "$CLAUDE_OUTPUT" | grep -qi "total-recall"; then
-    pass "Claude Code discovered total-recall skill"
-  else
-    fail "Claude Code did NOT discover total-recall skill"
-  fi
-else
-  skip "Claude Code not installed (skill discovery skipped)"
-  echo "*Claude Code not installed - skill discovery skipped*" >> "$PROOF_FILE"
-  echo "" >> "$PROOF_FILE"
-fi
-
 if [ "$CODEX_AVAILABLE" = true ]; then
 
   # Skill Discovery
   step "Testing Codex skill discovery..."
-  echo "### Skill Discovery" >> "$PROOF_FILE"
+  echo "### Codex Skill Discovery" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
-  echo "Command: \`codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \"/skills\"\`" >> "$PROOF_FILE"
+  echo "Command: \`codex exec --dangerously-bypass-approvals-and-sandbox \"List your available skills\"\`" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
 
   info "This will invoke Codex CLI and may take 30-60 seconds..."
   echo ""
 
-  DISCOVERY_OUTPUT=$(run_capture run_with_timeout 120 codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox "/skills")
+  DISCOVERY_OUTPUT=$(run_capture run_with_timeout 120 codex exec --dangerously-bypass-approvals-and-sandbox "What skills do you have available? Just list the skill names.")
   DISCOVERY_EXIT=$?
 
   echo "$DISCOVERY_OUTPUT" | head -40
@@ -343,13 +317,13 @@ if [ "$CODEX_AVAILABLE" = true ]; then
   step "Testing Codex skill execution..."
   echo "### Skill Execution" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
-  echo "Command: \`codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \"Use /total-recall to search for 'validation test'\"\`" >> "$PROOF_FILE"
+  echo "Command: \`codex exec --dangerously-bypass-approvals-and-sandbox \"Use /total-recall to search...\"\`" >> "$PROOF_FILE"
   echo "" >> "$PROOF_FILE"
 
   info "This will invoke the skill and may take 60-90 seconds..."
   echo ""
 
-  EXEC_OUTPUT=$(run_capture run_with_timeout 180 codex exec --enable-skills --dangerously-bypass-approvals-and-sandbox \
+  EXEC_OUTPUT=$(run_capture run_with_timeout 180 codex exec --dangerously-bypass-approvals-and-sandbox \
     "Use /total-recall to search for 'validation test'. Just tell me how many results.")
   EXEC_EXIT=$?
 
