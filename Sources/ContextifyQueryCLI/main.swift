@@ -1,7 +1,7 @@
 #if os(macOS)
 import ContextifyCore
 #else
-import ContextifyIngestionCore
+import ContextifyQueryCore
 #endif
 import Foundation
 
@@ -10,7 +10,10 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+
+#if os(macOS)
 import GRDB
+#endif
 
 // MARK: - Response Types
 
@@ -1682,6 +1685,7 @@ private enum JSONValue: Encodable, Equatable {
   }
 }
 
+#if os(macOS)
 private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   let message = (error.message ?? error.localizedDescription).trimmingCharacters(in: .whitespacesAndNewlines)
   let result = error.resultCode
@@ -1730,6 +1734,7 @@ private func parseMissingTableName(message: String) -> String? {
   }
   return table
 }
+#endif
 
 // MARK: - Plugin Installation
 

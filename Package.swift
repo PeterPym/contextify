@@ -78,16 +78,14 @@ let targets: [Target] = [
 // Linux: Cross-platform ingestion and query CLI
 let products: [Product] = [
   .library(name: "ContextifyIngestionCore", targets: ["ContextifyIngestionCore"]),
+  .library(name: "ContextifyQueryCore", targets: ["ContextifyQueryCore"]),
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
   .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
 ]
 
-// Files included in Linux build
+// Files included in Linux ingestion build (requires GRDB)
 // Paths are relative to app/Sources/ContextifyCore/
-//
-// NOTE: This is a minimal set for contextify-ingest and contextify-query doctor command.
-// Database query commands are NOT supported on Linux - they require macOS for full functionality.
-let linuxSources: [String] = [
+let linuxIngestionSources: [String] = [
   // Platform abstractions (cross-platform)
   "Platform/CrossPlatformCrypto.swift",
   "Platform/CrossPlatformLock.swift",
@@ -107,8 +105,6 @@ let linuxSources: [String] = [
   "Database/Utilities/TimeUnits.swift",
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
-  // Installation (CLI health checking)
-  "Installation/CLIHealthChecker.swift",
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
@@ -120,8 +116,15 @@ let linuxSources: [String] = [
   "Projects/TranscriptProviderID.swift",
 ]
 
+// Minimal files for query CLI (doctor command only - no GRDB needed)
+// Paths are relative to app/Sources/ContextifyCore/
+let linuxQuerySources: [String] = [
+  // Installation (CLI health checking) - no dependencies
+  "Installation/CLIHealthChecker.swift",
+]
+
 let targets: [Target] = [
-  // Cross-platform ingestion library (explicit source list for Linux)
+  // Cross-platform ingestion library (requires GRDB for database operations)
   .target(
     name: "ContextifyIngestionCore",
     dependencies: [
@@ -129,10 +132,21 @@ let targets: [Target] = [
       .product(name: "Crypto", package: "swift-crypto"),
     ],
     path: "app/Sources/ContextifyCore",
-    sources: linuxSources,
+    sources: linuxIngestionSources,
     swiftSettings: [
       .define("SWIFT_PACKAGE"),
       .define("INGESTION_CORE"),  // Flag for conditional compilation
+    ]
+  ),
+  // Lightweight query library (no GRDB - doctor command only)
+  .target(
+    name: "ContextifyQueryCore",
+    dependencies: [],
+    path: "app/Sources/ContextifyCore",
+    sources: linuxQuerySources,
+    swiftSettings: [
+      .define("SWIFT_PACKAGE"),
+      .define("QUERY_CORE"),  // Flag for conditional compilation
     ]
   ),
   // Cross-platform CLI - on Linux, depends on ContextifyIngestionCore
@@ -147,11 +161,11 @@ let targets: [Target] = [
       .unsafeFlags(["-parse-as-library"])
     ]
   ),
-  // Query CLI for Linux - install-plugin and doctor commands
+  // Query CLI for Linux - doctor command only (no GRDB needed)
   .executableTarget(
     name: "ContextifyQueryCLI",
     dependencies: [
-      "ContextifyIngestionCore",
+      "ContextifyQueryCore",
     ],
     path: "Sources/ContextifyQueryCLI"
   ),
