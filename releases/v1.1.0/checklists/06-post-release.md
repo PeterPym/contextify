@@ -98,6 +98,47 @@ curl -sL "https://github.com/PeterPym/contextify/releases/download/v1.1.0/Contex
 - [ ] Verify Sparkle updates work for existing users
 - [ ] Test update from previous version
 
+## Homebrew Formula Update
+
+**Repo:** `~/code/projects/homebrew-contextify`
+**Branch:** `feature/codex-skill-support` (pre-staged with caveats update)
+
+### Update Formula
+```bash
+cd ~/code/projects/homebrew-contextify
+git checkout feature/codex-skill-support
+
+# Update version
+sed -i '' 's/version ".*"/version "1.1.0"/' Formula/contextify-query.rb
+
+# Get SHA256 from release tarball
+curl -sL "https://github.com/PeterPym/contextify/releases/download/v1.1.0/contextify-query-arm64.tar.gz" | shasum -a 256
+# Update sha256 in formula with the output
+
+# Commit version bump
+git add -A && git commit -m "chore(formula): bump to v1.1.0"
+```
+
+### Merge and Push
+- [ ] Version updated to 1.1.0
+- [ ] SHA256 updated for new tarball
+- [ ] Merge branch to main
+- [ ] Push to origin: `git push origin main`
+
+### Verification
+```bash
+brew update
+brew upgrade contextify-query  # or brew install if not installed
+contextify-query --version     # Should show 1.1.0
+contextify-query install-plugin
+ls ~/.claude/skills/total-recall/SKILL.md  # Should exist
+ls ~/.codex/skills/total-recall/SKILL.md   # Should exist (new in 1.1.0)
+```
+
+- [ ] Homebrew install/upgrade works
+- [ ] Both Claude and Codex skills installed
+- [ ] Codex skill is real file (not symlink)
+
 ## Cleanup
 
 ### Archive Release Materials

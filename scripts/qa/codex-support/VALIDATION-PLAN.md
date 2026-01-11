@@ -141,6 +141,34 @@ Pre-merge checklist:
 
 ---
 
+## Phase 9: Homebrew Formula Update (Post-Release)
+**Status: PENDING RELEASE**
+
+The Homebrew formula must be updated AFTER the release is tagged and built.
+
+**Pre-release prep (DONE):**
+- [x] Formula caveats drafted in `~/code/projects/homebrew-contextify`
+- [x] Branch: `feature/codex-skill-support`
+- [x] Commit: `feat(formula): update caveats for Codex CLI support`
+
+**Post-release steps:**
+- [ ] Update `version` in Formula to match release tag
+- [ ] Update `sha256` with hash from release tarball
+- [ ] Merge branch to main
+- [ ] Push to origin
+
+**Why post-release:** The formula downloads a pre-built binary from GitHub releases. The caveats must match the binary's behavior. Updating caveats before the binary exists would mislead users.
+
+**Verification after push:**
+```bash
+brew update
+brew upgrade contextify-query
+contextify-query install-plugin
+ls ~/.codex/skills/total-recall/SKILL.md  # Should exist
+```
+
+---
+
 ## Summary
 
 | Phase | Status |
@@ -153,6 +181,7 @@ Pre-merge checklist:
 | 6. Edge Cases | COMPLETE |
 | 7. Documentation | COMPLETE |
 | 8. Merge Readiness | PENDING APP UI TEST |
+| 9. Homebrew Update | PENDING RELEASE |
 
 ---
 
@@ -163,3 +192,4 @@ Pre-merge checklist:
 - **State Clearing:** `scripts/qa/codex-support/clear-state.sh`
 - **Validation Script:** `scripts/qa/codex-support/validate-install.sh`
 - **Unit Tests:** `Tests/ContextifyCoreTests/PluginManifestDecodingTests.swift`
+- **Homebrew Formula:** `~/code/projects/homebrew-contextify/Formula/contextify-query.rb`
