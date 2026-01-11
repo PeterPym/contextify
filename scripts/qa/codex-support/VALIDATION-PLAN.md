@@ -187,10 +187,44 @@ ls ~/.codex/skills/total-recall/SKILL.md  # Should exist
 
 ---
 
+## Phase 9.5: CLIHealthChecker Extraction
+**Status: NOT STARTED**
+
+**Prerequisite for:** Phase 10 (Linux Build), Phase 12 (CLI Doctor)
+
+Extract health checking logic from `CLICoordinator` to a shared module in ContextifyCore. This provides a single source of truth for both the app and CLI.
+
+**Design doc:** `/tmp/cli-health-checker-extraction.md`
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md` (Phase 0)
+
+### 9.5.1 Create CLIHealthChecker
+- [ ] Create `app/Sources/ContextifyCore/Installation/CLIHealthChecker.swift`
+- [ ] Implement `checkHealth() -> HealthReport`
+- [ ] Platform-aware checks (full on macOS, skills-only on Linux)
+- [ ] `HealthReport` struct with component statuses and issues
+
+### 9.5.2 Refactor CLICoordinator
+- [ ] Update `computeState()` to use `CLIHealthChecker`
+- [ ] Remove duplicated filesystem logic
+- [ ] Map `HealthReport` to existing `State` enum
+
+### 9.5.3 Unit Tests
+- [ ] Add `CLIHealthCheckerTests.swift`
+- [ ] Test all components present → healthy
+- [ ] Test missing skill → degraded
+- [ ] Test missing shim → unconfigured
+
+### 9.5.4 Validation
+- [ ] `swift test` passes
+- [ ] `bash scripts/xc.sh build` shows 0 warnings
+- [ ] App Settings > CLI tab shows same behavior as before
+
+---
+
 ## Phase 10: Linux Build Validation
 **Status: NOT STARTED**
 
-**Prerequisite:** contextify-query must be added to Linux Package.swift targets.
+**Prerequisite:** Phase 9.5 (CLIHealthChecker), contextify-query added to Linux Package.swift.
 
 ### 10.1 Package.swift Updates
 - [ ] Add ContextifyQueryCLI to Linux products
@@ -261,17 +295,15 @@ ls ~/.codex/skills/total-recall/   # Should not exist
 ## Phase 12: CLI Doctor Command
 **Status: NOT STARTED**
 
-**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+**Prerequisite:** Phase 9.5 (CLIHealthChecker extraction)
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md` (Phase 1)
 
 ### 12.1 Implementation
 - [ ] Add `doctor` command to ContextifyQueryCLI
-- [ ] Check shim on PATH
-- [ ] Check plugin manifest entry
-- [ ] Check Claude skill file
-- [ ] Check Codex skill file
-- [ ] Check database connectivity
+- [ ] Call `CLIHealthChecker.checkHealth()` (from Phase 9.5)
+- [ ] Format human-readable output
 - [ ] JSON output (`--json` flag)
-- [ ] Self-repair option (`--fix` flag)
+- [ ] Self-repair option (`--fix` flag) - calls `install-plugin`
 
 ### 12.2 Validation (macOS)
 ```bash
@@ -342,6 +374,7 @@ tar xzf contextify-linux-arm64.tar.gz
 | 7. Documentation | COMPLETE |
 | 8. Merge Readiness | **MERGED** |
 | 9. Homebrew Update | PENDING RELEASE |
+| **9.5. CLIHealthChecker** | **NOT STARTED** |
 | 10. Linux Build | NOT STARTED |
 | 11. Linux Skill Install | NOT STARTED |
 | 12. CLI Doctor | NOT STARTED |
@@ -353,6 +386,7 @@ tar xzf contextify-linux-arm64.tar.gz
 
 - **Codex Spec:** `build/docs/specifications/total-recall-codex-support.md`
 - **Linux/Doctor Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+- **CLIHealthChecker Design:** `/tmp/cli-health-checker-extraction.md`
 - **QA Script (CLI):** `scripts/qa/codex-support/interactive-qa.sh`
 - **QA Script (App UI):** `scripts/qa/codex-support/interactive-qa-app.sh`
 - **State Clearing:** `scripts/qa/codex-support/clear-state.sh`

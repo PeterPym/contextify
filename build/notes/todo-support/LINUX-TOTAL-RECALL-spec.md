@@ -287,55 +287,82 @@ The "Repair" button runs `contextify-query doctor --fix` or `install-plugin`.
 
 ## Implementation Plan
 
+### Phase 0: Extract CLIHealthChecker to ContextifyCore (P0 - Do First)
+
+**Rationale:** Both the app (`CLICoordinator`) and CLI (`doctor` command) need health checking logic. Extracting to a shared module in ContextifyCore provides a single source of truth and avoids duplication that would drift over time.
+
+**Deliverables:**
+
+1. Create `app/Sources/ContextifyCore/Installation/CLIHealthChecker.swift`
+   - `struct CLIHealthChecker` with pure filesystem checks
+   - `func checkHealth() -> HealthReport`
+   - `struct HealthReport: Codable, Sendable` with component statuses
+   - `enum HealthStatus: healthy | degraded | broken | unconfigured`
+   - Platform-aware: full checks on macOS, skills-only on Linux
+
+2. Refactor `CLICoordinator.computeState()` to use `CLIHealthChecker`
+   - Remove duplicated filesystem logic
+   - Map `HealthReport` to existing `State` enum
+   - Keep UI-specific logic (throttling, operation flags) in CLICoordinator
+
+3. Add unit tests: `Tests/ContextifyCoreTests/CLIHealthCheckerTests.swift`
+   - All components present → healthy
+   - Missing Codex skill → degraded with correct issue
+   - Missing shim → broken/unconfigured
+   - Platform-specific behavior
+
+4. Verify build passes, existing tests pass
+
+**Validation:** App Settings > CLI tab shows same behavior as before extraction.
+
+**Design doc:** `/tmp/cli-health-checker-extraction.md`
+
+---
+
 ### Temporary Fix in Place
 
 A quick fix was added to `CLICoordinator.computeState()` to check for skill file existence:
 
-**Location:** `Contextify/Contextify/CLICoordinator.swift:255-277`
+**Location:** `Contextify/Contextify/CLICoordinator.swift:325-382`
 
 **What it does:**
 - Checks if `~/.claude/skills/total-recall/SKILL.md` exists
 - Checks if `~/.codex/skills/total-recall/SKILL.md` exists
-- Returns `.disabled` if either is missing
+- Returns repair state if skills missing
 
-**To be replaced by:** Phase 3 (App integration with doctor command)
+**To be replaced by:** Phase 0 (CLIHealthChecker extraction)
 
-Search for `TEMPORARY FIX: Skill file existence check` or `#CLI-DOCTOR` to find it.
+Search for `#CLI-DOCTOR` to find the TODO marker.
 
 ---
 
 ### Phase 1: CLI doctor command (P0 for Linux release)
 
 1. Add `doctor` case to Command enum
-2. Implement component checks:
-   - `checkShim()` - find shim, verify version, check PATH
-   - `checkPlugin()` - verify cache dir, manifest entry, agent file
-   - `checkSkills()` - verify both skill files, check not symlink, compare hashes
-   - `checkDatabase()` - existing status logic
-3. Aggregate into overall status
-4. Format output (human-readable and JSON)
-5. Add `--fix` flag to run `install-plugin` if issues detected
+2. Call `CLIHealthChecker.checkHealth()` (from Phase 0)
+3. Format output (human-readable and JSON)
+4. Add `--fix` flag to run `install-plugin` if issues detected
 
 ### Phase 2: Linux build (P0 for Linux release)
 
 1. Add `contextify-query` to Linux Package.swift targets
-2. Resolve Darwin-specific dependencies
+2. CLIHealthChecker already handles platform differences (from Phase 0)
 3. Add to Linux CI workflow
 4. Verify `install-plugin` creates skill files on Linux
 
-### Phase 3: App integration (P1)
+### Phase 3: App integration (P1) - SUPERSEDED
 
-1. Add `DoctorResult` model to parse JSON
-2. Update `CLICoordinator.computeState()` to use doctor
-3. Add `.degraded` state to `CLICoordinator.State`
-4. Update `CLISkillsSettingsTab` UI for degraded state
-5. Add "Repair" button
+~~Original plan: Shell out to `contextify-query doctor --json`~~
 
-### Phase 4: Unified health check spec (P2)
+**New approach (Phase 0):** App uses `CLIHealthChecker` directly from ContextifyCore. No subprocess needed. This is simpler and avoids bootstrap problems (what if CLI is broken?).
 
-1. Document canonical paths in a shared location
-2. Ensure CLI and app check same components
-3. Add version compatibility checking (CLI version vs expected)
+The repair state UI is already implemented. Phase 0 just extracts the logic to a shared location.
+
+### Phase 4: Unified health check spec (P2) - SUPERSEDED
+
+~~Original plan: Document canonical paths in shared location~~
+
+**New approach (Phase 0):** CLIHealthChecker IS the unified spec. Paths are defined once in code, used by both app and CLI.
 
 ---
 
