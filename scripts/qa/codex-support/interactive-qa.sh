@@ -41,19 +41,19 @@ step() {
 pass() {
   echo -e "${GREEN}✓ PASS: $1${NC}"
   echo "- [x] $1" >> "$PROOF_FILE"
-  ((PASS_COUNT++))
+  PASS_COUNT=$((PASS_COUNT + 1))
 }
 
 fail() {
   echo -e "${RED}✗ FAIL: $1${NC}"
   echo "- [ ] **FAIL:** $1" >> "$PROOF_FILE"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 }
 
 skip() {
   echo -e "${YELLOW}⊘ SKIP: $1${NC}"
   echo "- [ ] *SKIP:* $1" >> "$PROOF_FILE"
-  ((SKIP_COUNT++))
+  SKIP_COUNT=$((SKIP_COUNT + 1))
 }
 
 info() {
