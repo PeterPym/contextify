@@ -76,6 +76,9 @@ VEOF
               swift build -c release --product contextify-ingest \
                 --static-swift-stdlib \
                 -Xswiftc -DGENERATED_VERSION
+              swift build -c release --product contextify-query \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
 
               # Verify no dynamic SQLite dependency
               echo "Verifying static linking..."
@@ -89,8 +92,10 @@ VEOF
               # Create tarball
               mkdir -p dist
               cp .build/release/contextify-ingest dist/
+              cp .build/release/contextify-query dist/
+              cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-ingest-linux-x86_64.tar.gz contextify-ingest
+              tar -czvf contextify-ingest-linux-x86_64.tar.gz contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact
@@ -163,6 +168,9 @@ VEOF
               swift build -c release --product contextify-ingest \
                 --static-swift-stdlib \
                 -Xswiftc -DGENERATED_VERSION
+              swift build -c release --product contextify-query \
+                --static-swift-stdlib \
+                -Xswiftc -DGENERATED_VERSION
 
               # Verify no dynamic SQLite dependency
               echo "Verifying static linking..."
@@ -176,8 +184,10 @@ VEOF
               # Create tarball
               mkdir -p dist
               cp .build/release/contextify-ingest dist/
+              cp .build/release/contextify-query dist/
+              cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-ingest-linux-arm64.tar.gz contextify-ingest
+              tar -czvf contextify-ingest-linux-arm64.tar.gz contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact

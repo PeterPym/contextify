@@ -85,9 +85,9 @@ struct ContextifyQueryCLI {
     case summaries
     case stats
     case version
+    #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
-    #endif
     case doctor
   }
 
@@ -301,7 +301,6 @@ struct ContextifyQueryCLI {
 
       // Commands that don't need database connection
       switch command {
-      #if os(macOS)
       case .installPlugin:
         try runInstallPlugin(options: options)
         return
@@ -309,7 +308,6 @@ struct ContextifyQueryCLI {
       case .uninstallPlugin:
         try runUninstallPlugin(options: options)
         return
-      #endif
 
       case .doctor:
         try runDoctor(options: options)
@@ -870,7 +868,7 @@ struct ContextifyQueryCLI {
     exit(message == nil ? 0 : 1)
   }
   #else
-  // Linux: simplified usage for doctor command only
+  // Linux: simplified usage for install/doctor commands only
   private static func usage(_ message: String?) -> Never {
     if let message = message {
       FileHandle.standardError.write(Data("Error: \(message)\n\n".utf8))
@@ -879,7 +877,9 @@ struct ContextifyQueryCLI {
       Usage: contextify-query <command>
 
       Commands:
-        doctor    Check CLI installation health
+        install-plugin   Install Claude Code and Codex CLI skills
+        uninstall-plugin Remove Claude Code and Codex CLI skills
+        doctor           Check CLI installation health
 
       Options:
         --json    Emit JSON output
@@ -2076,6 +2076,157 @@ private struct PluginInstallPayload: Encodable {
   let path: String
 }
 #endif  // os(macOS)
+
+#if os(Linux)
+private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let userSkillSource = try findUserSkillSource()
+
+  let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
+  try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+
+  let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
+  let skillDest = skillsDir.appendingPathComponent("SKILL.md")
+  if FileManager.default.fileExists(atPath: skillDest.path) {
+    try FileManager.default.removeItem(at: skillDest)
+  }
+  try FileManager.default.copyItem(at: skillFile, to: skillDest)
+
+  if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
+    let warning = "Warning: CODEX_HOME is set to \(codexHome)\nSkill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
+    FileHandle.standardError.write(Data(warning.utf8))
+  }
+
+  let codexSkillsDir = home.appendingPathComponent(".codex/skills/total-recall")
+  try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
+  let codexSkillDest = codexSkillsDir.appendingPathComponent("SKILL.md")
+
+  let skillData = try Data(contentsOf: skillFile)
+  if FileManager.default.fileExists(atPath: codexSkillDest.path) {
+    try FileManager.default.removeItem(at: codexSkillDest)
+  }
+  try skillData.write(to: codexSkillDest, options: .atomic)
+
+  struct SkillInstallPayload: Encodable {
+    let action: String
+    let claudeSkillPath: String
+    let codexSkillPath: String
+  }
+
+  let payload = SkillInstallPayload(
+    action: "installed",
+    claudeSkillPath: skillsDir.path,
+    codexSkillPath: codexSkillsDir.path
+  )
+
+  if options.jsonOutput {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    let envelope = SuccessEnvelope(type: "pluginInstalled", schemaVersion: ResponseConstants.schemaVersion, data: payload, metadata: nil)
+    let data = try encoder.encode(envelope)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    print("Contextify Total Recall installed!")
+    print("  Claude Code: \(skillsDir.path)")
+    print("  Codex CLI:   \(codexSkillsDir.path)")
+    print("")
+    print("Restart your CLI tool, then use /total-recall to search history.")
+  }
+}
+
+private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let claudeSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
+  if FileManager.default.fileExists(atPath: claudeSkillDir.path) {
+    try FileManager.default.removeItem(at: claudeSkillDir)
+  }
+
+  let codexSkillDir = home.appendingPathComponent(".codex/skills/total-recall")
+  if FileManager.default.fileExists(atPath: codexSkillDir.path) {
+    try FileManager.default.removeItem(at: codexSkillDir)
+  }
+
+  struct SkillUninstallPayload: Encodable {
+    let action: String
+    let claudeSkillPath: String
+    let codexSkillPath: String
+  }
+
+  let payload = SkillUninstallPayload(
+    action: "uninstalled",
+    claudeSkillPath: claudeSkillDir.path,
+    codexSkillPath: codexSkillDir.path
+  )
+
+  if options.jsonOutput {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    let envelope = SuccessEnvelope(type: "pluginUninstalled", schemaVersion: ResponseConstants.schemaVersion, data: payload, metadata: nil)
+    let data = try encoder.encode(envelope)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    print("Uninstalled Total Recall skills")
+  }
+}
+
+private func findUserSkillSource() throws -> URL {
+  let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+  let repoUserSkill = cwdURL.appendingPathComponent("contextify-query/user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: repoUserSkill.path) {
+    return repoUserSkill
+  }
+
+  var executablePath = CommandLine.arguments[0]
+  if !executablePath.contains("/") {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = [executablePath]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    try? process.run()
+    process.waitUntilExit()
+
+    if process.terminationStatus == 0 {
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !path.isEmpty {
+        executablePath = path
+      }
+    }
+  }
+
+  let executableURL = URL(fileURLWithPath: executablePath)
+  let execDir = executableURL.deletingLastPathComponent()
+  let siblingUserSkill = execDir.appendingPathComponent("user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: siblingUserSkill.path) {
+    return siblingUserSkill
+  }
+
+  let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
+  let cellarBin = resolvedExec.deletingLastPathComponent()
+  let cellarRoot = cellarBin.deletingLastPathComponent()
+  let cellarUserSkill = cellarRoot.appendingPathComponent("share/user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: cellarUserSkill.path) {
+    return cellarUserSkill
+  }
+
+  throw CLIError(
+    code: "pluginNotFound",
+    message: """
+      Skill files not found.
+
+      If using the Linux release tarball:
+        Extract the archive and run install-plugin from that directory.
+      """,
+    exitCode: .unknown
+  )
+}
+#endif  // os(Linux)
 
 // MARK: - Doctor Command
 
