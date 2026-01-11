@@ -2,7 +2,8 @@
 feature: codex-skill-support
 branch: feature/codex-skill-support
 date: 2026-01-10
-status: complete
+merged: 2026-01-11
+status: merged
 ---
 
 # Codex Skill Support - Validation Plan
@@ -142,7 +143,7 @@ Codex CLI integration verified via interactive QA script:
 ---
 
 ## Phase 8: Final Merge Readiness (macOS)
-**Status: PENDING EDGE CASE TESTS**
+**Status: COMPLETE - MERGED 2026-01-11**
 
 Pre-merge checklist:
 - [x] Build passes (0 warnings)
@@ -152,9 +153,7 @@ Pre-merge checklist:
 - [x] CLI integration tested (Codex discovers and executes skill)
 - [x] Bug fix cherry-picked to main
 - [x] Branch rebased on main
-- [ ] **Settings UI toggle tested** - basic flow done, edge cases pending
-
-**Pending:** Add edge case tests (partial install states) to QA script, then run again.
+- [x] Settings UI toggle tested (basic flow + edge cases)
 
 Note: Linux phases (10-13) are tracked separately as P0 blockers for v1.1.0 release.
 
@@ -337,11 +336,11 @@ tar xzf contextify-linux-arm64.tar.gz
 | 1. Code Review | COMPLETE |
 | 2. Build Validation | COMPLETE |
 | 3. Unit Tests | COMPLETE |
-| 4. Functional Validation | IN PROGRESS (edge cases) |
+| 4. Functional Validation | COMPLETE |
 | 5. CLI Integration | COMPLETE |
 | 6. Edge Cases | COMPLETE |
 | 7. Documentation | COMPLETE |
-| 8. Merge Readiness | PENDING EDGE CASES |
+| 8. Merge Readiness | **MERGED** |
 | 9. Homebrew Update | PENDING RELEASE |
 | 10. Linux Build | NOT STARTED |
 | 11. Linux Skill Install | NOT STARTED |
