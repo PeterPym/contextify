@@ -146,8 +146,11 @@ public struct CLIHealthChecker: Sendable {
     // Check shim
     let shimStatus = checkShimMacOS(fileManager: fileManager)
 
-    // Check manifest
-    let manifestStatus = checkManifestMacOS(homeDir: homeDir)
+    // Check manifest (may return an issue for unreadable/malformed)
+    let (manifestStatus, manifestIssue) = checkManifestMacOS(homeDir: homeDir)
+    if let issue = manifestIssue {
+      issues.append(issue)
+    }
 
     // Check skills
     let skillsStatus = checkSkills(homeDir: homeDir, fileManager: fileManager)
@@ -232,31 +235,111 @@ public struct CLIHealthChecker: Sendable {
     return ShimStatus(installed: false, path: nil, onPath: false)
   }
 
-  private static func checkManifestMacOS(homeDir: URL) -> ManifestStatus {
+  /// Result of reading plugin manifest
+  enum ManifestReadResult: Equatable {
+    case notFound
+    case unreadable
+    case malformed
+    case missingPluginEntry  // File exists and is valid JSON, but no query@contextify entry
+    case success(version: String)
+  }
+
+  private static func checkManifestMacOS(homeDir: URL) -> (ManifestStatus, Issue?) {
     let v1ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins.json")
     let v2ManifestURL = homeDir.appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
 
-    if let version = readPluginVersion(at: v1ManifestURL) {
-      return ManifestStatus(present: true, version: version)
+    // Check both manifests - don't short-circuit on v1 errors
+    let v1Result = readPluginVersion(at: v1ManifestURL)
+    let v2Result = readPluginVersion(at: v2ManifestURL)
+
+    // Priority: prefer v1 success, then v2 success, then handle errors
+    // This ensures we find the plugin entry if it exists in either manifest
+
+    // 1. If v1 has our entry, use it (v1 is authoritative when present)
+    if case .success(let version) = v1Result {
+      return (ManifestStatus(present: true, version: version), nil)
     }
 
-    if let version = readPluginVersion(at: v2ManifestURL) {
-      return ManifestStatus(present: true, version: version)
+    // 2. If v2 has our entry, use it (fallback to v2)
+    if case .success(let version) = v2Result {
+      return (ManifestStatus(present: true, version: version), nil)
     }
 
-    return ManifestStatus(present: false, version: nil)
+    // 3. Neither has our entry - determine why
+    // Check for unreadable/malformed files (prefer reporting v1 issues over v2)
+    if case .unreadable = v1Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_UNREADABLE",
+                    message: "Plugin manifest exists but cannot be read",
+                    fix: "Check permissions on \(v1ManifestURL.path)"))
+    }
+    if case .malformed = v1Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_MALFORMED",
+                    message: "Plugin manifest is corrupted or invalid JSON",
+                    fix: "Run: contextify-query install-plugin"))
+    }
+    if case .unreadable = v2Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_UNREADABLE",
+                    message: "Plugin manifest exists but cannot be read",
+                    fix: "Check permissions on \(v2ManifestURL.path)"))
+    }
+    if case .malformed = v2Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_MALFORMED",
+                    message: "Plugin manifest is corrupted or invalid JSON",
+                    fix: "Run: contextify-query install-plugin"))
+    }
+
+    // 4. If either file exists but our entry is missing
+    if case .missingPluginEntry = v1Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_ENTRY_MISSING",
+                    message: "Plugin manifest exists but Contextify is not registered",
+                    fix: "Run: contextify-query install-plugin"))
+    }
+    if case .missingPluginEntry = v2Result {
+      return (ManifestStatus(present: false, version: nil),
+              Issue(component: "manifest", severity: .warning, code: "MANIFEST_ENTRY_MISSING",
+                    message: "Plugin manifest exists but Contextify is not registered",
+                    fix: "Run: contextify-query install-plugin"))
+    }
+
+    // 5. Both files not found - no manifest at all
+    return (ManifestStatus(present: false, version: nil), nil)
   }
 
-  private static func readPluginVersion(at url: URL) -> String? {
-    guard let data = try? Data(contentsOf: url),
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let plugins = json["plugins"] as? [String: Any],
+  static func readPluginVersion(at url: URL) -> ManifestReadResult {
+    let fileManager = FileManager.default
+
+    // Check if file exists
+    guard fileManager.fileExists(atPath: url.path) else {
+      return .notFound
+    }
+
+    // Try to read file
+    let data: Data
+    do {
+      data = try Data(contentsOf: url)
+    } catch {
+      return .unreadable
+    }
+
+    // Try to parse JSON
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return .malformed
+    }
+
+    // Extract version - if our plugin entry is missing, that's a distinct state
+    guard let plugins = json["plugins"] as? [String: Any],
           let pluginEntries = plugins["query@contextify"] as? [[String: Any]],
           let firstEntry = pluginEntries.first,
           let version = firstEntry["version"] as? String else {
-      return nil
+      return .missingPluginEntry
     }
-    return version
+
+    return .success(version: version)
   }
   #endif
 
@@ -268,9 +351,12 @@ public struct CLIHealthChecker: Sendable {
     let homeDir = fileManager.homeDirectoryForCurrentUser
     var issues: [Issue] = []
 
-    // Linux: no shim/manifest checks (binary is on PATH directly)
+    // Linux: shim/manifest not applicable (binary is on PATH directly, no manifest)
+    // installed=true means "this code is running from the CLI binary" - we don't verify
+    // the binary location or PATH, just that the binary is executing (which it must be).
+    // present=false for manifest since there's no manifest on Linux.
     let shimStatus = ShimStatus(installed: true, path: nil, onPath: true)
-    let manifestStatus = ManifestStatus(present: true, version: nil)
+    let manifestStatus = ManifestStatus(present: false, version: nil)
 
     // Check skills
     let skillsStatus = checkSkills(homeDir: homeDir, fileManager: fileManager)
@@ -337,7 +423,11 @@ public struct CLIHealthChecker: Sendable {
   private static func isDirectoryOnPath(_ dir: String) -> Bool {
     let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
     let normalizedDir = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
-    return path.split(separator: ":").contains { String($0) == normalizedDir }
+    return path.split(separator: ":").contains { entry in
+      let entryStr = String(entry)
+      let normalizedEntry = entryStr.hasSuffix("/") ? String(entryStr.dropLast()) : entryStr
+      return normalizedEntry == normalizedDir
+    }
   }
 
   private static func determineOverallStatus(
@@ -347,14 +437,15 @@ public struct CLIHealthChecker: Sendable {
     codexSkillPresent: Bool,
     issues: [Issue]
   ) -> HealthStatus {
-    // No shim = unconfigured (nothing works)
+    // No shim = unconfigured (nothing installed)
     if !shimInstalled {
       return .unconfigured
     }
 
-    // Shim exists but everything else missing = unconfigured
+    // Shim exists but everything else missing = broken (partial/corrupt install)
+    // This is different from unconfigured: the user attempted to install but something went wrong
     if !manifestPresent && !claudeSkillPresent && !codexSkillPresent {
-      return .unconfigured
+      return .broken
     }
 
     // Check for any errors (critical issues)

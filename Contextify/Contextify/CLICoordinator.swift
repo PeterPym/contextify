@@ -322,11 +322,12 @@ public final class CLICoordinator: ObservableObject {
     }
     log.info("[CLI-COMPUTE-STATE] Shim found at: \(shimPath, privacy: .public)")
 
+    // Trigger v2 -> v1 manifest migration if needed (legacy compat)
+    // Must run BEFORE checkHealth() so the health report reflects current state
+    triggerManifestMigrationIfNeeded()
+
     // Use shared CLIHealthChecker for component health
     let report = CLIHealthChecker.checkHealth()
-
-    // Trigger v2 -> v1 manifest migration if needed (legacy compat)
-    triggerManifestMigrationIfNeeded()
     log.info("[CLI-COMPUTE-STATE] Health report: overall=\(report.overall.rawValue, privacy: .public)")
     log.info("[CLI-COMPUTE-STATE] Manifest: \(report.components.manifest.present ? (report.components.manifest.version ?? "unknown") : "MISSING", privacy: .public)")
     log.info("[CLI-COMPUTE-STATE] Skills: claude=\(report.components.skills.claudeSkillPresent) codex=\(report.components.skills.codexSkillPresent)")

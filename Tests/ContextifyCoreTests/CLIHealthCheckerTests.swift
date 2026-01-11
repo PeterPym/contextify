@@ -210,28 +210,122 @@ final class CLIHealthCheckerTests: XCTestCase {
 
     switch report.overall {
     case .healthy:
-      // Healthy means no errors, possibly no warnings
+      // Healthy means no errors, no warnings
       XCTAssertFalse(report.issues.contains { $0.severity == .error })
+      XCTAssertFalse(report.issues.contains { $0.severity == .warning })
 
     case .degraded:
-      // Degraded means warnings but no errors, or specific missing components
-      // Either has warnings or specific missing components that warrant degraded
-      break
+      // Degraded means warnings but no errors
+      XCTAssertFalse(report.issues.contains { $0.severity == .error })
+      XCTAssertTrue(report.issues.contains { $0.severity == .warning })
 
     case .broken:
-      // Broken should have error-level issues
-      XCTAssertTrue(report.issues.contains { $0.severity == .error })
+      // Broken means shim exists but nothing else works (partial/corrupt install),
+      // or has error-level issues
+      #if os(macOS)
+      let hasErrors = report.issues.contains { $0.severity == .error }
+      let allMissing = !report.components.manifest.present &&
+                       !report.components.skills.claudeSkillPresent &&
+                       !report.components.skills.codexSkillPresent
+      // Broken when: has errors OR (shim installed but everything else missing)
+      XCTAssertTrue(hasErrors || (report.components.shim.installed && allMissing))
+      #endif
 
     case .unconfigured:
-      // Unconfigured means shim not installed or everything missing
+      // Unconfigured means shim not installed at all
       #if os(macOS)
-      // On macOS: either no shim, or shim with nothing else
-      if report.components.shim.installed {
-        XCTAssertFalse(report.components.manifest.present)
-        XCTAssertFalse(report.components.skills.claudeSkillPresent)
-        XCTAssertFalse(report.components.skills.codexSkillPresent)
-      }
+      XCTAssertFalse(report.components.shim.installed)
       #endif
     }
   }
+
+  // MARK: - Manifest Read Result Tests (File-Based)
+
+  #if os(macOS)
+  func testReadPluginVersion_NotFound() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let nonExistentFile = tempDir.appendingPathComponent("non_existent_\(UUID().uuidString).json")
+
+    let result = CLIHealthChecker.readPluginVersion(at: nonExistentFile)
+    XCTAssertEqual(result, .notFound)
+  }
+
+  func testReadPluginVersion_MalformedJSON() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let malformedFile = tempDir.appendingPathComponent("malformed_\(UUID().uuidString).json")
+    try "{ not valid json".write(to: malformedFile, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: malformedFile) }
+
+    let result = CLIHealthChecker.readPluginVersion(at: malformedFile)
+    XCTAssertEqual(result, .malformed)
+  }
+
+  func testReadPluginVersion_MissingPluginEntry() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let emptyPluginsFile = tempDir.appendingPathComponent("empty_plugins_\(UUID().uuidString).json")
+    // Valid JSON but no query@contextify entry
+    let json = """
+    {
+      "plugins": {
+        "some-other-plugin": [{"version": "1.0.0"}]
+      }
+    }
+    """
+    try json.write(to: emptyPluginsFile, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: emptyPluginsFile) }
+
+    let result = CLIHealthChecker.readPluginVersion(at: emptyPluginsFile)
+    XCTAssertEqual(result, .missingPluginEntry)
+  }
+
+  func testReadPluginVersion_Success() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let validFile = tempDir.appendingPathComponent("valid_\(UUID().uuidString).json")
+    let json = """
+    {
+      "plugins": {
+        "query@contextify": [{"version": "1.2.3"}]
+      }
+    }
+    """
+    try json.write(to: validFile, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: validFile) }
+
+    let result = CLIHealthChecker.readPluginVersion(at: validFile)
+    XCTAssertEqual(result, .success(version: "1.2.3"))
+  }
+
+  func testReadPluginVersion_EmptyPluginsObject() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let emptyFile = tempDir.appendingPathComponent("empty_obj_\(UUID().uuidString).json")
+    // Valid JSON with empty plugins object
+    let json = """
+    {
+      "plugins": {}
+    }
+    """
+    try json.write(to: emptyFile, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: emptyFile) }
+
+    let result = CLIHealthChecker.readPluginVersion(at: emptyFile)
+    XCTAssertEqual(result, .missingPluginEntry)
+  }
+
+  func testReadPluginVersion_NoPluginsKey() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+    let noKeyFile = tempDir.appendingPathComponent("no_key_\(UUID().uuidString).json")
+    // Valid JSON but no plugins key at all
+    let json = """
+    {
+      "version": "2",
+      "metadata": {}
+    }
+    """
+    try json.write(to: noKeyFile, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: noKeyFile) }
+
+    let result = CLIHealthChecker.readPluginVersion(at: noKeyFile)
+    XCTAssertEqual(result, .missingPluginEntry)
+  }
+  #endif
 }
