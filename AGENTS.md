@@ -163,6 +163,15 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/docs/architecture/transcript-access-security.md` - Security-scoped access
 - **Rule:** All FileManager ops must use `accessProvider.withAccess()`
 
+**CLI tool work (contextify-query):**
+- `build/docs/specifications/total-recall-codex-support.md` - **Reference implementation** for CLI skill/plugin changes
+  - Validation proof requirements (what proof to capture)
+  - Codex CLI integration testing patterns
+  - Success criteria and proof document format
+- `build/docs/guides/cli-installation.md` - User-facing installation guide
+- `Sources/ContextifyQueryCLI/main.swift` - CLI implementation
+- **Rule:** CLI changes require actual tool invocation proof, not just file existence checks
+
 **Build/CI/Release:**
 - `build/docs/guides/DEVELOPMENT.md` - Complete build commands
 - `build/docs/guides/linux-ci-builds.md` - GitHub Actions workflow
