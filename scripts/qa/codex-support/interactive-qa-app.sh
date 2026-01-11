@@ -192,12 +192,47 @@ header "Clear State"
 echo "## Clear State" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
-step "Clearing existing skills..."
+step "Clearing existing installation state..."
+
+# Clear skill files
 rm -rf ~/.claude/skills/total-recall 2>/dev/null || true
 rm -rf ~/.codex/skills/total-recall 2>/dev/null || true
-pass "Cleared existing skills"
+
+# Clear plugin manifest entry (so app shows "disabled")
+if [ -f ~/.claude/plugins/installed_plugins_v2.json ]; then
+  # Remove query@contextify entry from manifest
+  python3 -c "
+import json
+import sys
+try:
+    with open('$HOME/.claude/plugins/installed_plugins_v2.json', 'r') as f:
+        data = json.load(f)
+    if 'plugins' in data and 'query@contextify' in data['plugins']:
+        del data['plugins']['query@contextify']
+        with open('$HOME/.claude/plugins/installed_plugins_v2.json', 'w') as f:
+            json.dump(data, f, indent=2)
+        print('Removed query@contextify from manifest')
+except Exception as e:
+    print(f'Warning: {e}', file=sys.stderr)
+" 2>/dev/null || true
+fi
+
+# Clear plugin cache
+rm -rf ~/.claude/plugins/cache/contextify 2>/dev/null || true
+
+# Remove shim (so app detects as fully disabled)
+rm -f /opt/homebrew/bin/contextify-query 2>/dev/null || true
+rm -f /usr/local/bin/contextify-query 2>/dev/null || true
+rm -f ~/bin/contextify-query 2>/dev/null || true
+
+pass "Cleared installation state (skills, manifest, cache, shim)"
 
 echo ""
+echo -e "${YELLOW}Close and reopen Settings (Cmd+W, then Cmd+,) to refresh state${NC}"
+echo ""
+read -p "Press Enter after reopening Settings..."
+echo ""
+
 echo "Current state:"
 echo "  Claude: $(ls ~/.claude/skills/total-recall/SKILL.md 2>&1 || echo 'not installed')"
 echo "  Codex:  $(ls ~/.codex/skills/total-recall/SKILL.md 2>&1 || echo 'not installed')"
@@ -246,6 +281,20 @@ if [ -f ~/.claude/skills/total-recall/SKILL.md ] && [ -f ~/.codex/skills/total-r
 fi
 
 echo "" >> "$PROOF_FILE"
+
+# Fail early if Enable didn't work
+if [ ! -f ~/.claude/skills/total-recall/SKILL.md ] || [ ! -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  echo ""
+  echo -e "${RED}${BOLD}Enable test failed - cannot continue${NC}"
+  echo ""
+  echo "Debug info:"
+  echo "  Claude skill: $(ls ~/.claude/skills/total-recall/SKILL.md 2>&1)"
+  echo "  Codex skill:  $(ls ~/.codex/skills/total-recall/SKILL.md 2>&1)"
+  echo ""
+  echo "Check Console.app for errors from Contextify"
+  echo "Proof file: $PROOF_FILE"
+  exit 1
+fi
 
 # --- Test Disable ---
 
