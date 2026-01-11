@@ -233,24 +233,28 @@ public final class CLICoordinator: ObservableObject {
   // MARK: - Private Implementation
 
   private static func computeState() -> State {
+    log.info("[CLI-COMPUTE-STATE] Starting state computation...")
+
     // App Store builds: Cannot detect Homebrew CLI due to sandbox restrictions
     // Just show install instructions - user verifies in terminal
     if Sandbox.isSandboxed {
-      // Sandbox prevents us from checking /opt/homebrew/bin or running `which`
-      // Always return disabled to show install instructions
-      // User can verify installation by running `contextify-query status` in terminal
+      log.info("[CLI-COMPUTE-STATE] Sandboxed build, returning disabled")
       return .disabled
     }
 
     // DMG builds: Check for shim + plugin installation
     guard let shimPath = findInstalledShim() else {
+      log.info("[CLI-COMPUTE-STATE] No shim found, returning disabled")
       return .disabled
     }
+    log.info("[CLI-COMPUTE-STATE] Shim found at: \(shimPath, privacy: .public)")
 
     // Check if plugin exists
     guard let pluginVersion = readInstalledPluginVersion() else {
+      log.info("[CLI-COMPUTE-STATE] No plugin version in manifest, returning disabled")
       return .disabled
     }
+    log.info("[CLI-COMPUTE-STATE] Plugin version: \(pluginVersion, privacy: .public)")
 
     // ============================================================================
     // TEMPORARY FIX: Skill file existence check
@@ -267,13 +271,18 @@ public final class CLICoordinator: ObservableObject {
     let claudeSkillPath = homeDir.appendingPathComponent(".claude/skills/total-recall/SKILL.md").path
     let codexSkillPath = homeDir.appendingPathComponent(".codex/skills/total-recall/SKILL.md").path
 
+    log.info("[CLI-COMPUTE-STATE] Checking skills: claude=\(claudeSkillPath, privacy: .public) codex=\(codexSkillPath, privacy: .public)")
+
     let claudeSkillExists = fileManager.fileExists(atPath: claudeSkillPath)
     let codexSkillExists = fileManager.fileExists(atPath: codexSkillPath)
 
+    log.info("[CLI-COMPUTE-STATE] Skill check: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
+
     if !claudeSkillExists || !codexSkillExists {
-      log.warning("[CLI-STATE] Skills missing: claude=\(claudeSkillExists) codex=\(codexSkillExists)")
+      log.warning("[CLI-COMPUTE-STATE] Skills missing, returning disabled")
       return .disabled
     }
+    log.info("[CLI-COMPUTE-STATE] All skills present")
     // ============================================================================
 
     // Check if shim's parent directory is on PATH

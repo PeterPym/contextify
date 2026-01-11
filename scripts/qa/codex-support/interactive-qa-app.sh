@@ -160,32 +160,8 @@ if pgrep -x "Contextify" > /dev/null; then
   info "Stopped existing Contextify process"
 fi
 
-# Start the dev build
-step "Starting dev build..."
-open "$DEV_APP"
-sleep 3
-
-# Verify it's the right build
-step "Verifying correct build is running..."
-APP_PATH=$(ps aux | grep "Contextify.app/Contents/MacOS" | grep -v grep | head -1 | awk '{for(i=11;i<=NF;i++) printf $i" "; print ""}' | sed 's|/Contents/MacOS/Contextify.*||' || echo "")
-if echo "$APP_PATH" | grep -q "derived-dmg"; then
-  pass "DMG dev build running"
-  echo "Build: DMG dev build (unsandboxed)" >> "$PROOF_FILE"
-  echo "Path: $APP_PATH" >> "$PROOF_FILE"
-elif echo "$APP_PATH" | grep -q "derived-appstore"; then
-  fail "Wrong build type - App Store build running instead of DMG"
-  echo "Build: App Store (wrong)" >> "$PROOF_FILE"
-  exit 1
-else
-  fail "Wrong build running: $APP_PATH"
-  echo "Expected: .derived-dmg build"
-  echo "Got: $APP_PATH"
-  exit 1
-fi
-
-echo "" >> "$PROOF_FILE"
-
-# --- Clear State ---
+# --- Clear State BEFORE starting app ---
+# (App auto-installs on launch if state is disabled + writable paths exist)
 
 header "Clear State"
 
@@ -227,15 +203,92 @@ rm -f ~/bin/contextify-query 2>/dev/null || true
 
 pass "Cleared installation state (skills, manifest, cache, shim)"
 
-echo ""
-echo -e "${YELLOW}Close and reopen Settings (Cmd+W, then Cmd+,) to refresh state${NC}"
-echo ""
-read -p "Press Enter after reopening Settings..."
-echo ""
+echo "" >> "$PROOF_FILE"
 
-echo "Current state:"
-echo "  Claude: $(ls ~/.claude/skills/total-recall/SKILL.md 2>&1 || echo 'not installed')"
-echo "  Codex:  $(ls ~/.codex/skills/total-recall/SKILL.md 2>&1 || echo 'not installed')"
+# Start the dev build (AFTER clearing state)
+step "Starting dev build..."
+open "$DEV_APP"
+sleep 3
+
+# Verify it's the right build
+step "Verifying correct build is running..."
+APP_PATH=$(ps aux | grep "Contextify.app/Contents/MacOS" | grep -v grep | head -1 | awk '{for(i=11;i<=NF;i++) printf $i" "; print ""}' | sed 's|/Contents/MacOS/Contextify.*||' || echo "")
+if echo "$APP_PATH" | grep -q "derived-dmg"; then
+  pass "DMG dev build running"
+  echo "Build: DMG dev build (unsandboxed)" >> "$PROOF_FILE"
+  echo "Path: $APP_PATH" >> "$PROOF_FILE"
+elif echo "$APP_PATH" | grep -q "derived-appstore"; then
+  fail "Wrong build type - App Store build running instead of DMG"
+  echo "Build: App Store (wrong)" >> "$PROOF_FILE"
+  exit 1
+else
+  fail "Wrong build running: $APP_PATH"
+  echo "Expected: .derived-dmg build"
+  echo "Got: $APP_PATH"
+  exit 1
+fi
+
+echo "" >> "$PROOF_FILE"
+
+# Note: App will auto-install on launch since /opt/homebrew/bin is writable.
+# This is expected behavior. We verify auto-install worked, then test Disable/Enable.
+step "Waiting for auto-install to complete..."
+sleep 2
+
+step "Verifying auto-install installed both skills..."
+CLAUDE_EXISTS=false
+CODEX_EXISTS=false
+[ -f ~/.claude/skills/total-recall/SKILL.md ] && CLAUDE_EXISTS=true
+[ -f ~/.codex/skills/total-recall/SKILL.md ] && CODEX_EXISTS=true
+
+echo "  Claude skill: $CLAUDE_EXISTS"
+echo "  Codex skill:  $CODEX_EXISTS"
+
+if [ "$CLAUDE_EXISTS" = "true" ] && [ "$CODEX_EXISTS" = "true" ]; then
+  pass "Auto-install created both skills"
+  echo "Auto-install: Both skills created" >> "$PROOF_FILE"
+else
+  # If auto-install didn't create skills, that's fine - we'll test Enable
+  info "Auto-install did not create skills (will test Enable manually)"
+  echo "Auto-install: Skills not created (testing Enable)" >> "$PROOF_FILE"
+fi
+
+# --- Test Disable ---
+# (App auto-installed on launch, now we test Disable removes both skills)
+
+header "Test Disable"
+
+echo "## Test Disable" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+prompt_action "In Contextify.app:
+  1. Open Settings (Cmd+,)
+  2. Go to CLI tab (should show 'Enabled')
+  3. Click 'Disable' button"
+
+step "Verifying skills were removed..."
+
+echo "### After Disable" >> "$PROOF_FILE"
+echo "" >> "$PROOF_FILE"
+
+check_skill_removed ~/.claude/skills/total-recall "Claude"
+check_skill_removed ~/.codex/skills/total-recall "Codex"
+
+echo "" >> "$PROOF_FILE"
+
+# Fail early if Disable didn't work
+if [ -f ~/.claude/skills/total-recall/SKILL.md ] || [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
+  echo ""
+  echo -e "${RED}${BOLD}Disable test failed - skills still exist${NC}"
+  echo ""
+  echo "Debug info:"
+  echo "  Claude skill: $(ls ~/.claude/skills/total-recall/SKILL.md 2>&1)"
+  echo "  Codex skill:  $(ls ~/.codex/skills/total-recall/SKILL.md 2>&1)"
+  echo ""
+  echo "Check Console.app for errors from Contextify"
+  echo "Proof file: $PROOF_FILE"
+  exit 1
+fi
 
 # --- Test Enable ---
 
@@ -245,9 +298,8 @@ echo "## Test Enable" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
 prompt_action "In Contextify.app:
-  1. Open Settings (Cmd+,)
-  2. Go to CLI tab
-  3. Click 'Enable' button"
+  1. Settings > CLI tab (should show 'Disabled')
+  2. Click 'Enable' button"
 
 step "Verifying skills were installed..."
 
@@ -296,45 +348,24 @@ if [ ! -f ~/.claude/skills/total-recall/SKILL.md ] || [ ! -f ~/.codex/skills/tot
   exit 1
 fi
 
-# --- Test Disable ---
+# --- Test Re-Disable (Idempotency) ---
 
-header "Test Disable"
+header "Test Re-Disable (Idempotency)"
 
-echo "## Test Disable" >> "$PROOF_FILE"
+echo "## Test Re-Disable" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
 prompt_action "In Contextify.app:
   1. Settings > CLI tab
-  2. Click 'Disable' button"
+  2. Click 'Disable' button again"
 
-step "Verifying skills were removed..."
+step "Verifying skills were removed again..."
 
-echo "### After Disable" >> "$PROOF_FILE"
+echo "### After Re-Disable" >> "$PROOF_FILE"
 echo "" >> "$PROOF_FILE"
 
 check_skill_removed ~/.claude/skills/total-recall "Claude"
 check_skill_removed ~/.codex/skills/total-recall "Codex"
-
-echo "" >> "$PROOF_FILE"
-
-# --- Test Re-Enable ---
-
-header "Test Re-Enable (Idempotency)"
-
-echo "## Test Re-Enable" >> "$PROOF_FILE"
-echo "" >> "$PROOF_FILE"
-
-prompt_action "In Contextify.app:
-  1. Settings > CLI tab
-  2. Click 'Enable' button again"
-
-step "Verifying skills were reinstalled..."
-
-echo "### After Re-Enable" >> "$PROOF_FILE"
-echo "" >> "$PROOF_FILE"
-
-check_skill_exists ~/.claude/skills/total-recall/SKILL.md "Claude"
-check_skill_exists ~/.codex/skills/total-recall/SKILL.md "Codex"
 
 if [ -f ~/.codex/skills/total-recall/SKILL.md ]; then
   check_not_symlink ~/.codex/skills/total-recall/SKILL.md
