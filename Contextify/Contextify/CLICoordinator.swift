@@ -813,7 +813,7 @@ exit 1
   /// Read installed plugin version from manifest
   private static func readInstalledPluginVersion() -> String? {
     let manifestURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+      .appendingPathComponent(".claude/plugins/installed_plugins.json")
 
     guard let data = try? Data(contentsOf: manifestURL),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -953,10 +953,10 @@ exit 1
       .appendingPathComponent(".claude/plugins/cache/contextify/query/\(version)")
   }
 
-  /// Update installed_plugins_v2.json manifest
+  /// Update installed_plugins.json manifest
   private func updatePluginManifest(version: String, pluginPath: URL) throws {
     let manifestURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+      .appendingPathComponent(".claude/plugins/installed_plugins.json")
 
     // Read existing manifest or create new one
     var manifest: [String: Any]
@@ -995,7 +995,7 @@ exit 1
   /// Remove plugin entry from manifest
   private func removePluginFromManifest() {
     let manifestURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+      .appendingPathComponent(".claude/plugins/installed_plugins.json")
 
     guard let data = try? Data(contentsOf: manifestURL),
           var manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

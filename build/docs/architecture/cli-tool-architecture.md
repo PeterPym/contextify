@@ -95,7 +95,7 @@ CLI="/Applications/Contextify.app/Contents/MacOS/contextify-query"
 
 **What:** JSON file tracking installed plugins and versions.
 
-**Where:** `~/.claude/plugins/installed_plugins_v2.json`
+**Where:** `~/.claude/plugins/installed_plugins.json`
 
 **Why:** Enables version detection for upgrade prompts. Also used by Claude Code's plugin system (legacy, but still functional).
 

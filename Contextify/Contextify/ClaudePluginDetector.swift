@@ -49,7 +49,7 @@ final class ClaudePluginDetector: ObservableObject {
 
   private func checkPluginInstalled() -> Bool {
     let url = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+      .appendingPathComponent(".claude/plugins/installed_plugins.json")
 
     guard let data = try? Data(contentsOf: url),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

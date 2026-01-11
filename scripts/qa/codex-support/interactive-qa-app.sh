@@ -175,17 +175,17 @@ rm -rf ~/.claude/skills/total-recall 2>/dev/null || true
 rm -rf ~/.codex/skills/total-recall 2>/dev/null || true
 
 # Clear plugin manifest entry (so app shows "disabled")
-if [ -f ~/.claude/plugins/installed_plugins_v2.json ]; then
+if [ -f ~/.claude/plugins/installed_plugins.json ]; then
   # Remove query@contextify entry from manifest
   python3 -c "
 import json
 import sys
 try:
-    with open('$HOME/.claude/plugins/installed_plugins_v2.json', 'r') as f:
+    with open('$HOME/.claude/plugins/installed_plugins.json', 'r') as f:
         data = json.load(f)
     if 'plugins' in data and 'query@contextify' in data['plugins']:
         del data['plugins']['query@contextify']
-        with open('$HOME/.claude/plugins/installed_plugins_v2.json', 'w') as f:
+        with open('$HOME/.claude/plugins/installed_plugins.json', 'w') as f:
             json.dump(data, f, indent=2)
         print('Removed query@contextify from manifest')
 except Exception as e:

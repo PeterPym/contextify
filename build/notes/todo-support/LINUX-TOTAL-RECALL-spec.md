@@ -70,7 +70,7 @@ The problem is compounded on Linux:
 | | `/usr/local/bin/contextify-query` | (Intel Mac) | |
 | | `~/bin/contextify-query` | (fallback) | |
 | **Plugin Cache** | `~/.claude/plugins/cache/contextify/query/{version}/` | Plugin code | Claude Code plugin features |
-| **Plugin Manifest** | `~/.claude/plugins/installed_plugins_v2.json` | Registration | Claude Code discovery |
+| **Plugin Manifest** | `~/.claude/plugins/installed_plugins.json` | Registration | Claude Code discovery |
 | **Claude Skill** | `~/.claude/skills/total-recall/SKILL.md` | Skill definition | /total-recall in Claude Code |
 | **Codex Skill** | `~/.codex/skills/total-recall/SKILL.md` | Skill definition | /total-recall in Codex CLI |
 | **Agent** | `~/.claude/plugins/cache/contextify/query/{version}/agents/contextify-researcher.md` | Researcher agent | Multi-query delegation |
@@ -118,7 +118,7 @@ Shim:
 
 Plugin:
   ✓ Cache: ~/.claude/plugins/cache/contextify/query/1.1.0/
-  ✓ Manifest: entry exists in installed_plugins_v2.json
+  ✓ Manifest: entry exists in installed_plugins.json
   ✓ Agent: contextify-researcher.md present
 
 Skills:
