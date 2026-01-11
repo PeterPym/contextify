@@ -87,11 +87,13 @@ Run the app UI QA script:
 - [x] Click "Enable" - reinstalls both skills
 - [x] Verify Codex skill is real file (not symlink)
 
-**Edge Cases (TESTS ADDED, PENDING RUN):**
-- [ ] Remove just Codex skill → verify app shows Repair button
-- [ ] Click Repair → verify both restored
-- [ ] Remove just Claude skill → verify app shows Repair button
-- [ ] Click Repair → verify both restored
+**Edge Cases:**
+- [x] Remove just Codex skill → verify app shows Repair button
+- [x] Click Repair → verify both restored
+- [x] Remove just Claude skill → verify app shows Repair button
+- [x] Click Repair → verify both restored
+
+**Proof:** `/tmp/codex-skill-app-qa-proof-20260111-154125.md` (6/6 passed)
 
 **Bugs fixed during validation:**
 - `removeShimAndPlugin()` was not removing skill directories (fixed)
