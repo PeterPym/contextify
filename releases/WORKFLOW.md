@@ -326,16 +326,17 @@ If App Store rejects the submission:
 4. Re-run relevant checklist items
 5. Update `release.json` with new build number and resubmission
 
-## Two-Channel Release Strategy
+## Release Strategy
 
-Contextify ships via two channels:
+Contextify ships via three channels:
 
-| Channel | Target | Updates | Status |
-|---------|--------|---------|--------|
-| **DMG** | Contextify | Sparkle auto-updates | Ships immediately |
-| **App Store** | Contextify AppStore | Apple updates | Ships after Apple review |
+| Channel | Distribution | Ships |
+|---------|--------------|-------|
+| **DMG** | GitHub releases (+ Sparkle updates) | Immediately |
+| **App Store** | App Store | After Apple review |
+| **Linux CLI** | GitHub releases | With DMG |
 
-**Strategy:** DMG leads, App Store follows. Both built from same commit.
+**Strategy:** All channels built from same commit, same version. DMG and Linux ship immediately when built. Marketing waits for App Store approval.
 
 ### Build Both Distributions (Recommended)
 

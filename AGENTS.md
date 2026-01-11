@@ -310,103 +310,25 @@ Use the hybrid model (optimistic for user-visible changes, database-driven for b
 
 ## Releases
 
-**Strategy:** DMG leads, App Store follows. Both built from same commit. DMG ships immediately; App Store ships after Apple review (24-48h).
+Three channels, same commit, same version:
 
-**Release Management System:** `releases/` directory at repo root
-- `releases/WORKFLOW.md` - LLM-guided release workflow (start here)
-- `releases/config.json` - Release configuration
-- `releases/manifest.json` - Release history and current state
-- `releases/v{X.Y.Z}/` - Per-release directories with checklists, state, artifacts
+| Channel | Distribution | Ships |
+|---------|--------------|-------|
+| DMG | GitHub releases (+ Sparkle updates) | Immediately |
+| App Store | App Store | After Apple review |
+| Linux CLI | GitHub releases | With DMG |
 
-**Two distribution channels:**
+Marketing waits for App Store approval.
 
-| Channel | Target | Updates | Build Flag |
-|---------|-----------|---------|------------|
-| **DMG** | Contextify | Sparkle auto-updates | `--dist=dmg` |
-| **App Store** | Contextify AppStore | Apple updates | `--dist=appstore` |
+**Start here:** `releases/WORKFLOW.md`
 
-### Quick Commands
-
+**Quick commands:**
 ```bash
-# Session context (run when starting release work)
-./scripts/release/context.sh              # Shows active release, targets, next action
-
-# Initialize release (must specify target channels)
-./scripts/release/init.sh X.Y.Z --dmg     # DMG-only release
-./scripts/release/init.sh X.Y.Z --appstore # App Store-only release
-./scripts/release/init.sh X.Y.Z --both    # Both channels
-./scripts/release/init.sh X.Y.Z --reset   # Reset for new build (preserves targets)
-
-# Build (auto-skips non-targeted channels)
-./scripts/release/build.sh X.Y.Z
-
-# Check status
-./scripts/release/status.sh               # All releases summary
-./scripts/release/status.sh X.Y.Z         # Specific version (shows next steps)
-./scripts/release/status.sh --shipped     # What's in production?
-./scripts/release/status.sh --active      # What needs work?
-
-# Upload to App Store
-bash scripts/xc.sh upload
-
-# Record App Store submission
-./scripts/release/mark-submitted.sh X.Y.Z --build 5
-
-# If rejected by Apple
-./scripts/release/mark-rejected.sh X.Y.Z --interactive
-
-# Mark as shipped (has guards - use --force to bypass)
-./scripts/release/mark-shipped.sh X.Y.Z --dmg
-./scripts/release/mark-shipped.sh X.Y.Z --appstore --build 5
-
-# Check state consistency
-./scripts/release/check-consistency.sh
+./scripts/release/status.sh --active  # What needs work?
+./scripts/release/init.sh X.Y.Z --all # Start new release
 ```
 
-### Build Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/xc.sh` | Development builds, Xcode operations |
-| `scripts/build-release.sh` | Release builds (DMG + App Store) |
-| `scripts/release/build.sh` | Release workflow build (with tracking) |
-
-**Full command reference:** See `releases/WORKFLOW.md`
-
-### Pre-Release Validation
-
-```bash
-./scripts/release/validate-pre-release.sh X.Y.Z
-```
-
-Or manually:
-1. P0 blockers resolved: `grep "P0" TODOS.md`
-2. Tests pass: `swift test`
-3. Build clean: `bash scripts/xc.sh build` (zero warnings)
-4. Working directory clean: `git status`
-
-### Changelog Generation
-
-Release notes are generated via LLM analysis of git history:
-
-```bash
-./scripts/release/generate-release-notes.sh X.Y.Z
-```
-
-**Key points:**
-- Scoped to app code only (see `releases/config/app-paths.txt`)
-- Generates `releases/vX.Y.Z/assets/changelog.llm.md`
-- Human review required before finalizing
-- Produces CHANGELOG.md entry, Sparkle HTML, App Store text
-
-### Release References
-
-The complete release playbook (version sync rules, rejection handling, backdating constraints, checklists) lives in:
-- `releases/WORKFLOW.md` - LLM-guided workflow, status commands, reset/resubmit guidance
-- `build/docs/operations/release/RELEASE-CHECKLIST.md` - Step-by-step checklists, including rejections
-- `build/docs/guides/APP-STORE-SUBMISSION.md` - App Store submission and appeal details
-- `build/docs/operations/release/sparkle-updates.md` - Sparkle/DMG specifics
-- `build/docs/operations/release/README.md` - Release operations overview
+**Build scripts:** `scripts/xc.sh` (dev), `scripts/release/build.sh` (release)
 
 ## Transcript Access (App Store Builds)
 
