@@ -73,12 +73,20 @@ Run the interactive QA script:
 - [x] `~/.codex/skills/total-recall/` removed
 
 ### 4.5 Settings UI Toggle (DMG Build Only)
+**Status: PENDING**
+
+Run the app UI QA script:
+```bash
+./scripts/qa/codex-support/interactive-qa-app.sh
+```
+
 - [ ] Open Contextify.app > Settings > CLI tab
-- [ ] Click "Disable" - verify both skills removed
 - [ ] Click "Enable" - verify both skills installed
 - [ ] Verify Codex skill is real file (not symlink) after Enable
+- [ ] Click "Disable" - verify both skills removed
+- [ ] Click "Enable" again - verify idempotency
 
-**Outcome:** All checks pass via interactive QA script. Settings UI toggle pending manual verification.
+**Outcome:** Pending manual verification via app UI QA script.
 
 ---
 
@@ -117,7 +125,7 @@ Codex CLI integration verified via interactive QA script:
 ---
 
 ## Phase 8: Final Merge Readiness
-**Status: READY**
+**Status: PENDING APP UI TEST**
 
 Pre-merge checklist:
 - [x] Build passes (0 warnings)
@@ -127,8 +135,9 @@ Pre-merge checklist:
 - [x] CLI integration tested (Codex discovers and executes skill)
 - [x] Bug fix cherry-picked to main
 - [x] Branch rebased on main
+- [ ] **Settings UI toggle tested** (`./scripts/qa/codex-support/interactive-qa-app.sh`)
 
-**Ready for merge to main.**
+**Pending:** App UI toggle test before merge.
 
 ---
 
@@ -139,11 +148,11 @@ Pre-merge checklist:
 | 1. Code Review | COMPLETE |
 | 2. Build Validation | COMPLETE |
 | 3. Unit Tests | COMPLETE |
-| 4. Functional Validation | COMPLETE |
+| 4. Functional Validation | PENDING (4.5 App UI) |
 | 5. CLI Integration | COMPLETE |
 | 6. Edge Cases | COMPLETE |
 | 7. Documentation | COMPLETE |
-| 8. Merge Readiness | READY |
+| 8. Merge Readiness | PENDING APP UI TEST |
 
 ---
 
