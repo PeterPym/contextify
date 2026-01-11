@@ -248,19 +248,20 @@ description: Contextify Total Recall - Search past conversations
 ### State Enum
 
 ```swift
+public enum RepairReason: Equatable {
+  case claudeSkillMissing
+  case codexSkillMissing
+  case bothSkillsMissing
+  case manifestMissing
+}
+
 public enum State: Equatable {
   case disabled
   case installing
-  case enabled(version: String, pathWarning: Bool, skillWarning: SkillWarning?)
+  case enabled(version: String, pathWarning: Bool, repairIssue: RepairReason?)
   case enabledViaHomebrew(version: String)  // App Store only
   case upgrading(from: String, to: String)
   case failed(error: String)
-}
-
-public enum SkillWarning: Equatable {
-  case claudeMissing
-  case codexMissing
-  case bothMissing
 }
 ```
 
@@ -271,9 +272,10 @@ public enum SkillWarning: Equatable {
 | `.disabled` | **Enable** | "Not installed" | - |
 | `.enabled(v, false, nil)` | **Disable** | "Installed (vX.Y.Z)" | - |
 | `.enabled(v, true, nil)` | **Disable** | "Installed (vX.Y.Z)" | PATH warning |
-| `.enabled(v, _, .claudeMissing)` | **Repair** | "Installed (vX.Y.Z)" | Claude skill missing |
-| `.enabled(v, _, .codexMissing)` | **Repair** | "Installed (vX.Y.Z)" | Codex skill missing |
-| `.enabled(v, _, .bothMissing)` | **Repair** | "Installed (vX.Y.Z)" | Both skills missing |
+| `.enabled(v, _, .claudeSkillMissing)` | **Repair** | "Installed (vX.Y.Z)" | Claude skill missing |
+| `.enabled(v, _, .codexSkillMissing)` | **Repair** | "Installed (vX.Y.Z)" | Codex skill missing |
+| `.enabled(v, _, .bothSkillsMissing)` | **Repair** | "Installed (vX.Y.Z)" | Both skills missing |
+| `.enabled(v, _, .manifestMissing)` | **Repair** | "Installed (vunknown)" | Manifest missing |
 | `.enabledViaHomebrew(v)` | - | "Installed via Homebrew" | - |
 | `.installing` | - | "Installing..." | - |
 | `.failed(e)` | **Retry** | Error message | - |
@@ -284,17 +286,19 @@ public enum SkillWarning: Equatable {
 
 ### Failure Mode Matrix
 
-| # | Missing Component | Claude Works? | Codex Works? | Current UI | Correct UI |
-|---|-------------------|---------------|--------------|------------|------------|
-| 1 | Nothing | Yes | Yes | Enabled | Enabled |
-| 2 | Shim | No | No | Disabled | Disabled |
-| 3 | Manifest only | Yes* | Yes* | Disabled | Repair |
-| 4 | Claude skill only | No | Yes | ~~Disabled~~ | **Repair** |
-| 5 | Codex skill only | Yes | No | ~~Disabled~~ | **Repair** |
-| 6 | Both skills | No | No | Disabled | Disabled |
-| 7 | PATH issue | Maybe | Maybe | Warning | Warning |
+| # | Missing Component | Claude Works? | Codex Works? | UI |
+|---|-------------------|---------------|--------------|-----|
+| 1 | Nothing | Yes | Yes | Enabled |
+| 2 | Shim | No | No | Disabled |
+| 3 | Manifest only | Yes* | Yes* | Repair |
+| 4 | Claude skill only | No | Yes | Repair |
+| 5 | Codex skill only | Yes | No | Repair |
+| 6 | Both skills | No | No | Repair** |
+| 7 | Shim + manifest + all skills | No | No | Disabled |
+| 8 | PATH issue | Maybe | Maybe | Warning |
 
 *Manifest missing means version detection fails, but skills may still work.
+**Both skills missing but shim exists - can be repaired.
 
 ### Repair Flow
 
