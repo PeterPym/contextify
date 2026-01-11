@@ -571,6 +571,21 @@ exit 1
       log.info("[CLI-REMOVE] Removed plugin at \(pluginDir.path, privacy: .public)")
     }
 
+    // Remove skill directories
+    let claudeSkillDir = fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/skills/total-recall")
+    if fileManager.fileExists(atPath: claudeSkillDir.path) {
+      try? fileManager.removeItem(at: claudeSkillDir)
+      log.info("[CLI-REMOVE] Removed Claude skill at \(claudeSkillDir.path, privacy: .public)")
+    }
+
+    let codexSkillDir = fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/skills/total-recall")
+    if fileManager.fileExists(atPath: codexSkillDir.path) {
+      try? fileManager.removeItem(at: codexSkillDir)
+      log.info("[CLI-REMOVE] Removed Codex skill at \(codexSkillDir.path, privacy: .public)")
+    }
+
     // Update manifest to remove plugin entry
     removePluginFromManifest()
   }
