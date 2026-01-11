@@ -509,6 +509,7 @@ These must be done before CLI is usable:
 
 ---
 
+**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
 **Related:** #LINUX-CLI (ingestion), cross-platform architecture doc
 
 ## Periodic Ingestion Check for Resilience
