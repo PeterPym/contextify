@@ -139,6 +139,40 @@ ls ~/.codex/skills/total-recall/SKILL.md   # Should exist (new in 1.1.0)
 - [ ] Both Claude and Codex skills installed
 - [ ] Codex skill is real file (not symlink)
 
+## Architecture Documentation Updates (v1.1.0 Linux)
+
+This release closes the Linux Total Recall gap. Update documentation to reflect this.
+
+### Cross-Platform Architecture Doc
+**File:** `build/docs/architecture/cross-platform-architecture.md`
+
+- [ ] Update Feature Parity Matrix:
+  - Change `| **Total Recall skill** | Yes | **NO** |` to `| **Total Recall skill** | Yes | Yes |`
+  - Change `| **contextify-query CLI** | Yes | **NO** |` to `| **contextify-query CLI** | Yes | Yes |`
+- [ ] Remove or update "Critical Gap: Total Recall on Linux" section
+- [ ] Update "Why Linux Has Fewer Features" if needed
+
+### TODOS.md Cleanup
+- [ ] Mark `#LINUX-TOTAL-RECALL` items as complete
+- [ ] Mark `#CLI-DOCTOR` as complete
+- [ ] Remove completed items per TODO policy
+
+### Spec Status Update
+**File:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
+
+- [ ] Update front matter `status: active` → `status: complete`
+- [ ] Or move to `build/docs/` as permanent reference
+
+### Validation Plan Closure
+**File:** `scripts/qa/codex-support/VALIDATION-PLAN.md`
+
+- [ ] Mark Phases 10-13 as COMPLETE
+- [ ] Update front matter `status: complete`
+
+### CLI Documentation
+- [ ] Update `build/docs/guides/cli-installation.md` for Linux instructions
+- [ ] Add Linux section to website CLI docs (if exists)
+
 ## Cleanup
 
 ### Archive Release Materials
