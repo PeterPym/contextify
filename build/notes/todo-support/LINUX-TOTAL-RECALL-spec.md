@@ -3,7 +3,7 @@ todo_id: LINUX-TOTAL-RECALL
 title: CLI Installation Health Check - Technical Specification
 type: spec
 date: 2026-01-10
-status: active
+status: superseded
 description: Unified approach to verifying CLI tool and skill installation across platforms
 ---
 
@@ -13,7 +13,7 @@ description: Unified approach to verifying CLI tool and skill installation acros
 
 During validation of Codex skill support, we discovered that Contextify lacks a unified method for verifying that all CLI components are properly installed. The app and CLI have divergent, incomplete health checks, leading to situations where the UI shows "Enabled" but the actual functionality is broken.
 
-This specification proposes a unified `contextify-query doctor` command that provides comprehensive installation health checking, usable by both the CLI (for user debugging) and the app (for accurate UI state).
+Contextify now provides a unified `contextify-query doctor` command that provides comprehensive installation health checking, usable by both the CLI (for user debugging) and the app (for accurate UI state). The app and CLI share `CLIHealthChecker` in ContextifyCore. Repair flows use `contextify-query install-plugin`; `doctor --fix` is deferred.
 
 ---
 
@@ -93,17 +93,18 @@ The problem is compounded on Linux:
 
 ---
 
-## Proposed Solution: `contextify-query doctor`
+## Solution: `contextify-query doctor`
 
 ### Command Design
 
 ```bash
-contextify-query doctor [--json] [--fix]
+contextify-query doctor [--json]
 ```
 
 **Options:**
 - `--json`: Output as JSON for programmatic consumption (app integration)
-- `--fix`: Attempt to repair missing components (runs install-plugin if needed)
+
+**Repair:** If issues are reported, run `contextify-query install-plugin`. The `--fix` flag is deferred.
 
 ### Output Format (Human)
 
@@ -281,88 +282,31 @@ Installed (v1.1.0) - Some issues detected
 [Repair]  [Disable]
 ```
 
-The "Repair" button runs `contextify-query doctor --fix` or `install-plugin`.
+The "Repair" button runs `contextify-query install-plugin`.
 
 ---
 
-## Implementation Plan
+## Implementation Status
 
-### Phase 0: Extract CLIHealthChecker to ContextifyCore (P0 - Do First)
+### Phase 0: CLIHealthChecker extraction (complete)
+- [x] `CLIHealthChecker` lives in ContextifyCore with platform-aware checks
+- [x] `CLICoordinator.computeState()` uses `CLIHealthChecker`
+- [x] Unit tests cover component presence and platform behavior
+- [x] Settings > CLI mirrors health checks
 
-**Rationale:** Both the app (`CLICoordinator`) and CLI (`doctor` command) need health checking logic. Extracting to a shared module in ContextifyCore provides a single source of truth and avoids duplication that would drift over time.
+### Phase 1: CLI doctor command (complete)
+- [x] Doctor command is available
+- [x] Human-readable output and JSON output are supported
+- [ ] `--fix` flag is deferred; use `contextify-query install-plugin`
 
-**Deliverables:**
+### Phase 2: Linux build (complete, CI pending)
+- [x] `contextify-query` ships in Linux products
+- [x] `install-plugin` creates skills on Linux
+- [ ] Linux CI covers `contextify-query` (tracked in `scripts/qa/codex-support/VALIDATION-PLAN.md`)
 
-1. Create `app/Sources/ContextifyCore/Installation/CLIHealthChecker.swift`
-   - `struct CLIHealthChecker` with pure filesystem checks
-   - `func checkHealth() -> HealthReport`
-   - `struct HealthReport: Codable, Sendable` with component statuses
-   - `enum HealthStatus: healthy | degraded | broken | unconfigured`
-   - Platform-aware: full checks on macOS, skills-only on Linux
-
-2. Refactor `CLICoordinator.computeState()` to use `CLIHealthChecker`
-   - Remove duplicated filesystem logic
-   - Map `HealthReport` to existing `State` enum
-   - Keep UI-specific logic (throttling, operation flags) in CLICoordinator
-
-3. Add unit tests: `Tests/ContextifyCoreTests/CLIHealthCheckerTests.swift`
-   - All components present → healthy
-   - Missing Codex skill → degraded with correct issue
-   - Missing shim → broken/unconfigured
-   - Platform-specific behavior
-
-4. Verify build passes, existing tests pass
-
-**Validation:** App Settings > CLI tab shows same behavior as before extraction.
-
-**Design doc:** `/tmp/cli-health-checker-extraction.md`
-
----
-
-### Temporary Fix in Place
-
-A quick fix was added to `CLICoordinator.computeState()` to check for skill file existence:
-
-**Location:** `Contextify/Contextify/CLICoordinator.swift:325-382`
-
-**What it does:**
-- Checks if `~/.claude/skills/total-recall/SKILL.md` exists
-- Checks if `~/.codex/skills/total-recall/SKILL.md` exists
-- Returns repair state if skills missing
-
-**To be replaced by:** Phase 0 (CLIHealthChecker extraction)
-
-Search for `#CLI-DOCTOR` to find the TODO marker.
-
----
-
-### Phase 1: CLI doctor command (P0 for Linux release)
-
-1. Add `doctor` case to Command enum
-2. Call `CLIHealthChecker.checkHealth()` (from Phase 0)
-3. Format output (human-readable and JSON)
-4. Add `--fix` flag to run `install-plugin` if issues detected
-
-### Phase 2: Linux build (P0 for Linux release)
-
-1. Add `contextify-query` to Linux Package.swift targets
-2. CLIHealthChecker already handles platform differences (from Phase 0)
-3. Add to Linux CI workflow
-4. Verify `install-plugin` creates skill files on Linux
-
-### Phase 3: App integration (P1) - SUPERSEDED
-
-~~Original plan: Shell out to `contextify-query doctor --json`~~
-
-**New approach (Phase 0):** App uses `CLIHealthChecker` directly from ContextifyCore. No subprocess needed. This is simpler and avoids bootstrap problems (what if CLI is broken?).
-
-The repair state UI is already implemented. Phase 0 just extracts the logic to a shared location.
-
-### Phase 4: Unified health check spec (P2) - SUPERSEDED
-
-~~Original plan: Document canonical paths in shared location~~
-
-**New approach (Phase 0):** CLIHealthChecker IS the unified spec. Paths are defined once in code, used by both app and CLI.
+### App integration and unified spec (complete)
+- [x] App uses `CLIHealthChecker` directly (no subprocess)
+- [x] CLIHealthChecker defines canonical paths for app and CLI
 
 ---
 
@@ -385,7 +329,7 @@ The repair state UI is already implemented. Phase 0 just extracts the logic to a
   - Run doctor → healthy
   - Remove one skill
   - Run doctor → degraded with correct issue
-  - Run doctor --fix
+  - Run install-plugin
   - Run doctor → healthy
 
 ### Platform Tests
@@ -404,7 +348,7 @@ The repair state UI is already implemented. Phase 0 just extracts the logic to a
 
 3. **Database location discovery**: On Linux, where should the database live? Should doctor check multiple locations?
 
-4. **Repair scope**: Should `--fix` only run install-plugin, or also attempt to fix PATH issues?
+4. **Repair scope**: Should a future `--fix` only run install-plugin, or also attempt to fix PATH issues?
 
 5. **Caching**: Should app cache doctor results to avoid repeated CLI calls?
 
