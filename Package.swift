@@ -75,10 +75,11 @@ let targets: [Target] = [
   ),
 ]
 #else
-// Linux: Cross-platform ingestion only
+// Linux: Cross-platform ingestion and query CLI
 let products: [Product] = [
   .library(name: "ContextifyIngestionCore", targets: ["ContextifyIngestionCore"]),
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
+  .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
 ]
 
 // Files included in Linux build
@@ -92,17 +93,34 @@ let linuxSources: [String] = [
   "Platform/PlatformSandbox.swift",
   // Database layer
   "Database/BulkIngestManager.swift",   // Bulk write optimization
+  "Database/ContextifyQueryService.swift",  // Query service for CLI
+  "Database/DatabaseManager.swift",     // Database connection management
+  "Database/DatabaseMigration.swift",   // Schema migrations
   "Database/DatabaseSchema.swift",
+  "Database/EntryFilter.swift",         // Entry filtering
   "Database/KeyGeneration.swift",
   "Database/Models.swift",
   "Database/PathNormalizer.swift",
+  "Database/QueryContentTruncator.swift",  // Content truncation
+  "Database/QueryTimeFilters.swift",    // Time range filtering
   "Database/Repositories.swift",        // Repository protocols and implementations
   "Database/HooverEngine.swift",        // Transcript parsing engine
+  "Database/TranscriptOrchestrator.swift",  // High-level DB API
   "Database/TranscriptParsers.swift",   // Line parsers and metadata parsers
   "Database/IngestProgress.swift",      // Progress reporting protocol
   "Database/Utilities/TimeUnits.swift", // Time unit conversion helpers
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
+  // Installation (CLI health checking)
+  "Installation/CLIHealthChecker.swift",
+  // Query CLI support
+  "QueryCLI/ContextifyQueryShimMarker.swift",
+  "QueryCLI/FeedbackInbox.swift",
+  // Search
+  "Search/ConversationSearchService.swift",
+  // Worktree detection
+  "Worktree/WorktreeConfig.swift",
+  "Worktree/WorktreeDetector.swift",
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
@@ -140,6 +158,14 @@ let targets: [Target] = [
     swiftSettings: [
       .unsafeFlags(["-parse-as-library"])
     ]
+  ),
+  // Query CLI for Linux - install-plugin and doctor commands
+  .executableTarget(
+    name: "ContextifyQueryCLI",
+    dependencies: [
+      "ContextifyIngestionCore",
+    ],
+    path: "Sources/ContextifyQueryCLI"
   ),
 ]
 #endif
