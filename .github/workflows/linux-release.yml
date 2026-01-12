@@ -106,6 +106,7 @@ jobs:
         with:
           name: contextify-linux-x86_64
           path: dist/contextify-linux-x86_64.tar.gz
+          retention-days: 7
 
   build-linux-arm64:
     runs-on: ubuntu-latest
@@ -201,6 +202,7 @@ jobs:
         with:
           name: contextify-linux-arm64
           path: dist/contextify-linux-arm64.tar.gz
+          retention-days: 7
 
   # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
   # This job is disabled to avoid duplicate releases.
