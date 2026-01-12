@@ -91,16 +91,46 @@ status: ready-for-review
 
 ---
 
-## 5.3 App Store "What's New" (3-6 bullets)
+## 5.3 App Store "What's New" (FINAL - as submitted)
 
 ### Version 1.1.0
 
-- **Linux Support**: Total Recall skill now works on Linux
-- **Codex CLI**: Full integration with OpenAI's Codex CLI
-- **Faster Imports**: 2.5x faster bulk transcript ingestion
-- **Inline Images**: Images now render directly in the timeline
-- **Improved Accuracy**: Fixed project attribution for cross-directory sessions
-- **Health Checks**: New doctor command diagnoses installation issues
+```
+What's New in v1.1.0
+
+• Total Recall Expanded - Now supports Codex CLI and git worktrees. See below.
+• Tab Groups - Visually group tabs from related projects.
+• Inline Images - Images render inline with Quick Look preview.
+• Markdown Tables - Tables in conversation details now render nicely.
+• Faster Imports - 2.5x faster bulk transcript ingestion.
+
+Total Recall Improvements (install via Settings > CLI)
+
+Total Recall is a skill for Claude Code and Codex. It tells your AI how to use
+contextify-query, a CLI interface to your complete conversational history.
+
+This release we added two major expansions:
+
+• Codex CLI Support - Total Recall now works with OpenAI's Codex CLI alongside
+  Claude Code. Use either provider and search across all your conversations.
+
+• Support for Git Worktrees - contextify-query now recognizes git worktrees and
+  lets you search conversations across all related projects in one request.
+  Built a caching layer in worktree B last month? Normally, that would be tough
+  to find. But now from any of the project's worktrees you can just ask Claude
+  Code or Codex: "Can you use total recall to find the gotchas I uncovered
+  while working on that caching layer last month?" It is as though a genie has
+  granted your wish.
+```
+
+### Lessons Learned (for future releases)
+
+1. **Channel awareness** - Linux Support was originally listed but is irrelevant to App Store users
+2. **Feature framing** - "Improved Accuracy" was too vague; became "Git Worktree Search"
+3. **Missing features** - Tab Groups and Markdown Tables were missed in initial draft
+4. **Structure matters** - Scannable bullets at top, details below
+5. **CLI context needed** - Total Recall requires explanation of what it is and how to install
+6. **Description updates** - App Store description was also updated with Total Recall semantic search section
 
 ---
 
