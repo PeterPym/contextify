@@ -3,7 +3,7 @@ todo_id: LINUX-TOTAL-RECALL
 title: CLI Installation Health Check - Technical Specification
 type: spec
 date: 2026-01-10
-status: superseded
+status: complete
 description: Unified approach to verifying CLI tool and skill installation across platforms
 ---
 
