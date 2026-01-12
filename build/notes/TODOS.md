@@ -858,6 +858,27 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
+## Release Tooling (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (quality of life)
+**Effort:** 2-4 hours
+
+- [ ] #ASC-VERSION-POLL: Add App Store Connect API support for version-specific status polling
+
+**Problem:**
+`poll-appstore-status.sh` only queries live version via `altool --list-apps`. Cannot check pending/inflight versions (e.g., checking v1.1.0 status while v1.0 is live). Requires manual copy-paste from App Store Connect UI.
+
+**Solution:**
+1. Add App Store Connect REST API integration (JWT auth with p8 key)
+2. Accept `--version X.Y.Z` parameter to query specific version
+3. Show status for all versions, not just the live one
+4. Fallback to current altool behavior if API unavailable
+
+**Reference:** See `releases/WORKFLOW.md` "Known Gaps" section.
+
+---
+
 ## User Message Summarization Quality Improvement (1 item)
 
 **Status:** Phase 1 shipped, Phase 2 ready to implement
@@ -1726,6 +1747,47 @@ Migrate all preferences to bundle ID domain and remove `dev.contextify` suite.
 
 **Files:**
 - `app/Sources/ContextifyCore/HUDCore.swift:22-27` - sharedDefaults initialization
+
+---
+
+## Linux Landing Page (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (v1.1.0 marketing - SEO for Linux AI coding)
+**Effort:** 2-3 hours
+
+- [ ] #LINUX-LANDING-PAGE: Create dedicated Linux page with SEO keywords
+
+**Goal:** Dedicated page for Linux users, SEO optimized for "linux claude code", "linux codex cli", "linux ai coding assistant", etc.
+
+**URL:** `contextify.sh/linux/` or `contextify.sh/platforms/linux/`
+
+**Content:**
+- Hero: "Total Recall for Linux" - search your Claude Code and Codex conversations
+- Provider callouts: Claude Code (Anthropic), Codex CLI (OpenAI)
+- Installation instructions (Homebrew tap, direct download)
+- Feature highlights: semantic search, worktree support, cross-project queries
+- Use case examples with actual query strings
+- Requirements: Linux with Swift runtime, Claude Code or Codex installed
+
+**SEO Keywords:**
+- Linux Claude Code
+- Linux Codex CLI
+- Linux AI coding assistant
+- Linux agentic programming
+- Linux AI pair programming
+- Terminal AI history
+- CLI conversation search
+
+**Integration:**
+- Link from downloads page "Learn more about Linux support"
+- Link from main site footer
+- Cross-link with Total Recall blog post
+
+**Files:**
+- `website/linux/index.html` (new)
+- `website/index.html` (add link)
+- `website/download/index.html` (add link)
 
 ---
 
@@ -2623,7 +2685,7 @@ When Apple Intelligence encounters `FoundationModels.LanguageModelSession.Genera
 ## Help Documentation Content (1 item)
 
 **Status:** Not Started - research complete, structure defined
-**Priority:** P3 (deferred - user education, support reduction)
+**Priority:** P1 (v1.1.0 marketing - user education, support reduction)
 **Effort:** 4-8 hours
 **Research:** `build/notes/todo-support/HELP-DOCUMENTATION-research.md`
 
@@ -2636,8 +2698,14 @@ When Apple Intelligence encounters `FoundationModels.LanguageModelSession.Genera
 2. `/help/getting-started` - 5-minute setup guide
 3. `/help/keyboard-shortcuts` - Reference table
 4. `/help/troubleshooting` - Common issues and solutions
-5. `/help/features` - Feature discovery (post-launch)
+5. `/help/features` - Feature discovery (includes Total Recall, Tab Groups)
 6. `/help/privacy` - Data handling, local-first architecture
+7. `/help/total-recall` - Deep dive on Total Recall setup and usage (NEW for v1.1.0)
+
+**v1.1.0 Updates Needed:**
+- Total Recall section with Codex + worktree features
+- Linux CLI installation guide
+- Tab Groups explanation (DMG only)
 
 **Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/HELP-DOCUMENTATION-research.md`
 

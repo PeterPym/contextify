@@ -118,7 +118,9 @@
         "status": "approved",
         "build_number": 17,
         "submitted_at": "2025-12-23T07:33:58Z",
-        "approved_at": "2025-12-23"
+        "approved_at": "2025-12-23",
+        "source_tag": "v1.0.5",
+        "source_note": "Metadata-only release. Build 17 was built from v1.0.5 source with version bumped to 1.0.6. Discovered via Total Recall 2026-01-12."
       },
       "marketing": {
         "changelog_published": false,
@@ -155,16 +157,20 @@
         "linux"
       ],
       "git_tag": "v1.1.0",
-      "git_commit": "9ad83e211ae6f73ea262d614f111057a2f6a0df1",
+      "git_commit": "c6bb86e838a6a573292b9173d1c96cb3080b80d3",
       "dmg": {
-        "status": "pending"
+        "status": "built",
+        "built_at": "2026-01-11"
       },
       "appstore": {
-        "status": "pending",
-        "build_number": 1
+        "status": "submitted",
+        "build_number": 18,
+        "built_at": "2026-01-11",
+        "submitted_at": "2026-01-12T07:27:58Z"
       },
       "linux": {
-        "status": "pending"
+        "status": "built",
+        "built_at": "2026-01-12"
       },
       "marketing": {
         "changelog_published": false,

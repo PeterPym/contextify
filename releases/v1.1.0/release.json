@@ -2,19 +2,17 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.1.0",
   "target_channels": [
-  "dmg",
-  "appstore",
-  "linux"
-],
+    "dmg",
+    "appstore",
+    "linux"
+  ],
   "created": "2026-01-06",
   "updated": "2026-01-11",
-
   "git": {
     "tag": "v1.1.0",
-    "commit": "fe177c811120d0543434ada34a948873c198d0a8",
+    "commit": "c6bb86e838a6a573292b9173d1c96cb3080b80d3",
     "branch": "main"
   },
-
   "phases": {
     "pre_release": {
       "status": "complete",
@@ -26,12 +24,11 @@
         "working_directory_clean": true
       }
     },
-
     "build": {
-      "status": "in_progress",
+      "status": "complete",
       "dmg": {
         "built": true,
-        "path": "build/archives/v1.1.0/dmg/Contextify-1.1.0.dmg",
+        "path": "dist/Contextify-1.1.0.dmg",
         "sha256": "aa75a64ba878ac26935aa37c5eb267a8a3df4c941e33b182ea51c66ddcb3e03a",
         "size_bytes": 22921746,
         "signed": true,
@@ -40,58 +37,55 @@
       },
       "appstore": {
         "archived": true,
-        "archive_path": "build/archives/v1.1.0/appstore/Contextify.xcarchive",
-        "build_number": 1,
+        "archive_path": "/Users/rob/code/projects/contextify-wb1/build/archives/v1.1.0/appstore/Contextify.xcarchive",
+        "build_number": 18,
         "exported": true,
-        "uploaded": false,
+        "uploaded": true,
         "upload_receipt": null
       },
       "linux": {
-        "built": false,
+        "built": true,
         "shipped": false,
         "shipped_at": null,
         "github_release_url": null,
-        "blocked_reason": "linux-release.yml workflow fails with 'workflow file issue' on GitHub",
+        "blocked_reason": null,
         "x86_64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
+          "built": true,
+          "path": "build/archives/v1.1.0/linux/contextify-linux-x86_64.tar.gz",
+          "sha256": "464c6f53ef7755c54a867974fd49a78377548eb7fee882b4298eec43cb5c1732",
+          "size_bytes": 58039059
         },
         "arm64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
+          "built": true,
+          "path": "build/archives/v1.1.0/linux/contextify-linux-arm64.tar.gz",
+          "sha256": "cb3541193dd4fea3bb88b188f6d7c779942bd1a70d9a3bb86e2f4c6c85b82623",
+          "size_bytes": 57420905
         }
       }
     },
-
     "review_materials": {
-      "status": "pending",
+      "status": "complete",
       "demo_video": {
-        "recorded": false,
-        "path": null,
-        "deployed": false
+        "recorded": true,
+        "path": "https://contextify.sh/review-4a125b1d/demo-video.mp4",
+        "deployed": true
       },
       "sample_data": {
-        "generated": false,
-        "path": null,
-        "deployed": false
+        "generated": true,
+        "path": "https://contextify.sh/review-4a125b1d/sample-data.zip",
+        "deployed": true
       }
     },
-
     "submission": {
-      "status": "pending",
-      "submitted_at": null,
+      "status": "submitted",
+      "submitted_at": "2026-01-12T07:27:58Z",
       "rejection": null,
       "resubmission": null
     },
-
     "marketing": {
       "status": "pending",
       "changelog": {
-        "written": false,
+        "written": true,
         "published": false
       },
       "announcements": {
@@ -101,7 +95,6 @@
         "product_hunt": false
       }
     },
-
     "post_release": {
       "status": "pending",
       "documentation_updated": false,
@@ -109,7 +102,6 @@
       "monitoring_enabled": false
     }
   },
-
   "notes": [
     {
       "date": "2026-01-06",
@@ -125,6 +117,16 @@
       "date": "2026-01-11",
       "author": "claude",
       "note": "macOS builds complete: DMG (22MB, signed, notarized) and App Store (20MB pkg, 135MB archive). Linux blocked: linux-release.yml workflow fails on GitHub with 'workflow file issue'. linux-build.yml (CI) works fine, only the release workflow is affected."
+    },
+    {
+      "date": "2026-01-11",
+      "author": "system",
+      "note": "Build 1 completed (commit c6bb86e8)"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "system",
+      "note": "Submitted build 18 to App Store Connect"
     }
   ]
 }
