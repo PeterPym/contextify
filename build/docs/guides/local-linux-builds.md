@@ -90,9 +90,7 @@ docker run --rm \
   '
 ```
 
-**Note on Docker runtimes:**
-- **Colima:** Works for both arm64 and x86_64 on ARM Macs
-- **Docker Desktop:** May require enabling "Use Rosetta for x86_64/amd64 emulation" in settings, or may crash with "Illegal instruction" under QEMU
+**Note:** Tested with Colima on ARM Macs. Docker Desktop should also work.
 
 ## Worktree Compatibility
 
@@ -123,18 +121,11 @@ docker run --rm -v "$PWD/dist":/dist swift:6.0-noble ldd /dist/contextify-query
 | Scenario | Recommendation |
 |----------|----------------|
 | Normal releases | GitHub Actions (both architectures) |
-| Quota exhausted | Local Docker with Rosetta (both architectures) |
+| Quota exhausted | Local Docker (both architectures) |
 | Quick iteration | Local Docker |
 | Official release | Both should match - binaries are identical |
 
 ## Troubleshooting
-
-### "Illegal instruction" on x86_64
-
-This error occurs with Docker Desktop's QEMU emulation. Solutions:
-- **Switch to Colima:** `brew install colima && colima start` - uses Apple's Virtualization.framework
-- **Enable Rosetta in Docker Desktop:** Settings → General → "Use Rosetta for x86_64/amd64 emulation"
-- **Use GitHub Actions or an Intel Mac**
 
 ### Git "dubious ownership" errors
 
