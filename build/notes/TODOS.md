@@ -424,13 +424,20 @@ These must be done before CLI is usable:
 
 ---
 
+### P2 - Package Distribution
+
+- [ ] #LINUX-APT-REPO: APT repository for Debian/Ubuntu
+  - Host PPA or self-hosted apt repository
+  - GPG signing infrastructure
+  - Build .deb packages in CI
+  - `sudo apt install contextify-query`
+
+---
+
 ### P3 - Polish
 
 - [ ] #LINUX-HOMEBREW: Homebrew tap for macOS CLI users
   - `brew install contextify/tap/contextify-ingest`
-
-- [ ] #LINUX-APT-REPO: apt/deb packaging
-  - PPA or direct .deb download
 
 - [ ] #LINUX-DOCKER-IMAGE: Docker image for one-liner usage
   - `docker run contextify/ingest -v ~/.claude:/data ...`
