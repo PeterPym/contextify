@@ -19,9 +19,9 @@ Each release goes through 6 phases. Work through them in order:
 |-------|-----------|-------------|
 | 1 | `01-pre-release.md` | Tests, warnings, clean state, version planning |
 | 2 | `02-build.md` | DMG and App Store archive builds |
-| 3 | `03-review-materials.md` | Demo video, sample data for App Store |
+| 3 | `03-review-materials.md` | **Changelog analysis**, demo video, sample data |
 | 4 | `04-submission.md` | Upload, metadata, review notes |
-| 5 | `05-marketing.md` | Changelog, announcements, press |
+| 5 | `05-marketing.md` | Publish changelog, announcements, press |
 | 6 | `06-post-release.md` | Monitoring, feedback, documentation, Homebrew |
 
 ## Starting a New Release

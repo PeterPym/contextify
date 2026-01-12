@@ -4,6 +4,41 @@
 **Phase:** 3 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
+## Changelog Analysis (Do First)
+
+Generate comprehensive changelog before other review materials. This informs what to highlight in demos and release notes.
+
+### Run Changelog Analysis
+
+Use the release notes builder prompt with an AI assistant:
+
+```bash
+# View the prompt
+cat releases/templates/prompts/release-notes-builder.md
+
+# Provide these inputs when prompted:
+# 1. Compare range: Check manifest.json for previous release per channel
+# 2. include_merges: false (for ledger)
+# 3. Channel baselines: App Store, DMG, Linux (check releases/manifest.json)
+# 4. Exclusions: CI-only for external notes
+```
+
+- [ ] Run changelog analysis prompt with AI assistant
+- [ ] Review generated changelog for accuracy
+- [ ] Save internal analysis to: `releases/v{version}/changelog-analysis.md`
+- [ ] Extract "What's New" drafts for each channel
+
+### Verify Known Features
+
+Cross-check that major features appear in the analysis:
+- [ ] All user-facing features from this release are documented
+- [ ] Channel availability (App Store vs DMG vs Linux) is accurate
+- [ ] No features missing from the analysis
+
+**Output:** `releases/v{version}/changelog-analysis.md`
+
+---
+
 ## Sample Data
 
 ### Generate Sample Data
