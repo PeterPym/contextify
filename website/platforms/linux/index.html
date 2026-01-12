@@ -136,11 +136,12 @@
               <span class="terminal-prompt">$</span> /total-recall how did i fix the auth bug?<br><br>
               <span style="color: #4ec9b0;">⏺</span> <span style="color: #dcdcaa;">Skill</span><span style="color: #9cdcfe;">(total-recall)</span><br>
               <span style="color: #6a9955;">  ⎿ Successfully loaded skill</span><br><br>
-              <span style="color: #4ec9b0;">●</span> <span style="color: #dcdcaa;">query:contextify-researcher</span><span style="color: #9cdcfe;">(Search for auth bug fix)</span><br>
-              <span style="color: #6a9955;">  ⎿ Done (5 tool uses · 12.3k tokens · 42s)</span><br><br>
-              <span style="color: #4ec9b0;">●</span> <strong>Found it.</strong> The conversation from Jan 8 shows:<br>
+              <span style="color: #4ec9b0;">⏺</span> <strong>Contextify Total Recall</strong><br><br>
+              <span class="terminal-output">  <strong>Found:</strong> Auth bug fix from Jan 8, 2026</span><br><br>
+              <span class="terminal-output">  <strong>Summary:</strong></span><br>
               <span class="terminal-output">  - Race condition in token refresh</span><br>
-              <span class="terminal-output">  - Fixed with mutex lock in AuthManager.swift:142</span>
+              <span class="terminal-output">  - Fixed with mutex lock in AuthManager.swift:142</span><br>
+              <span class="terminal-output">  - Committed as "fix(auth): prevent token refresh race"</span>
             </code>
           </div>
         </div>
@@ -183,25 +184,28 @@
     </div>
   </section>
 
-  <!-- Example Queries -->
+  <!-- Researcher Agent -->
   <section class="feature-section feature-section-alt">
     <div class="container">
       <div class="row align-items-center g-5">
         <div class="col-lg-5">
-          <h2 class="feature-title">Ask questions in plain English</h2>
-          <p class="feature-description">No need to remember exact syntax or file names. Just describe what you're looking for.</p>
+          <h2 class="feature-title">Complex searches run in the background</h2>
+          <p class="feature-description">For multi-step research, the skill spawns a contextify-researcher agent that runs multiple queries and synthesizes results.</p>
         </div>
         <div class="col-lg-7">
           <div class="terminal-block">
             <code>
-              <span class="terminal-comment"># Find a specific fix</span><br>
-              <span class="terminal-prompt">$</span> /total-recall postgres connection pooling fix<br><br>
-              <span class="terminal-comment"># Search within a project</span><br>
-              <span class="terminal-prompt">$</span> /total-recall rate limiting in myapp<br><br>
-              <span class="terminal-comment"># Get context from a past conversation</span><br>
-              <span class="terminal-prompt">$</span> /total-recall that refactor we did last week<br><br>
-              <span class="terminal-comment"># Works in Claude Code and Codex CLI</span><br>
-              <span class="terminal-prompt">$</span> /total-recall how did we handle auth?
+              <span class="terminal-prompt">$</span> /total-recall what decisions did we make about the database schema?<br><br>
+              <span style="color: #4ec9b0;">⏺</span> <span style="color: #dcdcaa;">Skill</span><span style="color: #9cdcfe;">(total-recall)</span><br>
+              <span style="color: #6a9955;">  ⎿ Successfully loaded skill</span><br><br>
+              <span style="color: #4ec9b0;">●</span> <span style="color: #dcdcaa;">query:contextify-researcher</span><span style="color: #9cdcfe;">(Search for database schema decisions)</span><br>
+              <span style="color: #6a9955;">  ⎿ Done (9 tool uses · 34.1k tokens · 1m 14s)</span><br><br>
+              <span style="color: #4ec9b0;">⏺</span> <strong>Contextify Total Recall</strong><br><br>
+              <span class="terminal-output">  <strong>Found:</strong> 4 conversations about schema design</span><br><br>
+              <span class="terminal-output">  <strong>Key decisions:</strong></span><br>
+              <span class="terminal-output">  - Switched from JSON to normalized tables (Jan 3)</span><br>
+              <span class="terminal-output">  - Added composite index on project_id + timestamp</span><br>
+              <span class="terminal-output">  - Kept content as TEXT, not BLOB</span>
             </code>
           </div>
         </div>
