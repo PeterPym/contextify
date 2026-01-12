@@ -594,6 +594,15 @@ contextify-query install-plugin
 - **Pre-stage caveats changes** - for feature releases (new CLI behavior), create a branch with caveats updates ready to merge post-release
 - **SHA256 is critical** - wrong hash = broken installs
 
+## Known Gaps
+
+**App Store Version Status Polling:** The current `poll-appstore-status.sh` only queries the live version via `altool --list-apps`. It cannot check pending/inflight version status (e.g., v1.1.0 while v1.0 is live). Need to:
+- Add App Store Connect REST API integration (JWT auth with p8 key)
+- Accept `--version X.Y.Z` parameter to query specific version
+- Show status for all versions, not just the live one
+
+Currently requires manual check in App Store Connect UI.
+
 ## Detailed Documentation
 
 For more detailed procedures, see:
