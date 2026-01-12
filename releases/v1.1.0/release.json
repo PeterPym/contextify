@@ -11,7 +11,7 @@
 
   "git": {
     "tag": "v1.1.0",
-    "commit": "9ad83e211ae6f73ea262d614f111057a2f6a0df1",
+    "commit": "fe177c811120d0543434ada34a948873c198d0a8",
     "branch": "main"
   },
 
@@ -28,21 +28,21 @@
     },
 
     "build": {
-      "status": "pending",
+      "status": "in_progress",
       "dmg": {
-        "built": false,
-        "path": null,
-        "sha256": null,
-        "size_bytes": null,
-        "signed": false,
-        "notarized": false,
+        "built": true,
+        "path": "build/archives/v1.1.0/dmg/Contextify-1.1.0.dmg",
+        "sha256": "aa75a64ba878ac26935aa37c5eb267a8a3df4c941e33b182ea51c66ddcb3e03a",
+        "size_bytes": 22921746,
+        "signed": true,
+        "notarized": true,
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": false,
-        "archive_path": null,
+        "archived": true,
+        "archive_path": "build/archives/v1.1.0/appstore/Contextify.xcarchive",
         "build_number": 1,
-        "exported": false,
+        "exported": true,
         "uploaded": false,
         "upload_receipt": null
       },
@@ -51,6 +51,7 @@
         "shipped": false,
         "shipped_at": null,
         "github_release_url": null,
+        "blocked_reason": "linux-release.yml workflow fails with 'workflow file issue' on GitHub",
         "x86_64": {
           "built": false,
           "path": null,
@@ -119,6 +120,11 @@
       "date": "2026-01-10",
       "author": "claude",
       "note": "Added P0 blockers for Linux: contextify-query must build on Linux with Total Recall skill support. Also requires CLI doctor command for installation health checking. See spec: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "claude",
+      "note": "macOS builds complete: DMG (22MB, signed, notarized) and App Store (20MB pkg, 135MB archive). Linux blocked: linux-release.yml workflow fails on GitHub with 'workflow file issue'. linux-build.yml (CI) works fine, only the release workflow is affected."
     }
   ]
 }
