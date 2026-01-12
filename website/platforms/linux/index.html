@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contextify for Linux - Total Recall for Claude Code and Codex CLI</title>
+  <meta name="description" content="Search your Claude Code and Codex CLI conversation history on Linux. Semantic search, cross-project queries, and worktree support via command line.">
+  <link rel="canonical" href="https://contextify.sh/platforms/linux/">
+
+  <!-- SEO keywords targeting -->
+  <meta name="keywords" content="Linux Claude Code, Linux Codex CLI, Linux AI coding assistant, terminal AI history, CLI conversation search, agentic programming Linux">
+
+  <!-- Favicon -->
+  <link rel="icon" href="../../favicon.ico">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:url" content="https://contextify.sh/platforms/linux/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Contextify for Linux - Total Recall for Claude Code and Codex">
+  <meta property="og:description" content="Search your Claude Code and Codex CLI conversation history on Linux. Never lose a solution again.">
+  <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Contextify for Linux - Total Recall for Claude Code and Codex">
+  <meta name="twitter:description" content="Search your Claude Code and Codex CLI conversation history on Linux.">
+  <meta name="twitter:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Custom styles -->
+  <link href="../../styles.css?v=__DEPLOY_HASH__" rel="stylesheet">
+
+  <!-- Page-specific styles -->
+  <style>
+    .terminal-block {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+      font-size: 0.9rem;
+      overflow-x: auto;
+    }
+    .terminal-block code {
+      color: #e0e0e0;
+    }
+    .terminal-prompt {
+      color: #4ec9b0;
+    }
+    .terminal-comment {
+      color: #6a9955;
+    }
+    .terminal-output {
+      color: #9cdcfe;
+    }
+    .provider-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin: 0.25rem;
+    }
+    .provider-claude {
+      background: rgba(217, 119, 87, 0.15);
+      color: #d97757;
+    }
+    .provider-codex {
+      background: rgba(16, 163, 127, 0.15);
+      color: #10a37f;
+    }
+    .install-option {
+      background: var(--contextify-surface);
+      border-radius: 12px;
+      padding: 2rem;
+      height: 100%;
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--contextify-primary);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      font-size: 1.5rem;
+    }
+  </style>
+
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+</head>
+
+<body>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="../../">
+        <img src="../../assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+      <a href="../../download/" class="btn btn-primary d-none d-md-inline-block">Download</a>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="container py-5">
+      <div class="row align-items-center g-5 py-4">
+        <div class="col-lg-6">
+          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool</p>
+          <h1 class="fw-bold mb-4">Total Recall for your AI coding sessions</h1>
+          <p class="lead mb-4">
+            Search across every Claude Code and Codex CLI conversation you've ever had. Find that command, that fix, that solution from weeks ago in seconds.
+          </p>
+          <div class="mb-4">
+            <span class="provider-badge provider-claude">Claude Code (Anthropic)</span>
+            <span class="provider-badge provider-codex">Codex CLI (OpenAI)</span>
+          </div>
+          <a href="#install" class="btn btn-primary btn-lg">Install Now</a>
+        </div>
+        <div class="col-lg-6">
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-comment"># Search all your AI conversations</span><br>
+              <span class="terminal-prompt">$</span> contextify-query "how did I fix the auth bug"<br><br>
+              <span class="terminal-output">Found 3 matches across 2 projects:</span><br>
+              <span class="terminal-output">  [claude] myapp - 2 days ago</span><br>
+              <span class="terminal-output">  [codex] backend - 1 week ago</span><br>
+              <span class="terminal-output">  [claude] myapp - 3 weeks ago</span>
+            </code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Brand Gradient Divider -->
+  <div class="brand-divider"></div>
+
+  <!-- Problem Statement -->
+  <section class="statement-section">
+    <div class="container text-center">
+      <p class="statement-text">Claude Code conversations auto-delete after 30 days.</p>
+      <p class="statement-subtext">Contextify indexes them before they disappear, so you can search them forever.</p>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="feature-section">
+    <div class="container">
+      <h2 class="text-center fw-bold mb-5">Built for Linux power users</h2>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="feature-icon">&#128269;</div>
+          <h3 class="h5 fw-bold mb-2">Semantic Search</h3>
+          <p class="text-secondary">Natural language queries across all your conversations. Find solutions by describing the problem, not remembering exact keywords.</p>
+        </div>
+        <div class="col-md-4">
+          <div class="feature-icon">&#128194;</div>
+          <h3 class="h5 fw-bold mb-2">Cross-Project Queries</h3>
+          <p class="text-secondary">Search across every project at once, or filter to a specific repo. Your entire AI coding history in one place.</p>
+        </div>
+        <div class="col-md-4">
+          <div class="feature-icon">&#127795;</div>
+          <h3 class="h5 fw-bold mb-2">Git Worktree Support</h3>
+          <p class="text-secondary">First-class support for git worktrees. Contextify understands your multi-branch workflow and keeps context organized.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Example Queries -->
+  <section class="feature-section feature-section-alt">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-5">
+          <h2 class="feature-title">Ask questions in plain English</h2>
+          <p class="feature-description">No need to remember exact syntax or file names. Just describe what you're looking for.</p>
+        </div>
+        <div class="col-lg-7">
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-comment"># Find a specific fix</span><br>
+              <span class="terminal-prompt">$</span> contextify-query "postgres connection pooling fix"<br><br>
+              <span class="terminal-comment"># Search within a project</span><br>
+              <span class="terminal-prompt">$</span> contextify-query --project myapp "rate limiting"<br><br>
+              <span class="terminal-comment"># Get full context for an entry</span><br>
+              <span class="terminal-prompt">$</span> contextify-query --id abc123 --context<br><br>
+              <span class="terminal-comment"># Pipe results to your AI</span><br>
+              <span class="terminal-prompt">$</span> contextify-query "auth middleware" | claude
+            </code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Installation Section -->
+  <section id="install" class="feature-section">
+    <div class="container">
+      <h2 class="text-center fw-bold mb-5">Installation</h2>
+      <div class="row g-4 justify-content-center">
+        <div class="col-md-5">
+          <div class="install-option">
+            <h3 class="h5 fw-bold mb-3">Homebrew (Recommended)</h3>
+            <p class="text-secondary mb-4">Works on Linux and macOS with Homebrew installed.</p>
+            <div class="terminal-block">
+              <code>
+                <span class="terminal-prompt">$</span> brew tap contextify/tap<br>
+                <span class="terminal-prompt">$</span> brew install contextify-query
+              </code>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="install-option">
+            <h3 class="h5 fw-bold mb-3">Direct Download</h3>
+            <p class="text-secondary mb-4">Download the binary for your architecture.</p>
+            <div class="d-flex flex-column gap-2">
+              <a href="https://github.com/PeterPym/contextify/releases/latest" class="btn btn-outline-primary">
+                Linux x86_64 (.tar.gz)
+              </a>
+              <a href="https://github.com/PeterPym/contextify/releases/latest" class="btn btn-outline-primary">
+                Linux ARM64 (.tar.gz)
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post-install -->
+      <div class="row justify-content-center mt-5">
+        <div class="col-md-10">
+          <h3 class="h5 fw-bold mb-3 text-center">After Installation</h3>
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-comment"># Install the Total Recall skill for Claude Code and Codex</span><br>
+              <span class="terminal-prompt">$</span> contextify-query install-skill<br><br>
+              <span class="terminal-comment"># Verify installation</span><br>
+              <span class="terminal-prompt">$</span> contextify-query --version<br>
+              <span class="terminal-output">contextify-query 1.1.0</span><br><br>
+              <span class="terminal-comment"># Run your first search</span><br>
+              <span class="terminal-prompt">$</span> contextify-query "hello world"
+            </code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Requirements -->
+  <section class="requirements-section py-5">
+    <div class="container text-center">
+      <h2 class="h4 fw-bold mb-4">Requirements</h2>
+      <div class="row justify-content-center g-3">
+        <div class="col-md-4">
+          <div class="p-3 rounded" style="background: var(--contextify-surface);">
+            <p class="mb-1"><strong>Linux x86_64 or ARM64</strong></p>
+            <p class="text-secondary small mb-0">Ubuntu, Debian, Fedora, Arch, etc.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="p-3 rounded" style="background: var(--contextify-surface);">
+            <p class="mb-1"><strong>Claude Code or Codex CLI</strong></p>
+            <p class="text-secondary small mb-0">At least one AI coding tool installed</p>
+          </div>
+        </div>
+      </div>
+      <p class="text-secondary small mt-4">The CLI tool reads conversation transcripts from <code>~/.claude/</code> and <code>~/.codex/</code></p>
+    </div>
+  </section>
+
+  <!-- macOS CTA -->
+  <section class="py-5">
+    <div class="container">
+      <div class="download-card text-center">
+        <h2 class="h4 fw-bold mb-3">Also available for macOS</h2>
+        <p class="mb-4">The full Contextify app includes a visual timeline, real-time monitoring, and AI-powered summaries.</p>
+        <a href="../../download/" class="btn btn-primary">Download for Mac</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="../../download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="../../blog/" class="mx-2">Blog</a>
+        <span class="text-secondary">|</span>
+        <a href="../../privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="../../terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="../../support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2025 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+</body>
+</html>
