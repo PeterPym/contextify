@@ -1282,6 +1282,49 @@ watcher budgeting, background indexing improvements, and reduced main thread wor
 
 ---
 
+## Distribution: AI Tool Plugin Marketplace (1 item)
+
+**Status:** Not started
+**Priority:** P2 (distribution strategy)
+**Discovered:** 2026-01-12
+
+- [ ] #PLUGIN-DISTRIBUTION: Research and prototype plugin marketplace distribution
+
+**Vision:**
+Distribute Contextify through AI coding tool plugin marketplaces. Users install via plugin commands rather than visiting app stores:
+
+```
+Tip: Want to search your AI coding history? Add Total Recall:
+/plugin marketplace add contextify/total-recall
+/plugin install total-recall@contextify
+```
+
+**Workflow:**
+1. User sees contextual tip in their AI coding tool
+2. Runs plugin install command
+3. Skill detects user's platform (macOS, Linux, etc.)
+4. Checks if Contextify CLI is installed
+5. Guides user through installation if not (Homebrew, DMG, apt, etc.)
+6. Configures integration automatically
+
+**Research Questions:**
+1. Which AI tools support plugin marketplaces? (Claude Code, Cursor, Codex, others)
+2. What's the plugin/skill authoring format for each?
+3. Can a single plugin definition work across multiple tools?
+4. How do plugin marketplaces handle platform-specific installers?
+
+**Advantages:**
+- Users discover while using their preferred AI tool
+- Contextual installation at point of need
+- Platform detection and guided setup
+- Reach users who never visit app stores
+
+**Dependencies:**
+- Cross-platform CLI distribution (#HOMEBREW-CASK, Linux packages)
+- Plugin authoring standards stabilizing
+
+---
+
 ## Multi-Tenant Database Architecture (1 item)
 
 **Status:** Not started
