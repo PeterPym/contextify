@@ -19,14 +19,40 @@ Or use with CGI/WSGI as needed.
 import os
 import re
 import json
+import fcntl
+import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs
+from collections import defaultdict
 
 # Configuration
 SUBSCRIBERS_FILE = os.environ.get('SUBSCRIBERS_FILE', '/var/www/contextify/subscribers.txt')
 PORT = int(os.environ.get('SUBSCRIBE_PORT', 8080))
 ALLOWED_ORIGINS = ['https://contextify.sh', 'http://localhost', 'null']  # 'null' for file:// testing
+
+# Security limits
+MAX_EMAIL_LENGTH = 254
+MAX_PAYLOAD_SIZE = 1024
+MAX_REQUESTS_PER_MINUTE = 5
+
+# Rate limiting (in-memory, resets on restart)
+request_log = defaultdict(list)  # IP -> [timestamps]
+
+
+def check_rate_limit(ip):
+    """Returns True if request is allowed, False if rate limited."""
+    now = time.time()
+    minute_ago = now - 60
+
+    # Clean old entries
+    request_log[ip] = [t for t in request_log[ip] if t > minute_ago]
+
+    if len(request_log[ip]) >= MAX_REQUESTS_PER_MINUTE:
+        return False
+
+    request_log[ip].append(now)
+    return True
 
 
 def is_valid_email(email):
@@ -39,28 +65,35 @@ def add_subscriber(email):
     """Add email to subscribers file. Returns (success, message)."""
     email = email.strip().lower()
 
+    # Length check
+    if len(email) > MAX_EMAIL_LENGTH:
+        return False, "Invalid email address"
+
     if not is_valid_email(email):
         return False, "Invalid email address"
 
-    # Check for duplicates
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(SUBSCRIBERS_FILE), exist_ok=True)
+
+    # Use file locking for safe concurrent access
     try:
-        if os.path.exists(SUBSCRIBERS_FILE):
-            with open(SUBSCRIBERS_FILE, 'r') as f:
+        with open(SUBSCRIBERS_FILE, 'a+') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                # Check for duplicates
+                f.seek(0)
                 existing = [line.split('\t')[0] for line in f.readlines()]
                 if email in existing:
-                    return True, "Already subscribed"  # Don't reveal if already exists
-    except Exception:
-        pass  # If we can't read, continue anyway
+                    return True, "Thanks for subscribing!"  # Same message, no enumeration
 
-    # Append new subscriber
-    try:
-        os.makedirs(os.path.dirname(SUBSCRIBERS_FILE), exist_ok=True)
-        with open(SUBSCRIBERS_FILE, 'a') as f:
-            timestamp = datetime.utcnow().isoformat() + 'Z'
-            f.write(f"{email}\t{timestamp}\n")
-        return True, "Subscribed successfully"
+                # Append new subscriber
+                timestamp = datetime.utcnow().isoformat() + 'Z'
+                f.write(f"{email}\t{timestamp}\n")
+                return True, "Thanks for subscribing!"
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except Exception as e:
-        return False, f"Server error: {str(e)}"
+        return False, "Server error"  # Don't leak details
 
 
 class SubscribeHandler(BaseHTTPRequestHandler):
@@ -82,26 +115,46 @@ class SubscribeHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle subscription request."""
         origin = self.headers.get('Origin', '')
+        client_ip = self.client_address[0]
+
+        # Rate limiting
+        if not check_rate_limit(client_ip):
+            self._send_response(429, {'success': False, 'message': 'Too many requests. Try again later.'}, origin)
+            return
+
+        # Payload size limit
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > MAX_PAYLOAD_SIZE:
+            self._send_response(413, {'success': False, 'message': 'Request too large'}, origin)
+            return
 
         # Read POST data
-        content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length).decode('utf-8')
 
         # Parse form data or JSON
         email = None
+        honeypot = None
         content_type = self.headers.get('Content-Type', '')
 
         if 'application/json' in content_type:
             try:
                 data = json.loads(post_data)
                 email = data.get('email', '')
+                honeypot = data.get('website', '')  # Honeypot field
             except json.JSONDecodeError:
-                self._send_response(400, {'success': False, 'message': 'Invalid JSON'}, origin)
+                self._send_response(400, {'success': False, 'message': 'Invalid request'}, origin)
                 return
         else:
             # Form data
             params = parse_qs(post_data)
             email = params.get('email', [''])[0]
+            honeypot = params.get('website', [''])[0]
+
+        # Honeypot check - bots fill this in, humans don't see it
+        if honeypot:
+            # Pretend success but don't save
+            self._send_response(200, {'success': True, 'message': 'Thanks for subscribing!'}, origin)
+            return
 
         if not email:
             self._send_response(400, {'success': False, 'message': 'Email required'}, origin)

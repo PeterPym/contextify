@@ -186,6 +186,7 @@
           <h3 class="h5 mb-2">Stay Updated</h3>
           <p class="text-secondary small mb-3">Get notified when new versions ship. No spam, just releases.</p>
           <form id="newsletter-form" class="newsletter-form" action="/api/subscribe" method="POST">
+            <input type="text" name="website" style="display:none !important" tabindex="-1" autocomplete="off" aria-hidden="true">
             <div class="input-group">
               <input type="email" name="email" class="form-control" placeholder="your@email.com" required>
               <button type="submit" class="btn btn-primary">Subscribe</button>
@@ -264,7 +265,7 @@
       fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
+        body: JSON.stringify({ email: email, website: form.querySelector('input[name="website"]').value })
       })
       .then(function(response) { return response.json(); })
       .then(function(data) {
