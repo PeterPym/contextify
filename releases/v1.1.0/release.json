@@ -7,7 +7,7 @@
   "linux"
 ],
   "created": "2026-01-06",
-  "updated": "2026-01-06",
+  "updated": "2026-01-11",
 
   "git": {
     "tag": "v1.1.0",
@@ -17,13 +17,13 @@
 
   "phases": {
     "pre_release": {
-      "status": "pending",
-      "completed_at": null,
+      "status": "complete",
+      "completed_at": "2026-01-11",
       "validation": {
-        "tests_passed": null,
-        "test_count": null,
-        "warnings": null,
-        "working_directory_clean": null
+        "tests_passed": true,
+        "test_count": 335,
+        "warnings": 0,
+        "working_directory_clean": true
       }
     },
 
