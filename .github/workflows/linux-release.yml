@@ -67,10 +67,7 @@ jobs:
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
-// Generated at build time - do not edit
-let generatedCLIVersion = "$CLI_VERSION"
-VEOF
+              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
               # Build CLI with static Swift stdlib and generated version flag
               swift build -c release --product contextify-ingest \
@@ -165,10 +162,7 @@ VEOF
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
-// Generated at build time - do not edit
-let generatedCLIVersion = "$CLI_VERSION"
-VEOF
+              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
               # Build CLI with static Swift stdlib and generated version flag
               swift build -c release --product contextify-ingest \
