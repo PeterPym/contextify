@@ -103,3 +103,4 @@ core
 scripts/performance/results/*
 !scripts/performance/results/.gitignore
 !scripts/performance/results/.gitkeep
+Sources/ContextifyIngestionCLI/Version.generated.swift

@@ -1,5 +1,5 @@
 name: Linux Release
-# Workflow for building Linux CLI binaries (x86_64 and arm64)
+# Workflow for building Linux CLI binaries (x86_64 and arm64) - refresh
 
 on:
   push:
@@ -67,10 +67,7 @@ jobs:
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
-// Generated at build time - do not edit
-let generatedCLIVersion = "$CLI_VERSION"
-VEOF
+              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
               # Build CLI with static Swift stdlib and generated version flag
               swift build -c release --product contextify-ingest \
@@ -109,6 +106,7 @@ VEOF
         with:
           name: contextify-linux-x86_64
           path: dist/contextify-linux-x86_64.tar.gz
+          retention-days: 7
 
   build-linux-arm64:
     runs-on: ubuntu-latest
@@ -165,10 +163,7 @@ VEOF
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              cat > Sources/ContextifyIngestionCLI/Version.generated.swift << VEOF
-// Generated at build time - do not edit
-let generatedCLIVersion = "$CLI_VERSION"
-VEOF
+              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
               # Build CLI with static Swift stdlib and generated version flag
               swift build -c release --product contextify-ingest \
@@ -207,6 +202,7 @@ VEOF
         with:
           name: contextify-linux-arm64
           path: dist/contextify-linux-arm64.tar.gz
+          retention-days: 7
 
   # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
   # This job is disabled to avoid duplicate releases.
