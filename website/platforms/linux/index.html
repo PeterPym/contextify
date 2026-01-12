@@ -134,7 +134,7 @@
           <div class="terminal-block">
             <code>
               <span class="terminal-comment"># Search all your AI conversations</span><br>
-              <span class="terminal-prompt">$</span> contextify-query "how did I fix the auth bug"<br><br>
+              <span class="terminal-prompt">$</span> /total-recall how did i fix the auth bug?<br><br>
               <span class="terminal-output">Found 3 matches across 2 projects:</span><br>
               <span class="terminal-output">  [claude] myapp - 2 days ago</span><br>
               <span class="terminal-output">  [codex] backend - 1 week ago</span><br>
@@ -193,13 +193,13 @@
           <div class="terminal-block">
             <code>
               <span class="terminal-comment"># Find a specific fix</span><br>
-              <span class="terminal-prompt">$</span> contextify-query "postgres connection pooling fix"<br><br>
+              <span class="terminal-prompt">$</span> /total-recall postgres connection pooling fix<br><br>
               <span class="terminal-comment"># Search within a project</span><br>
-              <span class="terminal-prompt">$</span> contextify-query --project myapp "rate limiting"<br><br>
-              <span class="terminal-comment"># Get full context for an entry</span><br>
-              <span class="terminal-prompt">$</span> contextify-query --id abc123 --context<br><br>
-              <span class="terminal-comment"># Pipe results to your AI</span><br>
-              <span class="terminal-prompt">$</span> contextify-query "auth middleware" | claude
+              <span class="terminal-prompt">$</span> /total-recall rate limiting in myapp<br><br>
+              <span class="terminal-comment"># Get context from a past conversation</span><br>
+              <span class="terminal-prompt">$</span> /total-recall that refactor we did last week<br><br>
+              <span class="terminal-comment"># Works in Claude Code and Codex CLI</span><br>
+              <span class="terminal-prompt">$</span> /total-recall how did we handle auth?
             </code>
           </div>
         </div>
@@ -251,8 +251,8 @@
               <span class="terminal-comment"># Verify installation</span><br>
               <span class="terminal-prompt">$</span> contextify-query --version<br>
               <span class="terminal-output">contextify-query 1.1.0</span><br><br>
-              <span class="terminal-comment"># Run your first search</span><br>
-              <span class="terminal-prompt">$</span> contextify-query "hello world"
+              <span class="terminal-comment"># Then in Claude Code or Codex, use the skill:</span><br>
+              <span class="terminal-prompt">$</span> /total-recall what did we build yesterday?
             </code>
           </div>
         </div>
