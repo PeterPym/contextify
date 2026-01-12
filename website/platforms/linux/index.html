@@ -235,15 +235,17 @@
       <!-- Extract -->
       <div class="row justify-content-center mt-5">
         <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">Extract to your PATH</h3>
+          <h3 class="h5 fw-bold mb-3 text-center">Extract and install</h3>
           <div class="terminal-block">
             <code>
-              <span class="terminal-comment"># Create ~/.local/bin if it doesn't exist</span><br>
-              <span class="terminal-prompt">$</span> mkdir -p ~/.local/bin<br><br>
-              <span class="terminal-comment"># Extract the binary</span><br>
-              <span class="terminal-prompt">$</span> tar -xzf contextify-query-*.tar.gz -C ~/.local/bin<br><br>
+              <span class="terminal-comment"># Extract the tarball</span><br>
+              <span class="terminal-prompt">$</span> tar -xzf contextify-linux-*.tar.gz<br><br>
+              <span class="terminal-comment"># Move binaries to your PATH</span><br>
+              <span class="terminal-prompt">$</span> mkdir -p ~/.local/bin<br>
+              <span class="terminal-prompt">$</span> mv contextify-query contextify-ingest ~/.local/bin/<br><br>
               <span class="terminal-comment"># Add to PATH if not already (add to ~/.bashrc or ~/.zshrc)</span><br>
-              <span class="terminal-prompt">$</span> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+              <span class="terminal-prompt">$</span> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc<br>
+              <span class="terminal-prompt">$</span> source ~/.bashrc
             </code>
           </div>
         </div>
