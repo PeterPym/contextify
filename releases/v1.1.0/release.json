@@ -38,9 +38,9 @@
       "appstore": {
         "archived": true,
         "archive_path": "/Users/rob/code/projects/contextify-wb1/build/archives/v1.1.0/appstore/Contextify.xcarchive",
-        "build_number": 1,
+        "build_number": 18,
         "exported": true,
-        "uploaded": false,
+        "uploaded": true,
         "upload_receipt": null
       },
       "linux": {
@@ -64,28 +64,28 @@
       }
     },
     "review_materials": {
-      "status": "pending",
+      "status": "complete",
       "demo_video": {
-        "recorded": false,
-        "path": null,
-        "deployed": false
+        "recorded": true,
+        "path": "https://contextify.sh/review-4a125b1d/demo-video.mp4",
+        "deployed": true
       },
       "sample_data": {
-        "generated": false,
-        "path": null,
-        "deployed": false
+        "generated": true,
+        "path": "https://contextify.sh/review-4a125b1d/sample-data.zip",
+        "deployed": true
       }
     },
     "submission": {
-      "status": "pending",
-      "submitted_at": null,
+      "status": "submitted",
+      "submitted_at": "2026-01-12T07:27:58Z",
       "rejection": null,
       "resubmission": null
     },
     "marketing": {
       "status": "pending",
       "changelog": {
-        "written": false,
+        "written": true,
         "published": false
       },
       "announcements": {
@@ -122,6 +122,11 @@
       "date": "2026-01-11",
       "author": "system",
       "note": "Build 1 completed (commit c6bb86e8)"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "system",
+      "note": "Submitted build 18 to App Store Connect"
     }
   ]
 }

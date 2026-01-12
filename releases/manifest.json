@@ -163,9 +163,10 @@
         "built_at": "2026-01-11"
       },
       "appstore": {
-        "status": "built",
-        "build_number": 1,
-        "built_at": "2026-01-11"
+        "status": "submitted",
+        "build_number": 18,
+        "built_at": "2026-01-11",
+        "submitted_at": "2026-01-12T07:27:58Z"
       },
       "linux": {
         "status": "built",
