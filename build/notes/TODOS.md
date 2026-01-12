@@ -858,6 +858,27 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
+## Release Tooling (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (quality of life)
+**Effort:** 2-4 hours
+
+- [ ] #ASC-VERSION-POLL: Add App Store Connect API support for version-specific status polling
+
+**Problem:**
+`poll-appstore-status.sh` only queries live version via `altool --list-apps`. Cannot check pending/inflight versions (e.g., checking v1.1.0 status while v1.0 is live). Requires manual copy-paste from App Store Connect UI.
+
+**Solution:**
+1. Add App Store Connect REST API integration (JWT auth with p8 key)
+2. Accept `--version X.Y.Z` parameter to query specific version
+3. Show status for all versions, not just the live one
+4. Fallback to current altool behavior if API unavailable
+
+**Reference:** See `releases/WORKFLOW.md` "Known Gaps" section.
+
+---
+
 ## User Message Summarization Quality Improvement (1 item)
 
 **Status:** Phase 1 shipped, Phase 2 ready to implement
