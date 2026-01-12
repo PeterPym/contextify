@@ -133,12 +133,12 @@
         <div class="col-lg-6">
           <div class="terminal-block">
             <code>
-              <span class="terminal-comment"># Search all your AI conversations</span><br>
               <span class="terminal-prompt">$</span> /total-recall how did i fix the auth bug?<br><br>
-              <span class="terminal-output">Found 3 matches across 2 projects:</span><br>
-              <span class="terminal-output">  [claude] myapp - 2 days ago</span><br>
-              <span class="terminal-output">  [codex] backend - 1 week ago</span><br>
-              <span class="terminal-output">  [claude] myapp - 3 weeks ago</span>
+              <span class="terminal-output">Found it. The conversation from Jan 8, 2026 shows:</span><br>
+              <span class="terminal-output">- The bug was a race condition in token refresh</span><br>
+              <span class="terminal-output">- Fixed by adding a mutex lock in AuthManager.swift:142</span><br>
+              <span class="terminal-output">- Also added retry logic with exponential backoff</span><br><br>
+              <span class="terminal-output">The fix was committed as "fix(auth): prevent token refresh race"</span>
             </code>
           </div>
         </div>
