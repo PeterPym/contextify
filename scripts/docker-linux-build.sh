@@ -2,6 +2,22 @@
 # Build for Linux using Docker with Colima
 # Uses separate .build-linux directory to avoid conflicts with macOS build
 #
+# Usage:
+#   bash scripts/docker-linux-build.sh             # Basic build only
+#   bash scripts/docker-linux-build.sh --e2e       # Build + E2E transcript ingestion test
+#   bash scripts/docker-linux-build.sh --install-test  # Build + user install flow validation
+#
+# Prerequisites:
+#   - Docker running (macOS: brew install colima && colima start)
+#   - Internet connection (downloads Swift image + SQLite source)
+#
+# What each test validates:
+#   Basic build:   Swift 6 compiles on Linux, SQLite links correctly
+#   E2E test:      Binary executes, parses transcripts, writes to database
+#   Install test:  Tarball extraction, PATH install, skill manifest validation
+#
+# For full documentation: scripts/qa/README.md (Linux QA section)
+#
 # Note: Builds SQLite from source with SQLITE_ENABLE_SNAPSHOT because
 # GRDB requires sqlite3_snapshot_* functions which aren't in distro packages.
 
