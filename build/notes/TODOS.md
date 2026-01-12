@@ -1325,6 +1325,64 @@ Tip: Want to search your AI coding history? Add Total Recall:
 
 ---
 
+## Content: Total Recall Business Use Cases (1 item)
+
+**Status:** Not started
+**Priority:** P2 (content/documentation)
+**Discovered:** 2026-01-12
+
+- [ ] #TOTAL-RECALL-RECIPES: Create practical use case guide for Total Recall
+
+**Vision:**
+Document business-oriented use cases showing how Total Recall / contextify-query solves real work problems. Move beyond "interesting prompts" to demonstrate concrete value for daily workflows.
+
+**Target Use Cases:**
+
+1. **Daily Standups / Progress Reports**
+   - "What did I work on yesterday across all projects?"
+   - Automated daily digest of decisions, blockers, completions
+
+2. **Weekly Status Reports**
+   - Aggregate work across week by project
+   - Summarize key decisions and outcomes
+   - Track time allocation across projects
+
+3. **Handoff Documentation**
+   - "Generate context for someone taking over this project"
+   - Extract architecture decisions and rationale
+   - Compile list of known issues and workarounds
+
+4. **Code Review Prep**
+   - "What was the reasoning behind these changes?"
+   - Find discussions that led to implementation choices
+   - Locate related conversations for PR context
+
+5. **Onboarding Acceleration**
+   - "Show me how we typically handle X in this codebase"
+   - Learn team patterns from historical conversations
+   - Find precedents for common tasks
+
+6. **Audit / Compliance**
+   - "When was this security decision made and why?"
+   - Trace decisions back to original discussions
+   - Document decision rationale for compliance
+
+**Unique Positioning:**
+- Only tool with searchable history across Claude Code + Codex sessions
+- Local-first: no data leaves your machine
+- Project-aware: context scoped to relevant work
+- LLM-powered: semantic search, not just keyword matching
+
+**Deliverables:**
+- Guide/tutorial on website or in docs
+- Example prompts for each use case
+- Sample outputs showing value
+- Potential skill definitions for common workflows
+
+**Cross-link:** #PLUGIN-DISTRIBUTION (recipes could become marketplace skills)
+
+---
+
 ## Multi-Tenant Database Architecture (1 item)
 
 **Status:** Not started
