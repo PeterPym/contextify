@@ -1,7 +1,19 @@
+#if os(macOS)
 import ContextifyCore
-import Darwin
+#else
+import ContextifyQueryCore
+#endif
 import Foundation
+
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+#if os(macOS)
 import GRDB
+#endif
 
 // MARK: - Response Types
 
@@ -61,6 +73,7 @@ private struct ProjectScope {
 @main
 struct ContextifyQueryCLI {
   enum Command: String {
+    #if os(macOS)
     case search
     case activity
     case projects
@@ -72,8 +85,10 @@ struct ContextifyQueryCLI {
     case summaries
     case stats
     case version
+    #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
+    case doctor
   }
 
   struct Options {
@@ -294,11 +309,18 @@ struct ContextifyQueryCLI {
         try runUninstallPlugin(options: options)
         return
 
+      case .doctor:
+        try runDoctor(options: options)
+        return
+
+      #if os(macOS)
       default:
         break
+      #endif
       }
 
-      // All other commands need database
+      #if os(macOS)
+      // All other commands need database (macOS only)
       let dbURL = try resolveDatabaseURL(options: options)
       let service = try ContextifyQueryService(databaseURL: dbURL)
       let versionInfo = try service.versionInfo()
@@ -549,47 +571,57 @@ struct ContextifyQueryCLI {
           printVersionInfo(versionInfo)
         }
 
-      case .installPlugin, .uninstallPlugin:
+      case .installPlugin, .uninstallPlugin, .doctor:
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
+      #endif  // os(macOS)
     } catch let cliError as CLIError {
       emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
-    } catch let error as ContextifyQueryService.QueryError {
-      switch error {
-      case let .featureUnavailable(_, message):
-        let cliError = CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+    } catch {
+      // Handle platform-specific error types
+      #if os(macOS)
+      if let error = error as? ContextifyQueryService.QueryError {
+        switch error {
+        case let .featureUnavailable(_, message):
+          let cliError = CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+          emitError(cliError, json: jsonWanted)
+          exit(cliError.exitCode.rawValue)
+        }
+      }
+      if let error = error as? QueryCLIFeedbackError {
+        let cliError: CLIError
+        switch error {
+        case let .notFound(id):
+          cliError = CLIError(code: "invalidArgs", message: "No feedback with id '\(id)'", exitCode: .invalidArgs)
+        case let .invalidArgs(message):
+          cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+        case let .ioError(message):
+          cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+        }
         emitError(cliError, json: jsonWanted)
         exit(cliError.exitCode.rawValue)
       }
-    } catch let error as QueryCLIFeedbackError {
-      let cliError: CLIError
-      switch error {
-      case let .notFound(id):
-        cliError = CLIError(code: "invalidArgs", message: "No feedback with id '\(id)'", exitCode: .invalidArgs)
-      case let .invalidArgs(message):
-        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
-      case let .ioError(message):
-        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+      if let error = error as? QueryTimeParseError {
+        let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
+        emitError(cliError, json: jsonWanted)
+        exit(cliError.exitCode.rawValue)
       }
-      emitError(cliError, json: jsonWanted)
-      exit(cliError.exitCode.rawValue)
-    } catch let error as QueryTimeParseError {
-      let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
-      emitError(cliError, json: jsonWanted)
-      exit(cliError.exitCode.rawValue)
-    } catch let error as DatabaseError {
-      let mapped = mapDatabaseError(error)
-      emitError(mapped, json: jsonWanted)
-      exit(mapped.exitCode.rawValue)
-    } catch {
+      if let error = error as? DatabaseError {
+        let mapped = mapDatabaseError(error)
+        emitError(mapped, json: jsonWanted)
+        exit(mapped.exitCode.rawValue)
+      }
+      #endif
+      // Fallback for unhandled errors
       let cliError = CLIError(code: "unknown", message: error.localizedDescription, exitCode: .unknown)
       emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
     }
   }
 
+  #if os(macOS)
   private static func resolveDatabaseURL(options: Options) throws -> URL {
     if let dbPath = options.dbPath {
       let url = URL(fileURLWithPath: dbPath)
@@ -806,6 +838,7 @@ struct ContextifyQueryCLI {
         version              Database version info
         install-plugin       Install Claude Code and Codex CLI skills
         uninstall-plugin     Remove Claude Code and Codex CLI skills
+        doctor               Check CLI installation health
 
       Search query syntax (FTS5):
         Use OR/AND/NOT operators (e.g. "bug OR fix"), or quoted phrases ("memory leak").
@@ -834,6 +867,29 @@ struct ContextifyQueryCLI {
     )
     exit(message == nil ? 0 : 1)
   }
+  #else
+  // Linux: simplified usage for install/doctor commands only
+  private static func usage(_ message: String?) -> Never {
+    if let message = message {
+      FileHandle.standardError.write(Data("Error: \(message)\n\n".utf8))
+    }
+    FileHandle.standardError.write(Data("""
+      Usage: contextify-query <command>
+
+      Commands:
+        install-plugin   Install Claude Code and Codex CLI skills
+        uninstall-plugin Remove Claude Code and Codex CLI skills
+        doctor           Check CLI installation health
+
+      Options:
+        --json    Emit JSON output
+
+      Note: Full query commands require macOS.
+      """.utf8))
+    FileHandle.standardError.write(Data("\n".utf8))
+    exit(message == nil ? 0 : 1)
+  }
+  #endif  // os(macOS) - static methods
 }
 
 private func isRegularFile(_ url: URL) -> Bool {
@@ -842,6 +898,7 @@ private func isRegularFile(_ url: URL) -> Bool {
   return !isDirectory.boolValue
 }
 
+#if os(macOS)
 private func printVersionInfo(_ info: ContextifyQueryService.VersionInfo) {
   print("db_schema_version: \(info.sqliteUserVersion)")
   print("expected_schema_version: \(info.expectedSchemaVersion)")
@@ -1582,6 +1639,7 @@ private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSugg
   object["name"] = project.name.map(JSONValue.string) ?? .null
   return .object(object)
 }
+#endif  // os(macOS)
 
 private func emitError(_ cliError: CLIError, json: Bool) {
   if json {
@@ -1593,10 +1651,10 @@ private func emitError(_ cliError: CLIError, json: Bool) {
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
     } catch {
-      fputs("Error: \(cliError.message)\n", stderr)
+      FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
     }
   } else {
-    fputs("Error: \(cliError.message)\n", stderr)
+    FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
   }
 }
 
@@ -1627,6 +1685,7 @@ private enum JSONValue: Encodable, Equatable {
   }
 }
 
+#if os(macOS)
 private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   let message = (error.message ?? error.localizedDescription).trimmingCharacters(in: .whitespacesAndNewlines)
   let result = error.resultCode
@@ -1675,10 +1734,12 @@ private func parseMissingTableName(message: String) -> String? {
   }
   return table
 }
+#endif
 
 // MARK: - Plugin Installation
 
 private let pluginVersion = ContextifyQueryCLI.cliVersion
+#if os(macOS)
 private let pluginName = "query"
 private let pluginNamespace = "contextify"
 private let pluginIdentifier = "\(pluginName)@\(pluginNamespace)"
@@ -2013,4 +2074,262 @@ private struct PluginInstallPayload: Encodable {
   let identifier: String
   let version: String
   let path: String
+}
+#endif  // os(macOS)
+
+#if os(Linux)
+private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let userSkillSource = try findUserSkillSource()
+
+  let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
+  try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+
+  let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
+  let skillDest = skillsDir.appendingPathComponent("SKILL.md")
+  if FileManager.default.fileExists(atPath: skillDest.path) {
+    try FileManager.default.removeItem(at: skillDest)
+  }
+  try FileManager.default.copyItem(at: skillFile, to: skillDest)
+
+  if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
+    let warning = "Warning: CODEX_HOME is set to \(codexHome)\nSkill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
+    FileHandle.standardError.write(Data(warning.utf8))
+  }
+
+  let codexSkillsDir = home.appendingPathComponent(".codex/skills/total-recall")
+  try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
+  let codexSkillDest = codexSkillsDir.appendingPathComponent("SKILL.md")
+
+  let skillData = try Data(contentsOf: skillFile)
+  if FileManager.default.fileExists(atPath: codexSkillDest.path) {
+    try FileManager.default.removeItem(at: codexSkillDest)
+  }
+  try skillData.write(to: codexSkillDest, options: .atomic)
+
+  struct SkillInstallPayload: Encodable {
+    let action: String
+    let claudeSkillPath: String
+    let codexSkillPath: String
+  }
+
+  let payload = SkillInstallPayload(
+    action: "installed",
+    claudeSkillPath: skillsDir.path,
+    codexSkillPath: codexSkillsDir.path
+  )
+
+  if options.jsonOutput {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    let envelope = SuccessEnvelope(type: "pluginInstalled", schemaVersion: ResponseConstants.schemaVersion, data: payload, metadata: nil)
+    let data = try encoder.encode(envelope)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    print("Contextify Total Recall installed!")
+    print("  Claude Code: \(skillsDir.path)")
+    print("  Codex CLI:   \(codexSkillsDir.path)")
+    print("")
+    print("Restart your CLI tool, then use /total-recall to search history.")
+  }
+}
+
+private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let claudeSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
+  if FileManager.default.fileExists(atPath: claudeSkillDir.path) {
+    try FileManager.default.removeItem(at: claudeSkillDir)
+  }
+
+  let codexSkillDir = home.appendingPathComponent(".codex/skills/total-recall")
+  if FileManager.default.fileExists(atPath: codexSkillDir.path) {
+    try FileManager.default.removeItem(at: codexSkillDir)
+  }
+
+  struct SkillUninstallPayload: Encodable {
+    let action: String
+    let claudeSkillPath: String
+    let codexSkillPath: String
+  }
+
+  let payload = SkillUninstallPayload(
+    action: "uninstalled",
+    claudeSkillPath: claudeSkillDir.path,
+    codexSkillPath: codexSkillDir.path
+  )
+
+  if options.jsonOutput {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    let envelope = SuccessEnvelope(type: "pluginUninstalled", schemaVersion: ResponseConstants.schemaVersion, data: payload, metadata: nil)
+    let data = try encoder.encode(envelope)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    print("Uninstalled Total Recall skills")
+  }
+}
+
+private func findUserSkillSource() throws -> URL {
+  let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+  let repoUserSkill = cwdURL.appendingPathComponent("contextify-query/user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: repoUserSkill.path) {
+    return repoUserSkill
+  }
+
+  var executablePath = CommandLine.arguments[0]
+  if !executablePath.contains("/") {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = [executablePath]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    try? process.run()
+    process.waitUntilExit()
+
+    if process.terminationStatus == 0 {
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !path.isEmpty {
+        executablePath = path
+      }
+    }
+  }
+
+  let executableURL = URL(fileURLWithPath: executablePath)
+  let execDir = executableURL.deletingLastPathComponent()
+  let siblingUserSkill = execDir.appendingPathComponent("user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: siblingUserSkill.path) {
+    return siblingUserSkill
+  }
+
+  let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
+  let cellarBin = resolvedExec.deletingLastPathComponent()
+  let cellarRoot = cellarBin.deletingLastPathComponent()
+  let cellarUserSkill = cellarRoot.appendingPathComponent("share/user-skill/total-recall")
+  if FileManager.default.fileExists(atPath: cellarUserSkill.path) {
+    return cellarUserSkill
+  }
+
+  throw CLIError(
+    code: "pluginNotFound",
+    message: """
+      Skill files not found.
+
+      If using the Linux release tarball:
+        Extract the archive and run install-plugin from that directory.
+      """,
+    exitCode: .unknown
+  )
+}
+#endif  // os(Linux)
+
+// MARK: - Doctor Command
+
+private func runDoctor(options: ContextifyQueryCLI.Options) throws {
+  let report = CLIHealthChecker.checkHealth()
+
+  if options.jsonOutput {
+    // JSON output: encode the full health report
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    let payload = SuccessEnvelope(
+      type: "doctor",
+      schemaVersion: ResponseConstants.schemaVersion,
+      data: report,
+      metadata: nil
+    )
+    let data = try encoder.encode(payload)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+  } else {
+    // Human-readable output
+    printDoctorReport(report)
+  }
+
+  // Exit with non-zero if not healthy
+  switch report.overall {
+  case .healthy:
+    break
+  case .degraded:
+    exit(1)
+  case .broken, .unconfigured:
+    exit(2)
+  }
+}
+
+private func printDoctorReport(_ report: CLIHealthChecker.HealthReport) {
+  // Header with overall status
+  let statusEmoji: String
+  let statusText: String
+  switch report.overall {
+  case .healthy:
+    statusEmoji = "ok"
+    statusText = "healthy"
+  case .degraded:
+    statusEmoji = "!!"
+    statusText = "degraded"
+  case .broken:
+    statusEmoji = "XX"
+    statusText = "broken"
+  case .unconfigured:
+    statusEmoji = "--"
+    statusText = "unconfigured"
+  }
+
+  print("Contextify CLI Health Check")
+  print("===========================")
+  print("")
+  print("Status: [\(statusEmoji)] \(statusText)")
+  print("Platform: \(report.platform)")
+  print("")
+
+  // Components section
+  print("Components:")
+
+  // Shim
+  let shimStatus = report.components.shim.installed ? "installed" : "not installed"
+  print("  Shim: \(shimStatus)")
+  if let path = report.components.shim.path {
+    print("    Path: \(path)")
+    print("    On PATH: \(report.components.shim.onPath ? "yes" : "no")")
+  }
+
+  // Manifest
+  let manifestStatus = report.components.manifest.present ? "present" : "missing"
+  print("  Manifest: \(manifestStatus)")
+  if let version = report.components.manifest.version {
+    print("    Version: \(version)")
+  }
+
+  // Skills
+  print("  Skills:")
+  print("    Claude Code: \(report.components.skills.claudeSkillPresent ? "installed" : "missing")")
+  if let path = report.components.skills.claudeSkillPath {
+    print("      Path: \(path)")
+  }
+  print("    Codex CLI: \(report.components.skills.codexSkillPresent ? "installed" : "missing")")
+  if let path = report.components.skills.codexSkillPath {
+    print("      Path: \(path)")
+  }
+
+  // Issues section
+  if !report.issues.isEmpty {
+    print("")
+    print("Issues:")
+    for issue in report.issues {
+      let severityMarker = issue.severity == .error ? "[ERROR]" : "[WARN]"
+      print("  \(severityMarker) \(issue.code): \(issue.message)")
+      if let fix = issue.fix {
+        print("    Fix: \(fix)")
+      }
+    }
+  }
+
+  print("")
 }

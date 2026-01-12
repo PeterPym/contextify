@@ -74,6 +74,16 @@ contextify-query install-plugin
 contextify-query uninstall-plugin
 ```
 
+### Health Check Commands
+
+```bash
+# Verify CLI installation health
+contextify-query doctor
+
+# Machine-readable health check
+contextify-query doctor --json
+```
+
 Local development via Claude Code:
 
 ```bash
@@ -174,6 +184,12 @@ The CLI cannot find the Contextify database.
    ```bash
    cat ~/.claude/plugins/installed_plugins.json | grep contextify
    ```
+
+### CLI health check reports degraded
+
+1. Run `contextify-query doctor` to see missing components
+2. Run `contextify-query install-plugin`
+3. Re-run `contextify-query doctor` to confirm healthy status
 
 ### CLI not found after Homebrew install
 
