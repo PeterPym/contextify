@@ -232,10 +232,27 @@
         </div>
       </div>
 
+      <!-- Extract -->
+      <div class="row justify-content-center mt-5">
+        <div class="col-md-10">
+          <h3 class="h5 fw-bold mb-3 text-center">Extract to your PATH</h3>
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-comment"># Create ~/.local/bin if it doesn't exist</span><br>
+              <span class="terminal-prompt">$</span> mkdir -p ~/.local/bin<br><br>
+              <span class="terminal-comment"># Extract the binary</span><br>
+              <span class="terminal-prompt">$</span> tar -xzf contextify-query-*.tar.gz -C ~/.local/bin<br><br>
+              <span class="terminal-comment"># Add to PATH if not already (add to ~/.bashrc or ~/.zshrc)</span><br>
+              <span class="terminal-prompt">$</span> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+            </code>
+          </div>
+        </div>
+      </div>
+
       <!-- Post-install -->
       <div class="row justify-content-center mt-5">
         <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">After Installation</h3>
+          <h3 class="h5 fw-bold mb-3 text-center">Install the skill</h3>
           <div class="terminal-block">
             <code>
               <span class="terminal-comment"># Install the Total Recall skill for Claude Code and Codex</span><br>
