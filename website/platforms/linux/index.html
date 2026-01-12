@@ -134,13 +134,13 @@
           <div class="terminal-block">
             <code>
               <span class="terminal-prompt">$</span> /total-recall how did i fix the auth bug?<br><br>
-              <span style="color: #4ec9b0;">●</span> <span style="color: #dcdcaa;">query:contextify-researcher</span><span style="color: #9cdcfe;">(Search Total Recall for auth bug fix)</span><br>
+              <span style="color: #4ec9b0;">⏺</span> <span style="color: #dcdcaa;">Skill</span><span style="color: #9cdcfe;">(total-recall)</span><br>
+              <span style="color: #6a9955;">  ⎿ Successfully loaded skill</span><br><br>
+              <span style="color: #4ec9b0;">●</span> <span style="color: #dcdcaa;">query:contextify-researcher</span><span style="color: #9cdcfe;">(Search for auth bug fix)</span><br>
               <span style="color: #6a9955;">  └ Done (5 tool uses · 12.3k tokens · 42s)</span><br><br>
-              <span style="color: #4ec9b0;">●</span> <strong>Found it.</strong> The conversation from Jan 8, 2026 shows:<br>
-              <span class="terminal-output">  - The bug was a race condition in token refresh</span><br>
-              <span class="terminal-output">  - Fixed by adding a mutex lock in AuthManager.swift:142</span><br>
-              <span class="terminal-output">  - Also added retry logic with exponential backoff</span><br><br>
-              <span class="terminal-output">  The fix was committed as "fix(auth): prevent token refresh race"</span>
+              <span style="color: #4ec9b0;">●</span> <strong>Found it.</strong> The conversation from Jan 8 shows:<br>
+              <span class="terminal-output">  - Race condition in token refresh</span><br>
+              <span class="terminal-output">  - Fixed with mutex lock in AuthManager.swift:142</span>
             </code>
           </div>
         </div>
