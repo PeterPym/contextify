@@ -216,18 +216,25 @@
     <div class="container">
       <h2 class="text-center fw-bold mb-5">Installation</h2>
       <div class="row g-4 justify-content-center">
-        <div class="col-md-6">
+        <!-- x86_64 Card -->
+        <div class="col-md-5">
           <div class="install-option text-center">
-            <h3 class="h5 fw-bold mb-3">Download for Linux</h3>
-            <p class="text-secondary mb-4">Download the CLI binary for your architecture.</p>
-            <div class="d-flex flex-column gap-2">
-              <a href="/go/linux-x86_64" class="btn btn-primary">
-                Linux x86_64 (.tar.gz)
-              </a>
-              <a href="/go/linux-arm64" class="btn btn-outline-primary">
-                Linux ARM64 (.tar.gz)
-              </a>
-            </div>
+            <h3 class="h5 fw-bold mb-2">Intel / AMD</h3>
+            <p class="text-secondary mb-4">Most servers and older desktops</p>
+            <a href="/go/linux-x86_64" class="btn btn-primary">
+              Download x86_64
+            </a>
+          </div>
+        </div>
+
+        <!-- ARM64 Card -->
+        <div class="col-md-5">
+          <div class="install-option text-center">
+            <h3 class="h5 fw-bold mb-2">ARM64</h3>
+            <p class="text-secondary mb-4">Raspberry Pi, AWS Graviton, Apple Silicon VMs</p>
+            <a href="/go/linux-arm64" class="btn btn-primary">
+              Download ARM64
+            </a>
           </div>
         </div>
       </div>
