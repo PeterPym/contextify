@@ -26,20 +26,30 @@ SQLITE_URL="https://www.sqlite.org/2024/sqlite-autoconf-${SQLITE_VERSION}.tar.gz
 
 # Parse arguments
 RUN_E2E=""
-if [ "$1" = "--e2e" ]; then
-  RUN_E2E="1"
-fi
+RUN_INSTALL_TEST=""
+for arg in "$@"; do
+  case "$arg" in
+    --e2e)
+      RUN_E2E="1"
+      ;;
+    --install-test)
+      RUN_INSTALL_TEST="1"
+      ;;
+  esac
+done
 
 echo "=== Docker Linux Build ==="
 echo "Project: $PROJECT_ROOT"
 echo "Git root: $GIT_ROOT"
 echo "SQLite version: $SQLITE_VERSION"
 [ -n "$RUN_E2E" ] && echo "E2E test: enabled"
+[ -n "$RUN_INSTALL_TEST" ] && echo "Install test: enabled"
 
 docker run --rm \
   -v "$PROJECT_ROOT":/workspace:rw \
   -v "$GIT_ROOT/.git":"$GIT_ROOT/.git":ro \
   -e RUN_E2E="$RUN_E2E" \
+  -e RUN_INSTALL_TEST="$RUN_INSTALL_TEST" \
   -w /workspace \
   swift:6.0-noble \
   bash -c '
@@ -120,6 +130,126 @@ TRANSCRIPT
         echo "Expected at least 1 project, 1 transcript, 2 entries"
         exit 1
       fi
+    fi
+
+    # Run install test if --install-test flag was passed
+    if [ -n "$RUN_INSTALL_TEST" ]; then
+      echo ""
+      echo "=== Running Install Test ==="
+      echo "This simulates what a user does after downloading the tarball"
+      echo ""
+
+      # Step 1: Create tarball from built binaries (like release workflow does)
+      echo "--- Step 1: Creating tarball from built binaries ---"
+      TARBALL_DIR="/tmp/install-test"
+      rm -rf "$TARBALL_DIR"
+      mkdir -p "$TARBALL_DIR/dist"
+
+      cp /workspace/.build-linux/debug/contextify-query "$TARBALL_DIR/dist/"
+      cp /workspace/.build-linux/debug/contextify-ingest "$TARBALL_DIR/dist/"
+      cp -R /workspace/contextify-query/user-skill "$TARBALL_DIR/dist/"
+
+      cd "$TARBALL_DIR/dist"
+      tar -czvf "$TARBALL_DIR/contextify-linux-test.tar.gz" contextify-query contextify-ingest user-skill
+      echo "Created tarball at $TARBALL_DIR/contextify-linux-test.tar.gz"
+
+      # Step 2: Extract tarball like a user would
+      echo ""
+      echo "--- Step 2: Extracting tarball ---"
+      EXTRACT_DIR="/tmp/install-test-extract"
+      rm -rf "$EXTRACT_DIR"
+      mkdir -p "$EXTRACT_DIR"
+      cd "$EXTRACT_DIR"
+      tar -xzf "$TARBALL_DIR/contextify-linux-test.tar.gz"
+      echo "Extracted to $EXTRACT_DIR"
+      ls -la "$EXTRACT_DIR"
+
+      # Step 3: Move binaries to ~/.local/bin (standard Linux user install location)
+      # The CLI looks for user-skill directory sibling to the binary
+      echo ""
+      echo "--- Step 3: Installing to ~/.local/bin ---"
+      mkdir -p ~/.local/bin
+      mv "$EXTRACT_DIR/contextify-query" ~/.local/bin/
+      mv "$EXTRACT_DIR/contextify-ingest" ~/.local/bin/
+      mv "$EXTRACT_DIR/user-skill" ~/.local/bin/
+
+      echo "Installed binaries to ~/.local/bin/"
+      ls -la ~/.local/bin/contextify-*
+      ls -la ~/.local/bin/user-skill/
+
+      # Step 4: Add to PATH
+      echo ""
+      echo "--- Step 4: Adding ~/.local/bin to PATH ---"
+      export PATH="$HOME/.local/bin:$PATH"
+      echo "PATH now includes: $HOME/.local/bin"
+
+      # Step 5: Run contextify-query --version from PATH
+      echo ""
+      echo "--- Step 5: Running contextify-query --version ---"
+      if contextify-query --version; then
+        echo "PASS: contextify-query --version works"
+      else
+        echo "FAIL: contextify-query --version failed"
+        exit 1
+      fi
+
+      # Step 6: Run install-plugin
+      # The CLI finds user-skill sibling to the binary (resolved via PATH lookup)
+      echo ""
+      echo "--- Step 6: Running contextify-query install-plugin ---"
+      if contextify-query install-plugin; then
+        echo "PASS: install-plugin completed"
+      else
+        echo "FAIL: install-plugin failed"
+        exit 1
+      fi
+
+      # Step 7: Verify skill files exist
+      echo ""
+      echo "--- Step 7: Verifying skill files ---"
+      CLAUDE_SKILL="$HOME/.claude/skills/total-recall/SKILL.md"
+      CODEX_SKILL="$HOME/.codex/skills/total-recall/SKILL.md"
+
+      if [ -f "$CLAUDE_SKILL" ]; then
+        echo "PASS: Claude skill exists at $CLAUDE_SKILL"
+        echo "  Size: $(wc -c < "$CLAUDE_SKILL") bytes"
+      else
+        echo "FAIL: Claude skill missing at $CLAUDE_SKILL"
+        exit 1
+      fi
+
+      if [ -f "$CODEX_SKILL" ]; then
+        echo "PASS: Codex skill exists at $CODEX_SKILL"
+        echo "  Size: $(wc -c < "$CODEX_SKILL") bytes"
+      else
+        echo "FAIL: Codex skill missing at $CODEX_SKILL"
+        exit 1
+      fi
+
+      # Verify skill content is non-empty and looks valid
+      if grep -q "total-recall" "$CLAUDE_SKILL"; then
+        echo "PASS: Claude skill contains expected content"
+      else
+        echo "FAIL: Claude skill does not contain expected content"
+        exit 1
+      fi
+
+      # Step 8: Run contextify-query doctor
+      echo ""
+      echo "--- Step 8: Running contextify-query doctor ---"
+      contextify-query doctor || true  # Allow non-zero exit (degraded status expected without database)
+
+      echo ""
+      echo "=== Install Test PASSED ==="
+      echo "All installation steps completed successfully:"
+      echo "  - Tarball creation"
+      echo "  - Extraction"
+      echo "  - Binary installation to ~/.local/bin"
+      echo "  - PATH configuration"
+      echo "  - Version check"
+      echo "  - Skill installation"
+      echo "  - Skill file verification"
+      echo "  - Doctor command"
     fi
   '
 
