@@ -118,7 +118,9 @@
         "status": "approved",
         "build_number": 17,
         "submitted_at": "2025-12-23T07:33:58Z",
-        "approved_at": "2025-12-23"
+        "approved_at": "2025-12-23",
+        "source_tag": "v1.0.5",
+        "source_note": "Metadata-only release. Build 17 was built from v1.0.5 source with version bumped to 1.0.6. Discovered via Total Recall 2026-01-12."
       },
       "marketing": {
         "changelog_published": false,
