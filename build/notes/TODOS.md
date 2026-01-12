@@ -1207,6 +1207,48 @@ Claude Code v2.0.64+ supports named sessions via `/rename` command. Users can as
 
 ---
 
+## Launch at Login (Cross-Platform) (1 item)
+
+**Status:** Not started
+**Priority:** P1 (user convenience, always-on monitoring)
+**Effort:** Medium (platform-specific implementations)
+
+- [ ] #LAUNCH-AT-LOGIN: Enable Contextify to start automatically at system login
+
+**Goal:**
+Users shouldn't have to manually launch Contextify after every restart. The app should optionally start at login and begin monitoring transcripts immediately.
+
+**Platform Implementations:**
+
+1. **macOS (App Store + DMG)**
+   - Use `SMAppService` (macOS 13+) for modern login item registration
+   - Settings toggle: "Launch Contextify at login"
+   - App Store: Use `SMAppService.mainApp` (no helper app needed)
+   - DMG: Same approach, or LaunchAgent plist fallback for older macOS
+
+2. **Linux**
+   - Create `.desktop` file in `~/.config/autostart/`
+   - Or systemd user service: `~/.config/systemd/user/contextify.service`
+   - CLI flag: `contextify-ingest --install-autostart` / `--remove-autostart`
+
+**Implementation Notes:**
+- Settings UI: Toggle in Preferences with current state indicator
+- Respect user choice: Don't auto-enable, let user opt-in
+- Handle upgrade path: If user had it enabled, preserve across updates
+- Linux: Detect init system (systemd vs other) and use appropriate method
+
+**Research Questions:**
+1. Does `SMAppService` work in sandboxed App Store builds?
+2. Should Linux use systemd service or XDG autostart?
+3. How to handle first-run prompt vs settings-only toggle?
+
+**Files:**
+- New: `Contextify/Contextify/LaunchAtLoginManager.swift` (macOS)
+- New: `Sources/ContextifyIngestCLI/AutostartManager.swift` (Linux)
+- `Contextify/Contextify/SettingsView.swift` (toggle UI)
+
+---
+
 # P2 (Medium Priority)
 
 ---
