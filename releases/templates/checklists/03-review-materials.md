@@ -24,18 +24,33 @@ cat releases/templates/prompts/release-notes-builder.md
 ```
 
 - [ ] Run changelog analysis prompt with AI assistant
-- [ ] Review generated changelog for accuracy
-- [ ] Save internal analysis to: `releases/v{version}/changelog-analysis.md`
-- [ ] Extract "What's New" drafts for each channel
+- [ ] Review generated outputs for accuracy
+
+### Save Changelog Artifacts
+
+Copy outputs to release directory:
+
+```bash
+mkdir -p releases/v{version}/changelog
+cp /tmp/*-release-analysis.md releases/v{version}/changelog/internal-analysis.md
+cp /tmp/*-release-notes-external.md releases/v{version}/changelog/external-notes.md
+```
+
+- [ ] Internal analysis saved: `releases/v{version}/changelog/internal-analysis.md`
+- [ ] External notes saved: `releases/v{version}/changelog/external-notes.md`
 
 ### Verify Known Features
 
 Cross-check that major features appear in the analysis:
 - [ ] All user-facing features from this release are documented
 - [ ] Channel availability (App Store vs DMG vs Linux) is accurate
+- [ ] Commit counts verified (ledger matches git rev-list)
 - [ ] No features missing from the analysis
 
-**Output:** `releases/v{version}/changelog-analysis.md`
+**Outputs feed into:**
+- Phase 4: App Store "What's New" text (from external-notes.md)
+- Phase 5: Marketing announcements (from external-notes.md)
+- Audit trail: Internal analysis preserved for future reference
 
 ---
 
