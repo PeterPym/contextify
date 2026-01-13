@@ -106,17 +106,26 @@ struct Contextify: AsyncParsableCommand {
 
       GETTING STARTED:
         contextify ingest              Index new transcripts
+        contextify status              Show what's indexed
         contextify install-skill       Install Total Recall skill
         contextify doctor              Check installation health
+
+      DATABASE LOCATION (in order of precedence):
+        1. --db flag on individual commands
+        2. CONTEXTIFY_DB_PATH environment variable
+        3. XDG_DATA_HOME/contextify/contextify.db
+        4. ~/.local/share/contextify/contextify.db (default)
 
       DOCUMENTATION: https://contextify.sh/docs/
       """,
     version: "\(cliVersion) (schema v\(DatabaseSchema.currentVersion))",
     subcommands: [
-      // Ingestion commands (from ContextifyIngestionCLI)
+      // Ingestion and database commands
       IngestCommand.self,
+      StatusCommand.self,
       DiscoverCommand.self,
       VerifyCommand.self,
+      MigrateDbCommand.self,
       SchemaCommand.self,
       // Skill/plugin management
       InstallSkillCommand.self,
