@@ -17,7 +17,7 @@ description: Comprehensive spec for Linux CLI v1 release - from Beta to producti
 
 | Phase | Branch | Status | Merged |
 |-------|--------|--------|--------|
-| Phase 0: Unified Command Structure | `feature/linux-cli-v1-phase0` | NOT STARTED | - |
+| Phase 0: Unified Command Structure | `feature/linux-cli-v1-phase0` | COMPLETE | 2026-01-13 |
 | Phase 1: Foundation | `feature/linux-cli-v1-phase1` | NOT STARTED | - |
 | Phase 2: Service Setup | - | NOT STARTED | - |
 | Phase 3: Distribution | - | NOT STARTED | - |
