@@ -34,29 +34,64 @@ struct InstallSkillCommand: ParsableCommand {
   func run() throws {
     let home = FileManager.default.homeDirectoryForCurrentUser
     let userSkillSource = try findUserSkillSource()
-
-    // Install to Claude Code
-    let claudeSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
-    try FileManager.default.createDirectory(at: claudeSkillDir, withIntermediateDirectories: true)
-
     let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
-    let claudeSkillDest = claudeSkillDir.appendingPathComponent("SKILL.md")
+    let newData = try Data(contentsOf: skillFile)
 
-    if FileManager.default.fileExists(atPath: claudeSkillDest.path) {
-      if force {
-        try FileManager.default.removeItem(at: claudeSkillDest)
-      } else if !json {
-        // Check if files are identical
-        let existingData = try Data(contentsOf: claudeSkillDest)
-        let newData = try Data(contentsOf: skillFile)
-        if existingData == newData {
-          print("Skill already installed and up to date.")
-          print("  Claude Code: \(claudeSkillDir.path)")
-          return
-        }
+    // Set up paths for both targets
+    let claudeSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
+    let claudeSkillDest = claudeSkillDir.appendingPathComponent("SKILL.md")
+    let codexSkillDir = home.appendingPathComponent(".codex/skills/total-recall")
+    let codexSkillDest = codexSkillDir.appendingPathComponent("SKILL.md")
+
+    // Check state of both destinations
+    let claudeState = try checkInstallState(dest: claudeSkillDest, newData: newData)
+    let codexState = try checkInstallState(dest: codexSkillDest, newData: newData)
+
+    // If both are up to date, report and exit
+    if claudeState == .upToDate && codexState == .upToDate {
+      if json {
+        let result = InstallResult(
+          action: "up_to_date",
+          claudeSkillPath: claudeSkillDir.path,
+          codexSkillPath: codexSkillDir.path
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(result)
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+      } else {
+        print("Skill already installed and up to date.")
+        print("  Claude Code: \(claudeSkillDir.path)")
+        print("  Codex CLI:   \(codexSkillDir.path)")
+      }
+      return
+    }
+
+    // Check if any target needs --force
+    if !force {
+      if claudeState == .existsDiffers {
+        throw ValidationError("""
+          Claude Code skill exists and differs from source.
+          Re-run with --force to overwrite: contextify install-skill --force
+          """)
+      }
+      if codexState == .existsDiffers {
+        throw ValidationError("""
+          Codex CLI skill exists and differs from source.
+          Re-run with --force to overwrite: contextify install-skill --force
+          """)
       }
     }
-    try FileManager.default.copyItem(at: skillFile, to: claudeSkillDest)
+
+    // Install to Claude Code
+    try FileManager.default.createDirectory(at: claudeSkillDir, withIntermediateDirectories: true)
+    if claudeState != .upToDate {
+      if FileManager.default.fileExists(atPath: claudeSkillDest.path) {
+        try FileManager.default.removeItem(at: claudeSkillDest)
+      }
+      try newData.write(to: claudeSkillDest, options: .atomic)
+    }
 
     // Warn about CODEX_HOME if set
     if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
@@ -66,15 +101,13 @@ struct InstallSkillCommand: ParsableCommand {
     }
 
     // Install to Codex CLI
-    let codexSkillDir = home.appendingPathComponent(".codex/skills/total-recall")
     try FileManager.default.createDirectory(at: codexSkillDir, withIntermediateDirectories: true)
-    let codexSkillDest = codexSkillDir.appendingPathComponent("SKILL.md")
-
-    let skillData = try Data(contentsOf: skillFile)
-    if FileManager.default.fileExists(atPath: codexSkillDest.path) {
-      try FileManager.default.removeItem(at: codexSkillDest)
+    if codexState != .upToDate {
+      if FileManager.default.fileExists(atPath: codexSkillDest.path) {
+        try FileManager.default.removeItem(at: codexSkillDest)
+      }
+      try newData.write(to: codexSkillDest, options: .atomic)
     }
-    try skillData.write(to: codexSkillDest, options: .atomic)
 
     // Output result
     if json {
@@ -98,6 +131,22 @@ struct InstallSkillCommand: ParsableCommand {
   }
 }
 
+// MARK: - Install State
+
+private enum InstallState {
+  case notInstalled
+  case upToDate
+  case existsDiffers
+}
+
+private func checkInstallState(dest: URL, newData: Data) throws -> InstallState {
+  guard FileManager.default.fileExists(atPath: dest.path) else {
+    return .notInstalled
+  }
+  let existingData = try Data(contentsOf: dest)
+  return existingData == newData ? .upToDate : .existsDiffers
+}
+
 // MARK: - Helpers
 
 private struct InstallResult: Encodable {
@@ -118,24 +167,16 @@ private func findUserSkillSource() throws -> URL {
   // 2. Check relative to executable (tarball extraction)
   var executablePath = CommandLine.arguments[0]
 
-  // Resolve path if not absolute
+  // Resolve path if not absolute - search PATH manually for portability
   if !executablePath.contains("/") {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-    process.arguments = [executablePath]
-
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-
-    try? process.run()
-    process.waitUntilExit()
-
-    if process.terminationStatus == 0 {
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-         !path.isEmpty {
-        executablePath = path
+    if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+      let pathDirs = pathEnv.split(separator: ":").map(String.init)
+      for dir in pathDirs {
+        let candidate = URL(fileURLWithPath: dir).appendingPathComponent(executablePath)
+        if FileManager.default.isExecutableFile(atPath: candidate.path) {
+          executablePath = candidate.path
+          break
+        }
       }
     }
   }

@@ -63,7 +63,7 @@ private func handleArgv0Dispatch() -> [String]? {
     return newArgs
 
   case "contextify-query":
-    warnDeprecated("'contextify-query' is deprecated. Use 'contextify' subcommands instead.")
+    warnDeprecated("'contextify-query' is deprecated. Use 'contextify doctor', 'contextify install-skill', or 'contextify uninstall-skill' instead.")
     // Transform contextify-query commands to contextify equivalents
     var args = Array(CommandLine.arguments.dropFirst())
     if let first = args.first {
@@ -135,8 +135,9 @@ struct Contextify: AsyncParsableCommand {
       let allArgs = ["contextify"] + transformedArgs
       await Contextify.main(allArgs)
     } else {
-      // Normal invocation
-      await Contextify.main()
+      // Normal invocation - pass through original arguments
+      // Note: Must call main(_:) not main() to avoid infinite recursion
+      await Contextify.main(CommandLine.arguments)
     }
   }
 }
