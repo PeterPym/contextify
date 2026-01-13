@@ -395,23 +395,18 @@ These must be done before CLI is usable:
 
 ---
 
-### P1 - Background Service (required for automatic ingestion)
+### P0 - Background Service (required for automatic ingestion)
 
 **Status:** Not started
-**Note:** Without this, users must manually run `contextify-ingest` - marking Linux as Beta until resolved.
+**Reference:** `build/notes/todo-support/LINUX-SERVICE-SETUP-spec.md`
+**Note:** Without this, users must manually run `contextify-ingest` - Linux is Beta until resolved.
 
 - [ ] #LINUX-SERVICE-SETUP: systemd user service for automatic ingestion
-  - Research: Linux CLI norms for background services (systemd user units vs timers vs cron)
-  - `contextify-ingest install-service` command to generate and enable service
-  - systemd user timer for periodic ingestion (every 15 min or on file change)
-  - Service file templates in repo or generated at install time
-  - Uninstall command to disable and remove service
+  - `contextify-ingest install-service` - generate and enable systemd user timer
+  - `contextify-ingest uninstall-service` - remove service
+  - `contextify-ingest service-status` - check timer status
+  - Timer runs ingestion every 15 minutes
   - Document in `/docs/` page
-
-**References:**
-- systemd user services: `~/.config/systemd/user/`
-- systemd timers: preferred over cron for modern distros
-- inotify: could watch `~/.claude/` for real-time (stretch goal)
 
 ---
 
