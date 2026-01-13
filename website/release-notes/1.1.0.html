@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Contextify 1.1.0 Release Notes</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding: 20px; max-width: 600px; }
+    h1 { font-size: 1.5em; }
+    h2 { font-size: 1.2em; margin-top: 1.5em; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Contextify 1.1.0</h1>
+
+  <h2>Highlights</h2>
+  <ul>
+    <li><strong>Linux CLI Support</strong>: Total Recall now works on Linux systems running Claude Code or Codex CLI</li>
+    <li><strong>Codex CLI Integration</strong>: Full skill support for OpenAI's Codex CLI alongside Claude Code</li>
+    <li><strong>CLI Health Checker</strong>: New <code>contextify-query doctor</code> command diagnoses installation issues</li>
+    <li><strong>2.5x Faster Bulk Ingest</strong>: Performance optimizations dramatically speed up first-run and large history imports</li>
+  </ul>
+
+  <h2>New Features</h2>
+  <ul>
+    <li><strong>Inline Images</strong>: Timeline shows images with Quick Look support</li>
+    <li><strong>Status Bar Indicator</strong>: See permission status in the status bar</li>
+    <li><strong>Worktree Grouping</strong>: Projects visually grouped by git worktree</li>
+  </ul>
+
+  <h2>Improvements</h2>
+  <ul>
+    <li><strong>Project Attribution</strong>: Entries reassigned based on CWD for accuracy</li>
+    <li><strong>CLI Installation</strong>: Unified manifest format, auto-repair for partial installs</li>
+    <li><strong>Sidechain Capture</strong>: Agent sidechains and tool invocations now stored and searchable</li>
+  </ul>
+
+  <h2>Bug Fixes</h2>
+  <ul>
+    <li>Project misattribution from session ID collisions</li>
+    <li>Skill directory cleanup when disabling CLI integration</li>
+    <li>PATH warning during CLI installation</li>
+    <li>Sidechain filter now independent of "show hidden" setting</li>
+  </ul>
+</body>
+</html>
