@@ -171,6 +171,49 @@ These generate server requests visible in GoAccess before redirecting to the act
 
 **Important:** When deploying nginx config changes, run `sudo certbot --nginx -d contextify.sh -d www.contextify.sh --reinstall` afterward to preserve SSL configuration.
 
+## Newsletter Subscription API
+
+The website includes a newsletter signup form that posts to a Python backend service.
+
+**Components:**
+- **Script:** `/var/www/contextify.sh/api/subscribe.py`
+- **Systemd service:** `contextify-subscribe.service`
+- **Subscribers file:** `/var/www/contextify-data/subscribers.txt` (outside web root for privacy)
+- **Port:** 8080 (localhost only)
+
+**Nginx proxy configuration** (in `/etc/nginx/sites-available/contextify`):
+```nginx
+location /api/subscribe {
+    proxy_pass http://127.0.0.1:8080/subscribe;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+**Service management:**
+```bash
+# Check status
+sudo systemctl status contextify-subscribe
+
+# Restart service
+sudo systemctl restart contextify-subscribe
+
+# View logs
+sudo journalctl -u contextify-subscribe -f
+```
+
+**Features:**
+- Rate limiting (5 requests/minute per IP)
+- Honeypot field for bot detection
+- CORS configured for contextify.sh origin
+- File-based storage with locking for concurrency
+
+**To view subscribers:**
+```bash
+ssh web@banagale.com "cat /var/www/contextify-data/subscribers.txt"
+```
+
 ## DMG Naming Convention
 
 GitHub releases use stable filename `Contextify.dmg` (not versioned) to support the `/releases/latest/download/` URL pattern.
