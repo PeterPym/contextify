@@ -38,6 +38,53 @@ This document defines everything needed to ship a v1 that Linux users would reco
 
 ---
 
+## Linux Compatibility Baseline
+
+**This section is critical.** A binary that doesn't run out of the box is a "mass-close" moment.
+
+### Target Platforms
+
+| Distribution | Minimum Version | glibc | Status |
+|--------------|-----------------|-------|--------|
+| Ubuntu | 22.04 LTS | 2.35 | Primary target |
+| Debian | 12 (Bookworm) | 2.36 | Supported |
+| Fedora | 38+ | 2.37 | Supported |
+| Arch | Rolling | Latest | Supported |
+| RHEL/Rocky | 9+ | 2.34 | Supported |
+
+**Build strategy:** Build on Ubuntu 22.04 (oldest supported LTS) to maximize compatibility. Binaries built on newer glibc won't run on older systems.
+
+### Swift Runtime
+
+**Decision:** Statically link Swift stdlib.
+
+Swift binaries require the Swift runtime. Options:
+1. **Static linking** (recommended) - Larger binary (~50MB), but works everywhere
+2. **Dynamic linking** - Smaller binary, but requires Swift runtime installed
+3. **Bundle libs** - Ship .so files alongside binary
+
+For v1, we statically link to eliminate "library not found" issues. The binary size tradeoff is acceptable for a CLI tool.
+
+**CI requirement:** GitHub Actions workflow must:
+- Build on `ubuntu-22.04` runner (not `ubuntu-latest` which may be newer)
+- Use `-static-stdlib` flag (or Swift's default static linking on Linux)
+- Test binary execution on target before release
+
+### Verification
+
+Before any release:
+```bash
+# Check glibc requirement
+objdump -T contextify-ingest | grep GLIBC | sort -V | tail -1
+# Should show GLIBC_2.35 or lower
+
+# Check for missing shared libs
+ldd contextify-ingest
+# Should show only system libs (libc, libm, libpthread, etc.)
+```
+
+---
+
 ## Current State Assessment
 
 ### What We Have
@@ -70,28 +117,96 @@ This document defines everything needed to ship a v1 that Linux users would reco
 
 ## Design
 
+### 0. Unified Command Structure
+
+**Decision:** Ship a single `contextify` command with subcommands instead of separate binaries.
+
+**Rationale:** Two binaries (`contextify-ingest`, `contextify-query`) create documentation friction. Every instruction has to specify which binary. A unified command is much cleaner:
+
+```bash
+# Instead of:
+contextify-ingest ingest --quiet
+contextify-query search "authentication"
+contextify-ingest install-service
+
+# Ship:
+contextify ingest --quiet
+contextify search "authentication"
+contextify install-service
+```
+
+**Command structure:**
+
+```
+contextify
+├── ingest              # Index new transcripts
+├── search              # Query past conversations (alias: query)
+├── status              # Show database and service status
+├── install-skill       # Install Total Recall skill
+├── install-service     # Set up systemd timer
+├── uninstall-service   # Remove systemd timer
+├── service-status      # Check service status
+├── migrate-db          # Move database to XDG location
+├── doctor              # Diagnose issues
+└── --version, --help   # Standard flags
+```
+
+**Updating:** Re-run the install script. No built-in update command needed for v1.
+```bash
+curl -fsSL https://contextify.sh/install.sh | sh
+```
+
+**Implementation options:**
+
+1. **Single binary** (recommended) - One Swift executable with subcommands via Argument Parser
+2. **Thin wrapper** - Shell script that dispatches to underlying binaries
+3. **Symlinks** - `contextify` symlinks to `contextify-ingest`, detects invocation name
+
+For v1, option 1 (single binary) is cleanest. The current `contextify-query` and `contextify-ingest` can be merged into one `contextify` binary.
+
+**Migration from Beta:**
+- Keep old binary names as symlinks for backwards compatibility
+- Deprecation warning: "contextify-ingest is deprecated, use 'contextify ingest'"
+- Remove old binaries in v1.1
+
+---
+
 ### 1. XDG Base Directory Compliance
 
 **Specification:** [XDG Base Directory Spec](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html)
 
-**Required paths:**
+**Required paths (v1 scope):**
 
 ```
 $XDG_DATA_HOME/contextify/          # Default: ~/.local/share/contextify/
-├── contextify.db                   # Main database
-└── backups/                        # Optional backup location
+└── contextify.db                   # Main database (0600 permissions)
 
 $XDG_CONFIG_HOME/contextify/        # Default: ~/.config/contextify/
-└── config.toml                     # User configuration
-
-$XDG_STATE_HOME/contextify/         # Default: ~/.local/state/contextify/
-└── logs/                           # Ingestion logs (optional)
-
-$XDG_CACHE_HOME/contextify/         # Default: ~/.cache/contextify/
-└── (temporary files if needed)
+└── config.toml                     # User configuration (0600 permissions)
 ```
 
-**Implementation:**
+**Deferred to v1.1:** `XDG_STATE_HOME` (logs) and `XDG_CACHE_HOME` (temp files). Not needed for core functionality.
+
+### Security: File Permissions
+
+**Critical:** Transcripts contain sensitive data (tokens, internal code, secrets). Permissive umask on shared machines = data leak.
+
+| Path | Permissions | Rationale |
+|------|-------------|-----------|
+| `~/.local/share/contextify/` | `0700` | Directory not world-readable |
+| `contextify.db` | `0600` | Database contains conversation history |
+| `~/.config/contextify/` | `0700` | Config may contain paths to sensitive data |
+| `config.toml` | `0600` | May contain custom paths |
+
+**Implementation:** Always set permissions explicitly, don't rely on umask:
+```swift
+try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+// For files:
+try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+```
+
+### XDG Implementation
 
 Both `contextify-ingest` and `contextify-query` share a common `XDGPaths` module in `ContextifyIngestionCore`. This ensures both binaries resolve paths identically.
 
@@ -100,49 +215,93 @@ Both `contextify-ingest` and `contextify-query` share a common `XDGPaths` module
 // Shared by both contextify-ingest and contextify-query
 
 public struct XDGPaths {
-    public static var dataHome: URL {
-        if let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] {
-            return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
+    /// Validates XDG path is absolute. Returns nil with warning if relative.
+    private static func validatedXDGPath(_ envVar: String, fallback: URL) -> URL {
+        guard let xdg = ProcessInfo.processInfo.environment[envVar] else {
+            return fallback
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/contextify")
+        // XDG spec requires absolute paths
+        guard xdg.hasPrefix("/") else {
+            fputs("Warning: \(envVar)='\(xdg)' is not absolute, using default\n", stderr)
+            return fallback
+        }
+        return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
+    }
+
+    public static var dataHome: URL {
+        validatedXDGPath("XDG_DATA_HOME",
+            fallback: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".local/share/contextify"))
     }
 
     public static var configHome: URL {
-        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] {
-            return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
-        }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/contextify")
+        validatedXDGPath("XDG_CONFIG_HOME",
+            fallback: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".config/contextify"))
     }
 
     public static var databasePath: URL {
-        dataHome.appendingPathComponent("contextify.db")
+        // CONTEXTIFY_DB_PATH env var takes precedence (power user override)
+        if let dbPath = ProcessInfo.processInfo.environment["CONTEXTIFY_DB_PATH"],
+           dbPath.hasPrefix("/") {
+            return URL(fileURLWithPath: dbPath)
+        }
+        return dataHome.appendingPathComponent("contextify.db")
     }
 
     public static var configPath: URL {
         configHome.appendingPathComponent("config.toml")
     }
+
+    /// Create directory with secure permissions (0700)
+    public static func ensureSecureDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    /// Set secure file permissions (0600)
+    public static func setSecureFilePermissions(_ url: URL) throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
 }
 ```
 
+**Environment variable precedence:**
+1. `CONTEXTIFY_DB_PATH` - Direct path override (power users, migrations)
+2. `--db` flag - CLI argument
+3. `XDG_DATA_HOME/contextify/contextify.db` - XDG compliant
+4. `~/.local/share/contextify/contextify.db` - Default
+
 **Migration behavior:**
 
-When `contextify-ingest` or `contextify-query` runs and no database exists at the XDG location, check for legacy locations:
+When database doesn't exist at XDG location, check for legacy locations:
 1. `~/.contextify/contextify.db` (hypothetical old path)
 2. `~/Library/Application Support/Contextify/contextify.db` (macOS path, if somehow present)
 
-**Interactive mode (default):**
-```
-Found existing database at: ~/.contextify/contextify.db
-Move to XDG-compliant location (~/.local/share/contextify/contextify.db)? [Y/n]
+**Key principle:** Never prompt unless stdin is a TTY AND user explicitly asked for interactive behavior.
+
+**Default behavior (non-interactive):**
+- Use existing database in-place (don't move it)
+- Log a warning: `Using legacy database location: ~/.contextify/contextify.db`
+- Suggest: `Run 'contextify migrate-db' to move to XDG location`
+
+**Explicit migration command (v1):**
+```bash
+contextify migrate-db [--from PATH] [--to PATH]
 ```
 
-**Non-interactive mode** (`--quiet`, `--systemd`, or `CONTEXTIFY_NONINTERACTIVE=1`):
-- Do NOT prompt
-- Use the existing database in-place
-- Log a warning: `Using legacy database location: ~/.contextify/contextify.db`
-- User can migrate manually with `contextify-ingest migrate-db` (future command) or `--db` flag
+This command:
+1. Finds legacy database (or uses `--from`)
+2. Confirms destination (or uses `--to`)
+3. **Only prompts if stdin is TTY** - otherwise requires explicit `--yes` flag
+4. Copies database (not moves) to preserve rollback option
+5. Updates config to point to new location
+6. Prints verification steps
+
+**Why this approach:**
+- Scripts and systemd services never see surprise prompts
+- Beta users have explicit migration path in v1 (not "future")
+- Copy-not-move is safer for users with existing workflows
 
 ---
 
@@ -152,25 +311,36 @@ Move to XDG-compliant location (~/.local/share/contextify/contextify.db)? [Y/n]
 
 **Usage:**
 ```bash
-curl -sSL https://contextify.sh/install.sh | sh
+# Standard (non-interactive, prints next steps)
+curl -fsSL https://contextify.sh/install.sh | sh
+
+# With flags (use sh -s --)
+curl -fsSL https://contextify.sh/install.sh | sh -s -- --no-skill
+
+# Alternative that preserves TTY (if interactive features added later)
+sh -c "$(curl -fsSL https://contextify.sh/install.sh)"
 ```
+
+**Critical:** The script is **fully non-interactive by default**. With `curl | sh`, stdin is the script itself, so `read`-based prompting is broken. Don't add prompts without explicit `/dev/tty` handling.
 
 **Script behavior:**
 
 1. Detect architecture (`uname -m` → x86_64 or aarch64)
 2. Detect latest version (from `VERSION` env var, or GitHub API, or fallback URL)
-3. Download appropriate tarball
-4. **Verify SHA256 checksum** (download `.sha256` file from release)
+3. Download appropriate tarball (fail hard on HTTP errors)
+4. **Verify SHA256 checksum** (download `.sha256` file, fail on mismatch or missing)
 5. Extract to `$INSTALL_DIR` (default: `~/.local/bin/`)
 6. Verify binaries execute (`contextify-query --version`)
 7. Run `contextify-query install-skill` (skip with `--no-skill`)
-8. Prompt to run `contextify-ingest install-service` (skip with `--no-service`)
-9. Print success message with next steps
+8. Print success message with clear next steps (no prompts)
 
 **Environment variables:**
 - `VERSION` - Skip API call, use this version
 - `INSTALL_DIR` - Install location (default: `~/.local/bin`)
-- `CONTEXTIFY_NONINTERACTIVE=1` - Skip all prompts
+
+**Flags (via `sh -s --`):**
+- `--no-skill` - Skip skill installation
+- `--help` - Show usage
 
 **Script template:**
 
@@ -179,25 +349,68 @@ curl -sSL https://contextify.sh/install.sh | sh
 set -e
 
 # Contextify Linux Installer
-# Usage: curl -sSL https://contextify.sh/install.sh | sh
+# Usage: curl -fsSL https://contextify.sh/install.sh | sh
+#    or: curl -fsSL https://contextify.sh/install.sh | sh -s -- --no-skill
 
 REPO="PeterPym/contextify"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+SKIP_SKILL=0
+TMPDIR=""
+
+# Cleanup on exit (success or failure)
+cleanup() {
+    if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
+        rm -rf "$TMPDIR"
+    fi
+}
+trap cleanup EXIT INT TERM
+
+usage() {
+    echo "Contextify Linux Installer"
+    echo ""
+    echo "Usage: curl -fsSL https://contextify.sh/install.sh | sh"
+    echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --no-skill    Skip Total Recall skill installation"
+    echo "  --help        Show this help"
+    echo ""
+    echo "Environment:"
+    echo "  VERSION       Use specific version (default: latest)"
+    echo "  INSTALL_DIR   Install location (default: ~/.local/bin)"
+    exit 0
+}
 
 main() {
+    parse_args "$@"
     check_dependencies
     detect_arch
     detect_version
     download_and_extract
     verify_installation
-    install_skill
+    if [ "$SKIP_SKILL" -eq 0 ]; then
+        install_skill
+    fi
     print_success
 }
 
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --no-skill) SKIP_SKILL=1 ;;
+            --help|-h) usage ;;
+            *) echo "Unknown option: $1"; usage ;;
+        esac
+        shift
+    done
+}
+
 check_dependencies() {
-    for cmd in curl tar; do
+    # Required commands (all standard on Linux, but check anyway)
+    for cmd in curl tar mktemp sha256sum awk uname chmod mkdir; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
-            echo "Error: $cmd is required but not installed."
+            echo "Error: '$cmd' is required but not found."
+            echo "Install it with your package manager and retry."
             exit 1
         fi
     done
@@ -211,6 +424,7 @@ detect_arch() {
         arm64)   ARCH="arm64" ;;
         *)
             echo "Error: Unsupported architecture: $ARCH"
+            echo "Contextify supports x86_64 and arm64."
             exit 1
             ;;
     esac
@@ -224,19 +438,19 @@ detect_version() {
         return
     fi
 
-    # Try GitHub API first
-    VERSION=$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+    # Try GitHub API first (use -f to fail on HTTP errors)
+    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
               grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/' || true)
 
     # Fallback to hosted version file if API fails (rate limit, etc.)
     if [ -z "$VERSION" ]; then
         echo "GitHub API unavailable, trying fallback..."
-        VERSION=$(curl -sSL "https://contextify.sh/cli-version.txt" 2>/dev/null || true)
+        VERSION=$(curl -fsSL "https://contextify.sh/cli-version.txt" 2>/dev/null || true)
     fi
 
     if [ -z "$VERSION" ]; then
         echo "Error: Could not detect latest version"
-        echo "Try: VERSION=1.1.0 curl -sSL https://contextify.sh/install.sh | sh"
+        echo "Try: VERSION=1.1.0 curl -fsSL https://contextify.sh/install.sh | sh"
         exit 1
     fi
     echo "Latest version: $VERSION"
@@ -248,54 +462,82 @@ download_and_extract() {
     URL="$BASE_URL/$TARBALL"
     CHECKSUM_URL="$BASE_URL/$TARBALL.sha256"
 
-    echo "Downloading from $URL..."
+    echo "Downloading $TARBALL..."
     mkdir -p "$INSTALL_DIR"
 
-    # Download to temp location for checksum verification
+    # Create temp dir for download (cleaned up by trap)
     TMPDIR=$(mktemp -d)
-    curl -sSL "$URL" -o "$TMPDIR/$TARBALL"
 
-    # Verify checksum
+    # Download tarball (-f fails on HTTP errors like 404)
+    if ! curl -fsSL "$URL" -o "$TMPDIR/$TARBALL"; then
+        echo "Error: Failed to download $URL"
+        echo "Check that version $VERSION exists and your network connection."
+        exit 1
+    fi
+
+    # Download and verify checksum
     echo "Verifying checksum..."
-    EXPECTED=$(curl -sSL "$CHECKSUM_URL" | awk '{print $1}')
+    if ! EXPECTED=$(curl -fsSL "$CHECKSUM_URL" | awk '{print $1}'); then
+        echo "Error: Failed to download checksum file"
+        echo "Release may be incomplete. Try a different VERSION."
+        exit 1
+    fi
+
+    if [ -z "$EXPECTED" ]; then
+        echo "Error: Checksum file is empty or malformed"
+        exit 1
+    fi
+
     ACTUAL=$(sha256sum "$TMPDIR/$TARBALL" | awk '{print $1}')
     if [ "$EXPECTED" != "$ACTUAL" ]; then
         echo "Error: Checksum verification failed!"
         echo "Expected: $EXPECTED"
         echo "Actual:   $ACTUAL"
-        rm -rf "$TMPDIR"
+        echo ""
+        echo "This could indicate a corrupted download or tampered file."
         exit 1
     fi
     echo "Checksum verified."
 
-    # Extract
+    # Extract (tarball contains: contextify, contextify-ingest, contextify-query symlinks)
     tar -xzf "$TMPDIR/$TARBALL" -C "$INSTALL_DIR"
-    rm -rf "$TMPDIR"
-    chmod +x "$INSTALL_DIR/contextify-query" "$INSTALL_DIR/contextify-ingest"
+    chmod +x "$INSTALL_DIR/contextify"
 }
 
 verify_installation() {
-    if ! "$INSTALL_DIR/contextify-query" --version >/dev/null 2>&1; then
+    if ! "$INSTALL_DIR/contextify" --version >/dev/null 2>&1; then
         echo "Error: Installation verification failed"
+        echo ""
+        echo "The binary was installed but won't execute. Possible causes:"
+        echo "  - Missing shared libraries (run: ldd $INSTALL_DIR/contextify)"
+        echo "  - glibc version too old (need glibc 2.35+, Ubuntu 22.04+)"
+        echo ""
+        echo "Report issues: https://github.com/PeterPym/contextify/issues"
         exit 1
     fi
 }
 
 install_skill() {
     echo "Installing Total Recall skill..."
-    "$INSTALL_DIR/contextify-query" install-skill
+    "$INSTALL_DIR/contextify" install-skill
 }
 
 print_success() {
     echo ""
-    echo "✓ Contextify installed successfully!"
+    echo "Contextify installed successfully!"
     echo ""
-    echo "Binaries installed to: $INSTALL_DIR"
+    echo "Binary: $INSTALL_DIR/contextify"
     echo ""
-    echo "Next steps:"
-    echo "  1. Ensure $INSTALL_DIR is in your PATH"
-    echo "  2. Run: contextify-ingest install-service"
-    echo "  3. Use /total-recall in Claude Code or Codex"
+    echo "NEXT STEPS:"
+    echo ""
+    echo "  1. Add to PATH (if not already):"
+    echo "     echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+    echo ""
+    echo "  2. Set up automatic ingestion:"
+    echo "     contextify install-service"
+    echo ""
+    echo "  3. Use Total Recall in Claude Code or Codex:"
+    echo "     /total-recall"
     echo ""
     echo "Documentation: https://contextify.sh/docs/"
 }
@@ -312,14 +554,14 @@ main "$@"
 **Commands:**
 
 ```bash
-contextify-ingest install-service [--interval 15min]
-contextify-ingest uninstall-service
-contextify-ingest service-status
+contextify install-service [--interval 15min]
+contextify uninstall-service
+contextify service-status
 ```
 
 **Interval format:** Use systemd time span format (e.g., `15min`, `1h`, `30s`). See `man systemd.time`.
 
-**Service file:** `~/.config/systemd/user/contextify-ingest.service`
+**Service file:** `~/.config/systemd/user/contextify.service`
 ```ini
 [Unit]
 Description=Contextify transcript ingestion
@@ -327,24 +569,26 @@ Documentation=https://contextify.sh/docs/
 
 [Service]
 Type=oneshot
-# BINARY_PATH is replaced at install time with actual path (e.g., /home/user/.local/bin)
-ExecStart=BINARY_PATH/contextify-ingest ingest --systemd
-Environment="XDG_DATA_HOME=%h/.local/share"
-# Ensure output goes to journal even in quiet mode
+# Use %h (user home) specifier - standard systemd pattern
+ExecStart=%h/.local/bin/contextify ingest --systemd
+# Exit code 2 = "nothing to do" (not an error)
+SuccessExitStatus=2
 StandardOutput=journal
 StandardError=journal
-
-[Install]
-WantedBy=default.target
+# Note: Do NOT set Environment="XDG_DATA_HOME=..." - respect user's env
 ```
+
+**Important:** No `[Install]` section on the service. For timer-driven oneshots, only the timer needs an Install section.
 
 **Note on --systemd flag:** This is similar to `--quiet` but still logs a summary line to stdout for journald:
 ```
 Ingested 3 entries from 2 transcripts (0 errors)
 ```
-This ensures `journalctl --user -u contextify-ingest` shows meaningful output.
+This ensures `journalctl --user -u contextify` shows meaningful output.
 
-**Timer file:** `~/.config/systemd/user/contextify-ingest.timer`
+**Note on exit code 2:** systemd treats non-zero exit as failure by default. The `SuccessExitStatus=2` directive tells systemd that exit code 2 ("nothing to do") is a success, not a failure. Without this, users would see constant "failed" runs in `systemctl --user status`.
+
+**Timer file:** `~/.config/systemd/user/contextify.timer`
 ```ini
 [Unit]
 Description=Run Contextify ingestion periodically
@@ -361,36 +605,68 @@ WantedBy=timers.target
 
 **install-service implementation:**
 
-1. **Detect binary location:** Use `which contextify-ingest` or check common paths
+1. **Detect binary location:** Use `which contextify` or `readlink -f "$0"`
 2. **Check systemd user session availability:**
    ```bash
-   # Check if systemd user manager is running
-   systemctl --user is-system-running >/dev/null 2>&1
+   # Try to connect to user bus
+   if ! systemctl --user status >/dev/null 2>&1; then
+       ERROR=$(systemctl --user status 2>&1)
+       # Parse actual error for specific guidance
+   fi
    ```
-   If this fails (common on WSL, headless servers), provide guidance:
+
+   **Error-specific guidance:**
+
+   | Error | Likely cause | Guidance |
+   |-------|--------------|----------|
+   | "Failed to connect to bus" | No user session | `loginctl enable-linger $USER` (may need sudo on some distros) |
+   | "No such file or directory" | systemd not running | WSL1, container, or non-systemd distro |
+   | Other | Misconfigured | Show raw error, suggest manual debug |
+
+   **Fallback message:**
    ```
    systemd user session not available.
+   Error: {actual error message}
 
-   On servers/WSL, you may need to:
-     loginctl enable-linger $USER
+   Possible fixes:
+     1. Enable user lingering (may require sudo):
+        sudo loginctl enable-linger $USER
 
-   Or use cron instead:
-     crontab -e
-     */15 * * * * /path/to/contextify-ingest ingest --quiet
+     2. If on WSL, enable systemd:
+        # Edit /etc/wsl.conf, add [boot] systemd=true, restart WSL
+
+     3. Use cron instead (if available):
+        crontab -e
+        Add: */15 * * * * /path/to/contextify ingest --quiet
+
+     4. Run manually when needed:
+        contextify ingest
    ```
-3. Create `~/.config/systemd/user/` if needed
-4. Write service file with **actual binary path** (not hardcoded `~/.local/bin`)
-5. Write timer file with **configured interval**
+
+   **Cron fallback check:**
+   ```bash
+   if ! command -v crontab >/dev/null 2>&1; then
+       echo "Note: cron is not installed. Install cronie/vixie-cron for scheduled runs."
+   fi
+   ```
+
+3. Create `~/.config/systemd/user/` if needed (with 0700 permissions)
+4. Write service file with binary path from step 1
+   - Use absolute path resolved at install time
+   - If user upgrades to new location, re-run `install-service` to update
+5. Write timer file with configured interval
 6. Run `systemctl --user daemon-reload`
-7. Run `systemctl --user enable --now contextify-ingest.timer`
+7. Run `systemctl --user enable --now contextify.timer`
 8. Print status and next-run time
+
+**Upgrade handling:** If service already exists, `install-service` overwrites the unit files with current binary path. This handles the "user moved binary" case.
 
 **service-status output:**
 ```
 Contextify Ingestion Service
 ============================
 Status: active (waiting)
-Timer: contextify-ingest.timer
+Timer: contextify.timer
 Next run: 2026-01-12 22:15:00 PST (in 12 minutes)
 Last run: 2026-01-12 22:00:00 PST (success)
 
@@ -399,7 +675,7 @@ Recent logs (last 5 runs):
   Jan 12 21:45:00 - No new transcripts
   Jan 12 21:30:00 - Ingested 15 new entries
 
-View full logs: journalctl --user -u contextify-ingest
+View full logs: journalctl --user -u contextify
 ```
 
 **Fallback for non-systemd:**
@@ -409,7 +685,7 @@ systemd not detected. To run ingestion periodically, add to crontab:
   crontab -e
 
 Then add:
-  */15 * * * * ~/.local/bin/contextify-ingest ingest --quiet
+  */15 * * * * ~/.local/bin/contextify ingest --quiet
 ```
 
 ---
@@ -435,8 +711,8 @@ enum ExitCode: Int32 {
 #### Quiet Mode
 
 ```bash
-contextify-ingest ingest --quiet  # Only errors to stderr
-contextify-ingest ingest -q       # Short form
+contextify ingest --quiet  # Only errors to stderr
+contextify ingest -q       # Short form
 ```
 
 Suppress:
@@ -451,8 +727,8 @@ Keep:
 #### Verbose Mode
 
 ```bash
-contextify-ingest ingest --verbose  # Debug output
-contextify-ingest ingest -v         # Short form
+contextify ingest --verbose  # Debug output
+contextify ingest -v         # Short form
 ```
 
 #### Version Output
@@ -476,17 +752,21 @@ Each command should have:
 - Related commands mentioned
 
 ```bash
-$ contextify-ingest --help
-Contextify Ingestion CLI - Index your AI coding conversations
+$ contextify --help
+Contextify CLI - Search your AI coding conversations
 
-USAGE: contextify-ingest <command> [options]
+USAGE: contextify <command> [options]
 
 COMMANDS:
-  ingest            Ingest transcripts into the database
-  status            Show database and indexing status
+  ingest            Index new transcripts into the database
+  search            Search past conversations
+  status            Show database and service status
+  install-skill     Install Total Recall skill for Claude/Codex
   install-service   Set up automatic background ingestion
   uninstall-service Remove background ingestion service
   service-status    Check background service status
+  migrate-db        Move database to XDG-compliant location
+  doctor            Diagnose common issues
 
 OPTIONS:
   --db <path>       Database location (default: ~/.local/share/contextify/contextify.db)
@@ -496,10 +776,11 @@ OPTIONS:
   --help, -h        Show this help
 
 EXAMPLES:
-  contextify-ingest ingest                    # Index new transcripts
-  contextify-ingest ingest --quiet            # Silent mode for cron
-  contextify-ingest status                    # What's indexed?
-  contextify-ingest install-service           # Set up auto-ingestion
+  contextify ingest                    # Index new transcripts
+  contextify ingest --quiet            # Silent mode for cron/systemd
+  contextify search "authentication"   # Search conversations
+  contextify status                    # What's indexed?
+  contextify install-service           # Set up auto-ingestion
 
 DOCUMENTATION: https://contextify.sh/docs/
 ```
@@ -509,7 +790,7 @@ DOCUMENTATION: https://contextify.sh/docs/
 ### 5. Status Command
 
 ```bash
-$ contextify-ingest status
+$ contextify status
 Contextify Database Status
 ==========================
 Database: ~/.local/share/contextify/contextify.db
@@ -532,7 +813,7 @@ Last ingestion: 2026-01-12 21:45:00 (3 new entries)
 
 **JSON output:**
 ```bash
-$ contextify-ingest status --json
+$ contextify status --json
 {
   "format_version": 1,
   "cli_version": "1.1.0",
@@ -568,16 +849,13 @@ Swift Argument Parser can generate completions automatically.
 **Installation commands:**
 ```bash
 # Bash
-contextify-query --generate-completion-script bash > ~/.local/share/bash-completion/completions/contextify-query
-contextify-ingest --generate-completion-script bash > ~/.local/share/bash-completion/completions/contextify-ingest
+contextify --generate-completion-script bash > ~/.local/share/bash-completion/completions/contextify
 
 # Zsh
-contextify-query --generate-completion-script zsh > ~/.zfunc/_contextify-query
-contextify-ingest --generate-completion-script zsh > ~/.zfunc/_contextify-ingest
+contextify --generate-completion-script zsh > ~/.zfunc/_contextify
 
 # Fish
-contextify-query --generate-completion-script fish > ~/.config/fish/completions/contextify-query.fish
-contextify-ingest --generate-completion-script fish > ~/.config/fish/completions/contextify-ingest.fish
+contextify --generate-completion-script fish > ~/.config/fish/completions/contextify.fish
 ```
 
 **Install script integration:** Offer to install completions for detected shell.
@@ -631,78 +909,96 @@ Config error in ~/.config/contextify/config.toml:
 
 ## Implementation Plan
 
-### Phase 1: Foundation (4-6 hours)
+### Phase 0: Unified Command Structure (2-3 hours)
 
-1. **XDG paths** (1 hr)
-   - Create `XDGPaths` helper
+0. **Merge binaries into single `contextify` command** (2-3 hr)
+   - Restructure Package.swift to produce single `contextify` binary
+   - Create subcommand structure via Swift Argument Parser
+   - Add backwards-compatible symlinks (`contextify-ingest`, `contextify-query`) with deprecation warnings
+   - Update tarball build to include main binary + symlinks
+
+### Phase 1: Foundation (5-7 hours)
+
+1. **XDG paths + secure permissions** (1.5 hr)
+   - Create `XDGPaths` helper with validation (absolute paths only)
+   - Add `CONTEXTIFY_DB_PATH` env var support
+   - Ensure directories created with 0700, files with 0600
    - Update database default location
-   - Add migration prompt for existing databases
 
-2. **Exit codes + quiet mode** (1 hr)
-   - Define `ExitCode` enum
-   - Add `--quiet` flag to ingest command
+2. **migrate-db command** (1 hr)
+   - Find legacy databases
+   - Copy (not move) to XDG location
+   - Only prompt if stdin is TTY, else require `--yes`
+   - Print verification steps
+
+3. **Exit codes + quiet mode** (1 hr)
+   - Define `ExitCode` enum (0=success, 1=error, 2=noop)
+   - Add `--quiet` and `--systemd` flags
    - Ensure all commands return appropriate codes
 
-3. **Version info** (30 min)
+4. **Version info** (30 min)
    - Embed git hash at build time
    - Format version output properly
 
-4. **Help text audit** (1 hr)
+5. **Help text audit** (1 hr)
    - Review all command help strings
    - Add examples where missing
    - Ensure consistency
 
-5. **Status command** (1.5 hr)
+6. **Status command** (1.5 hr)
    - Query database for stats
    - Format human-readable output
-   - Add `--json` flag
+   - Add `--json` flag with `format_version`
 
 ### Phase 2: Service Setup (3-4 hours)
 
-6. **install-service command** (1.5 hr)
-   - Detect systemd
-   - Generate service + timer files
+7. **install-service command** (1.5 hr)
+   - Detect systemd with proper error handling
+   - Generate service + timer files (with SuccessExitStatus=2)
    - Run systemctl commands
-   - Handle errors gracefully
+   - Provide specific guidance for common errors (WSL, linger, etc.)
+   - Check for cron availability in fallback
 
-7. **uninstall-service command** (30 min)
+8. **uninstall-service command** (30 min)
    - Stop and disable timer
    - Remove files
    - Confirm removal
 
-8. **service-status command** (1 hr)
+9. **service-status command** (1 hr)
    - Query systemctl status
    - Parse next run time
-   - Show recent log entries
+   - Point to journalctl for logs (no log parsing in v1)
 
 ### Phase 3: Distribution (3-4 hours)
 
-9. **Install script** (1.5 hr)
-   - Write install.sh
-   - Test on Ubuntu, Fedora, Arch
-   - Deploy to website
+10. **Install script** (1.5 hr)
+    - Write install.sh (non-interactive, with cleanup trap)
+    - Test on Ubuntu 22.04, Fedora, Arch
+    - Verify checksum handling, error messages
+    - Deploy to website
 
-10. **Shell completions** (1 hr)
+11. **Shell completions** (30 min)
     - Verify Swift Argument Parser generates them
-    - Add to install script
-    - Document manual installation
+    - Document manual installation only (defer automation to v1.1)
 
-11. **Documentation** (1 hr)
+12. **Documentation** (1 hr)
     - Update /docs/ page
-    - Add troubleshooting section
+    - Add troubleshooting section (glibc, permissions, systemd)
     - Update README
 
 ### Phase 4: Polish (2-3 hours)
 
-12. **Config file support** (1.5 hr) [Optional for v1]
+13. **CI verification** (1 hr)
+    - Confirm builds on ubuntu-22.04 runner
+    - Verify static linking / glibc requirements
+    - Add binary verification to release workflow
+
+14. **Config file support** (1 hr) [Optional for v1]
     - TOML parsing
-    - Merge with CLI flags
+    - Merge with CLI flags and env vars
 
-13. **Testing** (1 hr)
-    - Docker-based E2E test
-    - Test on multiple distros
-
-14. **Final QA** (30 min)
+15. **Testing + QA** (1 hr)
+    - Docker-based E2E test on target distro
     - Fresh install walkthrough
     - Verify all commands work
 
@@ -828,18 +1124,52 @@ If we add a Linux Homebrew tap (Linuxbrew), we need to be **very careful** about
 
 1. **For v1:** Use curl | sh installer, skip Homebrew on Linux entirely
 2. **If we add Linux Homebrew later:**
-   - Use a different formula name (`contextify-cli` or just `contextify`)
-   - Formula should install BOTH `contextify-ingest` and `contextify-query`
+   - Formula name: `contextify` (matches the binary name)
+   - Formula installs the single `contextify` binary
    - Clear description: "Contextify CLI for Linux - transcript ingestion and search"
 3. **Documentation must clearly distinguish:**
    - "macOS App Store users: `brew install PeterPym/contextify/contextify-query`"
-   - "Linux users: `curl -sSL contextify.sh/install.sh | sh`"
+   - "Linux users: `curl -fsSL https://contextify.sh/install.sh | sh`"
 
 ---
 
 ## Open Questions
 
-1. **Config file in v1?** Could defer to v1.1 if time is tight.
+1. **Config file in v1?** Could defer to v1.1 if time is tight. However, `CONTEXTIFY_DB_PATH` env var provides the most critical power-user need (custom db location).
 2. **Homebrew tap for Linux?** Skip for v1, use curl installer. Revisit for v1.1+ (see above).
-3. **Migration from Beta?** Users with databases in old locations need migration path.
+3. ~~**Migration from Beta?**~~ RESOLVED: `migrate-db` command in v1, copy-not-move approach.
 4. **--json everywhere?** Useful for scripting, but adds work. Prioritize `status --json`.
+
+---
+
+## Future Considerations (v1.1+)
+
+### Man Pages
+
+Linux users expect `man contextify`. Not a P0, but a legitimacy marker.
+
+**Options:**
+- Generate from Swift Argument Parser help (automatic but basic)
+- Write proper man pages (more work, better quality)
+- Skip for v1, add in v1.1
+
+### Shell Completions Automation
+
+The spec includes manual completion installation. Auto-installing completions in the install script is nice-to-have but adds complexity:
+- Must detect user's shell
+- Must find correct completion directory
+- May need shell reload
+
+**v1 approach:** Document manual installation, defer automation to v1.1.
+
+### Service Status Log Parsing
+
+The `service-status` command could parse journald logs to show "last 5 runs". This is nice-to-have. For v1, simpler output with pointers to `journalctl` commands is sufficient:
+
+```
+Status: active
+Timer: contextify.timer
+Next run: in 12 minutes
+
+View logs: journalctl --user -u contextify -n 20
+```
