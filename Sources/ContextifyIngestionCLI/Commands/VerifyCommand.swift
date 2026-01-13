@@ -13,11 +13,23 @@ import ContextifyIngestionCore
 public struct VerifyCommand: ParsableCommand {
   public static let configuration = CommandConfiguration(
     commandName: "verify",
-    abstract: "Verify database integrity and environment compatibility"
+    abstract: "Verify database integrity and environment compatibility",
+    discussion: """
+      Checks the database for:
+      - WAL mode enabled
+      - FTS5 full-text search available
+      - Integrity check passes
+      - Schema version
+
+      EXAMPLES:
+        contextify verify              # Verify default database
+        contextify verify --full-check # Run thorough integrity check
+        contextify verify --db ~/custom.db
+      """
   )
 
-  @Option(name: .long, help: "Path to the SQLite database file")
-  public var db: String
+  @Option(name: .long, help: "Path to the SQLite database file (default: XDG location)")
+  public var db: String?
 
   @Option(name: .long, help: "Output format: jsonl or human")
   public var format: OutputFormat = .human
@@ -32,10 +44,13 @@ public struct VerifyCommand: ParsableCommand {
   public init() {}
 
   public mutating func run() throws {
+    // Resolve database path
+    let dbPath = db ?? XDGPaths.databasePath.path
+
     // Validate database
     let result: DatabaseOpener.ValidationResult
     do {
-      result = try DatabaseOpener.validateDatabase(at: db)
+      result = try DatabaseOpener.validateDatabase(at: dbPath)
     } catch let error as DatabaseOpener.CLIError {
       if format == .jsonl {
         emitJSON([
@@ -51,7 +66,7 @@ public struct VerifyCommand: ParsableCommand {
     // Get additional info if requested
     var fullIntegrityResult: String?
     if fullCheck {
-      fullIntegrityResult = try runFullIntegrityCheck()
+      fullIntegrityResult = try runFullIntegrityCheck(dbPath: dbPath)
     }
 
     // Output results
@@ -76,7 +91,7 @@ public struct VerifyCommand: ParsableCommand {
       }
       emitJSON(output)
     } else {
-      printHumanReadable(result, fullIntegrityResult: fullIntegrityResult)
+      printHumanReadable(dbPath: dbPath, result, fullIntegrityResult: fullIntegrityResult)
     }
 
     // Exit with appropriate code
@@ -85,21 +100,21 @@ public struct VerifyCommand: ParsableCommand {
     }
   }
 
-  private func runFullIntegrityCheck() throws -> String {
+  private func runFullIntegrityCheck(dbPath: String) throws -> String {
     var config = Configuration()
     config.readonly = true
 
-    let pool = try DatabasePool(path: db, configuration: config)
+    let pool = try DatabasePool(path: dbPath, configuration: config)
     return try pool.read { db in
       try String.fetchOne(db, sql: "PRAGMA integrity_check") ?? "unknown"
     }
   }
 
-  private func printHumanReadable(_ result: DatabaseOpener.ValidationResult, fullIntegrityResult: String?) {
+  private func printHumanReadable(dbPath: String, _ result: DatabaseOpener.ValidationResult, fullIntegrityResult: String?) {
     print("Database Verification Report")
     print("============================")
     print("")
-    print("Database: \(db)")
+    print("Database: \(dbPath)")
     print("SQLite Version: \(result.sqliteVersion)")
     print("")
 
