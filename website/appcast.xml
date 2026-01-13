@@ -8,6 +8,31 @@
 
     <!-- Latest version should be first -->
     <item>
+      <title>Version 1.1.0</title>
+      <pubDate>Sun, 12 Jan 2026 10:00:00 -0800</pubDate>
+
+      <!-- Build number (monotonic, for Sparkle comparison) -->
+      <sparkle:version>19</sparkle:version>
+
+      <!-- User-visible version -->
+      <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+
+      <sparkle:releaseNotesLink>
+        https://contextify.sh/release-notes/1.1.0.html
+      </sparkle:releaseNotesLink>
+
+      <enclosure
+        url="https://github.com/PeterPym/contextify/releases/download/v1.1.0/Contextify-1.1.0.dmg"
+        sparkle:edSignature="HhF2g549FM8ND+GOw+GykW6U0IPkwSe1RQNv4OQCDocjatVs7buI5j+p9jRpW6UoKLcF6NV4hejCYc2jv7gcAg=="
+        length="22921746"
+        type="application/octet-stream"
+        sparkle:os="macos"
+      />
+    </item>
+
+    <item>
       <title>Version 1.0.7</title>
       <pubDate>Mon, 23 Dec 2025 09:30:00 -0800</pubDate>
 
