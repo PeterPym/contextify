@@ -17,6 +17,10 @@ Rsync-based, one-command deployment to production server.
 - `--dry-run` - Preview without uploading
 - `--force` - Skip git clean/pushed checks
 
+## Local Development
+
+See `website/README.md` for local server setup (static file server + newsletter API).
+
 ## Server Configuration
 
 **Server:** web@banagale.com

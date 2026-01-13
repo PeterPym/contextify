@@ -780,3 +780,42 @@ footer a:hover {
 [data-bs-theme="dark"] .page-content a:hover {
   color: var(--link-hover);
 }
+
+/* ==========================================================================
+   Newsletter Signup Section
+   ========================================================================== */
+.newsletter-section {
+  background-color: var(--bg-muted);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-bs-theme="dark"] .newsletter-section {
+  background-color: var(--bg-muted);
+}
+
+.newsletter-form .input-group {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.newsletter-form .form-control {
+  border-color: var(--border-default);
+}
+
+.newsletter-form .form-control:focus {
+  border-color: var(--contextify-primary);
+  box-shadow: 0 0 0 0.2rem rgba(74, 123, 167, 0.25);
+}
+
+#newsletter-message {
+  min-height: 1.5em;
+}
+
+#newsletter-message.success {
+  color: var(--contextify-success);
+}
+
+#newsletter-message.error {
+  color: var(--contextify-error);
+}

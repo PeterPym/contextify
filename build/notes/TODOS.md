@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-05 (Expanded #EMAIL-COLLECTION to 5 actionable items with #REPORT-FUNKY-SUMMARY)
+**Last Updated:** 2026-01-12 (Added P0 #TAB-PERSIST - tab visibility not persisted across restarts)
 **Status:** Active
 
 **Priority Levels:**
@@ -49,6 +49,26 @@ doc_references:
 **Tracking:** `build/notes/active-work.md` (gitignored, local only)
 
 See tracking file for current branches in flight and review status.
+
+---
+
+# P0 (Launch Critical)
+
+---
+
+## Tab Visibility State Not Persisted
+
+**Status:** Not started
+**Priority:** P0 (launch blocker)
+**Discovered:** 2026-01-12
+
+- [ ] #TAB-PERSIST: Hidden tabs reappear after app restart
+
+**Problem:**
+When user hides tabs (Timeline, Search, etc.) via View menu or other controls, the hidden state is not persisted. On app restart, all tabs reappear regardless of previous visibility settings.
+
+**Expected behavior:**
+Tab visibility state should persist across app restarts via UserDefaults or similar persistence mechanism.
 
 ---
 
@@ -375,6 +395,21 @@ These must be done before CLI is usable:
 
 ---
 
+### P0 - Background Service (required for automatic ingestion)
+
+**Status:** Not started
+**Reference:** `build/notes/todo-support/LINUX-SERVICE-SETUP-spec.md`
+**Note:** Without this, users must manually run `contextify-ingest` - Linux is Beta until resolved.
+
+- [ ] #LINUX-SERVICE-SETUP: systemd user service for automatic ingestion
+  - `contextify-ingest install-service` - generate and enable systemd user timer
+  - `contextify-ingest uninstall-service` - remove service
+  - `contextify-ingest service-status` - check timer status
+  - Timer runs ingestion every 15 minutes
+  - Document in `/docs/` page
+
+---
+
 ### P1 - Validation
 
 - [ ] #LINUX-FIXTURE-TEST: Golden fixture comparison
@@ -424,13 +459,20 @@ These must be done before CLI is usable:
 
 ---
 
+### P2 - Package Distribution
+
+- [ ] #LINUX-APT-REPO: APT repository for Debian/Ubuntu
+  - Host PPA or self-hosted apt repository
+  - GPG signing infrastructure
+  - Build .deb packages in CI
+  - `sudo apt install contextify-query`
+
+---
+
 ### P3 - Polish
 
 - [ ] #LINUX-HOMEBREW: Homebrew tap for macOS CLI users
   - `brew install contextify/tap/contextify-ingest`
-
-- [ ] #LINUX-APT-REPO: apt/deb packaging
-  - PPA or direct .deb download
 
 - [ ] #LINUX-DOCKER-IMAGE: Docker image for one-liner usage
   - `docker run contextify/ingest -v ~/.claude:/data ...`
@@ -441,76 +483,6 @@ These must be done before CLI is usable:
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
 ---
-
-## Linux Total Recall Support (contextify-query)
-
-**Status:** NOT STARTED - Major gap
-**Priority:** P1
-**Tag:** #LINUX-QUERY
-
-- [ ] #LINUX-TOTAL-RECALL: Build contextify-query for Linux to enable Total Recall skill
-
-**Problem:** Total Recall is Contextify's star feature, but it doesn't work on Linux. The `/total-recall` skill requires `contextify-query`, which is only built for macOS.
-
-**Current State:**
-- `contextify-ingest` builds on Linux (ingestion only)
-- `contextify-query` is macOS-only (not in Linux build targets)
-- Linux Claude Code/Codex users cannot use Total Recall
-
-**Impact:** Anyone running Claude Code or Codex on Linux cannot use the primary feature that makes Contextify valuable.
-
----
-
-### P0 - Core Build
-
-- [ ] #LINUX-QUERY-SOURCES: Add contextify-query to Linux Package.swift targets
-  - Add ContextifyQueryCLI to Linux products
-  - Identify which sources need cross-platform adapters
-
-- [ ] #LINUX-QUERY-BUILD: Get contextify-query building on Linux
-  - Resolve any Darwin-specific dependencies
-  - May need Platform/* adapters similar to ingestion CLI
-
-- [ ] #LINUX-QUERY-CI: Add contextify-query to Linux CI workflow
-  - Build both CLIs in linux-build.yml
-  - E2E test: install-plugin → skill files exist
-
----
-
-### P1 - Distribution & Integration
-
-- [ ] #LINUX-QUERY-RELEASE: Include contextify-query in Linux releases
-  - .tar.gz contains both binaries
-  - Or separate downloads per CLI
-
-- [ ] #LINUX-SKILL-INSTALL: Ensure install-plugin works on Linux
-  - Creates ~/.claude/skills/total-recall/
-  - Creates ~/.codex/skills/total-recall/
-
-- [ ] #LINUX-QUERY-DOCS: Document Linux Total Recall setup
-  - Installation steps
-  - Verify skill works in Claude Code/Codex
-
----
-
-### P2 - Health Check (unified implementation)
-
-- [ ] #CLI-DOCTOR: Add `contextify-query doctor` command
-  - Check shim on PATH
-  - Check plugin manifest
-  - Check skill files (Claude + Codex)
-  - Check database connectivity
-  - Works on both macOS and Linux
-
-- [ ] #APP-HEALTH-CHECK: App uses CLI doctor for comprehensive status
-  - Call `contextify-query doctor --json` if CLI available
-  - Fall back to basic checks if CLI missing
-  - Surface partial install states in UI
-
----
-
-**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
-**Related:** #LINUX-CLI (ingestion), cross-platform architecture doc
 
 ## Periodic Ingestion Check for Resilience
 
@@ -1294,6 +1266,107 @@ watcher budgeting, background indexing improvements, and reduced main thread wor
    - `build/notes/todo-support/p0-indexing-ui-blocking.md`
 
 **Resolution:** If no issues observed after a week of normal use, close this item.
+
+---
+
+## Distribution: AI Tool Plugin Marketplace (1 item)
+
+**Status:** Not started
+**Priority:** P2 (distribution strategy)
+**Discovered:** 2026-01-12
+
+- [ ] #PLUGIN-DISTRIBUTION: Research and prototype plugin marketplace distribution
+
+**Vision:**
+Distribute Contextify through AI coding tool plugin marketplaces. Users install via plugin commands rather than visiting app stores:
+
+```
+Tip: Want to search your AI coding history? Add Total Recall:
+/plugin marketplace add contextify/total-recall
+/plugin install total-recall@contextify
+```
+
+**Workflow:**
+1. User sees contextual tip in their AI coding tool
+2. Runs plugin install command
+3. Skill detects user's platform (macOS, Linux, etc.)
+4. Checks if Contextify CLI is installed
+5. Guides user through installation if not (Homebrew, DMG, apt, etc.)
+6. Configures integration automatically
+
+**Research Questions:**
+1. Which AI tools support plugin marketplaces? (Claude Code, Cursor, Codex, others)
+2. What's the plugin/skill authoring format for each?
+3. Can a single plugin definition work across multiple tools?
+4. How do plugin marketplaces handle platform-specific installers?
+
+**Advantages:**
+- Users discover while using their preferred AI tool
+- Contextual installation at point of need
+- Platform detection and guided setup
+- Reach users who never visit app stores
+
+**Dependencies:**
+- Cross-platform CLI distribution (#HOMEBREW-CASK, Linux packages)
+- Plugin authoring standards stabilizing
+
+---
+
+## Content: Total Recall Business Use Cases (1 item)
+
+**Status:** Not started
+**Priority:** P2 (content/documentation)
+**Discovered:** 2026-01-12
+
+- [ ] #TOTAL-RECALL-RECIPES: Create practical use case guide for Total Recall
+
+**Vision:**
+Document business-oriented use cases showing how Total Recall / contextify-query solves real work problems. Move beyond "interesting prompts" to demonstrate concrete value for daily workflows.
+
+**Target Use Cases:**
+
+1. **Daily Standups / Progress Reports**
+   - "What did I work on yesterday across all projects?"
+   - Automated daily digest of decisions, blockers, completions
+
+2. **Weekly Status Reports**
+   - Aggregate work across week by project
+   - Summarize key decisions and outcomes
+   - Track time allocation across projects
+
+3. **Handoff Documentation**
+   - "Generate context for someone taking over this project"
+   - Extract architecture decisions and rationale
+   - Compile list of known issues and workarounds
+
+4. **Code Review Prep**
+   - "What was the reasoning behind these changes?"
+   - Find discussions that led to implementation choices
+   - Locate related conversations for PR context
+
+5. **Onboarding Acceleration**
+   - "Show me how we typically handle X in this codebase"
+   - Learn team patterns from historical conversations
+   - Find precedents for common tasks
+
+6. **Audit / Compliance**
+   - "When was this security decision made and why?"
+   - Trace decisions back to original discussions
+   - Document decision rationale for compliance
+
+**Unique Positioning:**
+- Only tool with searchable history across Claude Code + Codex sessions
+- Local-first: no data leaves your machine
+- Project-aware: context scoped to relevant work
+- LLM-powered: semantic search, not just keyword matching
+
+**Deliverables:**
+- Guide/tutorial on website or in docs
+- Example prompts for each use case
+- Sample outputs showing value
+- Potential skill definitions for common workflows
+
+**Cross-link:** #PLUGIN-DISTRIBUTION (recipes could become marketplace skills)
 
 ---
 
