@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-05 (Expanded #EMAIL-COLLECTION to 5 actionable items with #REPORT-FUNKY-SUMMARY)
+**Last Updated:** 2026-01-12 (Added P0 #TAB-PERSIST - tab visibility not persisted across restarts)
 **Status:** Active
 
 **Priority Levels:**
@@ -49,6 +49,26 @@ doc_references:
 **Tracking:** `build/notes/active-work.md` (gitignored, local only)
 
 See tracking file for current branches in flight and review status.
+
+---
+
+# P0 (Launch Critical)
+
+---
+
+## Tab Visibility State Not Persisted
+
+**Status:** Not started
+**Priority:** P0 (launch blocker)
+**Discovered:** 2026-01-12
+
+- [ ] #TAB-PERSIST: Hidden tabs reappear after app restart
+
+**Problem:**
+When user hides tabs (Timeline, Search, etc.) via View menu or other controls, the hidden state is not persisted. On app restart, all tabs reappear regardless of previous visibility settings.
+
+**Expected behavior:**
+Tab visibility state should persist across app restarts via UserDefaults or similar persistence mechanism.
 
 ---
 
@@ -372,6 +392,26 @@ These must be done before CLI is usable:
 - [ ] #LINUX-VERSION-STRATEGY: Versioning strategy
   - Decision: same version as app, or independent?
   - Schema version compatibility checking
+
+---
+
+### P1 - Background Service (required for automatic ingestion)
+
+**Status:** Not started
+**Note:** Without this, users must manually run `contextify-ingest` - marking Linux as Beta until resolved.
+
+- [ ] #LINUX-SERVICE-SETUP: systemd user service for automatic ingestion
+  - Research: Linux CLI norms for background services (systemd user units vs timers vs cron)
+  - `contextify-ingest install-service` command to generate and enable service
+  - systemd user timer for periodic ingestion (every 15 min or on file change)
+  - Service file templates in repo or generated at install time
+  - Uninstall command to disable and remove service
+  - Document in `/docs/` page
+
+**References:**
+- systemd user services: `~/.config/systemd/user/`
+- systemd timers: preferred over cron for modern distros
+- inotify: could watch `~/.claude/` for real-time (stretch goal)
 
 ---
 
