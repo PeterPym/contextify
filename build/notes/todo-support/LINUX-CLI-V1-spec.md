@@ -70,48 +70,43 @@ For v1, we statically link to eliminate "library not found" issues. The binary s
 - Use `-static-stdlib` flag (or Swift's default static linking on Linux)
 - Test binary execution on target before release
 
-### Runtime Dependency Contract
+### Runtime Dependency Contract (Test-Based)
 
-**Critical:** "Static Swift stdlib" doesn't mean "no runtime deps". Swift + Foundation can still pull in ICU, curl, etc. We must verify the exact dependency set.
+**Critical:** "Static Swift stdlib" doesn't mean "no runtime deps". Swift + Foundation can pull in ICU, curl, etc. We define the contract by **tests that must pass**, not a strict dependency list.
 
-**Allowed dynamic dependencies:**
-```
-linux-vdso.so.1
-libpthread.so.0
-libdl.so.2
-libm.so.6
-libc.so.6
-librt.so.1
-/lib64/ld-linux-x86-64.so.2
-```
-
-**NOT allowed (would break on minimal installs):**
-- libicudata / libicui18n / libicuuc (ICU)
-- libcurl
-- libxml2
-- Any Swift runtime .so files
-
-### Verification (Required Before Release)
+**Required tests (all must pass before release):**
 
 ```bash
-# 1. Check glibc requirement
+# 1. Check glibc floor
 objdump -T contextify | grep GLIBC | sort -V | tail -1
-# Should show GLIBC_2.35 or lower
+# Must show GLIBC_2.35 or lower
 
-# 2. Check all dynamic dependencies
-ldd contextify
-# Should show ONLY the allowed libs above
+# 2. No Swift runtime .so files (these would require Swift installed)
+ldd contextify | grep -E 'libswift|Swift'
+# Must return empty (exit 1)
 
-# 3. Test in minimal container (catches CI-only deps)
-docker run --rm -v $(pwd):/app ubuntu:22.04 /app/contextify --version
-# Must succeed without installing additional packages
+# 3. All subcommands run in minimal container
+docker run --rm -v $(pwd):/app ubuntu:22.04 sh -c '
+  /app/contextify --version &&
+  /app/contextify ingest --help &&
+  /app/contextify search --help &&
+  /app/contextify status --help
+'
+# Must succeed WITHOUT installing additional packages
 
-# 4. Test in older-than-target container (verifies glibc floor)
+# 4. Older-than-target fails (confirms glibc floor)
 docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version
-# Expected to FAIL (glibc too old) - confirms we're not accidentally compatible
+# Expected to FAIL - confirms we're not accidentally compatible with older glibc
 ```
 
-**CI requirement:** Add these checks to the release workflow. Binary that fails verification does not ship.
+**If ICU is required:** Swift + Foundation may pull in ICU for locale/regex/formatting. If the minimal container test fails due to ICU:
+- Option A: Document ICU as a requirement (`apt install libicu70`)
+- Option B: Statically link or bundle ICU (larger binary)
+- Option C: Avoid ICU-dependent APIs in the code
+
+**What we're really testing:** "A user with Ubuntu 22.04 minimal can download and run the binary without `apt install` anything."
+
+**CI requirement:** Add these tests to the release workflow. Binary that fails any test does not ship.
 
 ---
 
@@ -203,11 +198,18 @@ For v1, option 1 (single binary) is cleanest. The current `contextify-query` and
 ```swift
 // Deprecation warnings MUST:
 // 1. Go to stderr (not stdout - stdout is for output that scripts parse)
-// 2. Only show when stdin is a TTY (or CONTEXTIFY_SHOW_DEPRECATIONS=1)
+// 2. Only show when STDERR is a TTY (not stdin - user might pipe input but still want warnings)
 // 3. Be suppressible with CONTEXTIFY_NO_DEPRECATIONS=1
 
+import Darwin // for isatty
+
+func isStderrTTY() -> Bool {
+    return isatty(STDERR_FILENO) != 0
+}
+
 func warnDeprecated(_ message: String) {
-    guard FileHandle.standardInput.isTerminal ||
+    // Gate on stderr TTY, not stdin - handles `echo foo | contextify` case
+    guard isStderrTTY() ||
           ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_DEPRECATIONS"] == "1" else {
         return
     }
@@ -220,6 +222,8 @@ func warnDeprecated(_ message: String) {
 // Usage when invoked via old binary name:
 warnDeprecated("contextify-ingest is deprecated, use 'contextify ingest'")
 ```
+
+**Why stderr TTY (not stdin):** With `echo foo | contextify`, stdin is not a TTY but the user is still in a terminal and might want warnings. Gate on stderr to detect "is a human looking at this."
 
 **Why this matters:** If deprecation warnings go to stdout, they'll poison pipelines (`contextify-query ... | jq`) and break completion scripts. Linux users will be furious.
 
@@ -252,45 +256,71 @@ $XDG_CONFIG_HOME/contextify/        # Default: ~/.config/contextify/
 | `~/.config/contextify/` | `0700` | Config may contain paths to sensitive data |
 | `config.toml` | `0600` | May contain custom paths |
 
-**Implementation:** Always set permissions explicitly, don't rely on umask. Also tighten existing insecure files/dirs.
+**Implementation:** Always set permissions explicitly, don't rely on umask. Tighten existing insecure files/dirs, but **warn and continue** if chmod fails (NFS, weird mounts, corporate lockdown).
 
 ```swift
 /// Ensure directory exists with secure permissions (0700)
-/// If directory already exists with insecure perms, tighten them with a warning
-public static func ensureSecureDirectory(_ url: URL) throws {
+/// Tightens existing insecure perms; warns but continues on chmod failure
+public static func ensureSecureDirectory(_ url: URL) {
     let fm = FileManager.default
     var isDir: ObjCBool = false
 
-    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
-        if isDir.boolValue {
-            // Check current permissions
-            let attrs = try fm.attributesOfItem(atPath: url.path)
-            if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
-                // Directory is world/group accessible - tighten it
-                fputs("Warning: Tightening permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
-                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    do {
+        if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+            if isDir.boolValue {
+                // Check current permissions
+                let attrs = try fm.attributesOfItem(atPath: url.path)
+                if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
+                    // Directory is world/group accessible - try to tighten
+                    fputs("Warning: Attempting to tighten permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
+                    do {
+                        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+                    } catch {
+                        // chmod failed (NFS, weird mount, corporate lockdown)
+                        fputs("Warning: Could not tighten permissions on \(url.path): \(error.localizedDescription)\n", stderr)
+                        fputs("Warning: Directory may be accessible to other users\n", stderr)
+                        // Continue anyway - don't block the user
+                    }
+                }
+            } else {
+                fputs("Error: \(url.path) exists but is not a directory\n", stderr)
+                // This IS fatal - can't continue with wrong path type
+                exit(1)
             }
         } else {
-            throw NSError(domain: "Contextify", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "\(url.path) exists but is not a directory"
-            ])
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         }
-    } else {
-        try fm.createDirectory(at: url, withIntermediateDirectories: true)
-        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    } catch {
+        // Creation failure IS fatal if we need to write data
+        fputs("Error: Could not create \(url.path): \(error.localizedDescription)\n", stderr)
+        exit(1)
     }
 }
 
 /// Set secure file permissions (0600), tightening if needed
-public static func setSecureFilePermissions(_ url: URL) throws {
+/// Warns but continues on chmod failure
+public static func setSecureFilePermissions(_ url: URL) {
     let fm = FileManager.default
-    let attrs = try fm.attributesOfItem(atPath: url.path)
-    if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
-        fputs("Warning: Tightening permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
+    do {
+        let attrs = try fm.attributesOfItem(atPath: url.path)
+        if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
+            fputs("Warning: Attempting to tighten permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
+        }
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    } catch {
+        fputs("Warning: Could not set permissions on \(url.path): \(error.localizedDescription)\n", stderr)
+        fputs("Warning: File may be accessible to other users\n", stderr)
+        // Continue - file was written, just not with ideal perms
     }
-    try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 }
 ```
+
+**Failure modes:**
+- Directory creation fails → **Fatal** (can't proceed without storage)
+- Path exists but is file not dir → **Fatal** (configuration error)
+- chmod fails on existing dir → **Warn and continue** (NFS, corporate lockdown)
+- chmod fails on new file → **Warn and continue** (data was written)
 
 **Additional security note:** Keep `--systemd` output minimal. Never log transcript content, file paths, or anything that could leak sensitive data into journald. The summary line should only show counts:
 ```
@@ -389,17 +419,37 @@ contextify migrate-db [--from PATH] [--to PATH] [--delete-old] [--dry-run] [--ye
 - `--dry-run` - Show what would happen without making changes
 - `--yes` - Skip confirmation prompt (required in non-interactive mode)
 
-**Transactional migration steps:**
+**Concurrency-safe migration steps:**
+
+**Critical:** Simple file copy of SQLite while another process might write is unsafe. Can produce corrupt or inconsistent copy. Must use SQLite's safe mechanisms.
+
 1. Find legacy database (or use `--from`)
 2. Confirm destination (or use `--to`)
-3. **Only prompt if stdin is TTY** - otherwise require `--yes` flag
-4. Create target directory with `0700` permissions
-5. Copy database to new location
-6. Set `0600` permissions on new file
-7. **Verify:** Open new DB, check schema version, run sanity query (project count, transcript count)
-8. If verification fails: delete the new copy, report error, exit 1
-9. If verification passes: print success message
-10. If `--delete-old`: remove source database
+3. **Only prompt if stderr is TTY** - otherwise require `--yes` flag
+4. **Stop systemd timer if running:**
+   ```bash
+   systemctl --user stop contextify.timer 2>/dev/null || true
+   ```
+5. Create target directory with `0700` permissions
+6. **Safe copy using SQLite backup API:**
+   ```swift
+   // Use GRDB's backup or raw sqlite3_backup_* API
+   let source = try DatabaseQueue(path: sourcePath)
+   let dest = try DatabaseQueue(path: destPath)
+   try source.backup(to: dest)
+   ```
+   Alternative: `VACUUM INTO` if SQLite version supports it (3.27+)
+7. Set `0600` permissions on new file
+8. **Verify:** Open new DB, check schema version, run sanity query
+9. If verification fails: delete the new copy, report error, **re-enable timer**, exit 1
+10. If verification passes: print success message
+11. **Re-enable timer:**
+    ```bash
+    systemctl --user start contextify.timer 2>/dev/null || true
+    ```
+12. If `--delete-old`: remove source database
+
+**Why SQLite backup API:** A file copy during concurrent writes can produce subtly inconsistent state that passes basic verification but loses recent writes. SQLite's backup API handles this safely.
 
 **Success output:**
 ```
@@ -1158,6 +1208,117 @@ Config error in ~/.config/contextify/config.toml:
     - Docker-based E2E test on target distro
     - Fresh install walkthrough
     - Verify all commands work
+
+---
+
+## Required CI/CD Infrastructure
+
+The following must be added to the GitHub Actions release workflow **before v1 ships**.
+
+### Automated Validation Tests
+
+Add to `.github/workflows/linux-release.yml`:
+
+```yaml
+validate-linux-binary:
+  needs: build
+  runs-on: ubuntu-22.04
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: contextify-linux-x86_64
+
+    - name: Verify glibc floor
+      run: |
+        objdump -T contextify | grep GLIBC | sort -V | tail -1
+        # Must show GLIBC_2.35 or lower
+
+    - name: Verify no Swift runtime deps
+      run: |
+        ldd contextify | grep -E 'libswift|Swift' && exit 1 || echo "No Swift runtime deps"
+
+    - name: Test in ubuntu:22.04 minimal
+      run: |
+        docker run --rm -v $(pwd):/app ubuntu:22.04 sh -c '
+          /app/contextify --version &&
+          /app/contextify ingest --help &&
+          /app/contextify search --help &&
+          /app/contextify status --help
+        '
+
+    - name: Confirm glibc floor (ubuntu:20.04 should FAIL)
+      run: |
+        docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version 2>&1 && exit 1 || echo "Expected failure on ubuntu:20.04"
+```
+
+### Multi-Distro Validation Matrix
+
+Optional but recommended - add parallel jobs for:
+
+| Distribution | Container Image | Purpose |
+|--------------|-----------------|---------|
+| Ubuntu 22.04 | `ubuntu:22.04` | Primary target, minimal |
+| Debian 12 | `debian:12-slim` | Second major distro |
+| Fedora 38 | `fedora:38` | RPM-based, newer glibc |
+| Arch | `archlinux:latest` | Rolling release |
+
+### Local Validation Script
+
+Create `scripts/linux/validate-binary.sh` for local dev testing:
+
+```bash
+#!/bin/bash
+set -e
+
+BINARY="${1:-./contextify}"
+
+echo "=== Linux Binary Validation ==="
+
+# 1. glibc version
+echo "Checking glibc requirement..."
+GLIBC=$(objdump -T "$BINARY" | grep GLIBC | sort -V | tail -1 | grep -oP 'GLIBC_[\d.]+')
+echo "  Required: $GLIBC"
+
+# 2. Swift runtime
+echo "Checking for Swift runtime deps..."
+if ldd "$BINARY" | grep -qE 'libswift|Swift'; then
+  echo "  FAIL: Found Swift runtime dependencies"
+  exit 1
+fi
+echo "  OK: No Swift runtime deps"
+
+# 3. Minimal container test
+echo "Testing in ubuntu:22.04 minimal..."
+docker run --rm -v "$(dirname "$BINARY"):/app" ubuntu:22.04 sh -c "
+  /app/$(basename "$BINARY") --version &&
+  /app/$(basename "$BINARY") ingest --help
+"
+echo "  OK: Runs in minimal container"
+
+# 4. glibc floor confirmation
+echo "Confirming glibc floor (ubuntu:20.04 should fail)..."
+if docker run --rm -v "$(dirname "$BINARY"):/app" ubuntu:20.04 /app/$(basename "$BINARY") --version 2>/dev/null; then
+  echo "  WARN: Unexpectedly works on ubuntu:20.04"
+else
+  echo "  OK: Correctly fails on ubuntu:20.04"
+fi
+
+echo ""
+echo "=== Validation Complete ==="
+```
+
+### Current State
+
+**What exists:**
+- GitHub Actions builds both x86_64 and arm64 on `swift:6.0-noble`
+- Basic E2E test with fixture-based transcript ingestion
+- Binary execution verification (`--help`, `--version`, `doctor`)
+
+**What's missing (add before v1):**
+- Minimal container validation tests
+- glibc floor verification
+- Multi-distro matrix
+- Local validation script
 
 ---
 
