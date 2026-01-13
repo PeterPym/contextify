@@ -62,7 +62,7 @@ struct InstallSkillCommand: ParsableCommand {
     if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
       let warning = "Warning: CODEX_HOME is set to \(codexHome)\n" +
                     "Skill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
-      fputs(warning, stderr)
+      FileHandle.standardError.write(Data(warning.utf8))
     }
 
     // Install to Codex CLI

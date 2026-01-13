@@ -42,7 +42,7 @@ private func warnDeprecated(_ message: String) {
   guard ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" else {
     return
   }
-  fputs("Warning: \(message)\n", stderr)
+  FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
 }
 
 // MARK: - argv[0] Dispatch
@@ -132,7 +132,7 @@ struct Contextify: AsyncParsableCommand {
     // Check for backwards-compatible invocation
     if let transformedArgs = handleArgv0Dispatch() {
       // Re-invoke with transformed arguments
-      var allArgs = ["contextify"] + transformedArgs
+      let allArgs = ["contextify"] + transformedArgs
       await Contextify.main(allArgs)
     } else {
       // Normal invocation
