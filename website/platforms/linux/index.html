@@ -119,7 +119,7 @@
     <div class="container py-5">
       <div class="row align-items-center g-5 py-4">
         <div class="col-lg-6">
-          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool <span class="badge bg-warning text-dark" style="font-size: 0.7rem; vertical-align: middle;">Beta</span></p>
+          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool <span class="badge bg-secondary text-light" style="font-size: 0.7rem; vertical-align: middle;">Alpha</span></p>
           <h1 class="fw-bold mb-4">Total Recall for your AI coding sessions</h1>
           <p class="lead mb-4">
             Search across every Claude Code and Codex CLI conversation you've ever had. Find that command, that fix, that solution from weeks ago in seconds.
@@ -222,6 +222,35 @@
   <section id="install" class="feature-section">
     <div class="container">
       <h2 class="text-center fw-bold mb-5">Get Started</h2>
+
+      <!-- Alpha Status Callout -->
+      <div class="row justify-content-center mb-5">
+        <div class="col-md-10">
+          <div class="p-4 rounded" style="background: var(--contextify-surface); border-left: 4px solid var(--contextify-primary);">
+            <h3 class="h5 fw-bold mb-3">
+              <span class="badge bg-secondary text-light me-2" style="font-size: 0.75rem;">Alpha</span>
+              Current Status
+            </h3>
+            <p class="mb-3">
+              The Linux CLI is functional but requires manual setup. In this Alpha release:
+            </p>
+            <ul class="text-secondary mb-4" style="padding-left: 1.25rem;">
+              <li>Manual tarball download and extraction</li>
+              <li>Manual ingestion (you run <code>contextify-ingest</code> yourself)</li>
+              <li>Database stored in <code>~/.local/share/contextify/</code></li>
+            </ul>
+            <h4 class="h6 fw-bold mb-2">What we're building for v1.0</h4>
+            <ul class="text-secondary mb-0" style="padding-left: 1.25rem;">
+              <li><strong>One-line install:</strong> <code>curl -sSL contextify.sh/install.sh | sh</code></li>
+              <li><strong>Automatic ingestion:</strong> systemd user service runs in the background</li>
+              <li><strong>XDG-compliant paths:</strong> respects <code>$XDG_DATA_HOME</code>, <code>$XDG_CONFIG_HOME</code></li>
+              <li><strong>CLI polish:</strong> shell completions, <code>--quiet</code> mode, proper exit codes</li>
+              <li><strong>Status command:</strong> see what's indexed at a glance</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <h3 class="h5 fw-bold mb-4 text-center">Download</h3>
       <div class="row g-4 justify-content-center">
         <!-- x86_64 Card -->
