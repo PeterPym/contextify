@@ -79,13 +79,17 @@ For v1, we statically link to eliminate "library not found" issues. The binary s
 **Required tests (all must pass before release):**
 
 ```bash
-# 1. Check glibc floor
-objdump -T contextify | grep GLIBC | sort -V | tail -1
-# Must show GLIBC_2.35 or lower
+# 1. Check glibc floor (must be <= 2.35)
+MAX=$(objdump -T contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1 || true)
+if [ -z "$MAX" ]; then
+  echo "FAIL: could not determine glibc requirement"
+  exit 1
+fi
+# MAX must be GLIBC_2.35 or lower
 
 # 2. No Swift runtime .so files (these would require Swift installed)
-ldd contextify | grep -E 'libswift|Swift'
-# Must return empty (exit 1)
+ldd contextify | grep -qE 'libswift|Swift' && exit 1
+# Must NOT find any Swift runtime dependencies
 
 # 3. All subcommands run in minimal container
 docker run --rm -v $(pwd):/app ubuntu:22.04 sh -c '
@@ -330,7 +334,7 @@ public static func setSecureFilePermissions(_ url: URL) {
 - chmod fails on existing dir → **Warn and continue** (NFS, corporate lockdown)
 - chmod fails on new file → **Warn and continue** (data was written)
 
-**Additional security note:** Keep `--systemd` output minimal. Never log transcript content, file paths, or anything that could leak sensitive data into journald. The summary line should only show counts:
+**Additional security note:** Keep `--systemd` output minimal. Never log transcript content or secrets into journald. System paths (database location, config paths) in warnings are acceptable for debugging. The summary line should only show counts:
 ```
 Ingested 3 entries from 2 transcripts (0 errors)
 ```
