@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-05 (Expanded #EMAIL-COLLECTION to 5 actionable items with #REPORT-FUNKY-SUMMARY)
+**Last Updated:** 2026-01-12 (Added P0 #TAB-PERSIST - tab visibility not persisted across restarts)
 **Status:** Active
 
 **Priority Levels:**
@@ -49,6 +49,26 @@ doc_references:
 **Tracking:** `build/notes/active-work.md` (gitignored, local only)
 
 See tracking file for current branches in flight and review status.
+
+---
+
+# P0 (Launch Critical)
+
+---
+
+## Tab Visibility State Not Persisted
+
+**Status:** Not started
+**Priority:** P0 (launch blocker)
+**Discovered:** 2026-01-12
+
+- [ ] #TAB-PERSIST: Hidden tabs reappear after app restart
+
+**Problem:**
+When user hides tabs (Timeline, Search, etc.) via View menu or other controls, the hidden state is not persisted. On app restart, all tabs reappear regardless of previous visibility settings.
+
+**Expected behavior:**
+Tab visibility state should persist across app restarts via UserDefaults or similar persistence mechanism.
 
 ---
 
@@ -375,6 +395,21 @@ These must be done before CLI is usable:
 
 ---
 
+### P0 - Background Service (required for automatic ingestion)
+
+**Status:** Not started
+**Reference:** `build/notes/todo-support/LINUX-SERVICE-SETUP-spec.md`
+**Note:** Without this, users must manually run `contextify-ingest` - Linux is Beta until resolved.
+
+- [ ] #LINUX-SERVICE-SETUP: systemd user service for automatic ingestion
+  - `contextify-ingest install-service` - generate and enable systemd user timer
+  - `contextify-ingest uninstall-service` - remove service
+  - `contextify-ingest service-status` - check timer status
+  - Timer runs ingestion every 15 minutes
+  - Document in `/docs/` page
+
+---
+
 ### P1 - Validation
 
 - [ ] #LINUX-FIXTURE-TEST: Golden fixture comparison
@@ -448,76 +483,6 @@ These must be done before CLI is usable:
 **Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
 
 ---
-
-## Linux Total Recall Support (contextify-query)
-
-**Status:** NOT STARTED - Major gap
-**Priority:** P1
-**Tag:** #LINUX-QUERY
-
-- [ ] #LINUX-TOTAL-RECALL: Build contextify-query for Linux to enable Total Recall skill
-
-**Problem:** Total Recall is Contextify's star feature, but it doesn't work on Linux. The `/total-recall` skill requires `contextify-query`, which is only built for macOS.
-
-**Current State:**
-- `contextify-ingest` builds on Linux (ingestion only)
-- `contextify-query` is macOS-only (not in Linux build targets)
-- Linux Claude Code/Codex users cannot use Total Recall
-
-**Impact:** Anyone running Claude Code or Codex on Linux cannot use the primary feature that makes Contextify valuable.
-
----
-
-### P0 - Core Build
-
-- [ ] #LINUX-QUERY-SOURCES: Add contextify-query to Linux Package.swift targets
-  - Add ContextifyQueryCLI to Linux products
-  - Identify which sources need cross-platform adapters
-
-- [ ] #LINUX-QUERY-BUILD: Get contextify-query building on Linux
-  - Resolve any Darwin-specific dependencies
-  - May need Platform/* adapters similar to ingestion CLI
-
-- [ ] #LINUX-QUERY-CI: Add contextify-query to Linux CI workflow
-  - Build both CLIs in linux-build.yml
-  - E2E test: install-plugin → skill files exist
-
----
-
-### P1 - Distribution & Integration
-
-- [ ] #LINUX-QUERY-RELEASE: Include contextify-query in Linux releases
-  - .tar.gz contains both binaries
-  - Or separate downloads per CLI
-
-- [ ] #LINUX-SKILL-INSTALL: Ensure install-plugin works on Linux
-  - Creates ~/.claude/skills/total-recall/
-  - Creates ~/.codex/skills/total-recall/
-
-- [ ] #LINUX-QUERY-DOCS: Document Linux Total Recall setup
-  - Installation steps
-  - Verify skill works in Claude Code/Codex
-
----
-
-### P2 - Health Check (unified implementation)
-
-- [ ] #CLI-DOCTOR: Add `contextify-query doctor` command
-  - Check shim on PATH
-  - Check plugin manifest
-  - Check skill files (Claude + Codex)
-  - Check database connectivity
-  - Works on both macOS and Linux
-
-- [ ] #APP-HEALTH-CHECK: App uses CLI doctor for comprehensive status
-  - Call `contextify-query doctor --json` if CLI available
-  - Fall back to basic checks if CLI missing
-  - Surface partial install states in UI
-
----
-
-**Spec:** `build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md`
-**Related:** #LINUX-CLI (ingestion), cross-platform architecture doc
 
 ## Periodic Ingestion Check for Resilience
 
