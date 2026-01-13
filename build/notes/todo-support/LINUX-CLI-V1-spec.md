@@ -93,9 +93,14 @@ $XDG_CACHE_HOME/contextify/         # Default: ~/.cache/contextify/
 
 **Implementation:**
 
+Both `contextify-ingest` and `contextify-query` share a common `XDGPaths` module in `ContextifyIngestionCore`. This ensures both binaries resolve paths identically.
+
 ```swift
-struct XDGPaths {
-    static var dataHome: URL {
+// Sources/ContextifyIngestionCore/XDGPaths.swift
+// Shared by both contextify-ingest and contextify-query
+
+public struct XDGPaths {
+    public static var dataHome: URL {
         if let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] {
             return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
         }
@@ -103,7 +108,7 @@ struct XDGPaths {
             .appendingPathComponent(".local/share/contextify")
     }
 
-    static var configHome: URL {
+    public static var configHome: URL {
         if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] {
             return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
         }
@@ -111,13 +116,33 @@ struct XDGPaths {
             .appendingPathComponent(".config/contextify")
     }
 
-    static var databasePath: URL {
+    public static var databasePath: URL {
         dataHome.appendingPathComponent("contextify.db")
+    }
+
+    public static var configPath: URL {
+        configHome.appendingPathComponent("config.toml")
     }
 }
 ```
 
-**Migration:** On first run, if database exists at old location, offer to migrate or use `--db` flag.
+**Migration behavior:**
+
+When `contextify-ingest` or `contextify-query` runs and no database exists at the XDG location, check for legacy locations:
+1. `~/.contextify/contextify.db` (hypothetical old path)
+2. `~/Library/Application Support/Contextify/contextify.db` (macOS path, if somehow present)
+
+**Interactive mode (default):**
+```
+Found existing database at: ~/.contextify/contextify.db
+Move to XDG-compliant location (~/.local/share/contextify/contextify.db)? [Y/n]
+```
+
+**Non-interactive mode** (`--quiet`, `--systemd`, or `CONTEXTIFY_NONINTERACTIVE=1`):
+- Do NOT prompt
+- Use the existing database in-place
+- Log a warning: `Using legacy database location: ~/.contextify/contextify.db`
+- User can migrate manually with `contextify-ingest migrate-db` (future command) or `--db` flag
 
 ---
 
@@ -133,13 +158,19 @@ curl -sSL https://contextify.sh/install.sh | sh
 **Script behavior:**
 
 1. Detect architecture (`uname -m` → x86_64 or aarch64)
-2. Detect latest version from GitHub releases API
+2. Detect latest version (from `VERSION` env var, or GitHub API, or fallback URL)
 3. Download appropriate tarball
-4. Extract to `~/.local/bin/`
-5. Verify binaries execute (`contextify-query --version`)
-6. Run `contextify-query install-skill`
-7. Prompt to run `contextify-ingest install-service`
-8. Print success message with next steps
+4. **Verify SHA256 checksum** (download `.sha256` file from release)
+5. Extract to `$INSTALL_DIR` (default: `~/.local/bin/`)
+6. Verify binaries execute (`contextify-query --version`)
+7. Run `contextify-query install-skill` (skip with `--no-skill`)
+8. Prompt to run `contextify-ingest install-service` (skip with `--no-service`)
+9. Print success message with next steps
+
+**Environment variables:**
+- `VERSION` - Skip API call, use this version
+- `INSTALL_DIR` - Install location (default: `~/.local/bin`)
+- `CONTEXTIFY_NONINTERACTIVE=1` - Skip all prompts
 
 **Script template:**
 
@@ -187,21 +218,59 @@ detect_arch() {
 }
 
 detect_version() {
-    VERSION=$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" |
-              grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+    # Allow override via environment
+    if [ -n "$VERSION" ]; then
+        echo "Using VERSION from environment: $VERSION"
+        return
+    fi
+
+    # Try GitHub API first
+    VERSION=$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+              grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/' || true)
+
+    # Fallback to hosted version file if API fails (rate limit, etc.)
+    if [ -z "$VERSION" ]; then
+        echo "GitHub API unavailable, trying fallback..."
+        VERSION=$(curl -sSL "https://contextify.sh/cli-version.txt" 2>/dev/null || true)
+    fi
+
     if [ -z "$VERSION" ]; then
         echo "Error: Could not detect latest version"
+        echo "Try: VERSION=1.1.0 curl -sSL https://contextify.sh/install.sh | sh"
         exit 1
     fi
     echo "Latest version: $VERSION"
 }
 
 download_and_extract() {
-    URL="https://github.com/$REPO/releases/download/v$VERSION/contextify-linux-$ARCH.tar.gz"
-    echo "Downloading from $URL..."
+    BASE_URL="https://github.com/$REPO/releases/download/v$VERSION"
+    TARBALL="contextify-linux-$ARCH.tar.gz"
+    URL="$BASE_URL/$TARBALL"
+    CHECKSUM_URL="$BASE_URL/$TARBALL.sha256"
 
+    echo "Downloading from $URL..."
     mkdir -p "$INSTALL_DIR"
-    curl -sSL "$URL" | tar -xz -C "$INSTALL_DIR"
+
+    # Download to temp location for checksum verification
+    TMPDIR=$(mktemp -d)
+    curl -sSL "$URL" -o "$TMPDIR/$TARBALL"
+
+    # Verify checksum
+    echo "Verifying checksum..."
+    EXPECTED=$(curl -sSL "$CHECKSUM_URL" | awk '{print $1}')
+    ACTUAL=$(sha256sum "$TMPDIR/$TARBALL" | awk '{print $1}')
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        echo "Error: Checksum verification failed!"
+        echo "Expected: $EXPECTED"
+        echo "Actual:   $ACTUAL"
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    echo "Checksum verified."
+
+    # Extract
+    tar -xzf "$TMPDIR/$TARBALL" -C "$INSTALL_DIR"
+    rm -rf "$TMPDIR"
     chmod +x "$INSTALL_DIR/contextify-query" "$INSTALL_DIR/contextify-ingest"
 }
 
@@ -243,10 +312,12 @@ main "$@"
 **Commands:**
 
 ```bash
-contextify-ingest install-service [--interval 15m]
+contextify-ingest install-service [--interval 15min]
 contextify-ingest uninstall-service
 contextify-ingest service-status
 ```
+
+**Interval format:** Use systemd time span format (e.g., `15min`, `1h`, `30s`). See `man systemd.time`.
 
 **Service file:** `~/.config/systemd/user/contextify-ingest.service`
 ```ini
@@ -256,12 +327,22 @@ Documentation=https://contextify.sh/docs/
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/contextify-ingest ingest --quiet
+# BINARY_PATH is replaced at install time with actual path (e.g., /home/user/.local/bin)
+ExecStart=BINARY_PATH/contextify-ingest ingest --systemd
 Environment="XDG_DATA_HOME=%h/.local/share"
+# Ensure output goes to journal even in quiet mode
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target
 ```
+
+**Note on --systemd flag:** This is similar to `--quiet` but still logs a summary line to stdout for journald:
+```
+Ingested 3 entries from 2 transcripts (0 errors)
+```
+This ensures `journalctl --user -u contextify-ingest` shows meaningful output.
 
 **Timer file:** `~/.config/systemd/user/contextify-ingest.timer`
 ```ini
@@ -271,7 +352,7 @@ Documentation=https://contextify.sh/docs/
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=15min
+OnUnitActiveSec=INTERVAL
 Persistent=true
 
 [Install]
@@ -280,13 +361,29 @@ WantedBy=timers.target
 
 **install-service implementation:**
 
-1. Check systemd availability (`systemctl --user status` succeeds)
-2. Create `~/.config/systemd/user/` if needed
-3. Write service file (with correct binary path)
-4. Write timer file (with configured interval)
-5. Run `systemctl --user daemon-reload`
-6. Run `systemctl --user enable --now contextify-ingest.timer`
-7. Print status and next-run time
+1. **Detect binary location:** Use `which contextify-ingest` or check common paths
+2. **Check systemd user session availability:**
+   ```bash
+   # Check if systemd user manager is running
+   systemctl --user is-system-running >/dev/null 2>&1
+   ```
+   If this fails (common on WSL, headless servers), provide guidance:
+   ```
+   systemd user session not available.
+
+   On servers/WSL, you may need to:
+     loginctl enable-linger $USER
+
+   Or use cron instead:
+     crontab -e
+     */15 * * * * /path/to/contextify-ingest ingest --quiet
+   ```
+3. Create `~/.config/systemd/user/` if needed
+4. Write service file with **actual binary path** (not hardcoded `~/.local/bin`)
+5. Write timer file with **configured interval**
+6. Run `systemctl --user daemon-reload`
+7. Run `systemctl --user enable --now contextify-ingest.timer`
+8. Print status and next-run time
 
 **service-status output:**
 ```
@@ -437,6 +534,8 @@ Last ingestion: 2026-01-12 21:45:00 (3 new entries)
 ```bash
 $ contextify-ingest status --json
 {
+  "format_version": 1,
+  "cli_version": "1.1.0",
   "database": {
     "path": "/home/user/.local/share/contextify/contextify.db",
     "size_bytes": 44347392,
@@ -457,6 +556,8 @@ $ contextify-ingest status --json
   }
 }
 ```
+
+**Note:** `format_version` allows future changes to the JSON schema without breaking existing parsers. Increment when adding/removing fields.
 
 ---
 
@@ -485,7 +586,7 @@ contextify-ingest --generate-completion-script fish > ~/.config/fish/completions
 
 ### 7. Config File (Optional)
 
-**Location:** `~/.config/contextify/config.toml`
+**Location:** `$XDG_CONFIG_HOME/contextify/config.toml` (default: `~/.config/contextify/config.toml`)
 
 ```toml
 # Contextify Configuration
@@ -494,7 +595,7 @@ contextify-ingest --generate-completion-script fish > ~/.config/fish/completions
 # path = "~/.local/share/contextify/contextify.db"  # Default
 
 [ingestion]
-interval = "15m"      # Service timer interval
+interval = "15min"    # Service timer interval (systemd time span format)
 quiet = true          # Suppress output in background runs
 
 [providers]
@@ -505,6 +606,24 @@ codex_path = "~/.codex/sessions"
 ```
 
 **Precedence:** CLI flags > Environment variables > Config file > Defaults
+
+**Path expansion rules:**
+- `~` expands to `$HOME`
+- `$VAR` or `${VAR}` expands to environment variable
+- Relative paths are relative to current working directory (not recommended)
+- Invalid paths (non-existent, not a directory) trigger a warning at startup, not an error
+
+**Validation:**
+- Unknown keys: warn but don't fail (forward compatibility)
+- Invalid interval format: error with example of valid formats
+- Invalid path: warn at startup, skip that provider
+
+**Example error output:**
+```
+Config error in ~/.config/contextify/config.toml:
+  [ingestion] interval = "15" is invalid
+  Expected systemd time span format, e.g., "15min", "1h", "30s"
+```
 
 **Implementation:** Use a simple TOML parser or hand-roll for minimal dependencies.
 
