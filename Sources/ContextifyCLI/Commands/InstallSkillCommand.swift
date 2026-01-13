@@ -93,16 +93,15 @@ struct InstallSkillCommand: ParsableCommand {
       try newData.write(to: claudeSkillDest, options: .atomic)
     }
 
-    // Warn about CODEX_HOME if set
-    if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
-      let warning = "Warning: CODEX_HOME is set to \(codexHome)\n" +
-                    "Skill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
-      FileHandle.standardError.write(Data(warning.utf8))
-    }
-
     // Install to Codex CLI
     try FileManager.default.createDirectory(at: codexSkillDir, withIntermediateDirectories: true)
     if codexState != .upToDate {
+      // Warn about CODEX_HOME if set (only when actually installing to Codex)
+      if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
+        let warning = "Warning: CODEX_HOME is set to \(codexHome)\n" +
+                      "Skill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
+        FileHandle.standardError.write(Data(warning.utf8))
+      }
       if FileManager.default.fileExists(atPath: codexSkillDest.path) {
         try FileManager.default.removeItem(at: codexSkillDest)
       }
