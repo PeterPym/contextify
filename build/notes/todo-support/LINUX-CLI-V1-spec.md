@@ -70,18 +70,48 @@ For v1, we statically link to eliminate "library not found" issues. The binary s
 - Use `-static-stdlib` flag (or Swift's default static linking on Linux)
 - Test binary execution on target before release
 
-### Verification
+### Runtime Dependency Contract
 
-Before any release:
+**Critical:** "Static Swift stdlib" doesn't mean "no runtime deps". Swift + Foundation can still pull in ICU, curl, etc. We must verify the exact dependency set.
+
+**Allowed dynamic dependencies:**
+```
+linux-vdso.so.1
+libpthread.so.0
+libdl.so.2
+libm.so.6
+libc.so.6
+librt.so.1
+/lib64/ld-linux-x86-64.so.2
+```
+
+**NOT allowed (would break on minimal installs):**
+- libicudata / libicui18n / libicuuc (ICU)
+- libcurl
+- libxml2
+- Any Swift runtime .so files
+
+### Verification (Required Before Release)
+
 ```bash
-# Check glibc requirement
-objdump -T contextify-ingest | grep GLIBC | sort -V | tail -1
+# 1. Check glibc requirement
+objdump -T contextify | grep GLIBC | sort -V | tail -1
 # Should show GLIBC_2.35 or lower
 
-# Check for missing shared libs
-ldd contextify-ingest
-# Should show only system libs (libc, libm, libpthread, etc.)
+# 2. Check all dynamic dependencies
+ldd contextify
+# Should show ONLY the allowed libs above
+
+# 3. Test in minimal container (catches CI-only deps)
+docker run --rm -v $(pwd):/app ubuntu:22.04 /app/contextify --version
+# Must succeed without installing additional packages
+
+# 4. Test in older-than-target container (verifies glibc floor)
+docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version
+# Expected to FAIL (glibc too old) - confirms we're not accidentally compatible
 ```
+
+**CI requirement:** Add these checks to the release workflow. Binary that fails verification does not ship.
 
 ---
 
@@ -166,8 +196,32 @@ For v1, option 1 (single binary) is cleanest. The current `contextify-query` and
 
 **Migration from Beta:**
 - Keep old binary names as symlinks for backwards compatibility
-- Deprecation warning: "contextify-ingest is deprecated, use 'contextify ingest'"
-- Remove old binaries in v1.1
+- **argv[0] dispatch:** When invoked as `contextify-ingest`, automatically route to `ingest` subcommand. When invoked as `contextify-query`, route to `search` subcommand. This preserves muscle memory and existing scripts.
+- Remove old symlinks in v1.1
+
+**Deprecation warnings (critical for not breaking scripts):**
+```swift
+// Deprecation warnings MUST:
+// 1. Go to stderr (not stdout - stdout is for output that scripts parse)
+// 2. Only show when stdin is a TTY (or CONTEXTIFY_SHOW_DEPRECATIONS=1)
+// 3. Be suppressible with CONTEXTIFY_NO_DEPRECATIONS=1
+
+func warnDeprecated(_ message: String) {
+    guard FileHandle.standardInput.isTerminal ||
+          ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_DEPRECATIONS"] == "1" else {
+        return
+    }
+    guard ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" else {
+        return
+    }
+    fputs("Warning: \(message)\n", stderr)
+}
+
+// Usage when invoked via old binary name:
+warnDeprecated("contextify-ingest is deprecated, use 'contextify ingest'")
+```
+
+**Why this matters:** If deprecation warnings go to stdout, they'll poison pipelines (`contextify-query ... | jq`) and break completion scripts. Linux users will be furious.
 
 ---
 
@@ -198,12 +252,49 @@ $XDG_CONFIG_HOME/contextify/        # Default: ~/.config/contextify/
 | `~/.config/contextify/` | `0700` | Config may contain paths to sensitive data |
 | `config.toml` | `0600` | May contain custom paths |
 
-**Implementation:** Always set permissions explicitly, don't rely on umask:
+**Implementation:** Always set permissions explicitly, don't rely on umask. Also tighten existing insecure files/dirs.
+
 ```swift
-try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
-// For files:
-try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+/// Ensure directory exists with secure permissions (0700)
+/// If directory already exists with insecure perms, tighten them with a warning
+public static func ensureSecureDirectory(_ url: URL) throws {
+    let fm = FileManager.default
+    var isDir: ObjCBool = false
+
+    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+        if isDir.boolValue {
+            // Check current permissions
+            let attrs = try fm.attributesOfItem(atPath: url.path)
+            if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
+                // Directory is world/group accessible - tighten it
+                fputs("Warning: Tightening permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
+                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+            }
+        } else {
+            throw NSError(domain: "Contextify", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "\(url.path) exists but is not a directory"
+            ])
+        }
+    } else {
+        try fm.createDirectory(at: url, withIntermediateDirectories: true)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+}
+
+/// Set secure file permissions (0600), tightening if needed
+public static func setSecureFilePermissions(_ url: URL) throws {
+    let fm = FileManager.default
+    let attrs = try fm.attributesOfItem(atPath: url.path)
+    if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
+        fputs("Warning: Tightening permissions on \(url.path) (was \(String(perms, radix: 8)))\n", stderr)
+    }
+    try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+}
+```
+
+**Additional security note:** Keep `--systemd` output minimal. Never log transcript content, file paths, or anything that could leak sensitive data into journald. The summary line should only show counts:
+```
+Ingested 3 entries from 2 transcripts (0 errors)
 ```
 
 ### XDG Implementation
@@ -266,11 +357,12 @@ public struct XDGPaths {
 }
 ```
 
-**Environment variable precedence:**
-1. `CONTEXTIFY_DB_PATH` - Direct path override (power users, migrations)
-2. `--db` flag - CLI argument
-3. `XDG_DATA_HOME/contextify/contextify.db` - XDG compliant
-4. `~/.local/share/contextify/contextify.db` - Default
+**Precedence order (standard Linux convention):**
+1. `--db` flag - CLI argument (highest priority)
+2. `CONTEXTIFY_DB_PATH` - Environment variable
+3. Config file `database.path` - User configuration
+4. `XDG_DATA_HOME/contextify/contextify.db` - XDG compliant default
+5. `~/.local/share/contextify/contextify.db` - Fallback default
 
 **Migration behavior:**
 
@@ -287,21 +379,46 @@ When database doesn't exist at XDG location, check for legacy locations:
 
 **Explicit migration command (v1):**
 ```bash
-contextify migrate-db [--from PATH] [--to PATH]
+contextify migrate-db [--from PATH] [--to PATH] [--delete-old] [--dry-run] [--yes]
 ```
 
-This command:
-1. Finds legacy database (or uses `--from`)
-2. Confirms destination (or uses `--to`)
-3. **Only prompts if stdin is TTY** - otherwise requires explicit `--yes` flag
-4. Copies database (not moves) to preserve rollback option
-5. Updates config to point to new location
-6. Prints verification steps
+**Flags:**
+- `--from PATH` - Source database (default: auto-detect legacy location)
+- `--to PATH` - Destination (default: XDG location)
+- `--delete-old` - Remove old database after successful migration
+- `--dry-run` - Show what would happen without making changes
+- `--yes` - Skip confirmation prompt (required in non-interactive mode)
+
+**Transactional migration steps:**
+1. Find legacy database (or use `--from`)
+2. Confirm destination (or use `--to`)
+3. **Only prompt if stdin is TTY** - otherwise require `--yes` flag
+4. Create target directory with `0700` permissions
+5. Copy database to new location
+6. Set `0600` permissions on new file
+7. **Verify:** Open new DB, check schema version, run sanity query (project count, transcript count)
+8. If verification fails: delete the new copy, report error, exit 1
+9. If verification passes: print success message
+10. If `--delete-old`: remove source database
+
+**Success output:**
+```
+Migration complete.
+  New database: ~/.local/share/contextify/contextify.db (42.3 MB)
+  Verified: schema v33, 12 projects, 156 transcripts
+  Old database: ~/.contextify/contextify.db (retained)
+
+To remove old database: contextify migrate-db --delete-old
+```
+
+**Post-migration behavior:**
+After successful migration, the XDG location becomes the default. The system does NOT "sometimes choose legacy" based on existence. If both exist, XDG wins unless explicitly overridden with `--db` or `CONTEXTIFY_DB_PATH`.
 
 **Why this approach:**
 - Scripts and systemd services never see surprise prompts
-- Beta users have explicit migration path in v1 (not "future")
-- Copy-not-move is safer for users with existing workflows
+- Transactional: verification ensures no corrupted migrations
+- Copy-not-move by default preserves rollback option
+- `--delete-old` available for cleanup when ready
 
 ---
 
@@ -462,7 +579,11 @@ download_and_extract() {
     URL="$BASE_URL/$TARBALL"
     CHECKSUM_URL="$BASE_URL/$TARBALL.sha256"
 
-    echo "Downloading $TARBALL..."
+    echo ""
+    echo "Installing Contextify v$VERSION"
+    echo "  From: $URL"
+    echo "  To:   $INSTALL_DIR/contextify"
+    echo ""
     mkdir -p "$INSTALL_DIR"
 
     # Create temp dir for download (cleaned up by trap)
@@ -522,21 +643,57 @@ install_skill() {
     "$INSTALL_DIR/contextify" install-skill
 }
 
+check_path() {
+    # Check if install dir is in PATH
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 print_success() {
     echo ""
     echo "Contextify installed successfully!"
     echo ""
     echo "Binary: $INSTALL_DIR/contextify"
     echo ""
+
+    if ! check_path; then
+        echo "WARNING: $INSTALL_DIR is not in your PATH"
+        echo ""
+        echo "Add it to your shell configuration:"
+        echo ""
+        # Detect shell and provide appropriate advice
+        SHELL_NAME=$(basename "$SHELL")
+        case "$SHELL_NAME" in
+            bash)
+                echo "  # For bash, add to ~/.bashrc:"
+                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+                echo "  source ~/.bashrc"
+                ;;
+            zsh)
+                echo "  # For zsh, add to ~/.zshrc:"
+                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
+                echo "  source ~/.zshrc"
+                ;;
+            fish)
+                echo "  # For fish, run:"
+                echo "  fish_add_path ~/.local/bin"
+                ;;
+            *)
+                echo "  # Add this to your shell config:"
+                echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+                ;;
+        esac
+        echo ""
+    fi
+
     echo "NEXT STEPS:"
     echo ""
-    echo "  1. Add to PATH (if not already):"
-    echo "     echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-    echo ""
-    echo "  2. Set up automatic ingestion:"
+    echo "  1. Set up automatic ingestion:"
     echo "     contextify install-service"
     echo ""
-    echo "  3. Use Total Recall in Claude Code or Codex:"
+    echo "  2. Use Total Recall in Claude Code or Codex:"
     echo "     /total-recall"
     echo ""
     echo "Documentation: https://contextify.sh/docs/"
