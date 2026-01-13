@@ -680,9 +680,47 @@ codex_path = "~/.codex/sessions"
 
 ---
 
+## Existing Homebrew Situation
+
+**IMPORTANT:** There is already a Homebrew formula for `contextify-query`:
+
+```
+brew install PeterPym/contextify/contextify-query
+```
+
+This formula exists specifically for **App Store users on macOS**. The App Store build is sandboxed and cannot install the CLI shim itself, so users install via Homebrew to get Total Recall functionality.
+
+### The Problem
+
+If we add a Linux Homebrew tap (Linuxbrew), we need to be **very careful** about naming and messaging:
+
+| Formula | Platform | Purpose |
+|---------|----------|---------|
+| `contextify-query` | macOS | CLI for App Store users (query only) |
+| `contextify` (proposed) | Linux | Full CLI suite (ingest + query + service) |
+
+### Risks
+
+1. **User confusion:** Linux user installs `contextify-query` thinking it's the full CLI
+2. **Wrong binary:** `contextify-query` alone doesn't do ingestion
+3. **Documentation mismatch:** Install instructions could point to wrong formula
+
+### Recommendations
+
+1. **For v1:** Use curl | sh installer, skip Homebrew on Linux entirely
+2. **If we add Linux Homebrew later:**
+   - Use a different formula name (`contextify-cli` or just `contextify`)
+   - Formula should install BOTH `contextify-ingest` and `contextify-query`
+   - Clear description: "Contextify CLI for Linux - transcript ingestion and search"
+3. **Documentation must clearly distinguish:**
+   - "macOS App Store users: `brew install PeterPym/contextify/contextify-query`"
+   - "Linux users: `curl -sSL contextify.sh/install.sh | sh`"
+
+---
+
 ## Open Questions
 
 1. **Config file in v1?** Could defer to v1.1 if time is tight.
-2. **Homebrew tap?** Nice to have but not blocking v1.
+2. **Homebrew tap for Linux?** Skip for v1, use curl installer. Revisit for v1.1+ (see above).
 3. **Migration from Beta?** Users with databases in old locations need migration path.
 4. **--json everywhere?** Useful for scripting, but adds work. Prioritize `status --json`.
