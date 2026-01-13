@@ -3,11 +3,27 @@ todo_id: LINUX-CLI-V1
 title: Linux CLI v1 - Complete Release Specification
 type: spec
 date: 2026-01-12
-status: draft
+status: in-progress
 description: Comprehensive spec for Linux CLI v1 release - from Beta to production-ready
 ---
 
 # Linux CLI v1 - Complete Release Specification
+
+## Implementation Progress
+
+**Started:** 2026-01-13
+**Worktree:** main-wb1 (`/Users/rob/code/projects/contextify-wb1`)
+**Progress Report:** `/tmp/linux-cli-v1-progress.md`
+
+| Phase | Branch | Status | Merged |
+|-------|--------|--------|--------|
+| Phase 0: Unified Command Structure | `feature/linux-cli-v1-phase0` | COMPLETE | 2026-01-13 |
+| Phase 1: Foundation | `feature/linux-cli-v1-phase1` | NOT STARTED | - |
+| Phase 2: Service Setup | - | NOT STARTED | - |
+| Phase 3: Distribution | - | NOT STARTED | - |
+| Phase 4: Polish | - | NOT STARTED | - |
+
+---
 
 ## Executive Summary
 
