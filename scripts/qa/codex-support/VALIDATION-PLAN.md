@@ -3,7 +3,7 @@ feature: codex-skill-support
 branch: feature/codex-skill-support
 date: 2026-01-10
 merged: 2026-01-11
-status: merged
+status: complete
 ---
 
 # Codex Skill Support - Validation Plan
