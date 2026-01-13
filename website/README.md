@@ -32,11 +32,26 @@ Before making changes, consult these docs:
 
 **Script:** `scripts/deploy-website.sh` - Contains file exclusion list (README.md, QUICKSTART.txt, drafts/, etc.)
 
-## Local Testing
+## Local Development
+
+**Start both servers for full functionality:**
 
 ```bash
+# Terminal 1: Static file server (HTML/CSS/JS)
 cd website && python3 -m http.server 8000
-# Visit http://localhost:8000
+
+# Terminal 2: Newsletter API server
+cd website/api && python3 subscribe.py
+```
+
+| Server | Port | Purpose |
+|--------|------|---------|
+| Static | 8000 | HTML pages at http://localhost:8000 |
+| API | 8080 | Newsletter form submissions |
+
+**Static server only** (if not testing newsletter):
+```bash
+cd website && python3 -m http.server 8000
 ```
 
 ---

@@ -178,11 +178,33 @@
     </div>
   </section>
 
+  <!-- Newsletter Signup -->
+  <section class="newsletter-section py-4">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+          <h3 class="h5 mb-2">Stay Updated</h3>
+          <p class="text-secondary small mb-3">Get notified when new versions ship. No spam, just releases.</p>
+          <form id="newsletter-form" class="newsletter-form" action="/api/subscribe" method="POST">
+            <input type="text" name="website" style="display:none !important" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <div class="input-group">
+              <input type="email" name="email" class="form-control" placeholder="your@email.com" required>
+              <button type="submit" class="btn btn-primary">Subscribe</button>
+            </div>
+            <div id="newsletter-message" class="small mt-2"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="py-4 mt-5">
     <div class="container text-center">
       <div class="mb-3">
         <a href="download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="platforms/linux/" class="mx-2">Linux</a>
         <span class="text-secondary">|</span>
         <a href="blog/" class="mx-2">Blog</a>
         <span class="text-secondary">|</span>
@@ -196,7 +218,7 @@
       </div>
       <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
       <p class="text-secondary small mb-2">From the creator of <a href="https://github.com/banagale/filekitty" class="text-secondary">FileKitty</a></p>
-      <p class="text-secondary small mb-0">&copy; 2025 Contextify</p>
+      <p class="text-secondary small mb-0">&copy; 2026 Contextify</p>
     </div>
   </footer>
 
@@ -226,6 +248,43 @@
 
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeLightbox();
+    });
+
+    // Newsletter form handling
+    document.getElementById('newsletter-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var form = this;
+      var email = form.querySelector('input[name="email"]').value;
+      var messageEl = document.getElementById('newsletter-message');
+      var submitBtn = form.querySelector('button[type="submit"]');
+
+      // Disable form while submitting
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Subscribing...';
+      messageEl.textContent = '';
+      messageEl.className = 'small mt-2';
+
+      fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, website: form.querySelector('input[name="website"]').value })
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        messageEl.textContent = data.message || 'Thanks for subscribing!';
+        messageEl.className = 'small mt-2 success';
+        if (data.success) {
+          form.querySelector('input[name="email"]').value = '';
+        }
+      })
+      .catch(function(err) {
+        messageEl.textContent = 'Could not connect. Please try again.';
+        messageEl.className = 'small mt-2 error';
+      })
+      .finally(function() {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Subscribe';
+      });
     });
   </script>
 </body>

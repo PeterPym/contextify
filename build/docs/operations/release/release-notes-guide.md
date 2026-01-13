@@ -164,6 +164,106 @@ Use these sections as needed:
 
 Skip empty sections.
 
+## Writing Style: Lessons from v1.1.0
+
+These guidelines emerged from the v1.1.0 release notes iteration.
+
+### Structure: Scannable First, Details Later
+
+Users skim. Put the highlights at the top as a bullet list, then expand below.
+
+**Good structure:**
+```
+What's New in v1.1.0
+
+• Feature A - One-line summary.
+• Feature B - One-line summary.
+• Feature C - One-line summary.
+
+Feature A Details (if needed)
+
+Expanded explanation for users who want more context...
+```
+
+**Bad structure:**
+```
+What's New in v1.1.0
+
+Feature A
+
+Three paragraphs about Feature A before the user even knows
+what else is in the release...
+```
+
+### Channel Awareness: Only Include What's Relevant
+
+**App Store users don't care about:**
+- Linux CLI support
+- DMG-only features (automatic worktree grouping)
+- Build system changes
+
+**DMG users don't care about:**
+- Sandbox permission changes
+- App Store review accommodations
+
+When writing notes, ask: "Does this channel's user see/use this feature?"
+
+### Feature Framing: Benefits, Not Mechanics
+
+| Bad (Technical) | Good (User Benefit) |
+|-----------------|---------------------|
+| "Fixed project attribution for cross-directory sessions" | "Git worktree recognition - search across all related projects" |
+| "Added MarkdownUI dependency" | "Markdown tables now render nicely in details" |
+| "Improved accuracy" (vague) | Describe what's actually improved |
+
+### Context for CLI/External Features
+
+Features requiring external installation need context:
+
+**Bad:**
+```
+• Codex CLI Support - Works with Codex.
+```
+
+**Good:**
+```
+Total Recall Improvements (install via Settings > CLI)
+
+Total Recall is a skill for Claude Code and Codex. It tells your
+AI how to use contextify-query, a CLI interface to your complete
+conversational history.
+
+• Codex CLI Support - Total Recall now works with OpenAI's Codex
+  CLI alongside Claude Code.
+```
+
+### Avoid Robotic Bullet Points
+
+If every bullet follows the same pattern, the notes feel mechanical.
+
+**Robotic:**
+```
+• Feature A - Description of A.
+• Feature B - Description of B.
+• Feature C - Description of C.
+```
+
+**Natural:**
+```
+• Feature A - Description that flows naturally.
+• Feature B - This one can be longer when the feature
+  warrants it, with an example or use case.
+• Feature C - Brief.
+```
+
+### Common Mistakes
+
+1. **Missing features entirely** - Cross-reference the internal changelog against the external notes
+2. **Including irrelevant channels** - Linux support in App Store notes
+3. **Vague improvements** - "Improved accuracy" without saying what improved
+4. **No installation context** - CLI features need "install via Settings > CLI"
+5. **Description not updated** - App Store description should evolve with major features
+
 ## Examples
 
 **Good:**

@@ -2,7 +2,7 @@
 
 **Release:** 1.1.0
 **Phase:** 2 of 6
-**Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
+**Status:** [x] In Progress (macOS complete, Linux blocked)
 
 ## Automated Build (Recommended)
 
@@ -21,16 +21,40 @@ This script:
 
 ### Verify Build Output
 
-- [ ] Check archive directory: `ls -la build/archives/v1.1.0/`
-- [ ] Verify App Store archive: `build/archives/v1.1.0/appstore/Contextify.xcarchive`
-- [ ] Verify .pkg: `build/archives/v1.1.0/appstore/Contextify-1.1.0.pkg`
-- [ ] Verify DMG: `build/archives/v1.1.0/dmg/Contextify-1.1.0.dmg`
+- [x] Check archive directory: `ls -la build/archives/v1.1.0/`
+- [x] Verify App Store archive: `build/archives/v1.1.0/appstore/Contextify.xcarchive`
+- [x] Verify .pkg: `build/archives/v1.1.0/appstore/Contextify-1.1.0.pkg`
+- [x] Verify DMG: `build/archives/v1.1.0/dmg/Contextify-1.1.0.dmg`
 
 ### Record Build Info
 
-- [ ] Build number: ____
-- [ ] Commit: ____
-- [ ] DMG SHA256: ____
+- [x] Build number: 1
+- [x] Commit: fe177c811120d0543434ada34a948873c198d0a8
+- [x] DMG SHA256: aa75a64ba878ac26935aa37c5eb267a8a3df4c941e33b182ea51c66ddcb3e03a
+
+---
+
+## macOS Build Results
+
+| Channel | Artifact | Size | Status |
+|---------|----------|------|--------|
+| DMG | `Contextify-1.1.0.dmg` | 22 MB | Signed, notarized, stapled |
+| App Store | `Contextify-1.1.0.pkg` | 20 MB | Ready for upload |
+| App Store | `Contextify.xcarchive` | 135 MB | Includes dSYMs |
+
+## Linux Build Status
+
+**BLOCKED:** The `linux-release.yml` workflow fails on GitHub with "workflow file issue"
+
+- All workflow runs fail before execution starts
+- No logs generated (fails at parse/validation stage)
+- The `linux-build.yml` (CI workflow) works correctly
+- Only the release workflow is affected
+
+**Investigation needed:**
+- Check GitHub Actions web UI for detailed error
+- Compare linux-release.yml with working linux-build.yml
+- Try forcing GitHub to re-parse by making trivial change
 
 ---
 
@@ -56,7 +80,7 @@ python3 scripts/release.py --version 1.1.0 --yes
 ./scripts/sparkle/sign.sh dist/Contextify-1.1.0.dmg
 ```
 
-- [ ] DMG created: `dist/Contextify-1.1.0.dmg`
+- [x] DMG created: `dist/Contextify-1.1.0.dmg`
 - [ ] Sparkle signature copied
 
 ### App Store Build
@@ -68,8 +92,8 @@ bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 ```
 
-- [ ] Archive created: `build/Contextify.xcarchive`
-- [ ] Package exported: `build/appstore/Contextify.pkg`
+- [x] Archive created: `build/Contextify.xcarchive`
+- [x] Package exported: `build/appstore/Contextify.pkg`
 
 ### Archive Artifacts
 
@@ -95,9 +119,11 @@ Run validation script:
 
 ## Sign-off
 
-- [ ] All items complete
+- [x] macOS builds complete (DMG + App Store)
+- [ ] Linux builds complete (BLOCKED)
 - [ ] Validation passed
 - [ ] Ready for Phase 3: Review Materials
 
-**Completed by:** ____
-**Date:** ____
+**Completed by:** Claude
+**Date:** 2026-01-11
+**Note:** macOS ready to proceed. Linux requires workflow fix.

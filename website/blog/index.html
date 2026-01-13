@@ -131,14 +131,40 @@
 
         footer {
             margin-top: 60px;
-            padding-top: 20px;
+            padding: 30px 0;
             border-top: 1px solid var(--border);
-            color: var(--text-muted);
-            font-size: 0.9rem;
+            text-align: center;
         }
 
-        footer a {
-            margin: 0 10px;
+        .footer-links {
+            margin-bottom: 16px;
+            color: var(--text-muted);
+        }
+
+        .footer-links a {
+            color: var(--accent);
+            text-decoration: none;
+            margin: 0 8px;
+        }
+
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links .separator {
+            color: var(--text-muted);
+        }
+
+        .footer-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .footer-copyright {
+            color: var(--text-muted);
+            font-size: 0.85rem;
         }
 
         @media (max-width: 600px) {
@@ -163,6 +189,11 @@
         <main>
             <ul class="post-list">
                 <li class="post-item">
+                    <p class="post-date">January 13, 2026</p>
+                    <h2 class="post-title"><a href="tab-grouping-organize-projects-by-worktree.html">Tab Grouping: Organize Projects by Worktree</a></h2>
+                    <p class="post-excerpt">If you work with git worktrees, you know the pain: multiple checkouts of the same repository, each with their own Claude Code or Codex sessions. Tab grouping keeps your projects organized.</p>
+                </li>
+                <li class="post-item">
                     <p class="post-date">December 23, 2025</p>
                     <h2 class="post-title"><a href="total-recall-rag-search-claude-code-codex.html">Total Recall: RAG Search Across All Your Claude Code and Codex Conversations</a></h2>
                     <img src="../assets/img/blog/total-recall-og.jpg" alt="Johnny Cab from Total Recall" style="width: 100%; border-radius: 8px; margin: 16px 0;">
@@ -173,14 +204,23 @@
         </main>
 
         <footer>
-            <p>
-                &copy; 2025 Contextify. All rights reserved.
-                <br>
-                <a href="/">Home</a>
+            <div class="footer-links">
                 <a href="/download/">Download</a>
+                <span class="separator">|</span>
+                <a href="/platforms/linux/">Linux</a>
+                <span class="separator">|</span>
+                <a href="/blog/">Blog</a>
+                <span class="separator">|</span>
                 <a href="/privacy/">Privacy</a>
+                <span class="separator">|</span>
+                <a href="/terms/">Terms</a>
+                <span class="separator">|</span>
                 <a href="/support/">Support</a>
-            </p>
+                <span class="separator">|</span>
+                <a href="mailto:support@contextify.sh">Contact</a>
+            </div>
+            <div class="footer-brand">Contextify</div>
+            <p class="footer-copyright">&copy; 2026 Contextify</p>
         </footer>
     </div>
 </body>

@@ -2,95 +2,121 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.1.0",
   "target_channels": [
-  "dmg",
-  "appstore",
-  "linux"
-],
+    "dmg",
+    "appstore",
+    "linux"
+  ],
   "created": "2026-01-06",
-  "updated": "2026-01-06",
-
+  "updated": "2026-01-12",
   "git": {
     "tag": "v1.1.0",
-    "commit": "9ad83e211ae6f73ea262d614f111057a2f6a0df1",
+    "commit": "c6bb86e838a6a573292b9173d1c96cb3080b80d3",
     "branch": "main"
   },
-
   "phases": {
     "pre_release": {
-      "status": "pending",
-      "completed_at": null,
+      "status": "complete",
+      "completed_at": "2026-01-11",
       "validation": {
-        "tests_passed": null,
-        "test_count": null,
-        "warnings": null,
-        "working_directory_clean": null
+        "tests_passed": true,
+        "test_count": 335,
+        "warnings": 0,
+        "working_directory_clean": true
       }
     },
-
     "build": {
-      "status": "pending",
+      "status": "complete",
       "dmg": {
-        "built": false,
-        "path": null,
-        "sha256": null,
-        "size_bytes": null,
-        "signed": false,
-        "notarized": false,
+        "built": true,
+        "path": "dist/Contextify-1.1.0.dmg",
+        "sha256": "aa75a64ba878ac26935aa37c5eb267a8a3df4c941e33b182ea51c66ddcb3e03a",
+        "size_bytes": 22921746,
+        "signed": true,
+        "notarized": true,
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": false,
-        "archive_path": null,
-        "build_number": 1,
-        "exported": false,
-        "uploaded": false,
+        "archived": true,
+        "archive_path": "/Users/rob/code/projects/contextify-wb1/build/archives/v1.1.0/appstore/Contextify.xcarchive",
+        "build_number": 18,
+        "exported": true,
+        "uploaded": true,
         "upload_receipt": null
       },
       "linux": {
-        "built": false,
+        "built": true,
         "shipped": false,
         "shipped_at": null,
         "github_release_url": null,
+        "blocked_reason": null,
         "x86_64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
+          "built": true,
+          "path": "build/archives/v1.1.0/linux/contextify-linux-x86_64.tar.gz",
+          "sha256": "464c6f53ef7755c54a867974fd49a78377548eb7fee882b4298eec43cb5c1732",
+          "size_bytes": 58039059
         },
         "arm64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
+          "built": true,
+          "path": "build/archives/v1.1.0/linux/contextify-linux-arm64.tar.gz",
+          "sha256": "cb3541193dd4fea3bb88b188f6d7c779942bd1a70d9a3bb86e2f4c6c85b82623",
+          "size_bytes": 57420905
         }
       }
     },
-
     "review_materials": {
-      "status": "pending",
+      "status": "complete",
       "demo_video": {
-        "recorded": false,
-        "path": null,
-        "deployed": false
+        "recorded": true,
+        "path": "https://contextify.sh/review-4a125b1d/demo-video.mp4",
+        "deployed": true
       },
       "sample_data": {
-        "generated": false,
-        "path": null,
-        "deployed": false
+        "generated": true,
+        "path": "https://contextify.sh/review-4a125b1d/sample-data.zip",
+        "deployed": true
       }
     },
-
     "submission": {
-      "status": "pending",
-      "submitted_at": null,
+      "status": "approved",
+      "apple_state": "READY_FOR_SALE",
+      "apple_state_history": [
+        {
+          "state": "PREPARE_FOR_SUBMISSION",
+          "timestamp": "2026-01-11T23:11:00"
+        },
+        {
+          "state": "READY_FOR_REVIEW",
+          "timestamp": "2026-01-12T00:06:00"
+        },
+        {
+          "state": "WAITING_FOR_REVIEW",
+          "timestamp": "2026-01-12T00:06:00"
+        },
+        {
+          "state": "IN_REVIEW",
+          "timestamp": "2026-01-12T08:41:00"
+        },
+        {
+          "state": "PENDING_DEVELOPER_RELEASE",
+          "timestamp": "2026-01-12T09:25:00"
+        },
+        {
+          "state": "PROCESSING_FOR_APP_STORE",
+          "timestamp": "2026-01-12T22:22:00"
+        },
+        {
+          "state": "READY_FOR_SALE",
+          "timestamp": "2026-01-12T22:23:00"
+        }
+      ],
+      "submitted_at": "2026-01-12T07:27:58Z",
       "rejection": null,
       "resubmission": null
     },
-
     "marketing": {
       "status": "pending",
       "changelog": {
-        "written": false,
+        "written": true,
         "published": false
       },
       "announcements": {
@@ -100,7 +126,6 @@
         "product_hunt": false
       }
     },
-
     "post_release": {
       "status": "pending",
       "documentation_updated": false,
@@ -108,7 +133,6 @@
       "monitoring_enabled": false
     }
   },
-
   "notes": [
     {
       "date": "2026-01-06",
@@ -119,6 +143,26 @@
       "date": "2026-01-10",
       "author": "claude",
       "note": "Added P0 blockers for Linux: contextify-query must build on Linux with Total Recall skill support. Also requires CLI doctor command for installation health checking. See spec: build/notes/todo-support/LINUX-TOTAL-RECALL-spec.md"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "claude",
+      "note": "macOS builds complete: DMG (22MB, signed, notarized) and App Store (20MB pkg, 135MB archive). Linux blocked: linux-release.yml workflow fails on GitHub with 'workflow file issue'. linux-build.yml (CI) works fine, only the release workflow is affected."
+    },
+    {
+      "date": "2026-01-11",
+      "author": "system",
+      "note": "Build 1 completed (commit c6bb86e8)"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "system",
+      "note": "Submitted build 18 to App Store Connect"
+    },
+    {
+      "date": "2026-01-11",
+      "author": "user",
+      "note": "App Store release approved and released; scurrying to get Linux release done now."
     }
   ]
 }

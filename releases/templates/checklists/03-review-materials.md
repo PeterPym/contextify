@@ -4,6 +4,56 @@
 **Phase:** 3 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
+## Changelog Analysis (Do First)
+
+Generate comprehensive changelog before other review materials. This informs what to highlight in demos and release notes.
+
+### Run Changelog Analysis
+
+Use the release notes builder prompt with an AI assistant:
+
+```bash
+# View the prompt
+cat releases/templates/prompts/release-notes-builder.md
+
+# Provide these inputs when prompted:
+# 1. Compare range: Check manifest.json for previous release per channel
+# 2. include_merges: false (for ledger)
+# 3. Channel baselines: App Store, DMG, Linux (check releases/manifest.json)
+# 4. Exclusions: CI-only for external notes
+```
+
+- [ ] Run changelog analysis prompt with AI assistant
+- [ ] Review generated outputs for accuracy
+
+### Save Changelog Artifacts
+
+Copy outputs to release directory:
+
+```bash
+mkdir -p releases/v{version}/changelog
+cp /tmp/*-release-analysis.md releases/v{version}/changelog/internal-analysis.md
+cp /tmp/*-release-notes-external.md releases/v{version}/changelog/external-notes.md
+```
+
+- [ ] Internal analysis saved: `releases/v{version}/changelog/internal-analysis.md`
+- [ ] External notes saved: `releases/v{version}/changelog/external-notes.md`
+
+### Verify Known Features
+
+Cross-check that major features appear in the analysis:
+- [ ] All user-facing features from this release are documented
+- [ ] Channel availability (App Store vs DMG vs Linux) is accurate
+- [ ] Commit counts verified (ledger matches git rev-list)
+- [ ] No features missing from the analysis
+
+**Outputs feed into:**
+- Phase 4: App Store "What's New" text (from external-notes.md)
+- Phase 5: Marketing announcements (from external-notes.md)
+- Audit trail: Internal analysis preserved for future reference
+
+---
+
 ## Sample Data
 
 ### Generate Sample Data

@@ -634,6 +634,39 @@ App Store (sandboxed) builds can only access transcript directories (`~/.claude/
 
 ## P5 (Research / Exploratory)
 
+### P5-DISTRIBUTION-CHANNELS: Alternative Distribution and Monetization
+
+**Status:** Leads collected
+**Priority:** P5 (research, no commitment)
+**Effort:** Variable
+
+- [ ] Research RevenueCat for subscription management
+- [ ] Research Setapp for distribution
+
+**Leads:**
+
+1. **RevenueCat** - https://www.revenuecat.com/
+   - Subscription infrastructure for apps
+   - Handles App Store + direct sales + web subscriptions
+   - Analytics and subscriber management
+   - Could enable "pro tier" without App Store-only billing
+
+2. **Setapp** - https://setapp.com/how-it-works
+   - Curated Mac app subscription bundle
+   - Users pay monthly, devs get revenue share per usage
+   - Exposure to Setapp's subscriber base
+   - Alternative to App Store discovery
+
+**Research Questions:**
+1. What's the revenue share model for each?
+2. Does Setapp require exclusivity or allow parallel App Store presence?
+3. RevenueCat integration effort for existing App Store subscriptions?
+4. What's the user acquisition potential from Setapp's audience?
+
+**Trigger for promotion:** When ready to explore monetization beyond current free model.
+
+---
+
 ### P5-INVESTIGATE-TRANSCRIPT-PROVIDERS: Other AI Tool Transcript Support
 
 **Status:** Not started

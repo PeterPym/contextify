@@ -442,3 +442,56 @@ For development iteration without a VM:
 ```
 
 This tests Lite Mode code paths but is not a substitute for full VM testing before releases.
+
+---
+
+## Linux QA (Docker)
+
+Local Linux testing validates that the CLI tools build and function correctly on Linux, without needing to push to CI.
+
+### Prerequisites
+
+- **Docker** installed and running (via Colima on macOS: `brew install colima && colima start`)
+- Internet connection (downloads Swift toolchain image and SQLite source)
+
+### Quick Start
+
+```bash
+# Basic build - validates compilation on Linux
+bash scripts/docker-linux-build.sh
+
+# Build + E2E test - validates binary works and can ingest transcripts
+bash scripts/docker-linux-build.sh --e2e
+
+# Build + install test - validates tarball extraction, PATH install, skill installation
+bash scripts/docker-linux-build.sh --install-test
+```
+
+### What Each Test Validates
+
+| Test | Command | Validates |
+|------|---------|-----------|
+| **Basic build** | `docker-linux-build.sh` | Swift 6 compiles on Linux, SQLite with ENABLE_SNAPSHOT links correctly |
+| **E2E test** | `docker-linux-build.sh --e2e` | Binary executes, parses Claude Code transcripts, writes to SQLite database |
+| **Install test** | `docker-linux-build.sh --install-test` | Tarball extracts cleanly, `install.sh` works, skill manifest validates |
+
+### Technical Details
+
+The Docker build:
+1. Uses `swift:6.0-noble` (Ubuntu 24.04) image
+2. Builds SQLite from source with `SQLITE_ENABLE_SNAPSHOT` (required by GRDB)
+3. Compiles to `.build-linux/` (separate from macOS `.build/`)
+4. Runs entirely containerized - no host system pollution
+
+### When to Run
+
+- Before merging Linux-related changes
+- After modifying `Package.swift` dependencies
+- When updating install scripts or skill manifests
+- As a quick sanity check before triggering GitHub Actions CI
+
+### Relationship to CI
+
+This is a **local** pre-flight check. The GitHub Actions workflow (`.github/workflows/linux-release.yml`) runs the same validation on every push/PR. Use local Docker testing to catch issues before pushing.
+
+For remote CI documentation, see `build/docs/guides/linux-ci-builds.md`.
