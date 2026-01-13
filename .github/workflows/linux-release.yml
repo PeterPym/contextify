@@ -67,38 +67,33 @@ jobs:
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
-              # Build CLI with static Swift stdlib and generated version flag
-              swift build -c release --product contextify-ingest \
-                --static-swift-stdlib \
-                -Xswiftc -DGENERATED_VERSION
-              swift build -c release --product contextify-query \
+              # Build unified CLI (contextify) - the single binary for Linux
+              swift build -c release --product contextify \
                 --static-swift-stdlib \
                 -Xswiftc -DGENERATED_VERSION
 
               # Verify no dynamic SQLite dependency
               echo "Verifying static linking..."
-              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
-                echo "ERROR: Binary has dynamic SQLite dependency!"
-                ldd .build/release/contextify-ingest
+              if ldd .build/release/contextify 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: contextify has dynamic SQLite dependency!"
+                ldd .build/release/contextify
                 exit 1
               fi
-              echo "Static linking verified - no dynamic SQLite dependency"
-              if ldd .build/release/contextify-query 2>/dev/null | grep -q "libsqlite3"; then
-                echo "ERROR: Binary has dynamic SQLite dependency!"
-                ldd .build/release/contextify-query
-                exit 1
-              fi
-              echo "Static linking verified for contextify-query"
+              echo "Static linking verified for contextify"
 
-              # Create tarball
+              # Create tarball with unified binary and backwards-compat symlinks
               mkdir -p dist
-              cp .build/release/contextify-ingest dist/
-              cp .build/release/contextify-query dist/
+              cp .build/release/contextify dist/
+              # Create symlinks for backwards compatibility
+              # contextify-ingest and contextify-query point to contextify
+              # argv[0] dispatch handles routing to appropriate subcommands
+              ln -sf contextify dist/contextify-ingest
+              ln -sf contextify dist/contextify-query
               cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-linux-x86_64.tar.gz contextify-ingest contextify-query user-skill
+              tar -czvf contextify-linux-x86_64.tar.gz contextify contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact
@@ -163,38 +158,33 @@ jobs:
               # Generate Version.swift with resolved version
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\nlet generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
 
-              # Build CLI with static Swift stdlib and generated version flag
-              swift build -c release --product contextify-ingest \
-                --static-swift-stdlib \
-                -Xswiftc -DGENERATED_VERSION
-              swift build -c release --product contextify-query \
+              # Build unified CLI (contextify) - the single binary for Linux
+              swift build -c release --product contextify \
                 --static-swift-stdlib \
                 -Xswiftc -DGENERATED_VERSION
 
               # Verify no dynamic SQLite dependency
               echo "Verifying static linking..."
-              if ldd .build/release/contextify-ingest 2>/dev/null | grep -q "libsqlite3"; then
-                echo "ERROR: Binary has dynamic SQLite dependency!"
-                ldd .build/release/contextify-ingest
+              if ldd .build/release/contextify 2>/dev/null | grep -q "libsqlite3"; then
+                echo "ERROR: contextify has dynamic SQLite dependency!"
+                ldd .build/release/contextify
                 exit 1
               fi
-              echo "Static linking verified - no dynamic SQLite dependency"
-              if ldd .build/release/contextify-query 2>/dev/null | grep -q "libsqlite3"; then
-                echo "ERROR: Binary has dynamic SQLite dependency!"
-                ldd .build/release/contextify-query
-                exit 1
-              fi
-              echo "Static linking verified for contextify-query"
+              echo "Static linking verified for contextify"
 
-              # Create tarball
+              # Create tarball with unified binary and backwards-compat symlinks
               mkdir -p dist
-              cp .build/release/contextify-ingest dist/
-              cp .build/release/contextify-query dist/
+              cp .build/release/contextify dist/
+              # Create symlinks for backwards compatibility
+              # contextify-ingest and contextify-query point to contextify
+              # argv[0] dispatch handles routing to appropriate subcommands
+              ln -sf contextify dist/contextify-ingest
+              ln -sf contextify dist/contextify-query
               cp -R contextify-query/user-skill dist/
               cd dist
-              tar -czvf contextify-linux-arm64.tar.gz contextify-ingest contextify-query user-skill
+              tar -czvf contextify-linux-arm64.tar.gz contextify contextify-ingest contextify-query user-skill
             '
 
       - name: Upload artifact

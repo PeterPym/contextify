@@ -10,40 +10,42 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
-struct IngestCommand: AsyncParsableCommand {
-  static let configuration = CommandConfiguration(
+public struct IngestCommand: AsyncParsableCommand {
+  public static let configuration = CommandConfiguration(
     commandName: "ingest",
     abstract: "Ingest transcripts into the database"
   )
 
   @Option(name: .long, help: "Path to the SQLite database file")
-  var db: String
+  public var db: String
 
   @Option(name: .long, parsing: .upToNextOption, help: "Input directories to scan for transcripts")
-  var input: [String] = []
+  public var input: [String] = []
 
   @Option(name: .long, help: "Transcript provider: auto, claude, or codex")
-  var provider: ProviderOption = .auto
+  public var provider: ProviderOption = .auto
 
   @Flag(name: .long, help: "Delete existing data and rebuild from scratch")
-  var fullRebuild: Bool = false
+  public var fullRebuild: Bool = false
 
   @Option(name: .long, help: "Output format: jsonl or human")
-  var format: OutputFormat = .human
+  public var format: OutputFormat = .human
 
   @Option(name: .long, help: "Only process transcripts modified after this time (ISO8601 or Unix timestamp)")
-  var since: String?
+  public var since: String?
 
   @Option(name: .long, help: "Number of parallel workers for transcript processing (default: 4)")
-  var workers: Int = 4
+  public var workers: Int = 4
 
-  enum ProviderOption: String, ExpressibleByArgument {
+  public enum ProviderOption: String, ExpressibleByArgument {
     case auto, claude, codex
   }
 
-  enum OutputFormat: String, ExpressibleByArgument {
+  public enum OutputFormat: String, ExpressibleByArgument {
     case jsonl, human
   }
+
+  public init() {}
 
   /// Parse --since value as Date (supports ISO8601 or Unix timestamp)
   private func parseSinceDate() throws -> Date? {
@@ -84,7 +86,7 @@ struct IngestCommand: AsyncParsableCommand {
       """)
   }
 
-  mutating func run() async throws {
+  public mutating func run() async throws {
     let runId = UUID().uuidString.prefix(8).lowercased()
     let startTime = Date()
 
