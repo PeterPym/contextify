@@ -1022,6 +1022,21 @@ When user says "use contextify to look through our convo history", agent doesn't
 
 - [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `build/notes/todo-support/contextify-query-plugin-draft/`.
 
+- [ ] #RESEARCHER-TRIGGER: Update contextify-researcher agent trigger to cover "resume work" scenarios
+
+**Problem:**
+Current trigger focuses on "multi-query" and "breadth-first retrieval" use cases but misses a key scenario: **resuming work on issues/tasks that lack context in the current conversation**. When a user says "let's work on DELTA-1457" or "resume the auth refactor," the AI has no context about what was already tried, decisions made, or blockers encountered. This context exists in Contextify but the current trigger doesn't prompt its use.
+
+**Proposed trigger expansion:**
+1. Resuming work on an issue, ticket, or task not discussed in current conversation
+2. User references a ticket ID, feature name, or past work without providing context
+3. Need to recall decisions, approaches, or blockers from previous sessions
+4. Multi-query retrieval tasks (existing behavior)
+
+**Key insight:** If the user references work/issues/decisions not present in current context, check Contextify before proceeding.
+
+**Reference:** `/tmp/contextify-researcher-trigger-proposal.md`
+
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
 
 ---
