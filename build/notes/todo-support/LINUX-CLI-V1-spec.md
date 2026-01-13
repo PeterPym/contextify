@@ -50,9 +50,11 @@ This document defines everything needed to ship a v1 that Linux users would reco
 | Debian | 12 (Bookworm) | 2.36 | Supported |
 | Fedora | 38+ | 2.37 | Supported |
 | Arch | Rolling | Latest | Supported |
-| RHEL/Rocky | 9+ | 2.34 | Supported |
+| RHEL/Rocky | 9+ | 2.34 | Best effort* |
 
-**Build strategy:** Build on Ubuntu 22.04 (oldest supported LTS) to maximize compatibility. Binaries built on newer glibc won't run on older systems.
+*RHEL/Rocky 9 has glibc 2.34, which is below our 2.35 floor. May work if no 2.35-specific symbols are used, but not guaranteed.
+
+**Build strategy:** Build on Ubuntu 22.04 (glibc 2.35) to maximize compatibility. Binaries built on newer glibc won't run on older systems. Our glibc floor is **2.35**.
 
 ### Swift Runtime
 
@@ -94,9 +96,11 @@ docker run --rm -v $(pwd):/app ubuntu:22.04 sh -c '
 '
 # Must succeed WITHOUT installing additional packages
 
-# 4. Older-than-target fails (confirms glibc floor)
+# 4. Older-than-target check (informational, NOT a gate)
 docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version
-# Expected to FAIL - confirms we're not accidentally compatible with older glibc
+# Expected to FAIL due to glibc 2.31 < 2.35
+# If it succeeds: that's fine (more compatible than promised)
+# Do NOT fail CI if this passes - being more compatible is not harmful
 ```
 
 **If ICU is required:** Swift + Foundation may pull in ICU for locale/regex/formatting. If the minimal container test fails due to ICU:
@@ -201,7 +205,11 @@ For v1, option 1 (single binary) is cleanest. The current `contextify-query` and
 // 2. Only show when STDERR is a TTY (not stdin - user might pipe input but still want warnings)
 // 3. Be suppressible with CONTEXTIFY_NO_DEPRECATIONS=1
 
-import Darwin // for isatty
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 
 func isStderrTTY() -> Bool {
     return isatty(STDERR_FILENO) != 0
@@ -374,16 +382,9 @@ public struct XDGPaths {
         configHome.appendingPathComponent("config.toml")
     }
 
-    /// Create directory with secure permissions (0700)
-    public static func ensureSecureDirectory(_ url: URL) throws {
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
-    }
-
-    /// Set secure file permissions (0600)
-    public static func setSecureFilePermissions(_ url: URL) throws {
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    }
+    // Note: ensureSecureDirectory() and setSecureFilePermissions() helpers
+    // are defined in the Security section above with warn-and-continue behavior.
+    // Do not use simple throwing versions - chmod can fail on NFS/corporate lockdown.
 }
 ```
 
@@ -400,7 +401,7 @@ When database doesn't exist at XDG location, check for legacy locations:
 1. `~/.contextify/contextify.db` (hypothetical old path)
 2. `~/Library/Application Support/Contextify/contextify.db` (macOS path, if somehow present)
 
-**Key principle:** Never prompt unless stdin is a TTY AND user explicitly asked for interactive behavior.
+**Key principle:** Never prompt unless **both stdin AND stderr are TTYs**. Write prompts to stderr. Otherwise require `--yes` flag.
 
 **Default behavior (non-interactive):**
 - Use existing database in-place (don't move it)
@@ -425,7 +426,7 @@ contextify migrate-db [--from PATH] [--to PATH] [--delete-old] [--dry-run] [--ye
 
 1. Find legacy database (or use `--from`)
 2. Confirm destination (or use `--to`)
-3. **Only prompt if stderr is TTY** - otherwise require `--yes` flag
+3. **Only prompt if both stdin AND stderr are TTYs** - otherwise require `--yes` flag
 4. **Stop systemd timer if running:**
    ```bash
    systemctl --user stop contextify.timer 2>/dev/null || true
@@ -776,14 +777,17 @@ Documentation=https://contextify.sh/docs/
 
 [Service]
 Type=oneshot
-# Use %h (user home) specifier - standard systemd pattern
-ExecStart=%h/.local/bin/contextify ingest --systemd
+# BINARY_PATH is replaced at install time with actual absolute path
+# e.g., /home/user/.local/bin/contextify
+ExecStart=BINARY_PATH/contextify ingest --systemd
 # Exit code 2 = "nothing to do" (not an error)
 SuccessExitStatus=2
 StandardOutput=journal
 StandardError=journal
 # Note: Do NOT set Environment="XDG_DATA_HOME=..." - respect user's env
 ```
+
+**Note on path:** The `install-service` command resolves the binary location at install time and writes the absolute path. This handles custom `INSTALL_DIR` locations. If users upgrade to a new location, they must re-run `contextify install-service` to update the unit.
 
 **Important:** No `[Install]` section on the service. For timer-driven oneshots, only the timer needs an Install section.
 
@@ -1135,7 +1139,7 @@ Config error in ~/.config/contextify/config.toml:
 2. **migrate-db command** (1 hr)
    - Find legacy databases
    - Copy (not move) to XDG location
-   - Only prompt if stdin is TTY, else require `--yes`
+   - Only prompt if both stdin AND stderr are TTYs, else require `--yes`
    - Print verification steps
 
 3. **Exit codes + quiet mode** (1 hr)
@@ -1246,9 +1250,14 @@ validate-linux-binary:
           /app/contextify status --help
         '
 
-    - name: Confirm glibc floor (ubuntu:20.04 should FAIL)
+    - name: Check ubuntu:20.04 compatibility (informational)
+      continue-on-error: true  # Do NOT fail CI if this passes
       run: |
-        docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version 2>&1 && exit 1 || echo "Expected failure on ubuntu:20.04"
+        if docker run --rm -v $(pwd):/app ubuntu:20.04 /app/contextify --version 2>&1; then
+          echo "INFO: Binary works on ubuntu:20.04 (more compatible than required)"
+        else
+          echo "INFO: Binary requires glibc 2.35+ as expected"
+        fi
 ```
 
 ### Multi-Distro Validation Matrix
@@ -1295,12 +1304,12 @@ docker run --rm -v "$(dirname "$BINARY"):/app" ubuntu:22.04 sh -c "
 "
 echo "  OK: Runs in minimal container"
 
-# 4. glibc floor confirmation
-echo "Confirming glibc floor (ubuntu:20.04 should fail)..."
+# 4. glibc floor check (informational)
+echo "Checking ubuntu:20.04 compatibility (informational)..."
 if docker run --rm -v "$(dirname "$BINARY"):/app" ubuntu:20.04 /app/$(basename "$BINARY") --version 2>/dev/null; then
-  echo "  WARN: Unexpectedly works on ubuntu:20.04"
+  echo "  INFO: Works on ubuntu:20.04 (more compatible than required)"
 else
-  echo "  OK: Correctly fails on ubuntu:20.04"
+  echo "  INFO: Requires glibc 2.35+ as expected"
 fi
 
 echo ""
