@@ -5,16 +5,21 @@ import PackageDescription
 // Cross-Platform Package Configuration
 // ============================================================================
 //
-// This package supports both macOS (full app) and Linux (ingestion CLI only).
+// This package supports both macOS (full app) and Linux (CLI).
 //
 // Architecture:
-// - Linux: ContextifyIngestionCore + ContextifyIngestionCLI
+// - Linux: ContextifyIngestionCore + unified `contextify` CLI
 // - macOS: ContextifyCore (full library) + existing CLIs + tests
 //
 // The ContextifyIngestionCore target shares sources with ContextifyCore for now.
 // On macOS, we build ContextifyCore (full features). On Linux, we build
 // ContextifyIngestionCore (ingestion subset). Phase 3 will split the sources
 // properly and establish the inverted dependency (Core -> IngestionCore).
+//
+// CLI Architecture (Linux):
+// - `contextify` is the unified CLI binary with all commands
+// - `contextify-ingest` and `contextify-query` are symlinks for backwards compat
+// - Commands are in ContextifyIngestionCommands (shared library)
 //
 // NOTE: The `platforms:` stanza only affects Apple platforms (sets minimum
 // deployment targets). Linux builds are unaffected per Swift Evolution SE-0236.
@@ -75,12 +80,13 @@ let targets: [Target] = [
   ),
 ]
 #else
-// Linux: Cross-platform ingestion and query CLI
+// Linux: Unified CLI with backwards-compatible aliases
 let products: [Product] = [
   .library(name: "ContextifyIngestionCore", targets: ["ContextifyIngestionCore"]),
-  .library(name: "ContextifyQueryCore", targets: ["ContextifyQueryCore"]),
+  // Unified CLI binary - the main entry point
+  .executable(name: "contextify", targets: ["ContextifyCLI"]),
+  // Legacy binary (kept for backwards compatibility during transition)
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
-  .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
 ]
 
 // Files included in Linux ingestion build (requires GRDB)
@@ -105,6 +111,8 @@ let linuxIngestionSources: [String] = [
   "Database/Utilities/TimeUnits.swift",
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
+  // Installation (CLI health checking)
+  "Installation/CLIHealthChecker.swift",
   // Core types
   "Clock.swift",
   "ContextifyConfig.swift",
@@ -116,15 +124,9 @@ let linuxIngestionSources: [String] = [
   "Projects/TranscriptProviderID.swift",
 ]
 
-// Minimal files for query CLI (doctor command only - no GRDB needed)
-// Paths are relative to app/Sources/ContextifyCore/
-let linuxQuerySources: [String] = [
-  // Installation (CLI health checking) - no dependencies
-  "Installation/CLIHealthChecker.swift",
-]
-
 let targets: [Target] = [
   // Cross-platform ingestion library (requires GRDB for database operations)
+  // Also includes CLIHealthChecker for unified CLI
   .target(
     name: "ContextifyIngestionCore",
     dependencies: [
@@ -138,36 +140,47 @@ let targets: [Target] = [
       .define("INGESTION_CORE"),  // Flag for conditional compilation
     ]
   ),
-  // Lightweight query library (no GRDB - doctor command only)
+  // Shared ingestion commands library
+  // Contains IngestCommand, VerifyCommand, SchemaCommand, DiscoverCommand
   .target(
-    name: "ContextifyQueryCore",
-    dependencies: [],
-    path: "app/Sources/ContextifyCore",
-    sources: linuxQuerySources,
-    swiftSettings: [
-      .define("SWIFT_PACKAGE"),
-      .define("QUERY_CORE"),  // Flag for conditional compilation
-    ]
-  ),
-  // Cross-platform CLI - on Linux, depends on ContextifyIngestionCore
-  .executableTarget(
-    name: "ContextifyIngestionCLI",
+    name: "ContextifyIngestionCommands",
     dependencies: [
       "ContextifyIngestionCore",
       .product(name: "ArgumentParser", package: "swift-argument-parser"),
     ],
     path: "Sources/ContextifyIngestionCLI",
+    exclude: ["main.swift"],  // Exclude the entry point
+    swiftSettings: [
+      .define("SWIFT_PACKAGE"),
+    ]
+  ),
+  // Unified CLI - the recommended entry point for Linux users
+  // Includes all commands: ingest, discover, verify, schema, install-skill, doctor
+  .executableTarget(
+    name: "ContextifyCLI",
+    dependencies: [
+      "ContextifyIngestionCore",
+      "ContextifyIngestionCommands",
+      .product(name: "ArgumentParser", package: "swift-argument-parser"),
+    ],
+    path: "Sources/ContextifyCLI",
     swiftSettings: [
       .unsafeFlags(["-parse-as-library"])
     ]
   ),
-  // Query CLI for Linux - doctor command only (no GRDB needed)
+  // Legacy ingestion CLI - DEPRECATED, use 'contextify ingest' instead
   .executableTarget(
-    name: "ContextifyQueryCLI",
+    name: "ContextifyIngestionCLI",
     dependencies: [
-      "ContextifyQueryCore",
+      "ContextifyIngestionCore",
+      "ContextifyIngestionCommands",
+      .product(name: "ArgumentParser", package: "swift-argument-parser"),
     ],
-    path: "Sources/ContextifyQueryCLI"
+    path: "Sources/ContextifyIngestionCLI",
+    sources: ["main.swift"],  // Only include the entry point
+    swiftSettings: [
+      .unsafeFlags(["-parse-as-library"])
+    ]
   ),
 ]
 #endif

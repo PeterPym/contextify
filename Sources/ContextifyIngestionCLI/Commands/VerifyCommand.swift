@@ -10,26 +10,28 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
-struct VerifyCommand: ParsableCommand {
-  static let configuration = CommandConfiguration(
+public struct VerifyCommand: ParsableCommand {
+  public static let configuration = CommandConfiguration(
     commandName: "verify",
     abstract: "Verify database integrity and environment compatibility"
   )
 
   @Option(name: .long, help: "Path to the SQLite database file")
-  var db: String
+  public var db: String
 
   @Option(name: .long, help: "Output format: jsonl or human")
-  var format: OutputFormat = .human
+  public var format: OutputFormat = .human
 
   @Flag(name: .long, help: "Run full integrity check (slower but more thorough)")
-  var fullCheck: Bool = false
+  public var fullCheck: Bool = false
 
-  enum OutputFormat: String, ExpressibleByArgument {
+  public enum OutputFormat: String, ExpressibleByArgument {
     case jsonl, human
   }
 
-  mutating func run() throws {
+  public init() {}
+
+  public mutating func run() throws {
     // Validate database
     let result: DatabaseOpener.ValidationResult
     do {

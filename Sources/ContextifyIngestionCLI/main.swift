@@ -3,6 +3,7 @@ import ArgumentParser
 import ContextifyCore
 #else
 import ContextifyIngestionCore
+import ContextifyIngestionCommands
 #endif
 
 /// CLI version - in CI builds, Version.generated.swift defines generatedCLIVersion

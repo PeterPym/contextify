@@ -10,35 +10,39 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
-struct SchemaCommand: ParsableCommand {
-  static let configuration = CommandConfiguration(
+public struct SchemaCommand: ParsableCommand {
+  public static let configuration = CommandConfiguration(
     commandName: "schema",
     abstract: "Inspect database schema",
     subcommands: [DumpSubcommand.self, VersionSubcommand.self],
     defaultSubcommand: DumpSubcommand.self
   )
+
+  public init() {}
 }
 
 // MARK: - Dump Subcommand
 
 extension SchemaCommand {
-  struct DumpSubcommand: ParsableCommand {
-    static let configuration = CommandConfiguration(
+  public struct DumpSubcommand: ParsableCommand {
+    public static let configuration = CommandConfiguration(
       commandName: "dump",
       abstract: "Dump the complete database schema"
     )
 
     @Option(name: .long, help: "Path to the SQLite database file")
-    var db: String
+    public var db: String
 
     @Option(name: .long, help: "Output format: sql or json")
-    var format: OutputFormat = .sql
+    public var format: OutputFormat = .sql
 
-    enum OutputFormat: String, ExpressibleByArgument {
+    public enum OutputFormat: String, ExpressibleByArgument {
       case sql, json
     }
 
-    mutating func run() throws {
+    public init() {}
+
+    public mutating func run() throws {
       // FTS5 preflight
       let pool = try DatabaseOpener.openDatabase(at: db)
 
@@ -149,16 +153,18 @@ extension SchemaCommand {
 // MARK: - Version Subcommand
 
 extension SchemaCommand {
-  struct VersionSubcommand: ParsableCommand {
-    static let configuration = CommandConfiguration(
+  public struct VersionSubcommand: ParsableCommand {
+    public static let configuration = CommandConfiguration(
       commandName: "version",
       abstract: "Show schema version"
     )
 
     @Option(name: .long, help: "Path to the SQLite database file")
-    var db: String
+    public var db: String
 
-    mutating func run() throws {
+    public init() {}
+
+    public mutating func run() throws {
       var config = Configuration()
       config.readonly = true
 

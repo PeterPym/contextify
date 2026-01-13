@@ -7,7 +7,7 @@
     "linux"
   ],
   "created": "2026-01-06",
-  "updated": "2026-01-12",
+  "updated": "2026-01-13",
   "git": {
     "tag": "v1.1.0",
     "commit": "c6bb86e838a6a573292b9173d1c96cb3080b80d3",
@@ -33,7 +33,9 @@
         "size_bytes": 22921746,
         "signed": true,
         "notarized": true,
-        "sparkle_signature": null
+        "sparkle_signature": null,
+        "shipped": true,
+        "shipped_at": "2026-01-13"
       },
       "appstore": {
         "archived": true,
@@ -45,9 +47,9 @@
       },
       "linux": {
         "built": true,
-        "shipped": false,
-        "shipped_at": null,
-        "github_release_url": null,
+        "shipped": true,
+        "shipped_at": "2026-01-13",
+        "github_release_url": "https://github.com/banagale/contextify/releases/tag/v1.1.0",
         "blocked_reason": null,
         "x86_64": {
           "built": true,
@@ -111,7 +113,8 @@
       ],
       "submitted_at": "2026-01-12T07:27:58Z",
       "rejection": null,
-      "resubmission": null
+      "resubmission": null,
+      "approved_at": "2026-01-13"
     },
     "marketing": {
       "status": "pending",
@@ -163,6 +166,21 @@
       "date": "2026-01-11",
       "author": "user",
       "note": "App Store release approved and released; scurrying to get Linux release done now."
+    },
+    {
+      "date": "2026-01-13",
+      "author": "system",
+      "note": "dmg marked as shipped"
+    },
+    {
+      "date": "2026-01-13",
+      "author": "system",
+      "note": "appstore marked as approved"
+    },
+    {
+      "date": "2026-01-13",
+      "author": "system",
+      "note": "linux marked as shipped"
     }
   ]
 }

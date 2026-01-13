@@ -9,30 +9,32 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
-struct DiscoverCommand: AsyncParsableCommand {
-  static let configuration = CommandConfiguration(
+public struct DiscoverCommand: AsyncParsableCommand {
+  public static let configuration = CommandConfiguration(
     commandName: "discover",
     abstract: "Discover transcripts without ingesting them"
   )
 
   @Option(name: .long, parsing: .upToNextOption, help: "Input directories to scan for transcripts")
-  var input: [String] = []
+  public var input: [String] = []
 
   @Option(name: .long, help: "Transcript provider: auto, claude, or codex")
-  var provider: ProviderOption = .auto
+  public var provider: ProviderOption = .auto
 
   @Option(name: .long, help: "Output format: jsonl, json, or human")
-  var format: OutputFormat = .human
+  public var format: OutputFormat = .human
 
-  enum ProviderOption: String, ExpressibleByArgument {
+  public enum ProviderOption: String, ExpressibleByArgument {
     case auto, claude, codex
   }
 
-  enum OutputFormat: String, ExpressibleByArgument {
+  public enum OutputFormat: String, ExpressibleByArgument {
     case jsonl, json, human
   }
 
-  mutating func run() async throws {
+  public init() {}
+
+  public mutating func run() async throws {
     // Use LightweightDiscoveryService for fast discovery
     let discovery = LightweightDiscoveryService()
     var projects = await discovery.discoverProjectsLightweight()
