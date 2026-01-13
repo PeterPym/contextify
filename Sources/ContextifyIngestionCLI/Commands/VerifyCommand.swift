@@ -44,8 +44,13 @@ public struct VerifyCommand: ParsableCommand {
   public init() {}
 
   public mutating func run() throws {
-    // Resolve database path
-    let dbPath = db ?? XDGPaths.databasePath.path
+    // Resolve database path (with tilde expansion for user-provided paths)
+    let dbPath: String
+    if let dbFlag = db {
+      dbPath = XDGPaths.expandTilde(dbFlag)
+    } else {
+      dbPath = XDGPaths.databasePath.path
+    }
 
     // Validate database
     let result: DatabaseOpener.ValidationResult

@@ -113,7 +113,8 @@ public struct StatusCommand: ParsableCommand {
 
   private func resolveDatabasePath() -> String {
     if let dbFlag = db {
-      return dbFlag
+      // Expand tilde in user-provided path
+      return XDGPaths.expandTilde(dbFlag)
     }
     return XDGPaths.databasePath.path
   }
@@ -143,8 +144,9 @@ public struct StatusCommand: ParsableCommand {
     let process = Process()
     let pipe = Pipe()
 
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/\(command)")
-    process.arguments = args
+    // Use env to find the command in PATH (checks /usr/bin/env, /bin/env for portability)
+    process.executableURL = URL(fileURLWithPath: XDGPaths.envPath)
+    process.arguments = [command] + args
     process.standardOutput = pipe
     process.standardError = FileHandle.nullDevice
 
@@ -194,7 +196,7 @@ public struct StatusCommand: ParsableCommand {
       }
     } else {
       print("Background Service: not installed")
-      print("  Run 'contextify install-service' to enable automatic ingestion")
+      print("  See docs for enabling automatic ingestion via systemd")
     }
     print("")
     #endif

@@ -17,8 +17,17 @@ import Glibc
 /// 2. `CONTEXTIFY_DB_PATH` - Environment variable
 /// 3. Config file `database.path` - User configuration (future)
 /// 4. `XDG_DATA_HOME/contextify/contextify.db` - XDG compliant default
-/// 5. `~/.local/share/contextify/contextify.db` - Fallback default
+/// 5. `~/.local/share/contextify/contextify.db` - Fallback default (Linux)
+/// 6. `~/Library/Application Support/Contextify/contextify.db` - Fallback default (macOS)
 public struct XDGPaths {
+
+  // MARK: - Path Utilities
+
+  /// Expand tilde (~) in paths. Use this for user-provided paths (--db, env vars).
+  /// Returns the original path if no tilde expansion is needed.
+  public static func expandTilde(_ path: String) -> String {
+    return (path as NSString).expandingTildeInPath
+  }
 
   // MARK: - Path Resolution
 
@@ -32,15 +41,26 @@ public struct XDGPaths {
       writeStderr("Warning: \(envVar)='\(xdg)' is not absolute, using default\n")
       return fallback
     }
-    return URL(fileURLWithPath: xdg).appendingPathComponent("contextify")
+    // Avoid double-appending "contextify" if user already included it
+    let xdgURL = URL(fileURLWithPath: xdg)
+    if xdgURL.lastPathComponent == "contextify" {
+      return xdgURL
+    }
+    return xdgURL.appendingPathComponent("contextify")
   }
 
   /// XDG_DATA_HOME/contextify/ - where the database lives
-  /// Default: ~/.local/share/contextify/
+  /// Default: ~/.local/share/contextify/ (Linux) or ~/Library/Application Support/Contextify/ (macOS)
   public static var dataHome: URL {
-    validatedXDGPath("XDG_DATA_HOME",
+    #if os(macOS)
+    // macOS: use standard Application Support location
+    return FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/Contextify")
+    #else
+    return validatedXDGPath("XDG_DATA_HOME",
       fallback: FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".local/share/contextify"))
+    #endif
   }
 
   /// XDG_CONFIG_HOME/contextify/ - where config.toml lives
@@ -52,12 +72,18 @@ public struct XDGPaths {
   }
 
   /// Default database path with precedence:
-  /// CONTEXTIFY_DB_PATH env var > XDG_DATA_HOME/contextify/contextify.db
+  /// CONTEXTIFY_DB_PATH env var > XDG_DATA_HOME/contextify/contextify.db (or macOS default)
   public static var databasePath: URL {
     // CONTEXTIFY_DB_PATH env var takes precedence (power user override)
-    if let dbPath = ProcessInfo.processInfo.environment["CONTEXTIFY_DB_PATH"],
-       dbPath.hasPrefix("/") {
-      return URL(fileURLWithPath: dbPath)
+    if let dbPath = ProcessInfo.processInfo.environment["CONTEXTIFY_DB_PATH"] {
+      // Expand tilde first
+      let expanded = expandTilde(dbPath)
+      // Must be absolute after expansion
+      guard expanded.hasPrefix("/") else {
+        writeStderr("Warning: CONTEXTIFY_DB_PATH='\(dbPath)' is not an absolute path, using default\n")
+        return dataHome.appendingPathComponent("contextify.db")
+      }
+      return URL(fileURLWithPath: expanded)
     }
     return dataHome.appendingPathComponent("contextify.db")
   }
@@ -127,7 +153,14 @@ public struct XDGPaths {
       } else {
         // Create directory with secure permissions
         try fm.createDirectory(at: url, withIntermediateDirectories: true)
-        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        // Try to set secure permissions, but don't block on failure
+        do {
+          try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        } catch {
+          writeStderr("Warning: Could not set permissions on \(url.path): \(error.localizedDescription)\n")
+          writeStderr("Warning: Directory may be accessible to other users\n")
+          // Continue anyway - directory was created
+        }
         return true
       }
     } catch {
@@ -153,6 +186,26 @@ public struct XDGPaths {
     }
   }
 
+  /// Set secure permissions on database file and all sidecars (WAL, SHM, journal).
+  /// SQLite sidecars can contain sensitive content and may be created with default perms.
+  public static func setSecureDatabasePermissions(_ dbURL: URL) {
+    let sidecars = ["-wal", "-shm", "-journal"]
+    let basePath = dbURL.path
+
+    // Secure the main database file
+    if FileManager.default.fileExists(atPath: basePath) {
+      setSecureFilePermissions(dbURL)
+    }
+
+    // Secure any sidecars that exist
+    for suffix in sidecars {
+      let sidecarPath = basePath + suffix
+      if FileManager.default.fileExists(atPath: sidecarPath) {
+        setSecureFilePermissions(URL(fileURLWithPath: sidecarPath))
+      }
+    }
+  }
+
   // MARK: - TTY Detection
 
   /// Check if stdin is a TTY (for interactive prompts)
@@ -169,6 +222,19 @@ public struct XDGPaths {
   /// Use this for prompts that require user input
   public static func isInteractive() -> Bool {
     return isStdinTTY() && isStderrTTY()
+  }
+
+  // MARK: - Process Helpers
+
+  /// Find the path to `env` binary (checks /usr/bin/env, /bin/env for portability)
+  /// Returns the first path that exists, or /usr/bin/env as fallback
+  public static var envPath: String {
+    for path in ["/usr/bin/env", "/bin/env"] {
+      if FileManager.default.fileExists(atPath: path) {
+        return path
+      }
+    }
+    return "/usr/bin/env"  // Fallback - will fail clearly if missing
   }
 
   // MARK: - Output Helpers

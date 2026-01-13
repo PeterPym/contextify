@@ -50,10 +50,10 @@ public struct MigrateDbCommand: ParsableCommand {
   public init() {}
 
   public mutating func run() throws {
-    // Determine source path
+    // Determine source path (with tilde expansion for user-provided paths)
     let sourcePath: String
     if let fromPath = from {
-      sourcePath = fromPath
+      sourcePath = XDGPaths.expandTilde(fromPath)
     } else if let legacyPath = XDGPaths.findLegacyDatabase() {
       sourcePath = legacyPath.path
     } else {
@@ -75,8 +75,13 @@ public struct MigrateDbCommand: ParsableCommand {
       throw ExitCode.failure
     }
 
-    // Determine destination path
-    let destPath = to ?? XDGPaths.databasePath.path
+    // Determine destination path (with tilde expansion for user-provided paths)
+    let destPath: String
+    if let toPath = to {
+      destPath = XDGPaths.expandTilde(toPath)
+    } else {
+      destPath = XDGPaths.databasePath.path
+    }
 
     // Check if destination already exists
     if FileManager.default.fileExists(atPath: destPath) {
@@ -160,8 +165,8 @@ public struct MigrateDbCommand: ParsableCommand {
       throw ExitCode.failure
     }
 
-    // Set secure permissions on new file
-    XDGPaths.setSecureFilePermissions(URL(fileURLWithPath: destPath))
+    // Set secure permissions on new file and any sidecars
+    XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: destPath))
 
     // Verify the migrated database
     print("Verifying migration...")
@@ -221,17 +226,30 @@ public struct MigrateDbCommand: ParsableCommand {
 
   private func performMigration(from sourcePath: String, to destPath: String) throws {
     // Use GRDB's backup functionality for safe migration
-    let sourceConfig = Configuration()
+    var sourceConfig = Configuration()
+    // Set busyMode to handle concurrent writers (transient locks)
+    sourceConfig.busyMode = .timeout(5.0)  // Wait up to 5 seconds for locks
     let sourceQueue = try DatabaseQueue(path: sourcePath, configuration: sourceConfig)
 
     var destConfig = Configuration()
+    destConfig.busyMode = .timeout(5.0)
     destConfig.prepareDatabase { db in
       try db.execute(sql: "PRAGMA journal_mode=WAL")
     }
 
     let destQueue = try DatabaseQueue(path: destPath, configuration: destConfig)
 
-    try sourceQueue.backup(to: destQueue)
+    do {
+      try sourceQueue.backup(to: destQueue)
+    } catch {
+      // Provide actionable error if it looks like a lock issue
+      let errorDesc = error.localizedDescription.lowercased()
+      if errorDesc.contains("busy") || errorDesc.contains("locked") {
+        XDGPaths.writeStderr("Error: Database is locked by another process.\n")
+        XDGPaths.writeStderr("Hint: Stop any processes using the database (e.g., systemctl --user stop contextify.timer)\n")
+      }
+      throw error
+    }
   }
 
   // MARK: - Systemd Helpers
@@ -254,8 +272,9 @@ public struct MigrateDbCommand: ParsableCommand {
     let process = Process()
     let pipe = Pipe()
 
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/systemctl")
-    process.arguments = args
+    // Use env to find systemctl in PATH (checks /usr/bin/env, /bin/env for portability)
+    process.executableURL = URL(fileURLWithPath: XDGPaths.envPath)
+    process.arguments = ["systemctl"] + args
     process.standardOutput = pipe
     process.standardError = FileHandle.nullDevice
 

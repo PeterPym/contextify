@@ -149,6 +149,9 @@ public struct IngestCommand: AsyncParsableCommand {
       throw ExitCode.failure
     }
 
+    // Tighten DB file permissions immediately after creation (reduces exposure window)
+    XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))
+
     // Handle full rebuild
     if fullRebuild {
       if showHumanOutput {
@@ -390,6 +393,9 @@ public struct IngestCommand: AsyncParsableCommand {
 
     let duration = Date().timeIntervalSince(startTime)
 
+    // Secure database file and sidecars (WAL/SHM) permissions
+    XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))
+
     let summary = IngestionSummary(
       transcriptsProcessed: transcriptsProcessed,
       entriesInserted: totalEntriesInserted,
@@ -434,7 +440,8 @@ public struct IngestCommand: AsyncParsableCommand {
   /// Resolve database path using precedence: --db > env var > XDG default
   private func resolveDatabasePath() -> String {
     if let dbFlag = db {
-      return dbFlag
+      // Expand tilde in user-provided path
+      return XDGPaths.expandTilde(dbFlag)
     }
     return XDGPaths.databasePath.path
   }
