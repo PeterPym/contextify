@@ -108,6 +108,7 @@ struct Contextify: AsyncParsableCommand {
         contextify ingest              Index new transcripts
         contextify status              Show what's indexed
         contextify install-skill       Install Total Recall skill
+        contextify install-service     Set up automatic ingestion (Linux)
         contextify doctor              Check installation health
 
       DATABASE LOCATION (in order of precedence):
@@ -127,6 +128,10 @@ struct Contextify: AsyncParsableCommand {
       VerifyCommand.self,
       MigrateDbCommand.self,
       SchemaCommand.self,
+      // Service management (Linux)
+      InstallServiceCommand.self,
+      UninstallServiceCommand.self,
+      ServiceStatusCommand.self,
       // Skill/plugin management
       InstallSkillCommand.self,
       UninstallSkillCommand.self,
