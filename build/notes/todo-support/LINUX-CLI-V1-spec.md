@@ -583,7 +583,7 @@ parse_args() {
 
 check_dependencies() {
     # Required commands (all standard on Linux, but check anyway)
-    for cmd in curl tar mktemp sha256sum awk uname chmod mkdir; do
+    for cmd in curl tar mktemp sha256sum awk sed uname chmod mkdir; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             echo "Error: '$cmd' is required but not found."
             echo "Install it with your package manager and retry."
@@ -682,6 +682,15 @@ download_and_extract() {
     # Extract (tarball contains: contextify, contextify-ingest, contextify-query symlinks)
     tar -xzf "$TMPDIR/$TARBALL" -C "$INSTALL_DIR"
     chmod +x "$INSTALL_DIR/contextify"
+
+    # Verify tarball layout contract
+    if [ ! -x "$INSTALL_DIR/contextify" ]; then
+        echo "Error: missing contextify in tarball root (bad tarball layout?)"
+        exit 1
+    fi
+    # Symlinks are optional for functionality but expected in v1
+    [ -L "$INSTALL_DIR/contextify-ingest" ] || echo "Warning: missing contextify-ingest symlink"
+    [ -L "$INSTALL_DIR/contextify-query" ]  || echo "Warning: missing contextify-query symlink"
 }
 
 verify_installation() {
@@ -786,8 +795,9 @@ Documentation=https://contextify.sh/docs/
 [Service]
 Type=oneshot
 # BINARY_PATH and DB_PATH are replaced at install time with actual absolute paths
-# e.g., /home/user/.local/bin/contextify, /home/user/.local/share/contextify/contextify.db
-ExecStart=BINARY_PATH/contextify ingest --systemd --db DB_PATH
+# e.g., BINARY_PATH=/home/user/.local/bin/contextify
+#       DB_PATH=/home/user/.local/share/contextify/contextify.db
+ExecStart=BINARY_PATH ingest --systemd --db DB_PATH
 # Exit code 2 = "nothing to do" (not an error)
 SuccessExitStatus=2
 StandardOutput=journal
@@ -1247,7 +1257,11 @@ validate-linux-binary:
 
     - name: Verify glibc floor (<= 2.35)
       run: |
-        MAX=$(objdump -T contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1)
+        MAX=$(objdump -T contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1 || true)
+        if [ -z "$MAX" ]; then
+          echo "FAIL: could not determine glibc requirement (missing objdump/binutils or unexpected binary format)"
+          exit 1
+        fi
         echo "Max glibc required: $MAX"
         if [ "$(printf '%s\n' "$MAX" "GLIBC_2.35" | sort -V | tail -1)" != "GLIBC_2.35" ]; then
           echo "FAIL: binary requires $MAX (must be <= GLIBC_2.35)"
@@ -1303,7 +1317,11 @@ echo "=== Linux Binary Validation ==="
 
 # 1. glibc version (portable grep, no -P flag)
 echo "Checking glibc requirement..."
-GLIBC=$(objdump -T "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1)
+GLIBC=$(objdump -T "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1 || true)
+if [ -z "$GLIBC" ]; then
+  echo "  FAIL: could not determine glibc requirement"
+  exit 1
+fi
 echo "  Max required: $GLIBC"
 if [ "$(printf '%s\n' "$GLIBC" "GLIBC_2.35" | sort -V | tail -1)" != "GLIBC_2.35" ]; then
   echo "  FAIL: binary requires $GLIBC (must be <= GLIBC_2.35)"
