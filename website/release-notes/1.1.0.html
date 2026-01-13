@@ -12,40 +12,32 @@
 <body>
   <h1>Contextify 1.1.0</h1>
 
-  <h2>Highlights</h2>
+  <h2>What's New</h2>
   <ul>
-    <li><strong>Codex CLI Integration</strong>: Full skill support for OpenAI's Codex CLI alongside Claude Code</li>
-    <li><strong>2.5x Faster Bulk Ingest</strong>: Performance optimizations dramatically speed up first-run and large history imports</li>
+    <li><strong>Total Recall Expanded</strong> - Now supports Codex CLI and git worktrees</li>
+    <li><strong>Inline Images</strong> - Images render inline with Quick Look preview</li>
+    <li><strong>Markdown Tables</strong> - Tables in conversation details now render nicely</li>
+    <li><strong>Faster Imports</strong> - 2.5x faster bulk transcript ingestion</li>
   </ul>
 
-  <h2>New Features</h2>
+  <h2>Total Recall Improvements</h2>
   <ul>
-    <li><strong>Inline Images</strong>: Timeline shows images with Quick Look support</li>
-    <li><strong>Markdown Tables</strong>: Tables in conversation details now render nicely</li>
-    <li><strong>Status Bar Indicator</strong>: See permission status in the status bar</li>
-    <li><strong>Worktree Grouping</strong>: Projects visually grouped by git worktree</li>
-  </ul>
-
-  <h2>Improvements</h2>
-  <ul>
-    <li><strong>CLI Health Checker</strong>: New <code>contextify-query doctor</code> command diagnoses installation issues</li>
-    <li><strong>Project Attribution</strong>: Entries reassigned based on CWD for accuracy</li>
-    <li><strong>CLI Installation</strong>: Unified manifest format, auto-repair for partial installs</li>
-    <li><strong>Sidechain Capture</strong>: Agent sidechains and tool invocations now stored and searchable</li>
+    <li><strong>Codex CLI Support</strong> - Total Recall now works with OpenAI's Codex CLI alongside Claude Code. Search across all your conversations regardless of provider.</li>
+    <li><strong>Git Worktree Search</strong> - Search conversations across all related worktrees in one request. Built something in worktree B last month? Find it from any worktree.</li>
+    <li><strong>CLI Health Checker</strong> - New <code>contextify-query doctor</code> command diagnoses installation issues</li>
   </ul>
 
   <h2>Bug Fixes</h2>
   <ul>
     <li>Project misattribution from session ID collisions</li>
-    <li>Skill directory cleanup when disabling CLI integration</li>
-    <li>PATH warning during CLI installation</li>
     <li>Sidechain filter now independent of "show hidden" setting</li>
+    <li>PATH warning during CLI installation</li>
   </ul>
 
   <h2>Alpha: Linux CLI</h2>
   <ul>
-    <li><strong>Total Recall for Linux</strong>: Search your Claude Code and Codex CLI conversation history via <code>contextify-query</code></li>
-    <li><strong>Manual ingestion</strong>: Run <code>contextify-ingest</code> to index new transcripts (automatic background ingestion coming soon)</li>
+    <li><strong>Total Recall for Linux</strong> - Search your Claude Code and Codex CLI conversation history via <code>contextify-query</code></li>
+    <li><strong>Manual ingestion</strong> - Run <code>contextify-ingest</code> to index new transcripts (automatic background ingestion coming soon)</li>
   </ul>
 </body>
 </html>
