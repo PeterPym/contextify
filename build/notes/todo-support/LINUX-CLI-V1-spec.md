@@ -344,7 +344,7 @@ Both `contextify-ingest` and `contextify-query` share a common `XDGPaths` module
 // Shared by both contextify-ingest and contextify-query
 
 public struct XDGPaths {
-    /// Validates XDG path is absolute. Returns nil with warning if relative.
+    /// Validates XDG path is absolute. Returns fallback with warning if relative.
     private static func validatedXDGPath(_ envVar: String, fallback: URL) -> URL {
         guard let xdg = ProcessInfo.processInfo.environment[envVar] else {
             return fallback
@@ -491,6 +491,14 @@ sh -c "$(curl -fsSL https://contextify.sh/install.sh)"
 
 **Critical:** The script is **fully non-interactive by default**. With `curl | sh`, stdin is the script itself, so `read`-based prompting is broken. Don't add prompts without explicit `/dev/tty` handling.
 
+**Release artifact contract:** The tarball MUST extract files directly into the target directory (no top-level subdirectory). Contents:
+```
+contextify           # Main binary (executable)
+contextify-ingest    # Symlink → contextify (backwards compatibility)
+contextify-query     # Symlink → contextify (backwards compatibility)
+```
+This contract is enforced by the installer's `tar -C $INSTALL_DIR` extraction. If the tarball layout changes (e.g., adds a subdirectory), the installer will break.
+
 **Script behavior:**
 
 1. Detect architecture (`uname -m` → x86_64 or aarch64)
@@ -498,8 +506,8 @@ sh -c "$(curl -fsSL https://contextify.sh/install.sh)"
 3. Download appropriate tarball (fail hard on HTTP errors)
 4. **Verify SHA256 checksum** (download `.sha256` file, fail on mismatch or missing)
 5. Extract to `$INSTALL_DIR` (default: `~/.local/bin/`)
-6. Verify binaries execute (`contextify-query --version`)
-7. Run `contextify-query install-skill` (skip with `--no-skill`)
+6. Verify binary executes (`contextify --version`)
+7. Run `contextify install-skill` (skip with `--no-skill`)
 8. Print success message with clear next steps (no prompts)
 
 **Environment variables:**
@@ -777,17 +785,22 @@ Documentation=https://contextify.sh/docs/
 
 [Service]
 Type=oneshot
-# BINARY_PATH is replaced at install time with actual absolute path
-# e.g., /home/user/.local/bin/contextify
-ExecStart=BINARY_PATH/contextify ingest --systemd
+# BINARY_PATH and DB_PATH are replaced at install time with actual absolute paths
+# e.g., /home/user/.local/bin/contextify, /home/user/.local/share/contextify/contextify.db
+ExecStart=BINARY_PATH/contextify ingest --systemd --db DB_PATH
 # Exit code 2 = "nothing to do" (not an error)
 SuccessExitStatus=2
 StandardOutput=journal
 StandardError=journal
-# Note: Do NOT set Environment="XDG_DATA_HOME=..." - respect user's env
+# Note: We embed --db explicitly because systemd user units do NOT inherit shell environment.
+# Without this, $CONTEXTIFY_DB_PATH or $XDG_DATA_HOME overrides would be ignored.
 ```
 
-**Note on path:** The `install-service` command resolves the binary location at install time and writes the absolute path. This handles custom `INSTALL_DIR` locations. If users upgrade to a new location, they must re-run `contextify install-service` to update the unit.
+**Note on paths:** The `install-service` command resolves both the binary location AND the database path at install time using the same resolution logic as interactive commands (flags/env/config/defaults). This prevents "split-brain" scenarios where the timer writes to a different database than the user's interactive shell.
+
+**Critical:** systemd user units do NOT inherit your interactive shell environment. If a user has `CONTEXTIFY_DB_PATH` set in `.bashrc`, systemd won't see it. By embedding `--db /absolute/path` at install time, we make behavior deterministic.
+
+If users change their DB location, they must re-run `contextify install-service` to update the unit.
 
 **Important:** No `[Install]` section on the service. For timer-driven oneshots, only the timer needs an Install section.
 
@@ -945,8 +958,8 @@ contextify ingest -v         # Short form
 #### Version Output
 
 ```bash
-$ contextify-query --version
-contextify-query 1.1.0 (abc1234)
+$ contextify --version
+contextify 1.1.0 (abc1234)
   Built: 2026-01-12
   Swift: 6.0
   Platform: linux-x86_64
@@ -1069,7 +1082,7 @@ contextify --generate-completion-script zsh > ~/.zfunc/_contextify
 contextify --generate-completion-script fish > ~/.config/fish/completions/contextify.fish
 ```
 
-**Install script integration:** Offer to install completions for detected shell.
+**v1 approach:** Install script prints these instructions. Automatic completion installation deferred to v1.1 (see Future Considerations).
 
 ---
 
@@ -1232,10 +1245,15 @@ validate-linux-binary:
       with:
         name: contextify-linux-x86_64
 
-    - name: Verify glibc floor
+    - name: Verify glibc floor (<= 2.35)
       run: |
-        objdump -T contextify | grep GLIBC | sort -V | tail -1
-        # Must show GLIBC_2.35 or lower
+        MAX=$(objdump -T contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1)
+        echo "Max glibc required: $MAX"
+        if [ "$(printf '%s\n' "$MAX" "GLIBC_2.35" | sort -V | tail -1)" != "GLIBC_2.35" ]; then
+          echo "FAIL: binary requires $MAX (must be <= GLIBC_2.35)"
+          exit 1
+        fi
+        echo "OK: glibc requirement is within bounds"
 
     - name: Verify no Swift runtime deps
       run: |
@@ -1283,10 +1301,15 @@ BINARY="${1:-./contextify}"
 
 echo "=== Linux Binary Validation ==="
 
-# 1. glibc version
+# 1. glibc version (portable grep, no -P flag)
 echo "Checking glibc requirement..."
-GLIBC=$(objdump -T "$BINARY" | grep GLIBC | sort -V | tail -1 | grep -oP 'GLIBC_[\d.]+')
-echo "  Required: $GLIBC"
+GLIBC=$(objdump -T "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1)
+echo "  Max required: $GLIBC"
+if [ "$(printf '%s\n' "$GLIBC" "GLIBC_2.35" | sort -V | tail -1)" != "GLIBC_2.35" ]; then
+  echo "  FAIL: binary requires $GLIBC (must be <= GLIBC_2.35)"
+  exit 1
+fi
+echo "  OK: glibc requirement is within bounds"
 
 # 2. Swift runtime
 echo "Checking for Swift runtime deps..."
