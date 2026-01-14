@@ -79,7 +79,13 @@ public struct InstallServiceCommand: ParsableCommand {
     }
 
     // 5. Generate service file
-    let serviceContent = generateServiceFile(binaryPath: binaryPath, dbPath: dbPath)
+    let serviceContent: String
+    do {
+      serviceContent = try generateServiceFile(binaryPath: binaryPath, dbPath: dbPath)
+    } catch let error as ValidationError {
+      print("Error: \(error)")
+      throw ExitCode.failure
+    }
     let servicePath = systemdDir.appendingPathComponent("contextify.service")
     try serviceContent.write(to: servicePath, atomically: true, encoding: .utf8)
     print("Created: \(servicePath.path)")
@@ -152,7 +158,8 @@ public struct InstallServiceCommand: ParsableCommand {
       return nil
     }
     let fm = FileManager.default
-    for dir in pathEnv.split(separator: ":") {
+    // Skip empty components (:: or leading/trailing :)
+    for dir in pathEnv.split(separator: ":", omittingEmptySubsequences: true) {
       let candidate = String(dir) + "/" + name
       if fm.isExecutableFile(atPath: candidate) {
         return candidate
@@ -191,11 +198,13 @@ public struct InstallServiceCommand: ParsableCommand {
   /// - % must become %% (specifier escape)
   /// - \ and " need escaping for quoting
   /// - Wrap in quotes if whitespace present
-  private func escapeSystemdPath(_ path: String) -> String {
-    // Reject paths with newlines or NUL (can't be safely represented)
-    guard !path.contains("\n") && !path.contains("\0") else {
-      // Fall back to unescaped - will likely fail but better than silent corruption
-      return path
+  /// Throws if path contains control characters that can't be safely represented.
+  private func escapeSystemdPath(_ path: String) throws -> String {
+    // Reject paths with control characters (can't be safely represented in unit files)
+    for char in path.unicodeScalars {
+      if char.value < 0x20 || char == "\u{7F}" {
+        throw ValidationError.unsafePath(path, reason: "contains control character (\\u{\(String(format: "%04X", char.value))})")
+      }
     }
     var escaped = path
     // Escape backslash first (before adding more backslashes)
@@ -211,6 +220,18 @@ public struct InstallServiceCommand: ParsableCommand {
       return "\"\(escaped)\""
     }
     return escaped
+  }
+
+  /// Validation errors for install-service
+  private enum ValidationError: Error, CustomStringConvertible {
+    case unsafePath(String, reason: String)
+
+    var description: String {
+      switch self {
+      case .unsafePath(let path, let reason):
+        return "Unsafe path '\(path)': \(reason). Cannot write to systemd unit file."
+      }
+    }
   }
 
   /// Escape a path for use in cron (shell quoting)
@@ -272,9 +293,9 @@ public struct InstallServiceCommand: ParsableCommand {
     return "*/15 * * * *"
   }
 
-  private func generateServiceFile(binaryPath: String, dbPath: String) -> String {
-    let escapedBinary = escapeSystemdPath(binaryPath)
-    let escapedDb = escapeSystemdPath(dbPath)
+  private func generateServiceFile(binaryPath: String, dbPath: String) throws -> String {
+    let escapedBinary = try escapeSystemdPath(binaryPath)
+    let escapedDb = try escapeSystemdPath(dbPath)
     return """
       [Unit]
       Description=Contextify transcript ingestion
