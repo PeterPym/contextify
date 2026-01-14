@@ -134,12 +134,10 @@ public struct ServiceStatusCommand: ParsableCommand {
     if isActive {
       print("Status: active (running)")
       if let next = nextRun {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        let relative = formatter.localizedString(for: next, relativeTo: Date())
         let timeFormatter = DateFormatter()
         timeFormatter.dateStyle = .short
         timeFormatter.timeStyle = .short
+        let relative = formatRelativeTime(from: Date(), to: next)
         print("Next run: \(timeFormatter.string(from: next)) (\(relative))")
       }
     } else {
@@ -155,6 +153,29 @@ public struct ServiceStatusCommand: ParsableCommand {
 
     print("")
     print("View logs: journalctl --user -u contextify -n 20")
+  }
+
+  /// Format relative time without RelativeDateTimeFormatter (not available on Linux)
+  private func formatRelativeTime(from: Date, to: Date) -> String {
+    let seconds = to.timeIntervalSince(from)
+    if seconds < 0 {
+      return "in the past"
+    } else if seconds < 60 {
+      return "in less than a minute"
+    } else if seconds < 3600 {
+      let minutes = Int(seconds / 60)
+      return "in \(minutes) minute\(minutes == 1 ? "" : "s")"
+    } else if seconds < 86400 {
+      let hours = Int(seconds / 3600)
+      let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+      if minutes > 0 {
+        return "in \(hours) hour\(hours == 1 ? "" : "s"), \(minutes) minute\(minutes == 1 ? "" : "s")"
+      }
+      return "in \(hours) hour\(hours == 1 ? "" : "s")"
+    } else {
+      let days = Int(seconds / 86400)
+      return "in \(days) day\(days == 1 ? "" : "s")"
+    }
   }
 
   private func outputJSON(systemdAvailable: Bool, isInstalled: Bool, isActive: Bool, nextRun: Date?, lastRunSuccess: Bool?, error: String?) {
