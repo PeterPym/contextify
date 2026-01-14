@@ -21,9 +21,31 @@ Ranked approach for building Linux binaries:
 
 ## Prerequisites
 
-- Docker runtime: Colima recommended (`brew install colima docker && colima start`)
+### Docker Runtime (Colima on ARM Mac)
+
+ARM Macs require Colima configured with Rosetta for x86_64 builds. QEMU emulation does not work with Swift.
+
+```bash
+# Install
+brew install colima docker lima-additional-guestagents
+
+# Start with Rosetta support (required for x86_64 builds)
+colima start --arch x86_64 --vm-type vz --vz-rosetta
+```
+
+### Verify Configuration
+
+```bash
+colima list
+# ARCH column must show "x86_64" for amd64 builds
+```
+
+If ARCH shows `aarch64`, you need to recreate Colima (see Troubleshooting below).
+
+### Other Requirements
+
 - ARM Mac (Apple Silicon) for native arm64 builds
-- x86_64 builds work on ARM Macs with Colima (uses Rosetta)
+- x86_64 builds require Colima with Rosetta (see setup above)
 
 ## Quick Start: Build x86_64 (Recommended)
 
@@ -160,6 +182,33 @@ docker run --rm -v "$PWD/dist":/dist swift:6.0-jammy \
 When building from a git worktree, mount the workspace as read-only (`:ro`) and use a container-internal build directory (`-w /build`). This avoids git path resolution issues where Docker can't access the parent `.git` directory.
 
 ## Troubleshooting
+
+### "Illegal instruction" error during Swift compilation
+
+**Cause:** Colima is using QEMU emulation instead of Rosetta.
+
+**Diagnosis:**
+```bash
+colima list
+```
+If ARCH shows `aarch64`, Rosetta is not enabled.
+
+**Fix:**
+```bash
+colima stop
+colima delete  # WARNING: Removes all container data
+colima start --arch x86_64 --vm-type vz --vz-rosetta
+```
+
+### Colima architecture cannot be changed
+
+Colima's architecture is set at VM creation time. To change it, you must delete and recreate:
+
+```bash
+colima stop
+colima delete
+colima start --arch x86_64 --vm-type vz --vz-rosetta
+```
 
 ### Git "dubious ownership" errors
 Mount workspace as read-only (`:ro`) and copy files to container-internal path.
