@@ -19,9 +19,9 @@ description: Comprehensive spec for Linux CLI v1 release - from Beta to producti
 |-------|--------|--------|--------|-------------|--------|
 | Phase 0: Unified Command Structure | `feature/linux-cli-v1-phase0` | COMPLETE | 2026-01-13 | 2-3 hrs | ~17 min |
 | Phase 1: Foundation | `feature/linux-cli-v1-phase1` | COMPLETE | 2026-01-13 | 5-7 hrs | ~25 min |
-| Phase 2: Service Setup | - | NOT STARTED | - | 3-4 hrs | - |
-| Phase 3: Distribution | - | NOT STARTED | - | 3-4 hrs | - |
-| Phase 4: Polish | - | NOT STARTED | - | 2-3 hrs | - |
+| Phase 2: Service Setup | `feature/linux-cli-v1-phase2` | COMPLETE | 2026-01-13 | 3-4 hrs | ~47 min |
+| Phase 3: Distribution | `feature/linux-cli-v1-phase3` | COMPLETE | 2026-01-13 | 3-4 hrs | ~6 hrs |
+| Phase 4: Polish | - | IN PROGRESS | - | 2-3 hrs | - |
 
 **Velocity:** Phases 0+1 completed in 42 min vs 7-10 hrs estimated (~12x faster). Projected remaining: ~1-1.5 hrs.
 

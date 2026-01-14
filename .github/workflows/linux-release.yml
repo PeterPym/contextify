@@ -59,7 +59,7 @@ jobs:
             -e CLI_VERSION="${{ steps.version.outputs.version }}" \
             -w /workspace \
             --platform linux/amd64 \
-            swift:6.0-noble \
+            swift:6.0-jammy \
             bash -c '
               set -e
 
@@ -151,7 +151,7 @@ jobs:
             -e CLI_VERSION="${{ steps.version.outputs.version }}" \
             -w /workspace \
             --platform linux/arm64 \
-            swift:6.0-noble \
+            swift:6.0-jammy \
             bash -c '
               set -e
 

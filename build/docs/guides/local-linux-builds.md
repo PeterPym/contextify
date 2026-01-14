@@ -38,7 +38,7 @@ docker run --rm \
   -e CLI_VERSION="1.1.0" \
   -w /build \
   --platform linux/amd64 \
-  swift:6.0-noble \
+  swift:6.0-jammy \
   bash -c '
     set -e
     cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
@@ -79,7 +79,7 @@ docker run --rm \
   -e CLI_VERSION="1.1.0" \
   -w /build \
   --platform linux/arm64 \
-  swift:6.0-noble \
+  swift:6.0-jammy \
   bash -c '
     set -e
     cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
@@ -150,7 +150,7 @@ After building, verify static linking:
 tar -tzf dist/contextify-linux-x86_64.tar.gz
 
 # Verify no dynamic SQLite dependency
-docker run --rm -v "$PWD/dist":/dist swift:6.0-noble \
+docker run --rm -v "$PWD/dist":/dist swift:6.0-jammy \
   sh -c 'tar -xzf /dist/contextify-linux-x86_64.tar.gz -C /tmp && ldd /tmp/contextify'
 # Should NOT show libsqlite3.so
 ```
