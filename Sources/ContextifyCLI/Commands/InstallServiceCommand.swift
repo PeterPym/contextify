@@ -137,9 +137,8 @@ public struct InstallServiceCommand: ParsableCommand {
     }
     // If argv0 contains no path separator, search PATH
     if !argv0.contains("/") {
-      let whichResult = runWhich(argv0)
-      if !whichResult.isEmpty {
-        return whichResult
+      if let found = searchPath(for: argv0) {
+        return found
       }
     }
     // Relative path - resolve against cwd
@@ -147,31 +146,29 @@ public struct InstallServiceCommand: ParsableCommand {
     return URL(fileURLWithPath: cwd).appendingPathComponent(argv0).standardized.path
   }
 
-  /// Run 'which' to find a binary in PATH
-  private func runWhich(_ name: String) -> String {
-    let process = Process()
-    let pipe = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-    process.arguments = [name]
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-    do {
-      try process.run()
-      process.waitUntilExit()
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      let output = String(data: data, encoding: .utf8) ?? ""
-      return output.trimmingCharacters(in: .whitespacesAndNewlines)
-    } catch {
-      return ""
+  /// Search PATH for a binary (without depending on external 'which' command)
+  private func searchPath(for name: String) -> String? {
+    guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else {
+      return nil
     }
+    let fm = FileManager.default
+    for dir in pathEnv.split(separator: ":") {
+      let candidate = String(dir) + "/" + name
+      if fm.isExecutableFile(atPath: candidate) {
+        return candidate
+      }
+    }
+    return nil
   }
 
   private func checkSystemdAvailability() -> (available: Bool, error: String?) {
     // Use show-environment as a more reliable probe - it's fast and manager-level
     let result = runSystemctl(["--user", "show-environment"])
-    // Check for bus connection failure in output (more reliable than exit codes)
+    // Check for common failure patterns in output (more reliable than exit codes)
     let output = result.output.lowercased()
-    if output.contains("failed to connect") || output.contains("no such file or directory") {
+    if output.contains("failed to connect") ||
+       output.contains("no such file or directory") ||
+       output.contains("permission denied") {
       return (false, result.output)
     }
     // Exit code 0 means systemd user session is available
@@ -187,17 +184,29 @@ public struct InstallServiceCommand: ParsableCommand {
     return result.exitCode == 0
   }
 
-  /// Escape a path for use in systemd ExecStart (handles spaces and special chars)
+  /// Escape a path for use in systemd ExecStart
+  /// See: https://www.freedesktop.org/software/systemd/man/systemd.service.html
+  /// systemd has its own quoting rules (not shell):
+  /// - $ must become $$ (literal dollar)
+  /// - % must become %% (specifier escape)
+  /// - \ and " need escaping for quoting
+  /// - Wrap in quotes if whitespace present
   private func escapeSystemdPath(_ path: String) -> String {
-    // systemd uses C-style escapes in ExecStart
-    // Spaces need quoting, and we need to escape special chars
+    // Reject paths with newlines or NUL (can't be safely represented)
+    guard !path.contains("\n") && !path.contains("\0") else {
+      // Fall back to unescaped - will likely fail but better than silent corruption
+      return path
+    }
     var escaped = path
+    // Escape backslash first (before adding more backslashes)
     escaped = escaped.replacingOccurrences(of: "\\", with: "\\\\")
+    // Escape double quotes for systemd quoting
     escaped = escaped.replacingOccurrences(of: "\"", with: "\\\"")
-    escaped = escaped.replacingOccurrences(of: "'", with: "\\'")
-    escaped = escaped.replacingOccurrences(of: "$", with: "\\$")
-    escaped = escaped.replacingOccurrences(of: "`", with: "\\`")
-    // If path contains spaces or special chars, quote it
+    // systemd-specific: $ -> $$ (literal dollar sign)
+    escaped = escaped.replacingOccurrences(of: "$", with: "$$")
+    // systemd-specific: % -> %% (specifier escape)
+    escaped = escaped.replacingOccurrences(of: "%", with: "%%")
+    // Wrap in quotes if whitespace present
     if path.contains(" ") || path.contains("\t") {
       return "\"\(escaped)\""
     }

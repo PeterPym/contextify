@@ -61,7 +61,8 @@ public struct ServiceStatusCommand: ParsableCommand {
         print("systemd user session is required for the background service.")
         print("See 'contextify install-service --help' for alternatives.")
       }
-      return
+      // Exit with error code for scripting (systemd not available is an error condition)
+      throw ExitCode.failure
     }
 
     // Check if service is installed via systemctl (more reliable than file check)
@@ -104,9 +105,11 @@ public struct ServiceStatusCommand: ParsableCommand {
   private func checkSystemdAvailability() -> (available: Bool, error: String?) {
     // Use show-environment as a reliable probe - it's fast and manager-level
     let result = runSystemctl(["--user", "show-environment"])
-    // Check for bus connection failure in output
+    // Check for common failure patterns in output
     let output = result.output.lowercased()
-    if output.contains("failed to connect") || output.contains("no such file or directory") {
+    if output.contains("failed to connect") ||
+       output.contains("no such file or directory") ||
+       output.contains("permission denied") {
       return (false, result.output)
     }
     if result.exitCode == 0 {
