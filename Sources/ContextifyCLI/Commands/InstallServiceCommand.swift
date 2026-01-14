@@ -92,7 +92,8 @@ public struct InstallServiceCommand: ParsableCommand {
 
     // 7. Reload systemd and enable timer
     print("")
-    print("Enabling systemd timer...")
+    let wasActive = isTimerActive()
+    print(wasActive ? "Updating systemd timer..." : "Enabling systemd timer...")
 
     let reload = runSystemctl(["--user", "daemon-reload"])
     guard reload.exitCode == 0 else {
@@ -104,6 +105,15 @@ public struct InstallServiceCommand: ParsableCommand {
     guard enable.exitCode == 0 else {
       print("Error: Failed to enable timer: \(enable.output)")
       throw ExitCode.failure
+    }
+
+    // If timer was already active, restart to apply any interval changes
+    if wasActive {
+      let restart = runSystemctl(["--user", "restart", "contextify.timer"])
+      if restart.exitCode != 0 {
+        print("Warning: Timer enabled but restart failed: \(restart.output)")
+        print("New interval may not take effect until next reboot.")
+      }
     }
 
     // 8. Show status
@@ -125,18 +135,80 @@ public struct InstallServiceCommand: ParsableCommand {
     if argv0.hasPrefix("/") {
       return argv0
     }
+    // If argv0 contains no path separator, search PATH
+    if !argv0.contains("/") {
+      let whichResult = runWhich(argv0)
+      if !whichResult.isEmpty {
+        return whichResult
+      }
+    }
     // Relative path - resolve against cwd
     let cwd = FileManager.default.currentDirectoryPath
     return URL(fileURLWithPath: cwd).appendingPathComponent(argv0).standardized.path
   }
 
+  /// Run 'which' to find a binary in PATH
+  private func runWhich(_ name: String) -> String {
+    let process = Process()
+    let pipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = [name]
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    } catch {
+      return ""
+    }
+  }
+
   private func checkSystemdAvailability() -> (available: Bool, error: String?) {
-    let result = runSystemctl(["--user", "status"])
-    // Exit code 0 or 3 (no units) means systemd is available
-    if result.exitCode == 0 || result.exitCode == 3 {
+    // Use show-environment as a more reliable probe - it's fast and manager-level
+    let result = runSystemctl(["--user", "show-environment"])
+    // Check for bus connection failure in output (more reliable than exit codes)
+    let output = result.output.lowercased()
+    if output.contains("failed to connect") || output.contains("no such file or directory") {
+      return (false, result.output)
+    }
+    // Exit code 0 means systemd user session is available
+    if result.exitCode == 0 {
       return (true, nil)
     }
     return (false, result.output)
+  }
+
+  /// Check if the timer is already enabled/active
+  private func isTimerActive() -> Bool {
+    let result = runSystemctl(["--user", "is-active", "contextify.timer"])
+    return result.exitCode == 0
+  }
+
+  /// Escape a path for use in systemd ExecStart (handles spaces and special chars)
+  private func escapeSystemdPath(_ path: String) -> String {
+    // systemd uses C-style escapes in ExecStart
+    // Spaces need quoting, and we need to escape special chars
+    var escaped = path
+    escaped = escaped.replacingOccurrences(of: "\\", with: "\\\\")
+    escaped = escaped.replacingOccurrences(of: "\"", with: "\\\"")
+    escaped = escaped.replacingOccurrences(of: "'", with: "\\'")
+    escaped = escaped.replacingOccurrences(of: "$", with: "\\$")
+    escaped = escaped.replacingOccurrences(of: "`", with: "\\`")
+    // If path contains spaces or special chars, quote it
+    if path.contains(" ") || path.contains("\t") {
+      return "\"\(escaped)\""
+    }
+    return escaped
+  }
+
+  /// Escape a path for use in cron (shell quoting)
+  private func escapeShellPath(_ path: String) -> String {
+    // Use single quotes and escape any single quotes in the path
+    let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
+    return "'\(escaped)'"
   }
 
   private func printSystemdFallback(error: String?) {
@@ -150,22 +222,50 @@ public struct InstallServiceCommand: ParsableCommand {
     print("  1. Enable user lingering (may require sudo):")
     print("     sudo loginctl enable-linger $USER")
     print("")
-    print("  2. If on WSL, enable systemd in /etc/wsl.conf:")
+    print("  2. If on WSL2, enable systemd in /etc/wsl.conf:")
     print("     [boot]")
     print("     systemd=true")
-    print("     Then restart WSL.")
+    print("     Then restart: wsl --shutdown (from Windows)")
+    print("     Note: WSL1 does not support systemd.")
     print("")
     print("  3. Use cron instead:")
     let binaryPath = resolveBinaryPath()
     let dbPath = XDGPaths.databasePath.path
+    let escapedBinary = escapeShellPath(binaryPath)
+    let escapedDb = escapeShellPath(dbPath)
+    // Convert interval to cron format (approximate)
+    let cronInterval = intervalToCron(interval)
     print("     crontab -e")
-    print("     Add: */15 * * * * \(binaryPath) ingest --quiet --db \(dbPath)")
+    print("     Add: \(cronInterval) \(escapedBinary) ingest --quiet --db \(escapedDb) 2>&1 | logger -t contextify")
+    print("")
+    print("     Note: cron runs with minimal PATH/locale. Use absolute paths.")
     print("")
     print("  4. Run manually when needed:")
     print("     contextify ingest")
   }
 
+  /// Convert systemd interval format to approximate cron schedule
+  private func intervalToCron(_ interval: String) -> String {
+    // Parse common formats: 15min, 1h, 30s, etc.
+    let lower = interval.lowercased()
+    if lower.hasSuffix("min") || lower.hasSuffix("m") {
+      let numStr = lower.replacingOccurrences(of: "min", with: "").replacingOccurrences(of: "m", with: "")
+      if let mins = Int(numStr), mins > 0 && mins <= 59 {
+        return "*/\(mins) * * * *"
+      }
+    } else if lower.hasSuffix("h") {
+      let numStr = lower.replacingOccurrences(of: "h", with: "")
+      if let hours = Int(numStr), hours > 0 {
+        return "0 */\(hours) * * *"
+      }
+    }
+    // Default to every 15 minutes
+    return "*/15 * * * *"
+  }
+
   private func generateServiceFile(binaryPath: String, dbPath: String) -> String {
+    let escapedBinary = escapeSystemdPath(binaryPath)
+    let escapedDb = escapeSystemdPath(dbPath)
     return """
       [Unit]
       Description=Contextify transcript ingestion
@@ -173,9 +273,10 @@ public struct InstallServiceCommand: ParsableCommand {
 
       [Service]
       Type=oneshot
-      ExecStart=\(binaryPath) ingest --systemd --db \(dbPath)
+      ExecStart=\(escapedBinary) ingest --systemd --db \(escapedDb)
       # Exit code 2 = "nothing to do" (not an error)
       SuccessExitStatus=2
+      SyslogIdentifier=contextify
       StandardOutput=journal
       StandardError=journal
       """
@@ -208,7 +309,7 @@ public struct InstallServiceCommand: ParsableCommand {
       if nextRun.exitCode == 0, let usec = Int64(nextRun.output.trimmingCharacters(in: .whitespacesAndNewlines)), usec > 0 {
         let nextDate = Date(timeIntervalSince1970: Double(usec) / 1_000_000)
         let formatter = DateFormatter()
-        formatter.dateStyle = .none
+        formatter.dateStyle = .short
         formatter.timeStyle = .short
         print("Next run: \(formatter.string(from: nextDate))")
       }

@@ -56,15 +56,23 @@ public struct UninstallServiceCommand: ParsableCommand {
     _ = runSystemctl(["--user", "stop", "contextify.timer"])
     _ = runSystemctl(["--user", "disable", "contextify.timer"])
 
-    // Remove files
+    // Remove files (continue on error but report issues)
     print("Removing service files...")
     if timerExists {
-      try? fm.removeItem(at: timerPath)
-      print("Removed: \(timerPath.path)")
+      do {
+        try fm.removeItem(at: timerPath)
+        print("Removed: \(timerPath.path)")
+      } catch {
+        print("Warning: Could not remove \(timerPath.path): \(error.localizedDescription)")
+      }
     }
     if serviceExists {
-      try? fm.removeItem(at: servicePath)
-      print("Removed: \(servicePath.path)")
+      do {
+        try fm.removeItem(at: servicePath)
+        print("Removed: \(servicePath.path)")
+      } catch {
+        print("Warning: Could not remove \(servicePath.path): \(error.localizedDescription)")
+      }
     }
 
     // Reload daemon
@@ -80,20 +88,23 @@ public struct UninstallServiceCommand: ParsableCommand {
   private func runSystemctl(_ args: [String]) -> (exitCode: Int32, output: String) {
     let process = Process()
     let pipe = Pipe()
+    let errorPipe = Pipe()
 
     process.executableURL = URL(fileURLWithPath: XDGPaths.envPath)
     process.arguments = ["systemctl"] + args
     process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
+    process.standardError = errorPipe
 
     do {
       try process.run()
       process.waitUntilExit()
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      let output = String(data: data, encoding: .utf8) ?? ""
-      return (process.terminationStatus, output)
+      let outData = pipe.fileHandleForReading.readDataToEndOfFile()
+      let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: outData, encoding: .utf8) ?? ""
+      let errOutput = String(data: errData, encoding: .utf8) ?? ""
+      return (process.terminationStatus, output + errOutput)
     } catch {
-      return (1, "")
+      return (1, error.localizedDescription)
     }
   }
   #endif

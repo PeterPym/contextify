@@ -44,12 +44,29 @@ public struct ServiceStatusCommand: ParsableCommand {
 
   #if os(Linux)
   private func showStatus() throws {
-    let systemdDir = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".config/systemd/user")
-    let timerPath = systemdDir.appendingPathComponent("contextify.timer")
+    // First check if systemd user session is available
+    let systemdCheck = checkSystemdAvailability()
+    if !systemdCheck.available {
+      if json {
+        outputJSON(systemdAvailable: false, isInstalled: false, isActive: false, nextRun: nil, lastRunSuccess: nil, error: systemdCheck.error)
+      } else {
+        print("Contextify Ingestion Service")
+        print("============================")
+        print("")
+        print("Status: systemd unavailable")
+        if let err = systemdCheck.error, !err.isEmpty {
+          print("Error: \(err.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        print("")
+        print("systemd user session is required for the background service.")
+        print("See 'contextify install-service --help' for alternatives.")
+      }
+      return
+    }
 
-    // Check if service is installed
-    let isInstalled = FileManager.default.fileExists(atPath: timerPath.path)
+    // Check if service is installed via systemctl (more reliable than file check)
+    let loadState = runSystemctl(["--user", "show", "contextify.timer", "--property=LoadState", "--value"])
+    let isInstalled = loadState.exitCode == 0 && loadState.output.trimmingCharacters(in: .whitespacesAndNewlines) == "loaded"
 
     // Check if timer is active
     let activeCheck = runSystemctl(["--user", "is-active", "contextify.timer"])
@@ -66,25 +83,36 @@ public struct ServiceStatusCommand: ParsableCommand {
 
     // Get last run result
     var lastRunSuccess: Bool?
-    var lastRunDate: Date?
     if isInstalled {
-      let lastResult = runSystemctl(["--user", "show", "contextify.service", "--property=ActiveState,ExecMainStatus,ExecMainExitTimestamp", "--value"])
+      let lastResult = runSystemctl(["--user", "show", "contextify.service", "--property=ExecMainStatus", "--value"])
       if lastResult.exitCode == 0 {
-        let lines = lastResult.output.components(separatedBy: "\n")
-        if lines.count >= 2 {
-          // ExecMainStatus: 0 = success, 2 = noop (also success)
-          if let status = Int(lines[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
-            lastRunSuccess = (status == 0 || status == 2)
-          }
+        let statusStr = lastResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        // ExecMainStatus: 0 = success, 2 = noop (also success)
+        if let status = Int(statusStr) {
+          lastRunSuccess = (status == 0 || status == 2)
         }
       }
     }
 
     if json {
-      outputJSON(isInstalled: isInstalled, isActive: isActive, nextRun: nextRunDate, lastRunSuccess: lastRunSuccess)
+      outputJSON(systemdAvailable: true, isInstalled: isInstalled, isActive: isActive, nextRun: nextRunDate, lastRunSuccess: lastRunSuccess, error: nil)
     } else {
       outputHuman(isInstalled: isInstalled, isActive: isActive, nextRun: nextRunDate, lastRunSuccess: lastRunSuccess)
     }
+  }
+
+  private func checkSystemdAvailability() -> (available: Bool, error: String?) {
+    // Use show-environment as a reliable probe - it's fast and manager-level
+    let result = runSystemctl(["--user", "show-environment"])
+    // Check for bus connection failure in output
+    let output = result.output.lowercased()
+    if output.contains("failed to connect") || output.contains("no such file or directory") {
+      return (false, result.output)
+    }
+    if result.exitCode == 0 {
+      return (true, nil)
+    }
+    return (false, result.output)
   }
 
   private func outputHuman(isInstalled: Bool, isActive: Bool, nextRun: Date?, lastRunSuccess: Bool?) {
@@ -126,9 +154,10 @@ public struct ServiceStatusCommand: ParsableCommand {
     print("View logs: journalctl --user -u contextify -n 20")
   }
 
-  private func outputJSON(isInstalled: Bool, isActive: Bool, nextRun: Date?, lastRunSuccess: Bool?) {
+  private func outputJSON(systemdAvailable: Bool, isInstalled: Bool, isActive: Bool, nextRun: Date?, lastRunSuccess: Bool?, error: String?) {
     var output: [String: Any] = [
       "format_version": 1,
+      "systemd_available": systemdAvailable,
       "installed": isInstalled,
       "active": isActive
     ]
@@ -141,6 +170,10 @@ public struct ServiceStatusCommand: ParsableCommand {
       output["last_run_success"] = success
     }
 
+    if let err = error, !err.isEmpty {
+      output["error"] = err.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     if let jsonData = try? JSONSerialization.data(withJSONObject: output, options: [.sortedKeys]),
        let jsonString = String(data: jsonData, encoding: .utf8) {
       print(jsonString)
@@ -150,20 +183,23 @@ public struct ServiceStatusCommand: ParsableCommand {
   private func runSystemctl(_ args: [String]) -> (exitCode: Int32, output: String) {
     let process = Process()
     let pipe = Pipe()
+    let errorPipe = Pipe()
 
     process.executableURL = URL(fileURLWithPath: XDGPaths.envPath)
     process.arguments = ["systemctl"] + args
     process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
+    process.standardError = errorPipe
 
     do {
       try process.run()
       process.waitUntilExit()
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      let output = String(data: data, encoding: .utf8) ?? ""
-      return (process.terminationStatus, output)
+      let outData = pipe.fileHandleForReading.readDataToEndOfFile()
+      let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: outData, encoding: .utf8) ?? ""
+      let errOutput = String(data: errData, encoding: .utf8) ?? ""
+      return (process.terminationStatus, output + errOutput)
     } catch {
-      return (1, "")
+      return (1, error.localizedDescription)
     }
   }
   #endif
