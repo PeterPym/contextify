@@ -101,26 +101,52 @@ CI performs these validations automatically:
 2. **No Swift runtime deps** - Must be statically linked
 3. **Container test** - Must run in minimal ubuntu:22.04
 
-## Local Alternative
+## Local Build Alternative
 
-For faster iteration, build locally with Docker:
+For faster iteration, build locally with Docker. Use `/linux-local-build` skill or follow these steps:
+
+### Pre-Flight Check (Required on ARM Mac)
 
 ```bash
-# See: build/docs/guides/local-linux-builds.md
+# Check Colima configuration
+colima list
+# ARCH must show "x86_64" - if it shows "aarch64", fix it:
+
+colima stop
+colima delete  # WARNING: Removes container data
+colima start --arch x86_64 --vm-type vz --vz-rosetta
+```
+
+### Quick Build
+
+```bash
+# See: build/docs/guides/local-linux-builds.md for full command
 mkdir -p dist
 
-# x86_64 (~5-10 min on ARM Mac with Colima)
+# x86_64 (~5-10 min on ARM Mac with Colima + Rosetta)
 docker run --rm \
   -v "$PWD":/workspace:ro \
   -v "$PWD/dist":/output:rw \
   -e CLI_VERSION="1.1.0" \
   -w /build \
   --platform linux/amd64 \
-  swift:6.0-noble \
-  bash -c '...'  # See full command in docs
+  swift:6.0-jammy \
+  bash -c '...'  # See /linux-local-build for full command
 ```
 
+**Note:** Local builds require Colima with Rosetta. Without `--arch x86_64 --vm-type vz --vz-rosetta`, you'll get "Illegal instruction" errors.
+
 ## Troubleshooting
+
+### "Illegal instruction" error (local builds)
+
+Colima is using QEMU instead of Rosetta. Fix:
+
+```bash
+colima stop
+colima delete
+colima start --arch x86_64 --vm-type vz --vz-rosetta
+```
 
 ### "Actions budget is preventing further use"
 
@@ -142,8 +168,9 @@ The 90-minute timeout may not be enough. Options:
 Check that `Version.generated.swift` is being written to correct path:
 `Sources/ContextifyCLI/Version.generated.swift`
 
-## Related Documentation
+## Related
 
-- `build/docs/guides/local-linux-builds.md` - Local Docker builds
+- `/linux-local-build` - Local Docker builds skill
+- `build/docs/guides/local-linux-builds.md` - Local builds documentation
 - `build/docs/guides/linux-ci-builds.md` - CI system overview
 - `.github/workflows/linux-release.yml` - Workflow definition
