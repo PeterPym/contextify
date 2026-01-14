@@ -3,7 +3,7 @@ todo_id: LINUX-CLI-V1
 title: Linux CLI v1 - Complete Release Specification
 type: spec
 date: 2026-01-12
-status: in-progress
+status: complete
 description: Comprehensive spec for Linux CLI v1 release - from Beta to production-ready
 ---
 
@@ -21,7 +21,7 @@ description: Comprehensive spec for Linux CLI v1 release - from Beta to producti
 | Phase 1: Foundation | `feature/linux-cli-v1-phase1` | COMPLETE | 2026-01-13 | 5-7 hrs | ~25 min |
 | Phase 2: Service Setup | `feature/linux-cli-v1-phase2` | COMPLETE | 2026-01-13 | 3-4 hrs | ~47 min |
 | Phase 3: Distribution | `feature/linux-cli-v1-phase3` | COMPLETE | 2026-01-13 | 3-4 hrs | ~6 hrs |
-| Phase 4: Polish | - | IN PROGRESS | - | 2-3 hrs | - |
+| Phase 4: Polish | main-wb1 | COMPLETE | 2026-01-14 | 2-3 hrs | ~2 hrs |
 
 **Velocity:** Phases 0+1 completed in 42 min vs 7-10 hrs estimated (~12x faster). Projected remaining: ~1-1.5 hrs.
 
