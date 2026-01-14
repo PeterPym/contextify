@@ -13,11 +13,32 @@ import ContextifyIngestionCore
 public struct IngestCommand: AsyncParsableCommand {
   public static let configuration = CommandConfiguration(
     commandName: "ingest",
-    abstract: "Ingest transcripts into the database"
+    abstract: "Index new transcripts into the database",
+    discussion: """
+      Scans for Claude Code and Codex CLI transcripts and indexes them into
+      the Contextify database for full-text search.
+
+      EXAMPLES:
+        contextify ingest                    # Index using defaults
+        contextify ingest --quiet            # Silent mode for cron/systemd
+        contextify ingest --db ~/custom.db   # Custom database location
+
+      DATABASE LOCATION (in order of precedence):
+        1. --db flag
+        2. CONTEXTIFY_DB_PATH environment variable
+        3. XDG_DATA_HOME/contextify/contextify.db
+        4. ~/.local/share/contextify/contextify.db
+      """
   )
 
-  @Option(name: .long, help: "Path to the SQLite database file")
-  public var db: String
+  @Option(name: .long, help: "Path to the SQLite database file (default: XDG location)")
+  public var db: String?
+
+  @Flag(name: .shortAndLong, help: "Suppress non-error output")
+  public var quiet: Bool = false
+
+  @Flag(name: .long, help: "Output format for systemd journal (summary line only)")
+  public var systemd: Bool = false
 
   @Option(name: .long, parsing: .upToNextOption, help: "Input directories to scan for transcripts")
   public var input: [String] = []
@@ -90,34 +111,50 @@ public struct IngestCommand: AsyncParsableCommand {
     let runId = UUID().uuidString.prefix(8).lowercased()
     let startTime = Date()
 
-    // Set up event sink
+    // Resolve database path (--db > env var > XDG default)
+    let dbPath = resolveDatabasePath()
+
+    // Ensure parent directory exists with secure permissions
+    let dbDir = URL(fileURLWithPath: dbPath).deletingLastPathComponent()
+    if !XDGPaths.ensureSecureDirectory(dbDir) {
+      throw ExitCode.failure
+    }
+
+    // Determine output verbosity
+    let isQuiet = quiet || systemd
+    let showHumanOutput = format == .human && !isQuiet
+
+    // Set up event sink (only for non-quiet jsonl output)
     let sinkFormat: CLIEventSink.OutputFormat = format == .jsonl ? .jsonl : .human
-    let sink = CLIEventSink(format: sinkFormat)
+    let sink = isQuiet ? CLIEventSink(format: .human) : CLIEventSink(format: sinkFormat)
 
     // Parse --since date if provided
     let sinceDate = try parseSinceDate()
-    if let since = sinceDate, format == .human {
+    if let since = sinceDate, showHumanOutput {
       let formatter = ISO8601DateFormatter()
       print("Filtering: only transcripts modified after \(formatter.string(from: since))")
     }
 
     // Warn about --workers not being implemented yet
-    if workers != 4 && format == .human {
+    if workers != 4 && showHumanOutput {
       print("Note: --workers is not yet implemented (parallel processing coming in a future release)")
     }
 
     // Open database with FTS5 preflight
     let pool: DatabasePool
     do {
-      pool = try DatabaseOpener.openDatabase(at: db)
+      pool = try DatabaseOpener.openDatabase(at: dbPath)
     } catch let error as DatabaseOpener.CLIError {
-      sink.fileError(path: db, error: error.localizedDescription)
+      sink.fileError(path: dbPath, error: error.localizedDescription)
       throw ExitCode.failure
     }
 
+    // Tighten DB file permissions immediately after creation (reduces exposure window)
+    XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))
+
     // Handle full rebuild
     if fullRebuild {
-      if format == .human {
+      if showHumanOutput {
         print("Performing full rebuild - clearing existing data...")
       }
       try await pool.write { db in
@@ -175,7 +212,7 @@ public struct IngestCommand: AsyncParsableCommand {
     if !input.isEmpty {
       // Use provided input paths
       projects = discoverFromInputPaths(input)
-      if format == .human {
+      if showHumanOutput {
         print("Scanning \(input.count) custom input path(s)...")
       }
     } else {
@@ -223,7 +260,7 @@ public struct IngestCommand: AsyncParsableCommand {
     // Count total transcripts
     let totalTranscripts = projects.reduce(0) { $0 + $1.transcriptFiles.count }
 
-    if format == .human {
+    if showHumanOutput {
       print("Found \(projects.count) projects with \(totalTranscripts) transcripts")
     }
 
@@ -262,7 +299,7 @@ public struct IngestCommand: AsyncParsableCommand {
           return newId
         }
 
-        if format == .human {
+        if showHumanOutput {
           print("\nProcessing: \(project.displayName) (\(project.transcriptFiles.count) transcripts)")
         }
         projectsProcessed += 1
@@ -343,7 +380,7 @@ public struct IngestCommand: AsyncParsableCommand {
           totalEntriesSkipped += outcome.entriesSkipped
           transcriptsProcessed += 1
 
-          if format == .human && outcome.entriesInserted > 0 {
+          if showHumanOutput && outcome.entriesInserted > 0 {
             print("  \(fileURL.lastPathComponent): \(outcome.entriesInserted) entries")
           }
 
@@ -356,6 +393,9 @@ public struct IngestCommand: AsyncParsableCommand {
 
     let duration = Date().timeIntervalSince(startTime)
 
+    // Secure database file and sidecars (WAL/SHM) permissions
+    XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))
+
     let summary = IngestionSummary(
       transcriptsProcessed: transcriptsProcessed,
       entriesInserted: totalEntriesInserted,
@@ -363,9 +403,17 @@ public struct IngestCommand: AsyncParsableCommand {
       errorsEncountered: totalErrors,
       durationSeconds: duration
     )
-    sink.ingestionCompleted(runId: String(runId), success: totalErrors == 0, summary: summary)
 
-    if format == .human {
+    // Emit completion event (for jsonl format when not quiet)
+    if !isQuiet {
+      sink.ingestionCompleted(runId: String(runId), success: totalErrors == 0, summary: summary)
+    }
+
+    // Output based on mode
+    if systemd {
+      // Single summary line for systemd journal
+      print("Ingested \(totalEntriesInserted) entries from \(transcriptsProcessed) transcripts (\(totalErrors) errors)")
+    } else if showHumanOutput {
       print("")
       print("Ingestion complete:")
       print("  Projects processed: \(projectsProcessed)")
@@ -375,14 +423,27 @@ public struct IngestCommand: AsyncParsableCommand {
       print("  Errors: \(totalErrors)")
       print("  Duration: \(String(format: "%.2f", duration))s")
       print("")
-      print("Database: \(db)")
-      print("Use 'contextify-ingest verify --db \(db)' to verify the database.")
+      print("Database: \(dbPath)")
+      print("Use 'contextify verify --db \(dbPath)' to verify the database.")
     }
 
-    // Exit with non-zero code if errors occurred (for CI/script usage)
+    // Exit codes: 0=success, 1=error, 2=noop
     if totalErrors > 0 {
       throw ExitCode.failure
     }
+    if totalEntriesInserted == 0 && transcriptsProcessed == 0 {
+      // Nothing to do - exit code 2 for scripts
+      throw ExitCode(CLIExitCode.noop.rawValue)
+    }
+  }
+
+  /// Resolve database path using precedence: --db > env var > XDG default
+  private func resolveDatabasePath() -> String {
+    if let dbFlag = db {
+      // Expand tilde in user-provided path
+      return XDGPaths.expandTilde(dbFlag)
+    }
+    return XDGPaths.databasePath.path
   }
 
   /// Discover transcripts from custom input paths

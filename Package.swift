@@ -98,6 +98,7 @@ let linuxIngestionSources: [String] = [
   "Platform/CrossPlatformLogger.swift",
   "Platform/IngestionEventSink.swift",
   "Platform/PlatformSandbox.swift",
+  "Platform/XDGPaths.swift",
   // Database layer (ingestion only - no OSLog privacy modifiers)
   "Database/BulkIngestManager.swift",
   "Database/DatabaseSchema.swift",
