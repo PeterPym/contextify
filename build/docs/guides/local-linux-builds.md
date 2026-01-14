@@ -1,27 +1,76 @@
 # Local Linux Builds with Docker
 
-Build Linux CLI binaries locally using Docker as an alternative to GitHub Actions.
+Build Linux CLI binaries locally using Docker as an alternative to GitHub Actions CI.
 
-## When to Use Local Builds
+## Build Strategy
 
-Local Docker builds are a valid alternative to CI builds when:
+Ranked approach for building Linux binaries:
 
-- **GitHub Actions artifact quota is exhausted** (recalculates every 6-12 hours)
-- **Faster iteration** needed during development
-- **CI is down** or experiencing issues
-- **Network issues** with GitHub Actions
+| Rank | Method | When to Use |
+|------|--------|-------------|
+| 1 | **Local Docker (amd64)** | Development iteration, quick validation |
+| 2 | **CI (amd64 only)** | Pre-release validation, need amd64 artifact |
+| 3 | **CI (both architectures)** | Final release builds, need arm64 |
+| 4 | **Local Docker (arm64)** | Emergency only (2-3 hours on ARM Mac) |
 
-The binaries produced are identical to CI builds - same Swift version, same static linking, same build flags.
+**Why this order?**
+- Local amd64 builds are fast (~5-10 min) with Colima on ARM Mac
+- CI preserves GitHub Actions minutes (limited budget)
+- arm64 builds are slow everywhere (QEMU emulation)
+- CI arm64 builds timeout at 90 minutes; local takes 2-3 hours
 
 ## Prerequisites
 
-- Docker runtime installed and running (Colima recommended: `brew install colima docker && colima start`)
+- Docker runtime: Colima recommended (`brew install colima docker && colima start`)
 - ARM Mac (Apple Silicon) for native arm64 builds
-- x86_64 builds work on ARM Macs with Colima (or Docker Desktop with Rosetta enabled)
+- x86_64 builds work on ARM Macs with Colima (uses Rosetta)
 
-## Quick Start
+## Quick Start: Build x86_64 (Recommended)
 
-### Build arm64 (Native on Apple Silicon)
+```bash
+# Create output directory
+mkdir -p dist
+
+# Build x86_64 binary (~5-10 minutes on ARM Mac with Colima)
+docker run --rm \
+  -v "$PWD":/workspace:ro \
+  -v "$PWD/dist":/output:rw \
+  -e CLI_VERSION="1.1.0" \
+  -w /build \
+  --platform linux/amd64 \
+  swift:6.0-noble \
+  bash -c '
+    set -e
+    cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
+    apt-get update -qq && apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+
+    # Build SQLite with required features
+    cd /tmp
+    curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-3450100.tar.gz" | tar xz
+    cd sqlite-autoconf-*
+    CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
+      ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
+    make -j$(nproc) --quiet && make install --quiet && ldconfig
+
+    # Build unified CLI
+    cd /build
+    printf "// Generated at build time\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
+    swift build -c release --product contextify --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
+
+    # Package
+    mkdir -p /output
+    cp .build/release/contextify /output/
+    ln -sf contextify /output/contextify-ingest
+    ln -sf contextify /output/contextify-query
+    cp -R contextify-query/user-skill /output/
+    cd /output && tar -czvf contextify-linux-x86_64.tar.gz contextify contextify-ingest contextify-query user-skill
+    rm -f contextify contextify-ingest contextify-query && rm -rf user-skill
+  '
+```
+
+## Build arm64 (Native on Apple Silicon - SLOW)
+
+Only use this when CI arm64 build times out or CI is unavailable. Takes 2-3 hours.
 
 ```bash
 docker run --rm \
@@ -44,65 +93,52 @@ docker run --rm \
       ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu --disable-shared --quiet
     make -j$(nproc) --quiet && make install --quiet && ldconfig
 
-    # Build CLIs
+    # Build unified CLI
     cd /build
-    printf "// Generated at build time\nlet generatedCLIVersion = \"1.1.0\"\n" > Sources/ContextifyIngestionCLI/Version.generated.swift
-    swift build -c release --product contextify-query --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
-    swift build -c release --product contextify-ingest --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
+    printf "// Generated at build time\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
+    swift build -c release --product contextify --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
 
     # Package
-    cp .build/release/contextify-ingest .build/release/contextify-query /output/
+    mkdir -p /output
+    cp .build/release/contextify /output/
+    ln -sf contextify /output/contextify-ingest
+    ln -sf contextify /output/contextify-query
     cp -R contextify-query/user-skill /output/
-    cd /output && tar -czvf contextify-linux-arm64.tar.gz contextify-ingest contextify-query user-skill
-    rm -f contextify-ingest contextify-query && rm -rf user-skill
+    cd /output && tar -czvf contextify-linux-arm64.tar.gz contextify contextify-ingest contextify-query user-skill
+    rm -f contextify contextify-ingest contextify-query && rm -rf user-skill
   '
 ```
 
-### Build x86_64 (Works with Colima on ARM Mac)
+## Using CI Instead (Recommended for arm64)
 
-ARM Macs can build x86_64 using Colima, which uses Lima VMs with Apple's Virtualization.framework.
+CI builds are manual-only. Use `/linux-ci-trigger` skill or trigger directly:
 
 ```bash
-docker run --rm \
-  -v "$PWD":/workspace:ro \
-  -v "$PWD/dist":/output:rw \
-  -w /build \
-  --platform linux/amd64 \
-  swift:6.0-noble \
-  bash -c '
-    set -e
-    cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
-    apt-get update -qq && apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
-    cd /tmp
-    curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-3450100.tar.gz" | tar xz
-    cd sqlite-autoconf-*
-    CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
-      ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
-    make -j$(nproc) --quiet && make install --quiet && ldconfig
-    cd /build
-    printf "// Generated at build time\nlet generatedCLIVersion = \"1.1.0\"\n" > Sources/ContextifyIngestionCLI/Version.generated.swift
-    swift build -c release --product contextify-query --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
-    swift build -c release --product contextify-ingest --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
-    cp .build/release/contextify-ingest .build/release/contextify-query /output/
-    cp -R contextify-query/user-skill /output/
-    cd /output && tar -czvf contextify-linux-x86_64.tar.gz contextify-ingest contextify-query user-skill
-    rm -f contextify-ingest contextify-query && rm -rf user-skill
-  '
+# amd64 only (faster, ~10 min)
+gh workflow run "Linux Release" --repo banagale/contextify \
+  -f version=1.1.0 \
+  -f build_amd64=true \
+  -f build_arm64=false
+
+# Both architectures (slow, ~90 min)
+gh workflow run "Linux Release" --repo banagale/contextify \
+  -f version=1.1.0 \
+  -f build_amd64=true \
+  -f build_arm64=true
+
+# Monitor progress
+gh run list --workflow="Linux Release" --repo banagale/contextify --limit 1
+gh run watch --repo banagale/contextify
 ```
-
-**Note:** Tested with Colima on ARM Macs. Docker Desktop should also work.
-
-## Worktree Compatibility
-
-When building from a git worktree, mount the workspace as read-only (`:ro`) and use a container-internal build directory (`-w /build`). This avoids git path resolution issues where Docker can't access the parent `.git` directory.
 
 ## Build Artifacts
 
 Output location: `dist/contextify-linux-{arch}.tar.gz`
 
 Contents:
-- `contextify-ingest` - Database ingestion CLI
-- `contextify-query` - Query CLI with Total Recall skill
+- `contextify` - Unified CLI binary
+- `contextify-ingest` - Symlink to contextify (backwards compat)
+- `contextify-query` - Symlink to contextify (backwards compat)
 - `user-skill/` - Total Recall skill files
 
 ## Verification
@@ -110,31 +146,33 @@ Contents:
 After building, verify static linking:
 
 ```bash
-# Extract and check
-tar -tzf dist/contextify-linux-arm64.tar.gz
-docker run --rm -v "$PWD/dist":/dist swift:6.0-noble ldd /dist/contextify-query
-# Should show no libsqlite3.so dependency
+# Check tarball contents
+tar -tzf dist/contextify-linux-x86_64.tar.gz
+
+# Verify no dynamic SQLite dependency
+docker run --rm -v "$PWD/dist":/dist swift:6.0-noble \
+  sh -c 'tar -xzf /dist/contextify-linux-x86_64.tar.gz -C /tmp && ldd /tmp/contextify'
+# Should NOT show libsqlite3.so
 ```
 
-## CI vs Local: Which to Use?
+## Worktree Compatibility
 
-| Scenario | Recommendation |
-|----------|----------------|
-| Normal releases | GitHub Actions (both architectures) |
-| Quota exhausted | Local Docker (both architectures) |
-| Quick iteration | Local Docker |
-| Official release | Both should match - binaries are identical |
+When building from a git worktree, mount the workspace as read-only (`:ro`) and use a container-internal build directory (`-w /build`). This avoids git path resolution issues where Docker can't access the parent `.git` directory.
 
 ## Troubleshooting
 
 ### Git "dubious ownership" errors
-
 Mount workspace as read-only (`:ro`) and copy files to container-internal path.
 
 ### SwiftPM cache permission errors
-
 These warnings are harmless - SwiftPM can't write to the cache in the read-only mount but downloads work.
+
+### arm64 build takes too long
+This is expected. Swift compilation under QEMU is slow. Use CI for arm64 when possible.
+
+### Build fails with "cannot find X in scope"
+Check that Version.generated.swift is being written to the correct path (`Sources/ContextifyCLI/`).
 
 ---
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-14

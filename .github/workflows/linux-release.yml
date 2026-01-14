@@ -1,22 +1,35 @@
 name: Linux Release
-# Workflow for building Linux CLI binaries (x86_64 and arm64) - refresh
+# Workflow for building Linux CLI binaries (x86_64 and arm64)
+#
+# MANUAL-ONLY: This workflow does NOT run automatically on commits or tags.
+# Use /linux-ci-trigger skill or run manually via GitHub Actions UI.
+#
+# Build Strategy (see build/docs/guides/linux-ci-builds.md):
+#   1. Local builds preferred for development
+#   2. CI builds for releases and validation
+#   3. arm64 builds require QEMU (slow) - use CI for arm64
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'      # Unified versioning (preferred)
-      - 'cli-v*.*.*'  # Legacy CLI versioning (backward compat)
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to release (e.g., 1.0.0)'
         required: true
+      build_amd64:
+        description: 'Build x86_64 (amd64)'
+        type: boolean
+        default: true
+      build_arm64:
+        description: 'Build arm64 (slow - 1+ hour)'
+        type: boolean
+        default: true
 
 env:
   SQLITE_VERSION: "3450100"
 
 jobs:
   build-linux-amd64:
+    if: ${{ github.event.inputs.build_amd64 == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,10 +77,10 @@ jobs:
               make install --quiet
               ldconfig
 
-              # Generate Version.swift with resolved version
+              # Generate Version.swift with resolved version (unified CLI uses ContextifyCLI)
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
 
               # Build unified CLI (contextify) - the single binary for Linux
               swift build -c release --product contextify \
@@ -104,8 +117,9 @@ jobs:
           retention-days: 7
 
   build-linux-arm64:
+    if: ${{ github.event.inputs.build_arm64 == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -155,10 +169,10 @@ jobs:
               make install --quiet
               ldconfig
 
-              # Generate Version.swift with resolved version
+              # Generate Version.swift with resolved version (unified CLI uses ContextifyCLI)
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
 
               # Build unified CLI (contextify) - the single binary for Linux
               swift build -c release --product contextify \
@@ -197,6 +211,7 @@ jobs:
   # Validate binary compatibility before release (both architectures)
   validate-binary-amd64:
     needs: [build-linux-amd64]
+    if: ${{ github.event.inputs.build_amd64 == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download x86_64 artifact
@@ -267,6 +282,7 @@ jobs:
 
   validate-binary-arm64:
     needs: [build-linux-arm64]
+    if: ${{ github.event.inputs.build_arm64 == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Set up QEMU

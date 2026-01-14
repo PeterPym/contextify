@@ -143,6 +143,9 @@ struct Contextify: AsyncParsableCommand {
 
   /// Entry point - handles argv[0] dispatch for backwards compatibility
   static func main() async {
+    // Export version to environment for subcommand libraries to read
+    setenv("CONTEXTIFY_CLI_VERSION", cliVersion, 1)
+
     // Check for backwards-compatible invocation
     if let transformedArgs = handleArgv0Dispatch() {
       // Re-invoke with transformed arguments
