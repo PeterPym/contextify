@@ -36,6 +36,7 @@ usage() {
 
 main() {
     parse_args "$@"
+    check_os
     check_dependencies
     detect_arch
     detect_version
@@ -58,9 +59,28 @@ parse_args() {
     done
 }
 
+check_os() {
+    OS=$(uname -s 2>/dev/null || echo unknown)
+    case "$OS" in
+        Linux) ;;
+        Darwin)
+            echo "Error: This installer is for Linux only."
+            echo ""
+            echo "For macOS, download from: https://contextify.sh/download/"
+            echo "Or see documentation: https://contextify.sh/docs/"
+            exit 1
+            ;;
+        *)
+            echo "Error: Unsupported operating system: $OS"
+            echo "This installer supports Linux only."
+            exit 1
+            ;;
+    esac
+}
+
 check_dependencies() {
     # Required commands (all standard on Linux, but check anyway)
-    for cmd in curl tar mktemp sha256sum awk sed uname chmod mkdir; do
+    for cmd in curl tar mktemp sha256sum awk grep sed uname chmod mkdir tr rm mv; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             echo "Error: '$cmd' is required but not found."
             echo "Install it with your package manager and retry."
@@ -91,14 +111,22 @@ detect_version() {
         return
     fi
 
-    # Try GitHub API first (use -f to fail on HTTP errors)
-    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
-              grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/' || true)
+    # Try GitHub API first - POSIX-friendly JSON parsing with awk (no sed -E)
+    TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+          awk -F'"' '/"tag_name"/ { print $4; exit }' || true)
+
+    # Strip tag prefix to get bare version number (handles cli-v1.0.0, v1.0.0, or bare 1.0.0)
+    case "$TAG" in
+        cli-v*) VERSION=${TAG#cli-v} ;;
+        cli-*)  VERSION=${TAG#cli-} ;;
+        v*)     VERSION=${TAG#v} ;;
+        *)      VERSION=$TAG ;;
+    esac
 
     # Fallback to hosted version file if API fails (rate limit, etc.)
     if [ -z "$VERSION" ]; then
         echo "GitHub API unavailable, trying fallback..."
-        VERSION=$(curl -fsSL "https://contextify.sh/cli-version.txt" 2>/dev/null || true)
+        VERSION=$(curl -fsSL "https://contextify.sh/cli-version.txt" 2>/dev/null | tr -d '\r\n' || true)
     fi
 
     if [ -z "$VERSION" ]; then
@@ -123,7 +151,10 @@ download_and_extract() {
     mkdir -p "$INSTALL_DIR"
 
     # Create temp dir for download (cleaned up by trap)
-    TMPDIR=$(mktemp -d)
+    # Use portable mktemp invocation
+    TMPDIR=$(mktemp -d 2>/dev/null || mktemp -d -t contextify.XXXXXX)
+    STAGEDIR="$TMPDIR/stage"
+    mkdir -p "$STAGEDIR"
 
     # Download tarball (-f fails on HTTP errors like 404)
     if ! curl -fsSL "$URL" -o "$TMPDIR/$TARBALL"; then
@@ -134,14 +165,24 @@ download_and_extract() {
 
     # Download and verify checksum
     echo "Verifying checksum..."
-    if ! EXPECTED=$(curl -fsSL "$CHECKSUM_URL" | awk '{print $1}'); then
+    EXPECTED=$(curl -fsSL "$CHECKSUM_URL" | awk '{print $1}' | tr -d '\r' || true)
+
+    # Validate checksum is a 64-char hex string
+    if [ -z "$EXPECTED" ]; then
         echo "Error: Failed to download checksum file"
         echo "Release may be incomplete. Try a different VERSION."
         exit 1
     fi
 
-    if [ -z "$EXPECTED" ]; then
-        echo "Error: Checksum file is empty or malformed"
+    # Verify checksum format (exactly 64 hex chars, nothing else)
+    case "$EXPECTED" in
+        *[!0-9a-fA-F]*|'')
+            echo "Error: Checksum file is malformed (contains non-hex characters)"
+            exit 1
+            ;;
+    esac
+    if [ ${#EXPECTED} -ne 64 ]; then
+        echo "Error: Checksum file is malformed (expected 64 hex chars, got ${#EXPECTED})"
         exit 1
     fi
 
@@ -156,18 +197,56 @@ download_and_extract() {
     fi
     echo "Checksum verified."
 
-    # Extract (tarball contains: contextify, contextify-ingest, contextify-query symlinks)
-    tar -xzf "$TMPDIR/$TARBALL" -C "$INSTALL_DIR"
-    chmod +x "$INSTALL_DIR/contextify"
+    # Validate tarball contents before extraction (security: prevent path traversal attacks)
+    LIST=$(tar -tzf "$TMPDIR/$TARBALL") || { echo "Error: Failed to list tarball contents"; exit 1; }
 
-    # Verify tarball layout contract
-    if [ ! -x "$INSTALL_DIR/contextify" ]; then
+    # Normalize ./ prefix entries (tar creation style varies)
+    NORM_LIST=$(echo "$LIST" | sed 's|^\./||')
+
+    # Reject unsafe paths using awk (POSIX-friendly)
+    echo "$NORM_LIST" | awk '
+        $0 == "" { bad=1 }                          # empty lines
+        $0 ~ /^\// { bad=1 }                        # absolute paths
+        $0 ~ /(^|\/)\.\.(\/|$)/ { bad=1 }           # .. path segments
+        END { exit (bad ? 1 : 0) }
+    ' || { echo "Error: Tarball contains unsafe paths (absolute or traversal)"; exit 1; }
+
+    # Verify expected layout (contextify binary required, others optional)
+    if ! echo "$NORM_LIST" | grep -qx 'contextify'; then
+        echo "Error: Tarball missing 'contextify' binary"
+        exit 1
+    fi
+
+    # Extract to staging directory
+    tar -xzf "$TMPDIR/$TARBALL" -C "$STAGEDIR"
+
+    # Double-check extraction result
+    if [ ! -f "$STAGEDIR/contextify" ]; then
         echo "Error: missing contextify in tarball root (bad tarball layout?)"
         exit 1
     fi
-    # Symlinks are optional for functionality but expected in v1
-    [ -L "$INSTALL_DIR/contextify-ingest" ] || echo "Warning: missing contextify-ingest symlink"
-    [ -L "$INSTALL_DIR/contextify-query" ]  || echo "Warning: missing contextify-query symlink"
+
+    # Move files from staging to install directory
+    mv -f "$STAGEDIR/contextify" "$INSTALL_DIR/contextify"
+    chmod +x "$INSTALL_DIR/contextify"
+
+    # Move symlinks if present, remove stale ones if not (backwards compatibility)
+    if [ -L "$STAGEDIR/contextify-ingest" ]; then
+        mv -f "$STAGEDIR/contextify-ingest" "$INSTALL_DIR/contextify-ingest"
+    else
+        rm -f "$INSTALL_DIR/contextify-ingest" 2>/dev/null || true
+    fi
+    if [ -L "$STAGEDIR/contextify-query" ]; then
+        mv -f "$STAGEDIR/contextify-query" "$INSTALL_DIR/contextify-query"
+    else
+        rm -f "$INSTALL_DIR/contextify-query" 2>/dev/null || true
+    fi
+
+    # Move user-skill directory if present
+    if [ -d "$STAGEDIR/user-skill" ]; then
+        rm -rf "$INSTALL_DIR/user-skill"
+        mv -f "$STAGEDIR/user-skill" "$INSTALL_DIR/user-skill"
+    fi
 }
 
 verify_installation() {
@@ -208,8 +287,8 @@ print_success() {
         echo ""
         echo "Add it to your shell configuration:"
         echo ""
-        # Detect shell and provide appropriate advice
-        SHELL_NAME=$(basename "$SHELL")
+        # Detect shell using POSIX parameter expansion (no basename dependency)
+        SHELL_NAME="${SHELL##*/}"
         case "$SHELL_NAME" in
             bash)
                 echo "  # For bash, add to ~/.bashrc:"
@@ -231,12 +310,17 @@ print_success() {
                 ;;
         esac
         echo ""
+        echo "NEXT STEPS (use full path until PATH is updated):"
+        echo ""
+        echo "  1. Set up automatic ingestion:"
+        echo "     $INSTALL_DIR/contextify install-service"
+    else
+        echo "NEXT STEPS:"
+        echo ""
+        echo "  1. Set up automatic ingestion:"
+        echo "     contextify install-service"
     fi
 
-    echo "NEXT STEPS:"
-    echo ""
-    echo "  1. Set up automatic ingestion:"
-    echo "     contextify install-service"
     echo ""
     echo "  2. Use Total Recall in Claude Code or Codex:"
     echo "     /total-recall"

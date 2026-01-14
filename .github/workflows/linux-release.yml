@@ -194,8 +194,8 @@ jobs:
           path: dist/contextify-linux-arm64.tar.gz
           retention-days: 7
 
-  # Validate binary compatibility before release
-  validate-binary:
+  # Validate binary compatibility before release (both architectures)
+  validate-binary-amd64:
     needs: [build-linux-amd64]
     runs-on: ubuntu-latest
     steps:
@@ -212,8 +212,8 @@ jobs:
 
       - name: Check glibc floor (<= 2.35)
         run: |
-          echo "Checking glibc version requirements..."
-          MAX=$(objdump -T binary/contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1 || true)
+          echo "Checking glibc version requirements (x86_64)..."
+          MAX=$(objdump -T binary/contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -V | tail -1 || true)
           if [ -z "$MAX" ]; then
             echo "WARNING: Could not determine glibc requirement (may be fully static)"
             exit 0
@@ -233,7 +233,7 @@ jobs:
 
       - name: Check no Swift runtime dependencies
         run: |
-          echo "Checking for Swift runtime dependencies..."
+          echo "Checking for Swift runtime dependencies (x86_64)..."
           if ldd binary/contextify 2>/dev/null | grep -qE 'libswift|Swift'; then
             echo "ERROR: Binary has Swift runtime dependencies!"
             ldd binary/contextify | grep -E 'libswift|Swift'
@@ -243,7 +243,7 @@ jobs:
 
       - name: Test in minimal Ubuntu 22.04 container
         run: |
-          echo "Testing binary execution in minimal ubuntu:22.04 container..."
+          echo "Testing binary execution in minimal ubuntu:22.04 container (x86_64)..."
           docker run --rm -v $(pwd)/binary:/app:ro ubuntu:22.04 sh -c '
             set -e
             echo "Testing --version..."
@@ -263,7 +263,66 @@ jobs:
             echo ""
             echo "All subcommand tests passed!"
           '
-          echo "Minimal container test passed!"
+          echo "Minimal container test passed (x86_64)!"
+
+  validate-binary-arm64:
+    needs: [build-linux-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: contextify-linux-arm64
+          path: artifacts
+
+      - name: Extract tarball
+        run: |
+          mkdir -p binary
+          tar -xzf artifacts/contextify-linux-arm64.tar.gz -C binary
+
+      # Note: We skip explicit glibc objdump check for arm64 to avoid apt flakiness.
+      # Running the binary successfully in ubuntu:22.04 (glibc 2.35) is the definitive test.
+
+      - name: Test in minimal Ubuntu 22.04 container (arm64)
+        run: |
+          echo "Testing binary execution in minimal ubuntu:22.04 container (arm64)..."
+          docker run --rm --platform linux/arm64 \
+            -v $(pwd)/binary:/app:ro \
+            ubuntu:22.04 sh -c '
+              set -e
+
+              # Check no Swift runtime deps (handles static binaries where ldd fails)
+              echo "Checking for Swift runtime dependencies (arm64)..."
+              if ldd /app/contextify 2>/dev/null | grep -qiE "libswift|swift"; then
+                echo "ERROR: Binary has Swift runtime dependencies!"
+                ldd /app/contextify 2>/dev/null | grep -iE "libswift|swift" || true
+                exit 1
+              fi
+              # Note: ldd returns non-zero for static binaries, but we only fail if Swift libs found
+              echo "No Swift runtime dependencies found"
+              echo ""
+
+              echo "Testing --version..."
+              /app/contextify --version
+              echo ""
+              echo "Testing --help..."
+              /app/contextify --help
+              echo ""
+              echo "Testing ingest --help..."
+              /app/contextify ingest --help
+              echo ""
+              echo "Testing status --help..."
+              /app/contextify status --help
+              echo ""
+              echo "Testing install-service --help..."
+              /app/contextify install-service --help
+              echo ""
+              echo "All subcommand tests passed!"
+            '
+          echo "Minimal container test passed (arm64)!"
 
   # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
   # This job is disabled to avoid duplicate releases.
