@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2026-01-12 (Added P0 #TAB-PERSIST - tab visibility not persisted across restarts)
+**Last Updated:** 2026-01-14 (Added P1 #LINUX-OUTREACH - direct outreach to Linux CLI beta testers)
 **Status:** Active
 
 **Priority Levels:**
@@ -75,63 +75,6 @@ Tab visibility state should persist across app restarts via UserDefaults or simi
 # P1 (High Priority)
 
 ---
-
-## Image Rendering Pipeline Optimization (4 items)
-
-**Status:** Partially complete (3/4 done)
-**Priority:** P1 (performance/stability)
-**Discovered:** 2025-12-27
-
-- [x] #IMAGE-RENDER-ASYNC: Fix blocking file I/O in ImageExtractor actor - ✅ DONE (moved file I/O outside actor, streaming parse)
-- [x] #IMAGE-RENDER-CACHE: Implement proper LRU cache with byte-budget eviction - ✅ DONE (FIFO with byte budget)
-- [x] #IMAGE-RENDER-MEMORY: Reduce memory footprint with thumbnail caching - ✅ DONE (100MB cache limit enforced)
-- [ ] #IMAGE-RENDER-UX: Address minor UX issues (index bounds, gestures, decode errors) - Some items remain
-
-**Background:**
-Image rendering feature works but has performance/memory concerns identified in code review:
-1. ~~Actor blocked by synchronous full-file reads (can stall timeline)~~ - FIXED: File I/O moved outside actor
-2. ~~Cache eviction is not LRU (Dictionary.keys.first is unpredictable)~~ - FIXED: FIFO eviction with byte budget
-3. ~~Raw Data caching for 100 entries could consume hundreds of MB~~ - FIXED: 100MB hard limit enforced
-4. Repeated NSImage decodes on every view access - MITIGATED: Cache limits prevent excessive memory
-
-**Completed Work:**
-- Streaming JSONL parse (file I/O outside actor) - `ImageExtractor.swift:15-45`
-- FIFO cache eviction with 100MB byte budget - `ImageExtractor.swift:95-115`
-- Cache size enforcement prevents unbounded growth
-
-**Remaining Work:**
-- UX polish items tracked in #IMG-POLISH-* (separate P1 section)
-- Error handling improvements (decode failures, missing images)
-- Gesture refinements (zoom/pan edge cases)
-
-**Reference:** `/tmp/image-rendering-improvements-todo.md` (full breakdown)
-
----
-
-## Image Rendering UI/UX Polish (7 items)
-
-**Status:** Not started
-**Priority:** P1 (UX quality)
-**Discovered:** 2025-12-27
-
-- [ ] #IMG-POLISH-THUMBNAILS: Refine thumbnail styling (borders, corners, hover states)
-- [ ] #IMG-POLISH-PANEL: Polish preview panel window appearance and chrome
-- [ ] #IMG-POLISH-A11Y: Add VoiceOver support and keyboard nav completeness
-- [ ] #IMG-POLISH-ANIMATIONS: Smooth transitions between images and zoom/pan gestures
-- [ ] #IMG-POLISH-ERRORS: Improve empty/error state feedback when images fail to load
-- [ ] #IMG-POLISH-PROMPT: Enhance prompt text display (expand on click, better truncation)
-- [ ] #IMG-POLISH-WINDOW: Persist preview window size/position, handle close behavior
-
-**Background:**
-Image rendering feature is functional but needs UI polish:
-- Thumbnail styling minimal (basic rounded rect with low-contrast border)
-- Preview panel appearance could be more refined
-- No VoiceOver labels or screen reader support
-- Animations basic (0.2s easeInOut)
-- Prompt text truncates abruptly with no way to see full text
-- Window loses size/position on close
-
-**Scope:** UI/UX polish only. Performance concerns tracked separately in #IMAGE-RENDER-*.
 
 ---
 
@@ -331,82 +274,40 @@ Background process that continuously watches conversation transcripts and uses A
 
 ## Cross-Platform Ingestion CLI (Linux)
 
-**Status:** Scaffolding complete, not yet usable (entry parsing + distribution missing)
-**Priority:** P1
+**Status:** Code complete (all 4 phases done), needs release build
+**Priority:** P0 (release blocker)
 **Tag:** #LINUX-CLI
+**Spec:** `build/notes/todo-support/LINUX-CLI-V1-spec.md`
 
-- [ ] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
+- [x] #CROSS-PLATFORM-INGESTION: Build cross-platform ingestion CLI for Linux
 
-**Goal:** Linux CLI that ingests Claude Code/Codex transcripts into a Contextify-compatible, searchable database.
-
-**Current State:** CLI builds and creates project/transcript records, but does NOT parse entries. Users get an empty database shell. No distribution mechanism exists.
-
----
-
-### Completed Work
-
-- [x] Phase 1: Platform adapters (CrossPlatformLock, CrossPlatformCrypto, CrossPlatformLogger, IngestionEventSink)
-- [x] Phase 2: Package.swift restructure (conditional targets, swift-crypto)
-- [x] Phase 2.5: Docker build environment, Linux build succeeds
-- [x] Phase 3 skeleton: CLI creates project/transcript records (no entries)
-- [x] Phase 4: `ingestion_runs` table migration (v33)
-- [x] Phase 7: GitHub Actions Linux CI (.github/workflows/linux-build.yml)
-- [x] Phase 7: Change detection script, pre-commit hook
+**Current State:** All implementation phases complete. Code merged to main. Need to build new release with Phase 0-4 work (v1.1.0 on GitHub has old binaries).
 
 ---
 
-### P0 - Core Functionality (blocks everything else)
+### Completed Work (Phases 0-4)
 
-These must be done before CLI is usable:
-
-- [ ] #LINUX-OSLOG: Add OSLog cross-platform wrapper to `Repositories.swift`
-  - 6-line change: `#if canImport(OSLog)` wrapper at top of file
-  - No privacy labels to update (already checked)
-
-- [ ] #LINUX-HOOVER-SOURCES: Add HooverEngine + dependencies to `linuxSources` in Package.swift
-  - `Database/Repositories.swift`
-  - `Database/HooverEngine.swift`
-  - `Database/TranscriptParsers.swift` (already cross-platform)
-
-- [ ] #LINUX-HOOVER-WIRE: Wire HooverEngine in IngestCommand
-  - Call `hooverTranscript()` for each transcript file
-  - Track entries_inserted in run stats
-
-- [ ] #LINUX-E2E-VERIFY: E2E verification - ingest produces searchable entries
-  - Ingest real transcript, query FTS5, confirm results
+- [x] Phase 0: Unified `contextify` binary with subcommands (merged 2026-01-13)
+- [x] Phase 1: XDG paths, exit codes, status command (merged 2026-01-13)
+- [x] Phase 2: systemd service commands (merged 2026-01-13)
+- [x] Phase 3: curl|sh installer, CI validation (merged 2026-01-13)
+- [x] Phase 4: Polish, glibc compatibility fixes (completed 2026-01-14)
+- [x] #LINUX-OSLOG: OSLog cross-platform wrapper
+- [x] #LINUX-HOOVER-SOURCES: HooverEngine in Package.swift
+- [x] #LINUX-HOOVER-WIRE: HooverEngine wired in IngestCommand
+- [x] #LINUX-E2E-VERIFY: E2E verification passed
+- [x] #LINUX-RELEASE-WORKFLOW: GitHub Actions workflow exists
+- [x] #LINUX-INSTALL-SCRIPT: `curl -fsSL https://contextify.sh/install.sh | sh`
+- [x] #LINUX-SERVICE-SETUP: systemd timer commands (install-service, uninstall-service, service-status)
 
 ---
 
-### P1 - Distribution (required for users to actually use it)
+### P0 - Release (blocks everything else)
 
-- [ ] #LINUX-RELEASE-WORKFLOW: GitHub Releases workflow
-  - Build on tag push (v*.*.*)
-  - Publish .tar.gz artifacts (x86_64, arm64)
-  - Include version in binary (`contextify-ingest --version`)
-
-- [ ] #LINUX-INSTALL-SCRIPT: Install script
-  - `curl -sSL https://contextify.sh/install-cli.sh | sh`
-  - Detect architecture, download correct binary
-  - Install to ~/.local/bin or /usr/local/bin
-
-- [ ] #LINUX-VERSION-STRATEGY: Versioning strategy
-  - Decision: same version as app, or independent?
-  - Schema version compatibility checking
-
----
-
-### P0 - Background Service (required for automatic ingestion)
-
-**Status:** Not started
-**Reference:** `build/notes/todo-support/LINUX-SERVICE-SETUP-spec.md`
-**Note:** Without this, users must manually run `contextify-ingest` - Linux is Beta until resolved.
-
-- [ ] #LINUX-SERVICE-SETUP: systemd user service for automatic ingestion
-  - `contextify-ingest install-service` - generate and enable systemd user timer
-  - `contextify-ingest uninstall-service` - remove service
-  - `contextify-ingest service-status` - check timer status
-  - Timer runs ingestion every 15 minutes
-  - Document in `/docs/` page
+- [ ] #LINUX-VERSION-STRATEGY: Decide version for first full Linux release
+  - Option A: Unified v1.2.0 (all platforms ship together)
+  - Option B: Linux v1.2.0 independent (macOS catches up later)
+  - Need to build new binaries with Phase 0-4 work
 
 ---
 
@@ -414,73 +315,48 @@ These must be done before CLI is usable:
 
 - [ ] #LINUX-FIXTURE-TEST: Golden fixture comparison
   - Same input transcript → same DB output on macOS vs Linux
-  - Hash comparison of query results
 
 - [ ] #LINUX-DOCKER-TEST: Docker-based E2E test in CI
   - Full ingest + query cycle in workflow
 
 ---
 
+### P1 - Outreach
+
+- [ ] #LINUX-OUTREACH: Direct outreach to Linux CLI beta testers from prospect research
+  - 40 prospects identified (19 Reddit, 21 HN)
+  - Reference: `build/notes/outreach/linux-cli-prospect-research.md`
+  - **No longer blocked** - core functionality complete
+
+---
+
 ### P2 - CLI Features
 
 - [ ] #LINUX-INPUT-OPTION: Wire `--input` option to LightweightDiscoveryService
-  - Currently fails fast with error message
-
 - [ ] #LINUX-SINCE-OPTION: `--since <timestamp>` for incremental ingestion
-  - Skip transcripts not modified since timestamp
-
 - [ ] #LINUX-WORKERS-OPTION: `--workers N` for parallel ingestion
-  - Concurrent transcript processing
-
 - [ ] #LINUX-BATCH-TRANSACTIONS: Transaction batching per-project
-  - Performance at scale (10-100k transcripts)
-  - Batch writes using `db.inTransaction { ... }`
 
 ---
 
 ### P2 - Documentation
 
 - [ ] #LINUX-CLI-README: CLI README with usage examples
-  - Installation, basic usage, common workflows
-  - Located at `Sources/ContextifyIngestionCLI/README.md` or `docs/cli/`
-
-- [ ] #LINUX-INSTALL-GUIDE: Installation guide
-  - Per-platform instructions (Ubuntu, Debian, Fedora, Arch, macOS)
-  - Dependencies (none expected, but document)
-
-- [ ] #LINUX-WEBSITE-PAGE: Website /cli page
-  - contextify.sh/cli or contextify.sh/linux
-  - Installation, features, use cases
-
+- [ ] #LINUX-INSTALL-GUIDE: Installation guide (Ubuntu, Debian, Fedora, Arch)
+- [ ] #LINUX-WEBSITE-PAGE: Website /cli or /linux page
 - [ ] #LINUX-DB-SCHEMA-DOCS: Database query documentation
-  - What tables exist, what can you query
-  - Example SQL for common use cases
-  - FTS5 search syntax
 
 ---
 
-### P2 - Package Distribution
+### P3 - Package Distribution
 
 - [ ] #LINUX-APT-REPO: APT repository for Debian/Ubuntu
-  - Host PPA or self-hosted apt repository
-  - GPG signing infrastructure
-  - Build .deb packages in CI
-  - `sudo apt install contextify-query`
-
----
-
-### P3 - Polish
-
 - [ ] #LINUX-HOMEBREW: Homebrew tap for macOS CLI users
-  - `brew install contextify/tap/contextify-ingest`
-
 - [ ] #LINUX-DOCKER-IMAGE: Docker image for one-liner usage
-  - `docker run contextify/ingest -v ~/.claude:/data ...`
 
 ---
 
-**Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/swift6-concurrency.md`
-**Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
+**Guides:** `build/docs/guides/cross-platform-swift.md`, `build/docs/guides/linux-ci-builds.md`
 
 ---
 
@@ -2769,6 +2645,25 @@ When Apple Intelligence encounters `FoundationModels.LanguageModelSession.Genera
 ---
 
 # P3 (Low Priority / Deferred)
+
+## Image Rendering Polish (8 items)
+
+**Status:** Core done, polish deferred
+**Priority:** P3 (deferred from P1)
+**Discovered:** 2025-12-27
+
+- [ ] #IMAGE-RENDER-UX: Address minor UX issues (index bounds, gestures, decode errors)
+- [ ] #IMG-POLISH-THUMBNAILS: Refine thumbnail styling (borders, corners, hover states)
+- [ ] #IMG-POLISH-PANEL: Polish preview panel window appearance and chrome
+- [ ] #IMG-POLISH-A11Y: Add VoiceOver support and keyboard nav completeness
+- [ ] #IMG-POLISH-ANIMATIONS: Smooth transitions between images and zoom/pan gestures
+- [ ] #IMG-POLISH-ERRORS: Improve empty/error state feedback when images fail to load
+- [ ] #IMG-POLISH-PROMPT: Enhance prompt text display (expand on click, better truncation)
+- [ ] #IMG-POLISH-WINDOW: Persist preview window size/position, handle close behavior
+
+**Note:** Core performance work complete (async I/O, LRU cache, memory limits). These are UX polish items.
+
+---
 
 ## Help Documentation Content (1 item)
 
