@@ -1,6 +1,9 @@
 {
   "schemaVersion": 1,
   "repo": "contextify",
+  "task": {
+    "type": "bloon"
+  },
   "canonicalBranch": "main",
   "remote": "origin",
   "sync": {
