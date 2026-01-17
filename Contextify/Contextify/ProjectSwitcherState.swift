@@ -509,16 +509,15 @@ public final class ProjectSwitcherState {
       let withoutOrder = projects.count - withOrder
       log.info("[SWITCHER-SORT-DEBUG] Projects with display_order: \(withOrder, privacy: .public), without: \(withoutOrder, privacy: .public)")
 
-      // Filter out hidden projects (v18)
+      // Filter out sandbox container paths (hidden projects already excluded by SQL query)
       let visibleProjects = projects.filter { project in
-        guard !project.hidden else { return false }
         if Sandbox.isSandboxed, SandboxPathFilter.isSandboxContainerPath(project.rootPath) {
           log.info("[SWITCHER-FILTER] Skipping sandbox container project: \(project.rootPath, privacy: .public)")
           return false
         }
         return true
       }
-      let hiddenCount = projects.count - visibleProjects.count
+      let hiddenCount = try orchestrator.countHiddenProjects()
 
       // SQL already sorts by activity (max entry timestamp) when display_order is NULL
       // so we can trust the database order even on first launch.
