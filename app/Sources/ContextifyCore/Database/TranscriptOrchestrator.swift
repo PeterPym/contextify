@@ -387,6 +387,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// List projects for the tab switcher: display_order first, then activity.
+  /// Excludes hidden projects.
   public func listProjectsForSwitcher() throws -> [Project] {
     try dbManager.pool.read { db in
       let sql = """
@@ -397,6 +398,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           FROM transcript_entries
           GROUP BY project_id
         ) e ON p.id = e.project_id
+        WHERE p.hidden = 0
         ORDER BY
           (p.display_order IS NULL) ASC,
           p.display_order ASC,
@@ -458,7 +460,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         ), let canonicalId: String = canonicalRow["id"] {
           try db.execute(sql: """
             UPDATE projects
-            SET name = ?, updated_at = ?, hidden = 0
+            SET name = ?, updated_at = ?
             WHERE id = ?
           """, arguments: [project.displayName, nowSec, canonicalId])
 
@@ -491,7 +493,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
            let hashId: String = hashRow["id"] {
           try db.execute(sql: """
             UPDATE projects
-            SET root_path = ?, name = ?, updated_at = ?, hidden = 0
+            SET root_path = ?, name = ?, updated_at = ?
             WHERE id = ?
           """, arguments: [canonicalRootPath, project.displayName, nowSec, hashId])
           log.info("[METADATA-ONLY] Canonicalized project \(hashId, privacy: .public) to \(canonicalRootPath, privacy: .public)")
@@ -776,6 +778,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let now = Int(Date().timeIntervalSince1970)
     try dbManager.pool.write { db in
       try db.execute(sql: "UPDATE projects SET hidden = 0, updated_at = ? WHERE hidden = 1", arguments: [now])
+    }
+  }
+
+  /// Count hidden projects
+  public func countHiddenProjects() throws -> Int {
+    try dbManager.pool.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE hidden = 1") ?? 0
     }
   }
 
