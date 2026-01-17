@@ -108,6 +108,7 @@ struct Contextify: AsyncParsableCommand {
         contextify ingest              Index new transcripts
         contextify status              Show what's indexed
         contextify install-skill       Install Total Recall skill
+        contextify install-service     Set up automatic ingestion (Linux)
         contextify doctor              Check installation health
 
       DATABASE LOCATION (in order of precedence):
@@ -127,6 +128,10 @@ struct Contextify: AsyncParsableCommand {
       VerifyCommand.self,
       MigrateDbCommand.self,
       SchemaCommand.self,
+      // Service management (Linux)
+      InstallServiceCommand.self,
+      UninstallServiceCommand.self,
+      ServiceStatusCommand.self,
       // Skill/plugin management
       InstallSkillCommand.self,
       UninstallSkillCommand.self,
@@ -138,6 +143,9 @@ struct Contextify: AsyncParsableCommand {
 
   /// Entry point - handles argv[0] dispatch for backwards compatibility
   static func main() async {
+    // Export version to environment for subcommand libraries to read
+    setenv("CONTEXTIFY_CLI_VERSION", cliVersion, 1)
+
     // Check for backwards-compatible invocation
     if let transformedArgs = handleArgv0Dispatch() {
       // Re-invoke with transformed arguments

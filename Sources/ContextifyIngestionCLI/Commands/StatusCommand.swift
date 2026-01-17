@@ -10,6 +10,10 @@ import ContextifyCore
 import ContextifyIngestionCore
 #endif
 
+/// Get CLI version from environment or use default
+/// Set CONTEXTIFY_CLI_VERSION env var in main.swift before dispatching to commands
+private let statusCLIVersion = ProcessInfo.processInfo.environment["CONTEXTIFY_CLI_VERSION"] ?? "dev"
+
 public struct StatusCommand: ParsableCommand {
   public static let configuration = CommandConfiguration(
     commandName: "status",
@@ -214,7 +218,7 @@ public struct StatusCommand: ParsableCommand {
 
     var output: [String: Any] = [
       "format_version": 1,
-      "cli_version": cliVersion,
+      "cli_version": statusCLIVersion,
       "database": [
         "path": dbPath,
         "size_bytes": fileSize,
@@ -263,9 +267,27 @@ public struct StatusCommand: ParsableCommand {
   }
 
   private func formatRelativeTime(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .full
-    return formatter.localizedString(for: date, relativeTo: Date())
+    // Cross-platform relative time formatting (RelativeDateTimeFormatter not available on Linux)
+    let now = Date()
+    let interval = now.timeIntervalSince(date)
+    let absInterval = abs(interval)
+    let suffix = interval >= 0 ? "ago" : "from now"
+
+    if absInterval < 60 {
+      return "just now"
+    } else if absInterval < 3600 {
+      let minutes = Int(absInterval / 60)
+      return "\(minutes) minute\(minutes == 1 ? "" : "s") \(suffix)"
+    } else if absInterval < 86400 {
+      let hours = Int(absInterval / 3600)
+      return "\(hours) hour\(hours == 1 ? "" : "s") \(suffix)"
+    } else if absInterval < 604800 {
+      let days = Int(absInterval / 86400)
+      return "\(days) day\(days == 1 ? "" : "s") \(suffix)"
+    } else {
+      let weeks = Int(absInterval / 604800)
+      return "\(weeks) week\(weeks == 1 ? "" : "s") \(suffix)"
+    }
   }
 
   private func providerDisplayName(_ provider: String) -> String {

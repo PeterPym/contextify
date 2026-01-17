@@ -1,22 +1,35 @@
 name: Linux Release
-# Workflow for building Linux CLI binaries (x86_64 and arm64) - refresh
+# Workflow for building Linux CLI binaries (x86_64 and arm64)
+#
+# MANUAL-ONLY: This workflow does NOT run automatically on commits or tags.
+# Use /linux-ci-trigger skill or run manually via GitHub Actions UI.
+#
+# Build Strategy (see build/docs/guides/linux-ci-builds.md):
+#   1. Local builds preferred for development
+#   2. CI builds for releases and validation
+#   3. arm64 builds require QEMU (slow) - use CI for arm64
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'      # Unified versioning (preferred)
-      - 'cli-v*.*.*'  # Legacy CLI versioning (backward compat)
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to release (e.g., 1.0.0)'
         required: true
+      build_amd64:
+        description: 'Build x86_64 (amd64)'
+        type: boolean
+        default: true
+      build_arm64:
+        description: 'Build arm64 (slow - 1+ hour)'
+        type: boolean
+        default: true
 
 env:
   SQLITE_VERSION: "3450100"
 
 jobs:
   build-linux-amd64:
+    if: ${{ github.event.inputs.build_amd64 == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +59,7 @@ jobs:
             -e CLI_VERSION="${{ steps.version.outputs.version }}" \
             -w /workspace \
             --platform linux/amd64 \
-            swift:6.0-noble \
+            swift:6.0-jammy \
             bash -c '
               set -e
 
@@ -64,10 +77,10 @@ jobs:
               make install --quiet
               ldconfig
 
-              # Generate Version.swift with resolved version
+              # Generate Version.swift with resolved version (unified CLI uses ContextifyCLI)
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
 
               # Build unified CLI (contextify) - the single binary for Linux
               swift build -c release --product contextify \
@@ -104,8 +117,9 @@ jobs:
           retention-days: 7
 
   build-linux-arm64:
+    if: ${{ github.event.inputs.build_arm64 == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -137,7 +151,7 @@ jobs:
             -e CLI_VERSION="${{ steps.version.outputs.version }}" \
             -w /workspace \
             --platform linux/arm64 \
-            swift:6.0-noble \
+            swift:6.0-jammy \
             bash -c '
               set -e
 
@@ -155,10 +169,10 @@ jobs:
               make install --quiet
               ldconfig
 
-              # Generate Version.swift with resolved version
+              # Generate Version.swift with resolved version (unified CLI uses ContextifyCLI)
               cd /workspace
               CLI_VERSION="${CLI_VERSION:-0.0.0}"
-              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyIngestionCLI/Version.generated.swift
+              printf "// Generated at build time - do not edit\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
 
               # Build unified CLI (contextify) - the single binary for Linux
               swift build -c release --product contextify \
@@ -193,6 +207,138 @@ jobs:
           name: contextify-linux-arm64
           path: dist/contextify-linux-arm64.tar.gz
           retention-days: 7
+
+  # Validate binary compatibility before release (both architectures)
+  validate-binary-amd64:
+    needs: [build-linux-amd64]
+    if: ${{ github.event.inputs.build_amd64 == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: contextify-linux-x86_64
+          path: artifacts
+
+      - name: Extract tarball
+        run: |
+          mkdir -p binary
+          tar -xzf artifacts/contextify-linux-x86_64.tar.gz -C binary
+
+      - name: Check glibc floor (<= 2.35)
+        run: |
+          echo "Checking glibc version requirements (x86_64)..."
+          MAX=$(objdump -T binary/contextify | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -V | tail -1 || true)
+          if [ -z "$MAX" ]; then
+            echo "WARNING: Could not determine glibc requirement (may be fully static)"
+            exit 0
+          fi
+          echo "Maximum glibc version required: $MAX"
+          # Extract version number
+          GLIBC_VER=$(echo "$MAX" | sed 's/GLIBC_//')
+          MAJOR=$(echo "$GLIBC_VER" | cut -d. -f1)
+          MINOR=$(echo "$GLIBC_VER" | cut -d. -f2)
+          # Check if <= 2.35
+          if [ "$MAJOR" -gt 2 ] || ([ "$MAJOR" -eq 2 ] && [ "$MINOR" -gt 35 ]); then
+            echo "ERROR: Binary requires glibc $GLIBC_VER which is newer than our 2.35 floor!"
+            echo "This binary will not run on Ubuntu 22.04."
+            exit 1
+          fi
+          echo "glibc check passed: $GLIBC_VER <= 2.35"
+
+      - name: Check no Swift runtime dependencies
+        run: |
+          echo "Checking for Swift runtime dependencies (x86_64)..."
+          if ldd binary/contextify 2>/dev/null | grep -qE 'libswift|Swift'; then
+            echo "ERROR: Binary has Swift runtime dependencies!"
+            ldd binary/contextify | grep -E 'libswift|Swift'
+            exit 1
+          fi
+          echo "No Swift runtime dependencies found (statically linked)"
+
+      - name: Test in minimal Ubuntu 22.04 container
+        run: |
+          echo "Testing binary execution in minimal ubuntu:22.04 container (x86_64)..."
+          docker run --rm -v $(pwd)/binary:/app:ro ubuntu:22.04 sh -c '
+            set -e
+            echo "Testing --version..."
+            /app/contextify --version
+            echo ""
+            echo "Testing --help..."
+            /app/contextify --help
+            echo ""
+            echo "Testing ingest --help..."
+            /app/contextify ingest --help
+            echo ""
+            echo "Testing status --help..."
+            /app/contextify status --help
+            echo ""
+            echo "Testing install-service --help..."
+            /app/contextify install-service --help
+            echo ""
+            echo "All subcommand tests passed!"
+          '
+          echo "Minimal container test passed (x86_64)!"
+
+  validate-binary-arm64:
+    needs: [build-linux-arm64]
+    if: ${{ github.event.inputs.build_arm64 == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: contextify-linux-arm64
+          path: artifacts
+
+      - name: Extract tarball
+        run: |
+          mkdir -p binary
+          tar -xzf artifacts/contextify-linux-arm64.tar.gz -C binary
+
+      # Note: We skip explicit glibc objdump check for arm64 to avoid apt flakiness.
+      # Running the binary successfully in ubuntu:22.04 (glibc 2.35) is the definitive test.
+
+      - name: Test in minimal Ubuntu 22.04 container (arm64)
+        run: |
+          echo "Testing binary execution in minimal ubuntu:22.04 container (arm64)..."
+          docker run --rm --platform linux/arm64 \
+            -v $(pwd)/binary:/app:ro \
+            ubuntu:22.04 sh -c '
+              set -e
+
+              # Check no Swift runtime deps (handles static binaries where ldd fails)
+              echo "Checking for Swift runtime dependencies (arm64)..."
+              if ldd /app/contextify 2>/dev/null | grep -qiE "libswift|swift"; then
+                echo "ERROR: Binary has Swift runtime dependencies!"
+                ldd /app/contextify 2>/dev/null | grep -iE "libswift|swift" || true
+                exit 1
+              fi
+              # Note: ldd returns non-zero for static binaries, but we only fail if Swift libs found
+              echo "No Swift runtime dependencies found"
+              echo ""
+
+              echo "Testing --version..."
+              /app/contextify --version
+              echo ""
+              echo "Testing --help..."
+              /app/contextify --help
+              echo ""
+              echo "Testing ingest --help..."
+              /app/contextify ingest --help
+              echo ""
+              echo "Testing status --help..."
+              /app/contextify status --help
+              echo ""
+              echo "Testing install-service --help..."
+              /app/contextify install-service --help
+              echo ""
+              echo "All subcommand tests passed!"
+            '
+          echo "Minimal container test passed (arm64)!"
 
   # NOTE: GitHub Release creation is now handled by mark-shipped.sh --linux
   # This job is disabled to avoid duplicate releases.
