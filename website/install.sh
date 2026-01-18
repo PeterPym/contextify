@@ -2,6 +2,7 @@
 set -e
 
 # Contextify Linux Installer
+# Script version: 1.2.0 (anchored to CLI v1.2.0 release)
 # Usage: curl -fsSL https://contextify.sh/install.sh | sh
 #    or: curl -fsSL https://contextify.sh/install.sh | sh -s -- --no-skill
 
