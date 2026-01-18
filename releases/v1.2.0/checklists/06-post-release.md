@@ -27,12 +27,7 @@
 
 Review each public surface and determine if this release requires updates.
 
-### App Store Listing
-- [ ] Parse `appstore-metadata/fastlane/metadata/en-US/description.txt`
-- [ ] System requirements still accurate?
-- [ ] Feature list reflects current capabilities?
-- [ ] Screenshots show current UI? (if UI changed)
-- [ ] Required updates: ____
+**Note:** App Store listing content review moved to Phase 5 (Marketing) - should be done before submission.
 
 ### Website (contextify.sh)
 - [ ] Parse `website/index.html` - landing page current?
