@@ -8,26 +8,6 @@
 
 **Reference:** See `build/docs/operations/PUBLIC-SURFACES.md` for complete inventory of public surfaces.
 
-## Pre-Submission Content Review
-
-Review App Store listing content before submission. Easier to fix now than after rejection.
-
-### App Store Listing
-- [x] Parse `appstore-metadata/metadata.json` - source of truth for all metadata
-- [ ] System requirements still accurate?
-- [ ] Feature list reflects current capabilities?
-- [ ] Screenshots show current UI? (if UI changed significantly)
-- [ ] Keywords still relevant?
-- [ ] Required updates: ____
-
-### Upload Updated Metadata
-If changes were made:
-```bash
-FASTLANE_API_KEY_PATH=".secrets/fastlane_api_key.json" fastlane deliver \
-  --skip_binary_upload --skip_screenshots --force --run_precheck_before_submit false
-```
-- [x] Metadata uploaded to App Store Connect
-
 ## Changelog (App Only)
 
 ### Verify Scope
