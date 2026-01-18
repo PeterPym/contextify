@@ -1,0 +1,69 @@
+# project-config.yaml
+# Source of truth for project settings
+
+# ─────────────────────────────────────────────────────────────────
+# Identity
+# ─────────────────────────────────────────────────────────────────
+schema_version: 1
+repo: contextify
+description: macOS SwiftUI HUD for AI sessions
+
+# ─────────────────────────────────────────────────────────────────
+# Task Management
+# ─────────────────────────────────────────────────────────────────
+task:
+  type: bloon
+
+# ─────────────────────────────────────────────────────────────────
+# Git Workflow
+# ─────────────────────────────────────────────────────────────────
+canonical_branch: main
+remote: origin
+
+sync:
+  strategy: merge
+  push_landing: true
+  publish_to_canonical: false
+
+hooks:
+  pre_sync_all: null
+  post_sync_all: null
+  pre_sync: null
+  post_sync: null
+  post_init: null
+
+# ─────────────────────────────────────────────────────────────────
+# Worktrees
+# ─────────────────────────────────────────────────────────────────
+worktrees:
+  - name: primary
+    path: ~/code/projects/contextify
+    landing_branch: main
+
+  - name: wb1
+    path: ~/code/projects/contextify-wb1
+    landing_branch: main-wb1
+
+  - name: wb2
+    path: ~/code/projects/contextify-wb2
+    landing_branch: main-wb2
+
+  - name: wb3
+    path: ~/code/projects/contextify-wb3
+    landing_branch: main-wb3
+
+  - name: liquid-glass
+    path: ~/code/projects/contextify-liquid-glass
+    landing_branch: feat/liquid-glass-implementation
+    archived: true
+    meta:
+      archived_date: "2026-01-02"
+      stash: "liquid-glass WIP: ConversationTimelineView changes (archived 2026-01-02)"
+
+  - name: worker-bee
+    path: ~/code/projects/contextify-worker-bee
+    landing_branch: main
+    archived: true
+    meta:
+      archived_date: "2026-01-02"
+      note: "Replaced by wb1/wb2 naming convention"
