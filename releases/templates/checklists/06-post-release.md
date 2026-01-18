@@ -104,8 +104,35 @@ curl -sL "https://github.com/PeterPym/contextify/releases/download/v{version}/Co
 
 <!-- IF:dmg -->
 ### Auto-Updates (Sparkle)
-- [ ] Verify Sparkle updates work for existing users
-- [ ] Test update from previous version
+**CRITICAL:** The 1.1.0 release had a broken Sparkle update due to build number mismatch.
+
+#### Build Number Verification
+Before announcing the release, verify the DMG build number matches appcast:
+```bash
+# 1. Download and mount the release DMG
+curl -sL "https://github.com/PeterPym/contextify/releases/download/v{version}/Contextify-{version}.dmg" -o /tmp/verify.dmg
+hdiutil attach /tmp/verify.dmg -nobrowse -quiet
+
+# 2. Check build number in DMG
+/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /Volumes/Contextify/Contextify.app/Contents/Info.plist
+
+# 3. Check build number in appcast
+curl -s https://contextify.sh/appcast.xml | grep -A5 "Version {version}" | grep "sparkle:version"
+
+# 4. Cleanup
+hdiutil detach /Volumes/Contextify -quiet
+rm /tmp/verify.dmg
+```
+- [ ] DMG build number: ____
+- [ ] Appcast build number: ____
+- [ ] Numbers match? [ ] Yes / [ ] No (STOP - rebuild DMG with correct build number)
+
+#### Live Update Test
+- [ ] Install previous version (e.g., from `/Applications/` backup or previous DMG)
+- [ ] Launch app and trigger "Check for Updates..."
+- [ ] Update dialog shows correct version?
+- [ ] Click "Install Update" - completes successfully?
+- [ ] App relaunches with new version?
 <!-- ENDIF:dmg -->
 
 ## Cleanup
