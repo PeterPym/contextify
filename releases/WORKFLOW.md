@@ -221,6 +221,28 @@ After rejection, fix the issues and reset for a new build:
 ./scripts/release/validate-build.sh 1.0.0
 ```
 
+### Version Audit (Post-Release)
+
+After shipping, verify all channels are consistent:
+
+```bash
+# Query all live versions and check integrity
+./scripts/release/version-audit.sh
+
+# JSON output (for CI/automation)
+./scripts/release/version-audit.sh --json
+
+# Quiet mode (exit code only, for cron jobs)
+./scripts/release/version-audit.sh --quiet
+```
+
+This verifies:
+- GitHub DMG URL matches Sparkle appcast URL (binary integrity)
+- Version numbers match across GitHub and Sparkle
+- Linux CLI version matches DMG version (if applicable)
+
+**Exit codes:** 0 = all OK, 1 = inconsistencies found, 2 = fetch error
+
 ### Demo Recording
 
 ```bash
@@ -522,6 +544,19 @@ After a version ships, these must match for that version:
 - Appcast (`sparkle:shortVersionString`) - DMG only
 - App Store Connect - App Store only
 - GitHub Release (optional)
+
+### Binary Integrity Requirement
+
+**CRITICAL:** The published DMG binary MUST match what Sparkle uses for auto-updates.
+
+When shipping a DMG release:
+1. The DMG uploaded to GitHub Releases is the canonical binary
+2. The Sparkle appcast `<enclosure url="...">` MUST point to this exact file
+3. The EdDSA signature in appcast must be generated from this same binary
+
+**Why this matters:** If the URLs differ, users downloading from GitHub get a different binary than users updating via Sparkle. This breaks the chain of trust and can cause signature verification failures.
+
+**Verification:** Run `./scripts/release/version-audit.sh` after any release to verify consistency. This should be part of Phase 6 (Post-Release) checklist.
 
 ## File Locations
 

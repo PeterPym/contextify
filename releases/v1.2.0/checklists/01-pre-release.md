@@ -1,6 +1,6 @@
 # Pre-Release Checklist
 
-**Release:** {version}
+**Release:** 1.2.0
 **Phase:** 1 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
@@ -25,7 +25,7 @@
 ## Version Planning
 
 ### Version Number
-- [ ] Confirm version: {version}
+- [ ] Confirm version: 1.2.0
 - [ ] Follows semantic versioning (MAJOR.MINOR.PATCH)
 - [ ] Current version in Xcode: `grep MARKETING_VERSION Contextify/Contextify.xcodeproj/project.pbxproj | head -1`
 
@@ -40,7 +40,7 @@
 
 ### Release Notes
 - [ ] Draft release notes content
-- [ ] Save to: `releases/v{version}/assets/release-notes-draft.md`
+- [ ] Save to: `releases/v1.2.0/assets/release-notes-draft.md`
 
 ## Blockers Check
 
@@ -54,7 +54,7 @@
 
 Run validation script:
 ```bash
-./scripts/release/validate-pre-release.sh {version}
+./scripts/release/validate-pre-release.sh 1.2.0
 ```
 
 Paste output:
