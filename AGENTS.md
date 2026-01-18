@@ -47,16 +47,23 @@ These cause real problems when violated:
 
 ### Task & Roadmap Management
 
-- **TODOS.md** - Actionable items (P0-P3). Add bugs/debt here with priority.
-- **ROADMAP.md** - Exploratory ideas (P4-P5). Promote to TODOS.md once scoped.
+- **Bloon CLI** - Actionable items (P0-P3). Use `bloon` commands for all task management.
+- **ROADMAP.md** - Exploratory ideas (P4-P5). Promote to Bloon once scoped.
+
+**Quick commands:**
+```bash
+bloon ready -p contextify              # What's ready to work on?
+bloon list -p contextify --priority 0  # P0 critical items
+bloon add "Task" -p contextify --priority 1 --tags feature
+bloon done bl-XXXX --note "Completed"
+```
 
 **Key rules:**
-- Remove completed items immediately (don't celebrate)
+- Mark tasks done via `bloon done` immediately (don't batch)
 - Planning docs go in `/tmp/` first, then copy to repo if needed
 - Supporting docs in `build/notes/todo-support/` need YAML front matter
-- TODOS.md is the single source of truth (don't create other tracking files)
 
-**Full workflow details:** See TODOS.md front matter (priority definitions, doc naming, cleanup policy).
+**Reference:** See `build/notes/TODOS.md` for command reference and priority definitions.
 
 ### Feature Development Workflow
 
@@ -362,7 +369,7 @@ bash scripts/xc.sh build        # Must show 0 warnings
 
 Do NOT merge if either fails.
 
-**For larger features:** See `build/docs/guides/pre-merge-checklist.md` for comprehensive checklist including E2E tests, documentation audit, and TODOS.md administration.
+**For larger features:** See `build/docs/guides/pre-merge-checklist.md` for comprehensive checklist including E2E tests, documentation audit, and Bloon task updates.
 
 ### Test Requirements
 
