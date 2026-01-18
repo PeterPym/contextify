@@ -118,10 +118,11 @@ jobs:
           .build/debug/contextify --help
           .build/debug/contextify --version
           .build/debug/contextify install-skill --help
-          .build/debug/contextify doctor
-          .build/debug/contextify doctor --json
+          # doctor returns exit 2 when unconfigured (expected in CI)
+          .build/debug/contextify doctor || [ $? -eq 2 ]
+          .build/debug/contextify doctor --json || [ $? -eq 2 ]
           # Test symlink works
-          .build/debug/contextify-query doctor
+          .build/debug/contextify-query doctor || [ $? -eq 2 ]
           echo "contextify verification passed!"
 
       - name: E2E ingest test
