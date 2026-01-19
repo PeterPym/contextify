@@ -124,15 +124,10 @@ detect_version() {
         *)      VERSION=$TAG ;;
     esac
 
-    # Fallback to hosted version file if API fails (rate limit, etc.)
     if [ -z "$VERSION" ]; then
-        echo "GitHub API unavailable, trying fallback..."
-        VERSION=$(curl -fsSL "https://contextify.sh/cli-version.txt" 2>/dev/null | tr -d '\r\n' || true)
-    fi
-
-    if [ -z "$VERSION" ]; then
-        echo "Error: Could not detect latest version"
-        echo "Try: VERSION=1.1.0 curl -fsSL https://contextify.sh/install.sh | sh"
+        echo "Error: Could not detect latest version from GitHub API"
+        echo "This may be due to rate limiting. Try specifying VERSION manually:"
+        echo "  VERSION=1.2.0 curl -fsSL https://contextify.sh/install.sh | sh"
         exit 1
     fi
     echo "Latest version: $VERSION"
