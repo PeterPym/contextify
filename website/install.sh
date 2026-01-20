@@ -102,6 +102,13 @@ do_uninstall() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
 
+    # Remove cron job if present
+    if has_cron && crontab -l 2>/dev/null | grep -q "contextify ingest"; then
+        printf "  ${ARROW} Removing cron job..."
+        crontab -l 2>/dev/null | grep -v "contextify ingest" | crontab - 2>/dev/null || true
+        printf " ${CHECK}\n"
+    fi
+
     # Remove binaries
     if [ -f "$INSTALL_DIR/contextify" ]; then
         printf "  ${ARROW} Removing binary..."
@@ -132,9 +139,10 @@ do_uninstall() {
     exit 0
 }
 
-# Check if we can prompt the user (TTY and not non-interactive mode)
+# Check if we can prompt the user (can access /dev/tty and not non-interactive mode)
+# Note: We check /dev/tty (not stdin) because stdin is a pipe in curl | sh
 can_prompt() {
-    [ "$NON_INTERACTIVE" -eq 0 ] && [ -t 0 ]
+    [ "$NON_INTERACTIVE" -eq 0 ] && [ -r /dev/tty ] && [ -w /dev/tty ]
 }
 
 # Prompt user with default Y (returns 0 for yes, 1 for no)
@@ -162,10 +170,26 @@ has_cron() {
     command -v crontab >/dev/null 2>&1
 }
 
+warn_if_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        echo ""
+        printf "${YELLOW}Warning:${RESET} Running as root. This will install to ${BOLD}/root/.local/bin${RESET}\n"
+        echo "and systemd user services may not work correctly."
+        echo ""
+        echo "For normal use, run as a regular user instead:"
+        echo "  curl -fsSL https://contextify.sh/install.sh | sh"
+        echo ""
+        echo "For system-wide install, set INSTALL_DIR:"
+        echo "  INSTALL_DIR=/usr/local/bin curl -fsSL https://contextify.sh/install.sh | sh"
+        echo ""
+    fi
+}
+
 main() {
     setup_colors
     print_logo
     parse_args "$@"
+    warn_if_root
     check_os
     check_dependencies
     detect_arch
@@ -430,40 +454,52 @@ verify_installation() {
 }
 
 install_skill() {
-    printf "  ${ARROW} Installing Total Recall skill..."
+    printf "  ${ARROW} Installing Total Recall skill...\n"
     if "$INSTALL_DIR/contextify" install-skill >/dev/null 2>&1; then
-        printf " ${CHECK}\n"
+        # Show where skills were installed
+        if [ -d "$HOME/.claude/skills/total-recall" ]; then
+            printf "     ${DIM}Installed to: ~/.claude/skills/total-recall${RESET}\n"
+        fi
+        if [ -d "$HOME/.codex/skills/total-recall" ]; then
+            printf "     ${DIM}Installed to: ~/.codex/skills/total-recall${RESET}\n"
+        fi
+        printf "  ${CHECK} Skill installed\n"
     else
-        printf " ${YELLOW}(skipped)${RESET}\n"
+        printf "  ${YELLOW}(skipped)${RESET}\n"
     fi
 }
 
 try_install_service() {
-    printf "  ${ARROW} Enabling background ingestion (systemd)..."
+    printf "  ${ARROW} Enabling background ingestion (systemd)...\n"
     if "$INSTALL_DIR/contextify" install-service >/dev/null 2>&1; then
-        printf " ${CHECK}\n"
+        printf "     ${DIM}Timer: contextify-ingest.timer (runs every 15 minutes)${RESET}\n"
+        printf "     ${DIM}Check status: systemctl --user status contextify-ingest.timer${RESET}\n"
+        printf "  ${CHECK} Service enabled\n"
     else
-        printf " ${YELLOW}(failed - run manually)${RESET}\n"
+        printf "  ${YELLOW}(failed - run manually)${RESET}\n"
     fi
 }
 
 try_install_cron() {
-    printf "  ${ARROW} Enabling background ingestion (cron)..."
+    printf "  ${ARROW} Enabling background ingestion (cron)...\n"
     # Add cron job to run ingest every 15 minutes
     CRON_CMD="*/15 * * * * $INSTALL_DIR/contextify ingest --quiet"
 
     # Check if already installed
     if crontab -l 2>/dev/null | grep -q "contextify ingest"; then
-        printf " ${CHECK} (already configured)\n"
+        printf "     ${DIM}Cron job already configured (runs every 15 minutes)${RESET}\n"
+        printf "  ${CHECK} Cron enabled\n"
         return 0
     fi
 
     # Add to crontab
     (crontab -l 2>/dev/null || true; echo "$CRON_CMD") | crontab -
     if [ $? -eq 0 ]; then
-        printf " ${CHECK}\n"
+        printf "     ${DIM}Cron job: runs every 15 minutes${RESET}\n"
+        printf "     ${DIM}Check status: crontab -l | grep contextify${RESET}\n"
+        printf "  ${CHECK} Cron enabled\n"
     else
-        printf " ${YELLOW}(failed - add manually)${RESET}\n"
+        printf "  ${YELLOW}(failed - add manually)${RESET}\n"
     fi
 }
 
@@ -519,10 +555,12 @@ add_to_path() {
     if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
         printf "  ${CHECK} PATH configured in $RC_FILE\n"
     else
+        printf "  ${ARROW} Adding ~/.local/bin to your PATH in $RC_FILE\n"
         echo "" >> "$RC_FILE"
         echo "# Added by Contextify installer" >> "$RC_FILE"
         echo "$PATH_LINE" >> "$RC_FILE"
         printf "  ${CHECK} Added to $RC_FILE\n"
+        printf "  ${DIM}To undo: remove the 'Added by Contextify installer' block from $RC_FILE${RESET}\n"
     fi
 
     # Either way, if not in current PATH, user needs to restart
