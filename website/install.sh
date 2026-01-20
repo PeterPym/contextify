@@ -69,6 +69,7 @@ usage() {
     echo "Options:"
     echo "  --ingest            Run initial ingestion after install"
     echo "  --install-service   Enable automatic background ingestion (systemd)"
+    echo "  --uninstall         Remove Contextify and related files"
     echo "  --no-skill          Skip Total Recall skill installation"
     echo "  --non-interactive   Skip all prompts (for scripting)"
     echo "  --help              Show this help"
@@ -76,6 +77,56 @@ usage() {
     echo "Environment:"
     echo "  VERSION       Use specific version (default: latest)"
     echo "  INSTALL_DIR   Install location (default: ~/.local/bin)"
+    exit 0
+}
+
+do_uninstall() {
+    setup_colors
+    echo ""
+    printf "${BOLD}Uninstalling Contextify...${RESET}\n"
+    echo ""
+
+    # Stop and disable systemd service if present
+    if has_systemd_user; then
+        if systemctl --user is-enabled contextify-ingest.timer >/dev/null 2>&1; then
+            printf "  ${ARROW} Stopping systemd timer..."
+            systemctl --user stop contextify-ingest.timer 2>/dev/null || true
+            systemctl --user disable contextify-ingest.timer 2>/dev/null || true
+            printf " ${CHECK}\n"
+        fi
+        # Remove service files
+        rm -f "$HOME/.config/systemd/user/contextify-ingest.service" 2>/dev/null
+        rm -f "$HOME/.config/systemd/user/contextify-ingest.timer" 2>/dev/null
+        systemctl --user daemon-reload 2>/dev/null || true
+    fi
+
+    # Remove binaries
+    if [ -f "$INSTALL_DIR/contextify" ]; then
+        printf "  ${ARROW} Removing binary..."
+        rm -f "$INSTALL_DIR/contextify"
+        rm -f "$INSTALL_DIR/contextify-query" 2>/dev/null
+        rm -f "$INSTALL_DIR/contextify-ingest" 2>/dev/null
+        printf " ${CHECK}\n"
+    fi
+
+    # Remove skills
+    if [ -d "$HOME/.claude/skills/total-recall" ]; then
+        printf "  ${ARROW} Removing Claude Code skill..."
+        rm -rf "$HOME/.claude/skills/total-recall"
+        printf " ${CHECK}\n"
+    fi
+    if [ -d "$HOME/.codex/skills/total-recall" ]; then
+        printf "  ${ARROW} Removing Codex skill..."
+        rm -rf "$HOME/.codex/skills/total-recall"
+        printf " ${CHECK}\n"
+    fi
+
+    echo ""
+    printf "${GREEN}Contextify uninstalled.${RESET}\n"
+    echo ""
+    printf "${DIM}Optional: Remove data directory manually:${RESET}\n"
+    echo "  rm -rf ~/.local/share/contextify/"
+    echo ""
     exit 0
 }
 
@@ -149,6 +200,7 @@ parse_args() {
             --install-service) INSTALL_SERVICE=1 ;;
             --ingest) RUN_INGEST=1 ;;
             --non-interactive|-y) NON_INTERACTIVE=1 ;;
+            --uninstall) do_uninstall ;;
             --help|-h) usage ;;
             *) echo "Unknown option: $1"; usage ;;
         esac
