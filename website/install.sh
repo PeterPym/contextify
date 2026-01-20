@@ -563,8 +563,7 @@ print_success() {
     echo ""
 
     # Thank you and contact
-    printf "Thanks for installing Contextify!\n"
-    printf "Bugs, feature ideas, or cool use cases? ${CYAN}rob@contextify.sh${RESET}\n"
+    printf "Thanks for installing! Questions or feedback: ${CYAN}rob@contextify.sh${RESET}\n"
 }
 
 main "$@"
