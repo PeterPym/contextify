@@ -3,12 +3,53 @@ set -e
 
 # Contextify Linux Installer
 # Usage: curl -fsSL https://contextify.sh/install.sh | sh
-#    or: curl -fsSL https://contextify.sh/install.sh | sh -s -- --no-skill
+#    or: curl -fsSL https://contextify.sh/install.sh | sh -s -- --install-service
 
 REPO="PeterPym/contextify"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 SKIP_SKILL=0
+INSTALL_SERVICE=0
+RUN_INGEST=0
 TMPDIR=""
+
+# Colors (disabled if not a terminal or NO_COLOR is set)
+setup_colors() {
+    if [ -t 1 ] && [ -z "$NO_COLOR" ]; then
+        BOLD='\033[1m'
+        DIM='\033[2m'
+        GREEN='\033[0;32m'
+        CYAN='\033[0;36m'
+        YELLOW='\033[0;33m'
+        RED='\033[0;31m'
+        RESET='\033[0m'
+        CHECK="${GREEN}✓${RESET}"
+        ARROW="${CYAN}→${RESET}"
+    else
+        BOLD=''
+        DIM=''
+        GREEN=''
+        CYAN=''
+        YELLOW=''
+        RED=''
+        RESET=''
+        CHECK="[ok]"
+        ARROW="->"
+    fi
+}
+
+print_logo() {
+    printf "${CYAN}"
+    cat << 'EOF'
+   ___          _            _   _  __
+  / __\___  _ _| |_ _____  _| |_(_)/ _|_   _
+ / /  / _ \| ' \  _/ _ \ \/ /  _| |  _| | | |
+/ /__| (_) | | | ||  __/>  <| | | | | | |_| |
+\____/\___/|_| |_| \___/_/\_\_| |_|_|  \__, |
+                                       |___/
+EOF
+    printf "${RESET}"
+    echo ""
+}
 
 # Cleanup on exit (success or failure)
 cleanup() {
@@ -25,8 +66,9 @@ usage() {
     echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --no-skill    Skip Total Recall skill installation"
-    echo "  --help        Show this help"
+    echo "  --install-service   Enable automatic background ingestion (systemd)"
+    echo "  --no-skill          Skip Total Recall skill installation"
+    echo "  --help              Show this help"
     echo ""
     echo "Environment:"
     echo "  VERSION       Use specific version (default: latest)"
@@ -34,7 +76,15 @@ usage() {
     exit 0
 }
 
+# Check if systemd user services are available
+has_systemd_user() {
+    command -v systemctl >/dev/null 2>&1 && \
+    systemctl --user status >/dev/null 2>&1
+}
+
 main() {
+    setup_colors
+    print_logo
     parse_args "$@"
     check_os
     check_dependencies
@@ -45,6 +95,9 @@ main() {
     if [ "$SKIP_SKILL" -eq 0 ]; then
         install_skill
     fi
+    if [ "$INSTALL_SERVICE" -eq 1 ]; then
+        try_install_service
+    fi
     print_success
 }
 
@@ -52,6 +105,7 @@ parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --no-skill) SKIP_SKILL=1 ;;
+            --install-service) INSTALL_SERVICE=1 ;;
             --help|-h) usage ;;
             *) echo "Unknown option: $1"; usage ;;
         esac
@@ -96,18 +150,18 @@ detect_arch() {
         aarch64) ARCH="arm64" ;;
         arm64)   ARCH="arm64" ;;
         *)
-            echo "Error: Unsupported architecture: $ARCH"
+            printf "${RED}Error:${RESET} Unsupported architecture: $ARCH\n"
             echo "Contextify supports x86_64 and arm64."
             exit 1
             ;;
     esac
-    echo "Detected architecture: $ARCH"
+    printf "  ${CHECK} Detected architecture: ${BOLD}$ARCH${RESET}\n"
 }
 
 detect_version() {
     # Allow override via environment
     if [ -n "$VERSION" ]; then
-        echo "Using VERSION from environment: $VERSION"
+        printf "  ${CHECK} Using version: ${BOLD}$VERSION${RESET} (from environment)\n"
         return
     fi
 
@@ -125,16 +179,15 @@ detect_version() {
 
     # Fallback to hosted version file if API fails (rate limit, etc.)
     if [ -z "$VERSION" ]; then
-        echo "GitHub API unavailable, trying fallback..."
         VERSION=$(curl -fsSL "https://contextify.sh/cli-version.txt" 2>/dev/null | tr -d '\r\n' || true)
     fi
 
     if [ -z "$VERSION" ]; then
-        echo "Error: Could not detect latest version"
+        printf "${RED}Error:${RESET} Could not detect latest version\n"
         echo "Try: VERSION=1.1.0 curl -fsSL https://contextify.sh/install.sh | sh"
         exit 1
     fi
-    echo "Latest version: $VERSION"
+    printf "  ${CHECK} Latest version: ${BOLD}$VERSION${RESET}\n"
 }
 
 download_and_extract() {
@@ -144,9 +197,9 @@ download_and_extract() {
     CHECKSUM_URL="$BASE_URL/$TARBALL.sha256"
 
     echo ""
-    echo "Installing Contextify v$VERSION"
-    echo "  From: $URL"
-    echo "  To:   $INSTALL_DIR/contextify"
+    printf "${BOLD}Installing Contextify v$VERSION${RESET}\n"
+    printf "  ${DIM}From: $URL${RESET}\n"
+    printf "  ${DIM}To:   $INSTALL_DIR/contextify${RESET}\n"
     echo ""
     mkdir -p "$INSTALL_DIR"
 
@@ -164,7 +217,7 @@ download_and_extract() {
     fi
 
     # Download and verify checksum
-    echo "Verifying checksum..."
+    printf "  ${ARROW} Verifying checksum..."
     EXPECTED=$(curl -fsSL "$CHECKSUM_URL" | awk '{print $1}' | tr -d '\r' || true)
 
     # Validate checksum is a 64-char hex string
@@ -195,7 +248,7 @@ download_and_extract() {
         echo "This could indicate a corrupted download or tampered file."
         exit 1
     fi
-    echo "Checksum verified."
+    printf " ${CHECK}\n"
 
     # Validate tarball contents before extraction (security: prevent path traversal attacks)
     LIST=$(tar -tzf "$TMPDIR/$TARBALL") || { echo "Error: Failed to list tarball contents"; exit 1; }
@@ -263,8 +316,25 @@ verify_installation() {
 }
 
 install_skill() {
-    echo "Installing Total Recall skill..."
-    "$INSTALL_DIR/contextify" install-skill
+    printf "  ${ARROW} Installing Total Recall skill..."
+    if "$INSTALL_DIR/contextify" install-skill >/dev/null 2>&1; then
+        printf " ${CHECK}\n"
+    else
+        printf " ${YELLOW}(skipped)${RESET}\n"
+    fi
+}
+
+try_install_service() {
+    printf "  ${ARROW} Enabling background ingestion..."
+    if has_systemd_user; then
+        if "$INSTALL_DIR/contextify" install-service >/dev/null 2>&1; then
+            printf " ${CHECK}\n"
+        else
+            printf " ${YELLOW}(failed - run manually)${RESET}\n"
+        fi
+    else
+        printf " ${YELLOW}(systemd not available)${RESET}\n"
+    fi
 }
 
 check_path() {
@@ -275,57 +345,89 @@ check_path() {
     esac
 }
 
+add_to_path() {
+    # Auto-add ~/.local/bin to PATH in shell config (like rustup, nvm do)
+    SHELL_NAME="${SHELL##*/}"
+    PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+
+    case "$SHELL_NAME" in
+        bash)
+            RC_FILE="$HOME/.bashrc"
+            # Check if already present
+            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
+                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
+                return 0
+            fi
+            echo "" >> "$RC_FILE"
+            echo "# Added by Contextify installer" >> "$RC_FILE"
+            echo "$PATH_LINE" >> "$RC_FILE"
+            printf "  ${CHECK} Added to $RC_FILE\n"
+            ;;
+        zsh)
+            RC_FILE="$HOME/.zshrc"
+            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
+                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
+                return 0
+            fi
+            echo "" >> "$RC_FILE"
+            echo "# Added by Contextify installer" >> "$RC_FILE"
+            echo "$PATH_LINE" >> "$RC_FILE"
+            printf "  ${CHECK} Added to $RC_FILE\n"
+            ;;
+        fish)
+            # fish uses fish_add_path which is persistent
+            if command -v fish >/dev/null 2>&1; then
+                fish -c "fish_add_path $HOME/.local/bin" 2>/dev/null || true
+                printf "  ${CHECK} Added to fish PATH\n"
+            fi
+            ;;
+        *)
+            # Unknown shell - try .profile as fallback
+            RC_FILE="$HOME/.profile"
+            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
+                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
+                return 0
+            fi
+            echo "" >> "$RC_FILE"
+            echo "# Added by Contextify installer" >> "$RC_FILE"
+            echo "$PATH_LINE" >> "$RC_FILE"
+            printf "  ${CHECK} Added to $RC_FILE\n"
+            ;;
+    esac
+}
+
 print_success() {
     echo ""
-    echo "Contextify installed successfully!"
-    echo ""
-    echo "Binary: $INSTALL_DIR/contextify"
+    printf "${GREEN}${BOLD}Installation complete!${RESET}\n"
     echo ""
 
+    # Verify it works
+    printf "  ${CHECK} contextify --version ${DIM}→${RESET} "
+    "$INSTALL_DIR/contextify" --version 2>/dev/null || echo "(not in PATH yet)"
+
     if ! check_path; then
-        echo "WARNING: $INSTALL_DIR is not in your PATH"
-        echo ""
-        echo "Add it to your shell configuration:"
-        echo ""
-        # Detect shell using POSIX parameter expansion (no basename dependency)
-        SHELL_NAME="${SHELL##*/}"
-        case "$SHELL_NAME" in
-            bash)
-                echo "  # For bash, add to ~/.bashrc:"
-                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-                echo "  source ~/.bashrc"
-                ;;
-            zsh)
-                echo "  # For zsh, add to ~/.zshrc:"
-                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
-                echo "  source ~/.zshrc"
-                ;;
-            fish)
-                echo "  # For fish, run:"
-                echo "  fish_add_path ~/.local/bin"
-                ;;
-            *)
-                echo "  # Add this to your shell config:"
-                echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-                ;;
-        esac
-        echo ""
-        echo "NEXT STEPS (use full path until PATH is updated):"
-        echo ""
-        echo "  1. Set up automatic ingestion:"
-        echo "     $INSTALL_DIR/contextify install-service"
-    else
-        echo "NEXT STEPS:"
-        echo ""
-        echo "  1. Set up automatic ingestion:"
-        echo "     contextify install-service"
+        add_to_path
     fi
 
     echo ""
-    echo "  2. Use Total Recall in Claude Code or Codex:"
+    printf "${BOLD}Next steps:${RESET}\n"
+    echo ""
+
+    # Recommend service if systemd available, otherwise manual ingest
+    if has_systemd_user; then
+        printf "  ${ARROW} Enable background ingestion:\n"
+        echo "     contextify install-service"
+    else
+        printf "  ${ARROW} Run manual ingestion:\n"
+        echo "     contextify ingest"
+        printf "     ${DIM}(systemd user services not detected)${RESET}\n"
+    fi
+
+    echo ""
+    printf "  ${ARROW} Use Total Recall in Claude Code or Codex:\n"
     echo "     /total-recall"
     echo ""
-    echo "Documentation: https://contextify.sh/docs/"
+    printf "${DIM}Docs: https://contextify.sh/docs/${RESET}\n"
 }
 
 main "$@"
