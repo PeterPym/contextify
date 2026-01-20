@@ -39,14 +39,14 @@ Bring environment to `deps-ready` state (container + curl installed).
 ```
 Linux QA environment ready.
 
-Enter the container:
-  docker exec -it contextify-qa bash
+Enter the container (as non-root user):
+  docker exec -it -u testuser contextify-qa bash
 
 Install Contextify (copy this line):
   curl -fsSL https://contextify.sh/install.sh | sh
 ```
 
-This matches the install experience shown on https://contextify.sh/platforms/linux/
+This tests that install.sh works without root privileges (installs to ~/.local/bin).
 
 ## Arguments
 
@@ -132,7 +132,7 @@ colima start --arch aarch64  # For arm64 (slow)
 
 ### Step 3: Container Ready State
 
-Start Colima if needed, then start Ubuntu container:
+Start Colima if needed, then start Ubuntu container with non-root user:
 
 ```bash
 # Start Colima (if not running)
@@ -146,6 +146,11 @@ docker run -d --name contextify-qa \
   --platform linux/amd64 \
   ubuntu:22.04 \
   sleep infinity
+
+# Create non-root user (tests that install.sh doesn't require root)
+docker exec contextify-qa bash -c '
+  useradd -m -s /bin/bash testuser
+'
 
 # Verify container is running
 docker ps --filter "name=contextify-qa"
@@ -193,10 +198,10 @@ Report Claude CLI version when complete.
 
 ### Step 6: Contextify Installed State (NEW)
 
-Install Contextify CLI using the official installer:
+Install Contextify CLI using the official installer (as non-root user):
 
 ```bash
-docker exec contextify-qa bash -c '
+docker exec -u testuser contextify-qa bash -c '
   # One-line install from contextify.sh (same as website)
   curl -fsSL https://contextify.sh/install.sh | sh
 
@@ -205,15 +210,15 @@ docker exec contextify-qa bash -c '
 '
 ```
 
-This matches the install command shown on https://contextify.sh/platforms/linux/
+This tests that install.sh works without root privileges.
 
 ### Step 7: Auth Complete State
 
 Authentication requires interactive user input (opens browser on host).
 
 ```bash
-# Start auth flow - this will print a URL
-docker exec -it contextify-qa claude auth login
+# Start auth flow - this will print a URL (as non-root user)
+docker exec -it -u testuser contextify-qa claude auth login
 ```
 
 **Guide user through:**
@@ -226,21 +231,21 @@ docker exec -it contextify-qa claude auth login
 
 ### Step 8: Fixtures Loaded State
 
-Install test transcript fixtures for CLI testing:
+Install test transcript fixtures for CLI testing (as non-root user):
 
 ```bash
-docker exec contextify-qa bash -c '
-  mkdir -p /root/.claude/projects/test-project/sessions
+docker exec -u testuser contextify-qa bash -c '
+  mkdir -p ~/.claude/projects/test-project/sessions
 
   # Create minimal test transcript
-  cat > /root/.claude/projects/test-project/sessions/test-session-001.jsonl << "EOF"
+  cat > ~/.claude/projects/test-project/sessions/test-session-001.jsonl << "EOF"
 {"type":"summary","timestamp":"2026-01-19T12:00:00Z","summary":"Test fixture session for CLI validation"}
 {"type":"message","timestamp":"2026-01-19T12:00:01Z","role":"user","content":"Hello, this is a test"}
 {"type":"message","timestamp":"2026-01-19T12:00:02Z","role":"assistant","content":"Hello! I am a test fixture response."}
 EOF
 
-  echo "Test fixtures installed at /root/.claude/"
-  ls -la /root/.claude/projects/test-project/sessions/
+  echo "Test fixtures installed at ~/.claude/"
+  ls -la ~/.claude/projects/test-project/sessions/
 '
 ```
 
@@ -249,8 +254,8 @@ EOF
 Container is ready for live Claude Code sessions:
 
 ```bash
-# Start interactive shell in container
-docker exec -it contextify-qa bash
+# Start interactive shell in container (as non-root user)
+docker exec -it -u testuser contextify-qa bash
 
 # Inside container, user can:
 # - Run claude commands
@@ -274,8 +279,8 @@ This brings the environment to `deps-ready` and outputs:
 ```
 Linux QA environment ready.
 
-Enter the container:
-  docker exec -it contextify-qa bash
+Enter the container (as non-root user):
+  docker exec -it -u testuser contextify-qa bash
 
 Install Contextify (copy this line):
   curl -fsSL https://contextify.sh/install.sh | sh
@@ -286,9 +291,9 @@ Install Contextify (copy this line):
 curl -fsSL https://contextify.sh/install.sh | sh
 ```
 
-**Enter the container:**
+**Enter the container (as non-root user):**
 ```bash
-docker exec -it contextify-qa bash
+docker exec -it -u testuser contextify-qa bash
 ```
 
 ## Cleanup
