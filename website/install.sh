@@ -26,6 +26,7 @@ setup_colors() {
         RED='\033[0;31m'
         RESET='\033[0m'
         CHECK="${GREEN}✓${RESET}"
+        CROSS="${RED}✗${RESET}"
         ARROW="${CYAN}→${RESET}"
     else
         BOLD=''
@@ -36,6 +37,7 @@ setup_colors() {
         RED=''
         RESET=''
         CHECK="[ok]"
+        CROSS="[x]"
         ARROW="->"
     fi
 }
@@ -171,12 +173,42 @@ has_cron() {
     command -v crontab >/dev/null 2>&1
 }
 
-# Check if transcript directories exist (worth prompting for ingest)
-has_transcripts() {
+# Check for transcripts and display status
+# Sets CLAUDE_TRANSCRIPTS and CODEX_TRANSCRIPTS counts
+check_transcripts() {
+    printf "  ${ARROW} Looking for your existing transcripts...\n"
+
+    CLAUDE_TRANSCRIPTS=0
+    CODEX_TRANSCRIPTS=0
+
     # Claude Code transcripts
-    [ -d "$HOME/.claude/projects" ] && return 0
+    if [ -d "$HOME/.claude/projects" ]; then
+        CLAUDE_TRANSCRIPTS=$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ]; then
+        printf "    ${CHECK} Claude Code: ${BOLD}${CLAUDE_TRANSCRIPTS}${RESET} transcripts\n"
+    else
+        printf "    ${CROSS} Claude Code: not found\n"
+    fi
+
     # Codex CLI transcripts
-    [ -d "$HOME/.codex/sessions" ] && return 0
+    if [ -d "$HOME/.codex/sessions" ]; then
+        CODEX_TRANSCRIPTS=$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    if [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
+        printf "    ${CHECK} Codex: ${BOLD}${CODEX_TRANSCRIPTS}${RESET} transcripts\n"
+    else
+        printf "    ${CROSS} Codex: not found\n"
+    fi
+
+    # Return success if any transcripts found
+    [ "$CLAUDE_TRANSCRIPTS" -gt 0 ] || [ "$CODEX_TRANSCRIPTS" -gt 0 ]
+}
+
+# Simple check without output (for conditionals)
+has_transcripts() {
+    [ -d "$HOME/.claude/projects" ] && [ -n "$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | head -1)" ] && return 0
+    [ -d "$HOME/.codex/sessions" ] && [ -n "$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | head -1)" ] && return 0
     return 1
 }
 
@@ -227,9 +259,9 @@ main() {
         fi
     fi
 
-    # Only prompt for initial ingest if transcripts might exist
+    # Check for transcripts and prompt for ingest if found
     if [ "$RUN_INGEST" -eq 0 ]; then
-        if has_transcripts; then
+        if check_transcripts; then
             HAS_TRANSCRIPTS=1
             if prompt_yes "Index your existing transcripts now?"; then
                 RUN_INGEST=1
