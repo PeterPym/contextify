@@ -148,13 +148,12 @@ struct Contextify: AsyncParsableCommand {
 
     // Check for backwards-compatible invocation
     if let transformedArgs = handleArgv0Dispatch() {
-      // Re-invoke with transformed arguments
-      let allArgs = ["contextify"] + transformedArgs
-      await Contextify.main(allArgs)
+      // Re-invoke with transformed arguments (without program name)
+      await Contextify.main(transformedArgs)
     } else {
-      // Normal invocation - pass through original arguments
-      // Note: Must call main(_:) not main() to avoid infinite recursion
-      await Contextify.main(CommandLine.arguments)
+      // Normal invocation - use default argument handling
+      // ArgumentParser's main() correctly handles CommandLine.arguments internally
+      await Contextify.main()
     }
   }
 }
