@@ -21,20 +21,9 @@ Set up and manage a Docker-based Linux environment for testing Contextify CLI an
 
 When user asks for "clean linux qa env" or similar:
 
-### Step 1: Check for existing container
+### Step 1: Destroy any existing container
 
-```bash
-docker ps -a --filter "name=contextify-qa" --format "{{.Names}}"
-```
-
-If container exists, ask user:
-```
-Container 'contextify-qa' already exists. Destroy and create fresh?
-(Waiting 20 seconds - no response means yes)
-```
-
-- If user says no/keep: skip to status check
-- If user says yes OR 20 seconds pass with no response: destroy and recreate
+"Clean" means fresh - no confirmation needed.
 
 ```bash
 docker stop contextify-qa 2>/dev/null; docker rm contextify-qa 2>/dev/null
