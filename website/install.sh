@@ -12,6 +12,7 @@ INSTALL_SERVICE=0
 INSTALL_CRON=0
 RUN_INGEST=0
 NON_INTERACTIVE=0
+HAS_TRANSCRIPTS=1
 TMPDIR=""
 
 # Colors (disabled if not a terminal or NO_COLOR is set)
@@ -213,6 +214,7 @@ main() {
     echo ""
 
     # Background ingestion: prefer systemd, fallback to cron
+    # (silently skip if neither available - user will run ingest manually)
     if [ "$INSTALL_SERVICE" -eq 0 ] && [ "$INSTALL_CRON" -eq 0 ]; then
         if has_systemd_user; then
             if prompt_yes "Enable automatic background ingestion (systemd)?"; then
@@ -222,22 +224,18 @@ main() {
             if prompt_yes "Enable automatic background ingestion (cron)?"; then
                 INSTALL_CRON=1
             fi
-        else
-            # Neither systemd nor cron available - tell user instead of silent skip
-            printf "  ${DIM}Background ingestion not available (no systemd user session or cron).${RESET}\n"
-            printf "  ${DIM}You can run 'contextify ingest' manually anytime.${RESET}\n"
         fi
     fi
 
     # Only prompt for initial ingest if transcripts might exist
     if [ "$RUN_INGEST" -eq 0 ]; then
         if has_transcripts; then
+            HAS_TRANSCRIPTS=1
             if prompt_yes "Index your existing transcripts now?"; then
                 RUN_INGEST=1
             fi
         else
-            printf "  ${DIM}No transcripts found yet - skipping initial ingest.${RESET}\n"
-            printf "  ${DIM}Run 'contextify ingest' after using Claude Code or Codex.${RESET}\n"
+            HAS_TRANSCRIPTS=0
         fi
     fi
 
@@ -612,17 +610,27 @@ print_success() {
     printf "${BOLD}Next steps:${RESET}\n"
     echo ""
 
-    printf "  ${ARROW} Search your past conversations with Total Recall:\n"
+    STEP=1
+
+    # If no transcripts, tell user to create some first
+    if [ "${HAS_TRANSCRIPTS:-1}" -eq 0 ]; then
+        printf "  ${STEP}. Use Claude Code or Codex to have some conversations\n"
+        STEP=$((STEP + 1))
+        printf "  ${STEP}. Run ${BOLD}contextify ingest${RESET} to index your transcripts\n"
+        STEP=$((STEP + 1))
+    fi
+
+    printf "  ${STEP}. Search with Total Recall:\n"
     echo "     In Claude Code or Codex, run: /total-recall \"what did we decide about...\""
     echo ""
 
-    printf "${DIM}Docs: https://contextify.sh/docs/${RESET}\n"
-    echo ""
+    printf "Docs: ${CYAN}https://contextify.sh/docs/${RESET}\n"
 
-    # Thank you and contact
-    echo ""
+    # Thank you and contact - two blank lines after for spacing from next prompt
     echo ""
     printf "Thanks for installing! Questions or feedback: ${CYAN}rob@contextify.sh${RESET}\n"
+    echo ""
+    echo ""
 }
 
 main "$@"
