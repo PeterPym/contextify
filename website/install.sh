@@ -655,6 +655,20 @@ print_success() {
     if [ "${HAS_TRANSCRIPTS:-1}" -eq 0 ]; then
         printf "  ${STEP}. Use Claude Code or Codex to have some conversations\n"
         STEP=$((STEP + 1))
+    fi
+
+    # Recommend setting up automatic ingestion if not already done
+    if [ "$INSTALL_SERVICE" -eq 1 ] || [ "$INSTALL_CRON" -eq 1 ]; then
+        # Service was set up - no need to mention ingest
+        :
+    elif has_systemd_user; then
+        printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
+        STEP=$((STEP + 1))
+    elif has_cron; then
+        printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
+        STEP=$((STEP + 1))
+    else
+        # No service available - mention manual ingest
         printf "  ${STEP}. Run ${BOLD}contextify ingest${RESET} to index your transcripts\n"
         STEP=$((STEP + 1))
     fi
