@@ -15,14 +15,17 @@ Trigger Linux CLI builds on GitHub Actions and monitor their progress.
 
 ## Build Strategy
 
-Ranked approach (prefer earlier options):
+**Recommended approach** (ARM Mac with dual Colima profiles):
 
-| Rank | Method | When to Use |
-|------|--------|-------------|
-| 1 | Local Docker (amd64) | Development iteration, quick validation |
-| 2 | CI (amd64 only) | Pre-release validation |
-| 3 | CI (both architectures) | Final release builds |
-| 4 | Local Docker (arm64) | Emergency only (2-3 hours) |
+| Architecture | Method | Time | Notes |
+|--------------|--------|------|-------|
+| **x86_64** | CI (this skill) | ~10 min | Native x86 runners, fast |
+| **arm64** | Local (`/linux-local-build`) | ~12 min | Native on ARM Mac via Colima arm64 profile |
+
+**Why this split?**
+- x86_64 on CI: GitHub's x86 runners build natively - no emulation overhead
+- arm64 locally: ARM Mac builds natively (~12 min) via dedicated Colima profile
+- arm64 on CI: QEMU emulation is slow (60+ min), often times out - **avoid**
 
 ## Triggering CI
 
@@ -158,10 +161,16 @@ Go to: GitHub Settings > Billing > Spending limits
 
 ### arm64 build timeout
 
-The 90-minute timeout may not be enough. Options:
-- Build arm64 locally (2-3 hours)
-- Retry - sometimes QEMU is faster on second attempt
-- Skip arm64 for validation, only build for releases
+CI arm64 builds use QEMU emulation (60+ min). **Recommended: build arm64 locally instead.**
+
+```bash
+# Set up arm64 Colima profile (one-time)
+colima start --profile arm64 --arch aarch64 --vm-type vz
+
+# Switch to arm64 context and build (~12 min native)
+docker context use colima-arm64
+# Then use /linux-local-build or see build/docs/guides/local-linux-builds.md
+```
 
 ### Build fails with "cannot find X in scope"
 

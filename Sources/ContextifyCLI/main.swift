@@ -24,6 +24,70 @@ let cliVersion = generatedCLIVersion
 let cliVersion = "1.1.0-dev"
 #endif
 
+// MARK: - Deprecation Warnings
+
+/// Check if stderr is a TTY (for deprecation warning gating)
+private func isStderrTTY() -> Bool {
+  return isatty(STDERR_FILENO) != 0
+}
+
+/// Emit a deprecation warning to stderr if appropriate
+/// Only shows when stderr is a TTY and CONTEXTIFY_NO_DEPRECATIONS is not set
+private func warnDeprecated(_ message: String) {
+  // Show on TTY unless explicitly suppressed
+  guard isStderrTTY() ||
+        ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_DEPRECATIONS"] == "1" else {
+    return
+  }
+  guard ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" else {
+    return
+  }
+  FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
+}
+
+// MARK: - argv[0] Dispatch
+
+/// Determine how the binary was invoked and handle backwards compatibility
+private func handleArgv0Dispatch() -> [String]? {
+  let executableName = URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
+
+  switch executableName {
+  case "contextify-ingest":
+    warnDeprecated("'contextify-ingest' is deprecated. Use 'contextify ingest' instead.")
+    // Transform: contextify-ingest [args] -> contextify ingest [args]
+    var newArgs = Array(CommandLine.arguments.dropFirst())
+    // If no subcommand given, default to "ingest"
+    if newArgs.isEmpty || newArgs[0].hasPrefix("-") {
+      newArgs.insert("ingest", at: 0)
+    }
+    return newArgs
+
+  case "contextify-query":
+    warnDeprecated("'contextify-query' is deprecated. Use 'contextify doctor', 'contextify install-skill', or 'contextify uninstall-skill' instead.")
+    // Transform contextify-query commands to contextify equivalents
+    var args = Array(CommandLine.arguments.dropFirst())
+    if let first = args.first {
+      switch first {
+      case "install-plugin":
+        args[0] = "install-skill"
+      case "uninstall-plugin":
+        args[0] = "uninstall-skill"
+      case "doctor":
+        // Already matches
+        break
+      default:
+        // Unknown command - pass through
+        break
+      }
+    }
+    return args
+
+  default:
+    // Normal invocation as 'contextify'
+    return nil
+  }
+}
+
 // MARK: - Main Command
 
 /// Contextify CLI - Search and manage your AI coding conversations
@@ -42,7 +106,6 @@ struct Contextify: AsyncParsableCommand {
 
       GETTING STARTED:
         contextify ingest              Index new transcripts
-        contextify search "query"      Search your conversations
         contextify status              Show what's indexed
         contextify install-skill       Install Total Recall skill
         contextify install-service     Set up automatic ingestion (Linux)
@@ -65,11 +128,6 @@ struct Contextify: AsyncParsableCommand {
       VerifyCommand.self,
       MigrateDbCommand.self,
       SchemaCommand.self,
-      // Query commands
-      SearchCommand.self,
-      ActivityCommand.self,
-      ProjectsCommand.self,
-      ContextCommand.self,
       // Service management (Linux)
       InstallServiceCommand.self,
       UninstallServiceCommand.self,
@@ -83,12 +141,19 @@ struct Contextify: AsyncParsableCommand {
     defaultSubcommand: nil
   )
 
-  /// Entry point
+  /// Entry point - handles argv[0] dispatch for backwards compatibility
   static func main() async {
     // Export version to environment for subcommand libraries to read
     setenv("CONTEXTIFY_CLI_VERSION", cliVersion, 1)
 
-    // ArgumentParser's main(_:) expects args WITHOUT argv[0]
-    await Contextify.main(Array(CommandLine.arguments.dropFirst()))
+    // Check for backwards-compatible invocation
+    if let transformedArgs = handleArgv0Dispatch() {
+      // Re-invoke with transformed arguments (without program name)
+      await Contextify.main(transformedArgs)
+    } else {
+      // Normal invocation - pass args without program name (argv[0])
+      // Note: Must call main(_:) not main() to avoid infinite recursion
+      await Contextify.main(Array(CommandLine.arguments.dropFirst()))
+    }
   }
 }
