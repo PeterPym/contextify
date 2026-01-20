@@ -134,13 +134,13 @@ public struct XDGPaths {
           // Check current permissions and tighten if needed
           let attrs = try fm.attributesOfItem(atPath: url.path)
           if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
-            // Directory is world/group accessible - try to tighten
-            writeStderr("Warning: Attempting to tighten permissions on \(url.path) (was \(String(perms, radix: 8)))\n")
+            // Directory is world/group accessible - try to tighten silently
             do {
               try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+              // Success - no need to warn the user
             } catch {
-              // chmod failed (NFS, weird mount, corporate lockdown)
-              writeStderr("Warning: Could not tighten permissions on \(url.path): \(error.localizedDescription)\n")
+              // chmod failed (NFS, weird mount, corporate lockdown) - only warn on failure
+              writeStderr("Warning: Could not secure permissions on \(url.path): \(error.localizedDescription)\n")
               writeStderr("Warning: Directory may be accessible to other users\n")
               // Continue anyway - don't block the user
             }
@@ -174,13 +174,10 @@ public struct XDGPaths {
   public static func setSecureFilePermissions(_ url: URL) {
     let fm = FileManager.default
     do {
-      let attrs = try fm.attributesOfItem(atPath: url.path)
-      if let perms = attrs[.posixPermissions] as? Int, perms & 0o077 != 0 {
-        writeStderr("Warning: Attempting to tighten permissions on \(url.path) (was \(String(perms, radix: 8)))\n")
-      }
+      // Silently secure file permissions - only warn on failure
       try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     } catch {
-      writeStderr("Warning: Could not set permissions on \(url.path): \(error.localizedDescription)\n")
+      writeStderr("Warning: Could not secure permissions on \(url.path): \(error.localizedDescription)\n")
       writeStderr("Warning: File may be accessible to other users\n")
       // Continue - file was written, just not with ideal perms
     }

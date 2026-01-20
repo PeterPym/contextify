@@ -404,8 +404,8 @@ public struct IngestCommand: AsyncParsableCommand {
       durationSeconds: duration
     )
 
-    // Emit completion event (for jsonl format when not quiet)
-    if !isQuiet {
+    // Emit completion event (only for jsonl format, not human - avoids duplicate output)
+    if !isQuiet && format == .jsonl {
       sink.ingestionCompleted(runId: String(runId), success: totalErrors == 0, summary: summary)
     }
 
@@ -427,14 +427,12 @@ public struct IngestCommand: AsyncParsableCommand {
       print("Use 'contextify verify --db \(dbPath)' to verify the database.")
     }
 
-    // Exit codes: 0=success, 1=error, 2=noop
+    // Exit codes: 0=success (including "nothing to do"), 1=error
+    // "No transcripts found" is a valid success state for fresh installs
     if totalErrors > 0 {
       throw ExitCode.failure
     }
-    if totalEntriesInserted == 0 && transcriptsProcessed == 0 {
-      // Nothing to do - exit code 2 for scripts
-      throw ExitCode(CLIExitCode.noop.rawValue)
-    }
+    // Exit 0 - success (even if nothing was processed)
   }
 
   /// Resolve database path using precedence: --db > env var > XDG default
