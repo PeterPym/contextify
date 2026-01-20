@@ -102,10 +102,10 @@ do_uninstall() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
 
-    # Remove cron job if present
-    if has_cron && crontab -l 2>/dev/null | grep -q "contextify ingest"; then
+    # Remove cron job if present (match our exact install pattern)
+    if has_cron && crontab -l 2>/dev/null | grep -q "contextify ingest --quiet"; then
         printf "  ${ARROW} Removing cron job..."
-        crontab -l 2>/dev/null | grep -v "contextify ingest" | crontab - 2>/dev/null || true
+        crontab -l 2>/dev/null | grep -v "contextify ingest --quiet" | crontab - 2>/dev/null || true
         printf " ${CHECK}\n"
     fi
 
@@ -472,8 +472,8 @@ install_skill() {
 try_install_service() {
     printf "  ${ARROW} Enabling background ingestion (systemd)...\n"
     if "$INSTALL_DIR/contextify" install-service >/dev/null 2>&1; then
-        printf "     ${DIM}Timer: contextify-ingest.timer (runs every 15 minutes)${RESET}\n"
-        printf "     ${DIM}Check status: systemctl --user status contextify-ingest.timer${RESET}\n"
+        printf "     ${DIM}Timer: contextify-ingest.timer${RESET}\n"
+        printf "     ${DIM}Check: systemctl --user status contextify-ingest.timer${RESET}\n"
         printf "  ${CHECK} Service enabled\n"
     else
         printf "  ${YELLOW}(failed - run manually)${RESET}\n"
