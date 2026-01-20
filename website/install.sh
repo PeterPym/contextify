@@ -10,6 +10,7 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 SKIP_SKILL=0
 INSTALL_SERVICE=0
 RUN_INGEST=0
+NON_INTERACTIVE=0
 TMPDIR=""
 
 # Colors (disabled if not a terminal or NO_COLOR is set)
@@ -66,14 +67,35 @@ usage() {
     echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
     echo ""
     echo "Options:"
+    echo "  --ingest            Run initial ingestion after install"
     echo "  --install-service   Enable automatic background ingestion (systemd)"
     echo "  --no-skill          Skip Total Recall skill installation"
+    echo "  --non-interactive   Skip all prompts (for scripting)"
     echo "  --help              Show this help"
     echo ""
     echo "Environment:"
     echo "  VERSION       Use specific version (default: latest)"
     echo "  INSTALL_DIR   Install location (default: ~/.local/bin)"
     exit 0
+}
+
+# Check if we can prompt the user (TTY and not non-interactive mode)
+can_prompt() {
+    [ "$NON_INTERACTIVE" -eq 0 ] && [ -t 0 ]
+}
+
+# Prompt user with default Y (returns 0 for yes, 1 for no)
+prompt_yes() {
+    prompt_msg="$1"
+    if ! can_prompt; then
+        return 1  # Default to no when non-interactive
+    fi
+    printf "${prompt_msg} [Y/n] "
+    read -r answer </dev/tty
+    case "$answer" in
+        [nN]*) return 1 ;;
+        *) return 0 ;;
+    esac
 }
 
 # Check if systemd user services are available
@@ -95,8 +117,27 @@ main() {
     if [ "$SKIP_SKILL" -eq 0 ]; then
         install_skill
     fi
+
+    # Interactive prompts (if TTY and not --non-interactive)
+    echo ""
+    if [ "$INSTALL_SERVICE" -eq 0 ] && has_systemd_user; then
+        if prompt_yes "Enable automatic background ingestion (systemd)?"; then
+            INSTALL_SERVICE=1
+        fi
+    fi
+
+    if [ "$RUN_INGEST" -eq 0 ]; then
+        if prompt_yes "Index your existing transcripts now?"; then
+            RUN_INGEST=1
+        fi
+    fi
+
+    # Execute based on flags (set by args or prompts)
     if [ "$INSTALL_SERVICE" -eq 1 ]; then
         try_install_service
+    fi
+    if [ "$RUN_INGEST" -eq 1 ]; then
+        run_initial_ingest
     fi
     print_success
 }
@@ -106,6 +147,8 @@ parse_args() {
         case "$1" in
             --no-skill) SKIP_SKILL=1 ;;
             --install-service) INSTALL_SERVICE=1 ;;
+            --ingest) RUN_INGEST=1 ;;
+            --non-interactive|-y) NON_INTERACTIVE=1 ;;
             --help|-h) usage ;;
             *) echo "Unknown option: $1"; usage ;;
         esac
@@ -334,6 +377,19 @@ try_install_service() {
         fi
     else
         printf " ${YELLOW}(systemd not available)${RESET}\n"
+    fi
+}
+
+run_initial_ingest() {
+    echo ""
+    printf "${BOLD}Indexing your transcripts...${RESET}\n"
+    echo ""
+    # Run ingest and show output (it has its own progress indicators)
+    if "$INSTALL_DIR/contextify" ingest 2>&1; then
+        echo ""
+        printf "  ${CHECK} Ingestion complete\n"
+    else
+        printf "  ${YELLOW}Ingestion had issues - check 'contextify ingest' for details${RESET}\n"
     fi
 }
 
