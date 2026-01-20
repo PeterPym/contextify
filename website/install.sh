@@ -490,87 +490,81 @@ check_path() {
 
 add_to_path() {
     # Auto-add ~/.local/bin to PATH in shell config (like rustup, nvm do)
+    # Sets PATH_NEEDS_RESTART=1 if user needs to restart shell
     SHELL_NAME="${SHELL##*/}"
     PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+    PATH_NEEDS_RESTART=0
 
     case "$SHELL_NAME" in
         bash)
             RC_FILE="$HOME/.bashrc"
-            # Check if already present
-            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
-                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
-                return 0
-            fi
-            echo "" >> "$RC_FILE"
-            echo "# Added by Contextify installer" >> "$RC_FILE"
-            echo "$PATH_LINE" >> "$RC_FILE"
-            printf "  ${CHECK} Added to $RC_FILE\n"
             ;;
         zsh)
             RC_FILE="$HOME/.zshrc"
-            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
-                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
-                return 0
-            fi
-            echo "" >> "$RC_FILE"
-            echo "# Added by Contextify installer" >> "$RC_FILE"
-            echo "$PATH_LINE" >> "$RC_FILE"
-            printf "  ${CHECK} Added to $RC_FILE\n"
             ;;
         fish)
-            # fish uses fish_add_path which is persistent
+            # fish uses fish_add_path which is persistent and immediate
             if command -v fish >/dev/null 2>&1; then
                 fish -c "fish_add_path $HOME/.local/bin" 2>/dev/null || true
                 printf "  ${CHECK} Added to fish PATH\n"
             fi
+            return 0
             ;;
         *)
-            # Unknown shell - try .profile as fallback
             RC_FILE="$HOME/.profile"
-            if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
-                printf "  ${CHECK} PATH already configured in $RC_FILE\n"
-                return 0
-            fi
-            echo "" >> "$RC_FILE"
-            echo "# Added by Contextify installer" >> "$RC_FILE"
-            echo "$PATH_LINE" >> "$RC_FILE"
-            printf "  ${CHECK} Added to $RC_FILE\n"
             ;;
     esac
+
+    # Check if already present in config
+    if [ -f "$RC_FILE" ] && grep -q '\.local/bin' "$RC_FILE" 2>/dev/null; then
+        printf "  ${CHECK} PATH configured in $RC_FILE\n"
+    else
+        echo "" >> "$RC_FILE"
+        echo "# Added by Contextify installer" >> "$RC_FILE"
+        echo "$PATH_LINE" >> "$RC_FILE"
+        printf "  ${CHECK} Added to $RC_FILE\n"
+    fi
+
+    # Either way, if not in current PATH, user needs to restart
+    PATH_NEEDS_RESTART=1
 }
 
 print_success() {
+    PATH_NEEDS_RESTART=0
+
     echo ""
     printf "${GREEN}${BOLD}Installation complete!${RESET}\n"
     echo ""
 
     # Verify it works
     printf "  ${CHECK} contextify --version ${DIM}→${RESET} "
-    "$INSTALL_DIR/contextify" --version 2>/dev/null || echo "(not in PATH yet)"
+    "$INSTALL_DIR/contextify" --version 2>/dev/null || echo "(installed)"
 
     if ! check_path; then
         add_to_path
+    fi
+
+    # Prominent restart message if needed
+    if [ "$PATH_NEEDS_RESTART" -eq 1 ]; then
+        echo ""
+        printf "${YELLOW}${BOLD}>>> Restart your shell or run:${RESET}\n"
+        printf "    ${BOLD}source ~/${RC_FILE##*/}${RESET}\n"
     fi
 
     echo ""
     printf "${BOLD}Next steps:${RESET}\n"
     echo ""
 
-    # Recommend service if systemd available, otherwise manual ingest
-    if has_systemd_user; then
-        printf "  ${ARROW} Enable background ingestion:\n"
-        echo "     contextify install-service"
-    else
-        printf "  ${ARROW} Run manual ingestion:\n"
-        echo "     contextify ingest"
-        printf "     ${DIM}(systemd user services not detected)${RESET}\n"
-    fi
-
-    echo ""
     printf "  ${ARROW} Search your past conversations with Total Recall:\n"
     echo "     /total-recall \"what did we decide about...\""
     echo ""
+
     printf "${DIM}Docs: https://contextify.sh/docs/${RESET}\n"
+    echo ""
+
+    # Thank you and contact
+    printf "Thanks for installing Contextify!\n"
+    printf "Bugs, feature ideas, or cool use cases? ${CYAN}rob@contextify.sh${RESET}\n"
 }
 
 main "$@"
