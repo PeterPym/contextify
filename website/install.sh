@@ -657,20 +657,22 @@ print_success() {
         STEP=$((STEP + 1))
     fi
 
-    # Recommend setting up automatic ingestion if not already done
+    # Ingestion steps depend on whether service was already set up
     if [ "$INSTALL_SERVICE" -eq 1 ] || [ "$INSTALL_CRON" -eq 1 ]; then
-        # Service was set up - no need to mention ingest
-        :
-    elif has_systemd_user; then
-        printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
-        STEP=$((STEP + 1))
-    elif has_cron; then
-        printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
+        # Service already handles ingestion - just mention it's automatic
+        printf "  ${STEP}. Your transcripts will be indexed automatically in the background\n"
         STEP=$((STEP + 1))
     else
-        # No service available - mention manual ingest
-        printf "  ${STEP}. Run ${BOLD}contextify ingest${RESET} to index your transcripts\n"
+        # Tell user to run ingest manually first
+        printf "  ${STEP}. Index your transcripts: ${BOLD}contextify ingest${RESET}\n"
         STEP=$((STEP + 1))
+
+        # Recommend setting up automatic ingestion if available
+        if has_systemd_user || has_cron; then
+            printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
+            printf "     ${DIM}(Runs ingest periodically in the background via systemd/cron)${RESET}\n"
+            STEP=$((STEP + 1))
+        fi
     fi
 
     printf "  ${STEP}. Search with Total Recall:\n"
