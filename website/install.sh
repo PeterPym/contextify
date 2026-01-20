@@ -567,8 +567,8 @@ print_success() {
     fi
 
     echo ""
-    printf "  ${ARROW} Use Total Recall in Claude Code or Codex:\n"
-    echo "     /total-recall"
+    printf "  ${ARROW} Search your past conversations with Total Recall:\n"
+    echo "     /total-recall \"what did we decide about...\""
     echo ""
     printf "${DIM}Docs: https://contextify.sh/docs/${RESET}\n"
 }
