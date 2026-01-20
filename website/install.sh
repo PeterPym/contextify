@@ -9,6 +9,7 @@ REPO="PeterPym/contextify"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 SKIP_SKILL=0
 INSTALL_SERVICE=0
+INSTALL_CRON=0
 RUN_INGEST=0
 NON_INTERACTIVE=0
 TMPDIR=""
@@ -69,6 +70,7 @@ usage() {
     echo "Options:"
     echo "  --ingest            Run initial ingestion after install"
     echo "  --install-service   Enable automatic background ingestion (systemd)"
+    echo "  --install-cron      Enable automatic background ingestion (cron)"
     echo "  --uninstall         Remove Contextify and related files"
     echo "  --no-skill          Skip Total Recall skill installation"
     echo "  --non-interactive   Skip all prompts (for scripting)"
@@ -155,6 +157,11 @@ has_systemd_user() {
     systemctl --user status >/dev/null 2>&1
 }
 
+# Check if cron is available
+has_cron() {
+    command -v crontab >/dev/null 2>&1
+}
+
 main() {
     setup_colors
     print_logo
@@ -171,9 +178,17 @@ main() {
 
     # Interactive prompts (if TTY and not --non-interactive)
     echo ""
-    if [ "$INSTALL_SERVICE" -eq 0 ] && has_systemd_user; then
-        if prompt_yes "Enable automatic background ingestion (systemd)?"; then
-            INSTALL_SERVICE=1
+
+    # Background ingestion: prefer systemd, fallback to cron
+    if [ "$INSTALL_SERVICE" -eq 0 ] && [ "$INSTALL_CRON" -eq 0 ]; then
+        if has_systemd_user; then
+            if prompt_yes "Enable automatic background ingestion (systemd)?"; then
+                INSTALL_SERVICE=1
+            fi
+        elif has_cron; then
+            if prompt_yes "Enable automatic background ingestion (cron)?"; then
+                INSTALL_CRON=1
+            fi
         fi
     fi
 
@@ -187,6 +202,9 @@ main() {
     if [ "$INSTALL_SERVICE" -eq 1 ]; then
         try_install_service
     fi
+    if [ "$INSTALL_CRON" -eq 1 ]; then
+        try_install_cron
+    fi
     if [ "$RUN_INGEST" -eq 1 ]; then
         run_initial_ingest
     fi
@@ -198,6 +216,7 @@ parse_args() {
         case "$1" in
             --no-skill) SKIP_SKILL=1 ;;
             --install-service) INSTALL_SERVICE=1 ;;
+            --install-cron) INSTALL_CRON=1 ;;
             --ingest) RUN_INGEST=1 ;;
             --non-interactive|-y) NON_INTERACTIVE=1 ;;
             --uninstall) do_uninstall ;;
@@ -420,15 +439,31 @@ install_skill() {
 }
 
 try_install_service() {
-    printf "  ${ARROW} Enabling background ingestion..."
-    if has_systemd_user; then
-        if "$INSTALL_DIR/contextify" install-service >/dev/null 2>&1; then
-            printf " ${CHECK}\n"
-        else
-            printf " ${YELLOW}(failed - run manually)${RESET}\n"
-        fi
+    printf "  ${ARROW} Enabling background ingestion (systemd)..."
+    if "$INSTALL_DIR/contextify" install-service >/dev/null 2>&1; then
+        printf " ${CHECK}\n"
     else
-        printf " ${YELLOW}(systemd not available)${RESET}\n"
+        printf " ${YELLOW}(failed - run manually)${RESET}\n"
+    fi
+}
+
+try_install_cron() {
+    printf "  ${ARROW} Enabling background ingestion (cron)..."
+    # Add cron job to run ingest every 15 minutes
+    CRON_CMD="*/15 * * * * $INSTALL_DIR/contextify ingest --quiet"
+
+    # Check if already installed
+    if crontab -l 2>/dev/null | grep -q "contextify ingest"; then
+        printf " ${CHECK} (already configured)\n"
+        return 0
+    fi
+
+    # Add to crontab
+    (crontab -l 2>/dev/null || true; echo "$CRON_CMD") | crontab -
+    if [ $? -eq 0 ]; then
+        printf " ${CHECK}\n"
+    else
+        printf " ${YELLOW}(failed - add manually)${RESET}\n"
     fi
 }
 
