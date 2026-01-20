@@ -170,6 +170,15 @@ has_cron() {
     command -v crontab >/dev/null 2>&1
 }
 
+# Check if transcript directories exist (worth prompting for ingest)
+has_transcripts() {
+    # Claude Code transcripts
+    [ -d "$HOME/.claude/projects" ] && return 0
+    # Codex CLI transcripts
+    [ -d "$HOME/.codex/sessions" ] && return 0
+    return 1
+}
+
 warn_if_root() {
     if [ "$(id -u)" -eq 0 ]; then
         echo ""
@@ -213,12 +222,22 @@ main() {
             if prompt_yes "Enable automatic background ingestion (cron)?"; then
                 INSTALL_CRON=1
             fi
+        else
+            # Neither systemd nor cron available - tell user instead of silent skip
+            printf "  ${DIM}Background ingestion not available (no systemd user session or cron).${RESET}\n"
+            printf "  ${DIM}You can run 'contextify ingest' manually anytime.${RESET}\n"
         fi
     fi
 
+    # Only prompt for initial ingest if transcripts might exist
     if [ "$RUN_INGEST" -eq 0 ]; then
-        if prompt_yes "Index your existing transcripts now?"; then
-            RUN_INGEST=1
+        if has_transcripts; then
+            if prompt_yes "Index your existing transcripts now?"; then
+                RUN_INGEST=1
+            fi
+        else
+            printf "  ${DIM}No transcripts found yet - skipping initial ingest.${RESET}\n"
+            printf "  ${DIM}Run 'contextify ingest' after using Claude Code or Codex.${RESET}\n"
         fi
     fi
 
@@ -594,13 +613,15 @@ print_success() {
     echo ""
 
     printf "  ${ARROW} Search your past conversations with Total Recall:\n"
-    echo "     /total-recall \"what did we decide about...\""
+    echo "     In Claude Code or Codex, run: /total-recall \"what did we decide about...\""
     echo ""
 
     printf "${DIM}Docs: https://contextify.sh/docs/${RESET}\n"
     echo ""
 
     # Thank you and contact
+    echo ""
+    echo ""
     printf "Thanks for installing! Questions or feedback: ${CYAN}rob@contextify.sh${RESET}\n"
 }
 
