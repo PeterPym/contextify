@@ -176,14 +176,13 @@ has_cron() {
 # Check for transcripts and display status
 # Sets CLAUDE_TRANSCRIPTS and CODEX_TRANSCRIPTS counts
 check_transcripts() {
-    echo ""
     printf "  ${ARROW} Looking for your existing transcripts...\n"
 
     CLAUDE_TRANSCRIPTS=0
     CODEX_TRANSCRIPTS=0
 
     # Claude Code transcripts - check dir exists first (fast), then count
-    printf "    Claude Code: "
+    printf "       Claude Code: "
     if [ -d "$HOME/.claude/projects" ]; then
         CLAUDE_TRANSCRIPTS=$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
         if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ]; then
@@ -196,7 +195,7 @@ check_transcripts() {
     fi
 
     # Codex CLI transcripts
-    printf "    Codex: "
+    printf "       Codex: "
     if [ -d "$HOME/.codex/sessions" ]; then
         CODEX_TRANSCRIPTS=$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
         if [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
