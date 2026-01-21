@@ -10,9 +10,10 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 SKIP_SKILL=0
 INSTALL_SERVICE=0
 INSTALL_CRON=0
-RUN_INGEST=0
+SKIP_INGEST=0
 NON_INTERACTIVE=0
-HAS_TRANSCRIPTS=1
+HAS_TRANSCRIPTS=0
+HAS_PROVIDER=0
 TMPDIR=""
 
 # Colors (disabled if not a terminal or NO_COLOR is set)
@@ -71,7 +72,7 @@ usage() {
     echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --ingest            Run initial ingestion after install"
+    echo "  --no-ingest         Skip initial transcript indexing"
     echo "  --install-service   Enable automatic background ingestion (systemd)"
     echo "  --install-cron      Enable automatic background ingestion (cron)"
     echo "  --uninstall         Remove Contextify and related files"
@@ -174,16 +175,21 @@ has_cron() {
 }
 
 # Check for transcripts and display status
-# Sets CLAUDE_TRANSCRIPTS and CODEX_TRANSCRIPTS counts
+# Sets CLAUDE_TRANSCRIPTS, CODEX_TRANSCRIPTS, HAS_TRANSCRIPTS, HAS_PROVIDER
 check_transcripts() {
     printf "  ${ARROW} Looking for your existing transcripts...\n"
 
     CLAUDE_TRANSCRIPTS=0
     CODEX_TRANSCRIPTS=0
+    CLAUDE_INSTALLED=0
+    CODEX_INSTALLED=0
 
-    # Claude Code transcripts
-    if [ -d "$HOME/.claude/projects" ]; then
-        CLAUDE_TRANSCRIPTS=$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+    # Claude Code - check if installed, then count transcripts
+    if [ -d "$HOME/.claude" ]; then
+        CLAUDE_INSTALLED=1
+        if [ -d "$HOME/.claude/projects" ]; then
+            CLAUDE_TRANSCRIPTS=$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+        fi
     fi
     if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ]; then
         printf "     ${CHECK} Claude Code: ${BOLD}${CLAUDE_TRANSCRIPTS}${RESET} transcripts found\n"
@@ -191,9 +197,12 @@ check_transcripts() {
         printf "     ${CROSS} Claude Code: no transcripts found ${DIM}(~/.claude/projects/)${RESET}\n"
     fi
 
-    # Codex CLI transcripts
-    if [ -d "$HOME/.codex/sessions" ]; then
-        CODEX_TRANSCRIPTS=$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+    # Codex CLI - check if installed, then count transcripts
+    if [ -d "$HOME/.codex" ]; then
+        CODEX_INSTALLED=1
+        if [ -d "$HOME/.codex/sessions" ]; then
+            CODEX_TRANSCRIPTS=$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+        fi
     fi
     if [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
         printf "     ${CHECK} Codex: ${BOLD}${CODEX_TRANSCRIPTS}${RESET} transcripts found\n"
@@ -201,15 +210,9 @@ check_transcripts() {
         printf "     ${CROSS} Codex: no transcripts found ${DIM}(~/.codex/sessions/)${RESET}\n"
     fi
 
-    # Return success if any transcripts found
-    [ "$CLAUDE_TRANSCRIPTS" -gt 0 ] || [ "$CODEX_TRANSCRIPTS" -gt 0 ]
-}
-
-# Simple check without output (for conditionals)
-has_transcripts() {
-    [ -d "$HOME/.claude/projects" ] && [ -n "$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | head -1)" ] && return 0
-    [ -d "$HOME/.codex/sessions" ] && [ -n "$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | head -1)" ] && return 0
-    return 1
+    # Set global flags
+    [ "$CLAUDE_INSTALLED" -eq 1 ] || [ "$CODEX_INSTALLED" -eq 1 ] && HAS_PROVIDER=1
+    [ "$CLAUDE_TRANSCRIPTS" -gt 0 ] || [ "$CODEX_TRANSCRIPTS" -gt 0 ] && HAS_TRANSCRIPTS=1
 }
 
 warn_if_root() {
@@ -259,17 +262,8 @@ main() {
         fi
     fi
 
-    # Check for transcripts and prompt for ingest if found
-    if [ "$RUN_INGEST" -eq 0 ]; then
-        if check_transcripts; then
-            HAS_TRANSCRIPTS=1
-            if prompt_yes "Index your existing transcripts now?"; then
-                RUN_INGEST=1
-            fi
-        else
-            HAS_TRANSCRIPTS=0
-        fi
-    fi
+    # Check for transcripts (sets HAS_TRANSCRIPTS and HAS_PROVIDER)
+    check_transcripts
 
     # Execute based on flags (set by args or prompts)
     if [ "$INSTALL_SERVICE" -eq 1 ]; then
@@ -278,7 +272,9 @@ main() {
     if [ "$INSTALL_CRON" -eq 1 ]; then
         try_install_cron
     fi
-    if [ "$RUN_INGEST" -eq 1 ]; then
+
+    # Auto-ingest if transcripts found (unless --no-ingest)
+    if [ "$HAS_TRANSCRIPTS" -eq 1 ] && [ "$SKIP_INGEST" -eq 0 ]; then
         run_initial_ingest
     fi
     print_success
@@ -290,7 +286,7 @@ parse_args() {
             --no-skill) SKIP_SKILL=1 ;;
             --install-service) INSTALL_SERVICE=1 ;;
             --install-cron) INSTALL_CRON=1 ;;
-            --ingest) RUN_INGEST=1 ;;
+            --no-ingest) SKIP_INGEST=1 ;;
             --non-interactive|-y) NON_INTERACTIVE=1 ;;
             --uninstall) do_uninstall ;;
             --help|-h) usage ;;
@@ -647,23 +643,25 @@ print_success() {
 
     STEP=1
 
-    # If no transcripts, tell user to create some first
-    if [ "${HAS_TRANSCRIPTS:-1}" -eq 0 ]; then
-        printf "  ${STEP}. Use Claude Code or Codex to have some conversations\n"
+    # If no provider installed, tell user to install one first
+    if [ "$HAS_PROVIDER" -eq 0 ]; then
+        printf "  ${STEP}. Install Claude Code or Codex\n"
         STEP=$((STEP + 1))
-    fi
-
-    # Ingestion steps depend on whether service was already set up
-    if [ "$INSTALL_SERVICE" -eq 1 ] || [ "$INSTALL_CRON" -eq 1 ]; then
-        # Service already handles ingestion - just mention it's automatic
-        printf "  ${STEP}. Your transcripts will be indexed automatically in the background\n"
+        printf "  ${STEP}. Have some conversations to generate transcripts\n"
         STEP=$((STEP + 1))
-    else
-        # Tell user to run ingest manually first
         printf "  ${STEP}. Index your transcripts: ${BOLD}contextify ingest${RESET}\n"
         STEP=$((STEP + 1))
+    elif [ "$HAS_TRANSCRIPTS" -eq 0 ]; then
+        # Provider installed but no transcripts yet
+        printf "  ${STEP}. Use Claude Code or Codex to have some conversations\n"
+        STEP=$((STEP + 1))
+        printf "  ${STEP}. Index your transcripts: ${BOLD}contextify ingest${RESET}\n"
+        STEP=$((STEP + 1))
+    fi
+    # If transcripts existed, we already auto-ingested them - no need to mention ingest
 
-        # Recommend setting up automatic ingestion if available
+    # Recommend setting up automatic ingestion if not already done
+    if [ "$INSTALL_SERVICE" -eq 0 ] && [ "$INSTALL_CRON" -eq 0 ]; then
         if has_systemd_user || has_cron; then
             printf "  ${STEP}. Set up automatic ingestion: ${BOLD}contextify install-service${RESET}\n"
             printf "     ${DIM}(Runs ingest periodically in the background via systemd/cron)${RESET}\n"
