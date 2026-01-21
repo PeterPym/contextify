@@ -505,14 +505,17 @@ verify_installation() {
 install_skill() {
     printf "  ${ARROW} Installing Total Recall skill...\n"
     if "$INSTALL_DIR/contextify" install-skill >/dev/null 2>&1; then
-        # Show where skills were installed
+        # Show result for each provider
         if [ -d "$HOME/.claude/skills/total-recall" ]; then
-            printf "     ${DIM}Installed to: ~/.claude/skills/total-recall${RESET}\n"
+            printf "     ${CHECK} Claude Code ${DIM}(~/.claude/skills/total-recall)${RESET}\n"
+        else
+            printf "     ${CROSS} Claude Code ${DIM}(~/.claude/skills/total-recall)${RESET}\n"
         fi
         if [ -d "$HOME/.codex/skills/total-recall" ]; then
-            printf "     ${DIM}Installed to: ~/.codex/skills/total-recall${RESET}\n"
+            printf "     ${CHECK} Codex ${DIM}(~/.codex/skills/total-recall)${RESET}\n"
+        else
+            printf "     ${CROSS} Codex ${DIM}(~/.codex/skills/total-recall)${RESET}\n"
         fi
-        printf "  ${CHECK} Skill installed\n"
     else
         printf "  ${YELLOW}(skipped)${RESET}\n"
     fi
