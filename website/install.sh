@@ -562,7 +562,7 @@ try_install_cron() {
 
 run_initial_ingest() {
     printf "  ${ARROW} Indexing your transcripts...\n"
-    if "$INSTALL_DIR/contextify" ingest --quiet 2>&1; then
+    if "$INSTALL_DIR/contextify" ingest >/dev/null 2>&1; then
         printf "  ${CHECK} Transcripts indexed\n"
     else
         printf "  ${YELLOW}Ingestion had issues - run 'contextify ingest' for details${RESET}\n"
