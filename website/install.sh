@@ -404,7 +404,7 @@ download_and_extract() {
     fi
 
     # Download and verify checksum
-    printf "  ${ARROW} Verifying checksum...\n"
+    printf "  ${ARROW} Verifying checksum..."
     EXPECTED=$(curl -fsSL "$CHECKSUM_URL" | awk '{print $1}' | tr -d '\r' || true)
 
     # Validate checksum is a 64-char hex string
@@ -435,7 +435,7 @@ download_and_extract() {
         echo "This could indicate a corrupted download or tampered file."
         exit 1
     fi
-    printf "  ${CHECK} Checksum verified\n"
+    printf " ${CHECK}\n"
 
     # Validate tarball contents before extraction (security: prevent path traversal attacks)
     LIST=$(tar -tzf "$TMPDIR/$TARBALL") || { echo "Error: Failed to list tarball contents"; exit 1; }
