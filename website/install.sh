@@ -211,8 +211,12 @@ check_transcripts() {
     fi
 
     # Set global flags
-    [ "$CLAUDE_INSTALLED" -eq 1 ] || [ "$CODEX_INSTALLED" -eq 1 ] && HAS_PROVIDER=1
-    [ "$CLAUDE_TRANSCRIPTS" -gt 0 ] || [ "$CODEX_TRANSCRIPTS" -gt 0 ] && HAS_TRANSCRIPTS=1
+    if [ "$CLAUDE_INSTALLED" -eq 1 ] || [ "$CODEX_INSTALLED" -eq 1 ]; then
+        HAS_PROVIDER=1
+    fi
+    if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ] || [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
+        HAS_TRANSCRIPTS=1
+    fi
 }
 
 warn_if_root() {
