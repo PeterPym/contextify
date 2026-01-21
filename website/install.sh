@@ -182,29 +182,27 @@ check_transcripts() {
     CODEX_TRANSCRIPTS=0
 
     # Claude Code transcripts - check dir exists first (fast), then count
-    printf "       Claude Code: "
     if [ -d "$HOME/.claude/projects" ]; then
         CLAUDE_TRANSCRIPTS=$(find "$HOME/.claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
         if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ]; then
-            printf "${CHECK} ${BOLD}${CLAUDE_TRANSCRIPTS}${RESET} transcripts\n"
+            printf "     ${CHECK} Claude Code: ${BOLD}${CLAUDE_TRANSCRIPTS}${RESET} transcripts\n"
         else
-            printf "${CROSS} none\n"
+            printf "     ${DIM}-${RESET} Claude Code: no transcripts yet\n"
         fi
     else
-        printf "${CROSS} not installed\n"
+        printf "     ${DIM}-${RESET} Claude Code: not installed\n"
     fi
 
     # Codex CLI transcripts
-    printf "       Codex: "
     if [ -d "$HOME/.codex/sessions" ]; then
         CODEX_TRANSCRIPTS=$(find "$HOME/.codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
         if [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
-            printf "${CHECK} ${BOLD}${CODEX_TRANSCRIPTS}${RESET} transcripts\n"
+            printf "     ${CHECK} Codex: ${BOLD}${CODEX_TRANSCRIPTS}${RESET} transcripts\n"
         else
-            printf "${CROSS} none\n"
+            printf "     ${DIM}-${RESET} Codex: no transcripts yet\n"
         fi
     else
-        printf "${CROSS} not installed\n"
+        printf "     ${DIM}-${RESET} Codex: not installed\n"
     fi
 
     # Return success if any transcripts found
