@@ -57,10 +57,15 @@ EOF
     echo ""
 }
 
-# Cleanup on exit (success or failure)
+# Cleanup and error handling on exit
 cleanup() {
+    exit_code=$?
     if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
         rm -rf "$TMPDIR"
+    fi
+    if [ $exit_code -ne 0 ]; then
+        echo ""
+        echo "Need help? Email rob@contextify.sh"
     fi
 }
 trap cleanup EXIT INT TERM
