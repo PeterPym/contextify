@@ -1,29 +1,27 @@
 # Local Linux Builds with Docker
 
-Build Linux CLI binaries locally using Docker as an alternative to GitHub Actions CI.
+Build Linux CLI binaries locally using Docker.
 
-## Build Strategy
-
-**Recommended approach** (ARM Mac with dual Colima profiles):
+## Build Strategy (ARM Mac)
 
 | Architecture | Method | Time | Notes |
 |--------------|--------|------|-------|
-| **x86_64** | CI (GitHub Actions) | ~10 min | Native x86 runners, fast |
-| **arm64** | Local Docker (native) | ~12 min | Native on ARM Mac via Colima arm64 profile |
+| **x86_64** | **CI ONLY** | ~10 min | NEVER build locally on ARM Mac |
+| **arm64** | Local Docker | ~12 min | Native on ARM Mac via Colima arm64 profile |
 
-**Why this split?**
-- x86_64 on CI: GitHub's x86 runners build natively - no emulation overhead
-- arm64 locally: ARM Mac builds natively via dedicated Colima profile (~12 min)
-- arm64 on CI: QEMU emulation is painfully slow (60+ min), often times out
+**CRITICAL: x86_64 builds MUST use GitHub CI.** Local x86_64 builds on ARM Mac are unreliable:
+- Rosetta translation causes crashes and "illegal instruction" errors
+- Builds may silently produce wrong architecture binaries
+- Switching Colima profiles disrupts running containers
 
-**Legacy approach** (if only one Colima profile):
+```bash
+# x86_64: ALWAYS use CI
+gh workflow run linux-build.yml --repo banagale/contextify -f architecture=x86_64
 
-| Rank | Method | When to Use |
-|------|--------|-------------|
-| 1 | **Local Docker (amd64)** | Development iteration, quick validation |
-| 2 | **CI (amd64 only)** | Pre-release validation, need amd64 artifact |
-| 3 | **Local Docker (arm64)** | Need arm64, have ARM Mac with arm64 Colima profile |
-| 4 | **CI (arm64)** | Last resort - QEMU is very slow (60+ min)
+# arm64: Build locally (fast, native)
+docker context use colima-arm64
+# ... then run build command below
+```
 
 ## Prerequisites
 
@@ -94,48 +92,23 @@ docker run --rm swift:6.0-noble uname -m
 # Should show: x86_64 (for colima) or aarch64 (for colima-arm64)
 ```
 
-## Quick Start: Build x86_64 (Recommended)
+## x86_64 Builds: USE CI ONLY
+
+**DO NOT build x86_64 locally on ARM Mac.** Use GitHub Actions CI:
 
 ```bash
-# Create output directory
-mkdir -p dist
+# Trigger CI build
+gh workflow run linux-build.yml --repo banagale/contextify -f architecture=x86_64
 
-# Build x86_64 binary (~5-10 minutes on ARM Mac with Colima)
-docker run --rm \
-  -v "$PWD":/workspace:ro \
-  -v "$PWD/dist":/output:rw \
-  -e CLI_VERSION="1.1.0" \
-  -w /build \
-  --platform linux/amd64 \
-  swift:6.0-jammy \
-  bash -c '
-    set -e
-    cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
-    apt-get update -qq && apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+# Monitor progress
+gh run list --workflow=linux-build.yml --repo banagale/contextify --limit 1
+gh run watch --repo banagale/contextify
 
-    # Build SQLite with required features
-    cd /tmp
-    curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-3450100.tar.gz" | tar xz
-    cd sqlite-autoconf-*
-    CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
-      ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
-    make -j$(nproc) --quiet && make install --quiet && ldconfig
-
-    # Build unified CLI
-    cd /build
-    printf "// Generated at build time\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
-    swift build -c release --product contextify --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
-
-    # Package
-    mkdir -p /output
-    cp .build/release/contextify /output/
-    ln -sf contextify /output/contextify-ingest
-    ln -sf contextify /output/contextify-query
-    cp -R contextify-query/user-skill /output/
-    cd /output && tar -czvf contextify-linux-x86_64.tar.gz contextify contextify-ingest contextify-query user-skill
-    rm -f contextify contextify-ingest contextify-query && rm -rf user-skill
-  '
+# Download artifact when complete
+gh run download <run-id> --repo banagale/contextify -n linux-cli-x86_64
 ```
+
+CI builds take ~10 minutes on native x86_64 runners and produce reliable binaries.
 
 ## Build arm64 (Native on Apple Silicon - FAST with native profile)
 

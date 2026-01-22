@@ -262,11 +262,69 @@ public struct IngestCommand: AsyncParsableCommand {
       projects = filteredProjects
     }
 
-    // Count total transcripts
-    let totalTranscripts = projects.reduce(0) { $0 + $1.transcriptFiles.count }
+    // Query completed transcripts to enable resume (skip already-processed files)
+    // Key: canonical file path, Value: stored mtime (seconds since epoch)
+    let completedTranscripts: [String: Int] = try await pool.read { db in
+      var result: [String: Int] = [:]
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT file_path, last_modified FROM transcripts
+        WHERE ingest_state = 'complete'
+      """)
+      for row in rows {
+        // GRDB Row subscript returns DatabaseValue - use type annotation for conversion
+        let path: String? = row["file_path"]
+        let mtime: Int? = row["last_modified"]
+        if let path = path, let mtime = mtime {
+          result[path] = mtime
+        }
+      }
+      return result
+    }
+
+    // Build set of files that actually need work (not already complete, or file changed)
+    var filesNeedingWork: Set<String> = []
+    let fm = FileManager.default
+    for project in projects {
+      for fileURL in project.transcriptFiles {
+        let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+
+        // Check if already complete with unchanged mtime
+        if let storedMtime = completedTranscripts[filePath] {
+          if let attrs = try? fm.attributesOfItem(atPath: fileURL.path),
+             let currentMtime = attrs[.modificationDate] as? Date {
+            let currentMtimeInt = Int(currentMtime.timeIntervalSince1970)
+            if currentMtimeInt == storedMtime {
+              // File unchanged since last complete ingest - skip
+              continue
+            }
+          }
+        }
+
+        filesNeedingWork.insert(filePath)
+      }
+    }
+
+    // Count only files that need work
+    let totalTranscripts = filesNeedingWork.count
+    let skippedCount = completedTranscripts.count
+
+    // Debug: always print resume stats (remove after testing)
+    print("[DEBUG] completedTranscripts.count = \(completedTranscripts.count)")
+    print("[DEBUG] filesNeedingWork.count = \(filesNeedingWork.count)")
+    if let firstCompleted = completedTranscripts.first {
+      print("[DEBUG] Sample DB path: \(firstCompleted.key)")
+    }
+    if let firstFile = projects.first?.transcriptFiles.first {
+      let canonPath = firstFile.resolvingSymlinksInPath().standardizedFileURL.path
+      print("[DEBUG] Sample filesystem path: \(canonPath)")
+    }
 
     if showHumanOutput {
-      print("Found \(projects.count) projects with \(totalTranscripts) transcripts")
+      if skippedCount > 0 {
+        print("Found \(projects.count) projects (\(totalTranscripts) to process, \(skippedCount) already indexed)")
+      } else {
+        print("Found \(projects.count) projects with \(totalTranscripts) transcripts")
+      }
     }
 
     // Emit start event
@@ -316,14 +374,17 @@ public struct IngestCommand: AsyncParsableCommand {
 
       // Process each transcript in the project
       for fileURL in project.transcriptFiles {
+        // Skip files already processed (resume support)
+        let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+        if !filesNeedingWork.contains(filePath) {
+          continue
+        }
+
         do {
           // Get file attributes
           let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
           let lastModified = (attrs[.modificationDate] as? Date) ?? Date()
           let fileSize = (attrs[.size] as? Int) ?? 0
-
-          // Compute canonical path first (used for storage and provider derivation)
-          let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
           let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
 
           // Derive provider from canonical path using anchored patterns
@@ -387,8 +448,12 @@ public struct IngestCommand: AsyncParsableCommand {
 
           // Write progress file for install.sh spinner
           let progressFile = "/tmp/contextify-ingest-progress"
-          try? "\(transcriptsProcessed)/\(totalTranscripts)\n".write(
-            toFile: progressFile, atomically: true, encoding: .utf8)
+          let progressContent = "\(transcriptsProcessed)/\(totalTranscripts)\n"
+          do {
+            try progressContent.write(toFile: progressFile, atomically: true, encoding: .utf8)
+          } catch {
+            print("[DEBUG] Failed to write progress file: \(error)")
+          }
 
           if showHumanOutput && outcome.entriesInserted > 0 {
             print("  \(fileURL.lastPathComponent): \(outcome.entriesInserted) entries")

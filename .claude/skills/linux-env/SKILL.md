@@ -48,13 +48,24 @@ Install Contextify (copy this line):
 
 This tests that install.sh works without root privileges (installs to ~/.local/bin).
 
+## CRITICAL: Architecture Rules
+
+**On ARM Mac (M1/M2/M3):**
+- **arm64**: Build and test LOCALLY with native Colima arm64 profile (~12 min builds)
+- **x86_64**: ALWAYS use GitHub CI - NEVER build x86_64 locally on ARM Mac
+
+Local x86_64 builds on ARM Mac are unreliable (Rosetta/QEMU issues, crashes, wrong binaries).
+Use `/linux-ci-trigger` or `gh workflow run linux-build.yml -f architecture=x86_64` instead.
+
 ## Arguments
 
 Parse arguments from the command:
 - `status` - Show current environment state (default if no args)
 - `--state=<target>` - Bring environment to specified state
-- `--arch=x86_64|arm64` - Target architecture (default: x86_64)
+- `--arch=arm64` - Target architecture (default: arm64 on ARM Mac)
 - `--cleanup` - Stop container and optionally Colima
+
+**Note:** `--arch=x86_64` is intentionally not supported for local testing. Use CI for x86_64.
 
 Target states (in order):
 1. `container-ready` - Colima running, Ubuntu container available
@@ -110,40 +121,41 @@ Report current state to user before proceeding.
 
 ### Step 2: Architecture Selection
 
-**Default: x86_64** (fast with Rosetta on ARM Mac)
-**arm64**: Only if explicitly requested (warn user: 2-3x slower)
+**Default: arm64** (native on ARM Mac, fast and reliable)
 
-To switch architectures, Colima must be restarted:
+On ARM Mac, ONLY use arm64 for local Docker testing. x86_64 local builds are unreliable.
 
 ```bash
 # Check current Colima architecture
 colima list  # ARCH column shows current
 
-# If switching architectures (USER CONFIRMATION REQUIRED):
-# This takes 1-3 minutes and stops any running containers
-colima stop
-colima delete  # Only if changing architecture
-colima start --arch x86_64 --vm-type vz --vz-rosetta  # For x86_64
-# OR
-colima start --arch aarch64  # For arm64 (slow)
+# Start arm64 Colima (if not running)
+colima start --profile arm64 --arch aarch64 --vm-type vz
+docker context use colima-arm64
 ```
 
-**IMPORTANT:** Always ask user before changing architecture - it disrupts running containers.
+**NEVER switch to x86_64 locally.** If you need x86_64 binaries, use GitHub CI:
+```bash
+gh workflow run linux-build.yml --repo banagale/contextify -f architecture=x86_64
+```
+
+**IMPORTANT:** Always ask user before any Colima operations - they disrupt running containers.
 
 ### Step 3: Container Ready State
 
 Start Colima if needed, then start Ubuntu container with non-root user:
 
 ```bash
-# Start Colima (if not running)
-colima start --arch x86_64 --vm-type vz --vz-rosetta
+# Start arm64 Colima (if not running)
+colima start --profile arm64 --arch aarch64 --vm-type vz
 
-# Verify Docker context points to Colima
-docker context use colima
+# Verify Docker context points to arm64 Colima
+docker context use colima-arm64
 
-# Start persistent Ubuntu container
+# Start persistent Ubuntu container with --init (prevents zombie processes)
 docker run -d --name contextify-qa \
-  --platform linux/amd64 \
+  --init \
+  --platform linux/arm64 \
   ubuntu:22.04 \
   sleep infinity
 
@@ -342,22 +354,22 @@ Next state: auth-complete (requires interactive auth)
 
 ## Architecture Considerations
 
-**x86_64 (default, recommended):**
-- Fast on ARM Mac with Rosetta
-- Requires: `colima start --arch x86_64 --vm-type vz --vz-rosetta`
+**arm64 (default, required for local testing on ARM Mac):**
+- Native on ARM Mac - fast and reliable
+- Requires: `colima start --profile arm64 --arch aarch64 --vm-type vz`
+- Use `docker context use colima-arm64`
 
-**arm64:**
-- Native on ARM Mac but slow for Swift compilation
-- Use only when specifically testing arm64 binaries
-- Expect 2-3x longer times for any compilation
+**x86_64 (CI ONLY - never build locally on ARM Mac):**
+- Local x86_64 builds on ARM Mac are unreliable (Rosetta issues, crashes, wrong binaries)
+- ALWAYS use GitHub CI for x86_64: `gh workflow run linux-build.yml -f architecture=x86_64`
+- CI has native x86_64 runners that build correctly in ~10 min
 
-**CRITICAL:** Docker context must match intended architecture. The `--platform` flag does NOT override context.
+**CRITICAL:** On ARM Mac, only use arm64 Colima profile for local work. Never switch to x86_64.
 
 ```bash
-# Verify architecture matches intent
+# Verify you're using arm64
 docker run --rm ubuntu:22.04 uname -m
-# x86_64 = good for x86_64 testing
-# aarch64 = good for arm64 testing
+# Must show: aarch64
 ```
 
 ## Troubleshooting
