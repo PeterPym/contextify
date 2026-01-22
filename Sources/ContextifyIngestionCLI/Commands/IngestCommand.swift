@@ -385,6 +385,11 @@ public struct IngestCommand: AsyncParsableCommand {
           totalEntriesSkipped += outcome.entriesSkipped
           transcriptsProcessed += 1
 
+          // Write progress file for install.sh spinner
+          let progressFile = "/tmp/contextify-ingest-progress"
+          try? "\(transcriptsProcessed)/\(totalTranscripts)\n".write(
+            toFile: progressFile, atomically: true, encoding: .utf8)
+
           if showHumanOutput && outcome.entriesInserted > 0 {
             print("  \(fileURL.lastPathComponent): \(outcome.entriesInserted) entries")
           }
@@ -397,6 +402,9 @@ public struct IngestCommand: AsyncParsableCommand {
     }
 
     let duration = Date().timeIntervalSince(startTime)
+
+    // Clean up progress file
+    try? FileManager.default.removeItem(atPath: "/tmp/contextify-ingest-progress")
 
     // Secure database file and sidecars (WAL/SHM) permissions
     XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))

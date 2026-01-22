@@ -563,10 +563,9 @@ try_install_cron() {
 run_initial_ingest() {
     TOTAL_TRANSCRIPTS=$((CLAUDE_TRANSCRIPTS + CODEX_TRANSCRIPTS))
     printf "  ${ARROW} Indexing your transcripts...\n"
-    if [ "$TOTAL_TRANSCRIPTS" -gt 1000 ]; then
-        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take a while)${RESET}\n"
-    elif [ "$TOTAL_TRANSCRIPTS" -gt 500 ]; then
-        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take a few minutes)${RESET}\n"
+    if [ "$TOTAL_TRANSCRIPTS" -gt 500 ]; then
+        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take anywhere from${RESET}\n"
+        printf "     ${DIM} a few minutes to longer than a Who's the Boss? episode)${RESET}\n"
     fi
 
     # Run ingest in background and show progress
@@ -574,9 +573,10 @@ run_initial_ingest() {
     "$INSTALL_DIR/contextify" ingest --quiet 2>&1 &
     INGEST_PID=$!
 
-    # Show spinner with elapsed time while ingest runs
-    SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    # Show spinner with elapsed time and progress while ingest runs
+    # Use ASCII spinner for maximum terminal compatibility
     SPINNER_IDX=0
+    PROGRESS_FILE="/tmp/contextify-ingest-progress"
     while kill -0 "$INGEST_PID" 2>/dev/null; do
         ELAPSED=$(($(date +%s) - START_TIME))
         if [ "$ELAPSED" -ge 60 ]; then
@@ -586,8 +586,20 @@ run_initial_ingest() {
         else
             TIME_STR="${ELAPSED}s"
         fi
-        CHAR=$(printf '%s' "$SPINNER" | cut -c$((SPINNER_IDX % 10 + 1)))
-        printf "\r     ${DIM}${CHAR} Indexing... (${TIME_STR} elapsed)${RESET}          "
+        # ASCII spinner: | / - \
+        case $((SPINNER_IDX % 4)) in
+            0) CHAR='|' ;;
+            1) CHAR='/' ;;
+            2) CHAR='-' ;;
+            3) CHAR='\' ;;
+        esac
+        # Read progress from CLI if available
+        if [ -f "$PROGRESS_FILE" ]; then
+            PROGRESS=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
+            printf "\r     ${DIM}${CHAR} Indexing ${PROGRESS} transcripts (${TIME_STR})${RESET}          "
+        else
+            printf "\r     ${DIM}${CHAR} Indexing... (${TIME_STR})${RESET}          "
+        fi
         SPINNER_IDX=$((SPINNER_IDX + 1))
         sleep 0.2
     done
