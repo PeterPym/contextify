@@ -108,6 +108,11 @@ public struct IngestCommand: AsyncParsableCommand {
   }
 
   public mutating func run() async throws {
+    // Set quiet mode for logging before anything else runs
+    if quiet || systemd {
+      CrossPlatformLogger.quietMode = true
+    }
+
     let runId = UUID().uuidString.prefix(8).lowercased()
     let startTime = Date()
 
@@ -124,9 +129,9 @@ public struct IngestCommand: AsyncParsableCommand {
     let isQuiet = quiet || systemd
     let showHumanOutput = format == .human && !isQuiet
 
-    // Set up event sink (only for non-quiet jsonl output)
+    // Set up event sink
     let sinkFormat: CLIEventSink.OutputFormat = format == .jsonl ? .jsonl : .human
-    let sink = isQuiet ? CLIEventSink(format: .human) : CLIEventSink(format: sinkFormat)
+    let sink = CLIEventSink(format: sinkFormat, quiet: isQuiet)
 
     // Parse --since date if provided
     let sinceDate = try parseSinceDate()
