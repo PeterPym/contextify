@@ -561,9 +561,57 @@ try_install_cron() {
 }
 
 run_initial_ingest() {
+    TOTAL_TRANSCRIPTS=$((CLAUDE_TRANSCRIPTS + CODEX_TRANSCRIPTS))
     printf "  ${ARROW} Indexing your transcripts...\n"
-    if "$INSTALL_DIR/contextify" ingest --quiet 2>&1; then
-        printf "  ${CHECK} Transcripts indexed\n"
+    if [ "$TOTAL_TRANSCRIPTS" -gt 1000 ]; then
+        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take a while)${RESET}\n"
+    elif [ "$TOTAL_TRANSCRIPTS" -gt 500 ]; then
+        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take a few minutes)${RESET}\n"
+    fi
+
+    # Run ingest in background and show progress
+    START_TIME=$(date +%s)
+    "$INSTALL_DIR/contextify" ingest --quiet 2>&1 &
+    INGEST_PID=$!
+
+    # Show spinner with elapsed time while ingest runs
+    SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    SPINNER_IDX=0
+    while kill -0 "$INGEST_PID" 2>/dev/null; do
+        ELAPSED=$(($(date +%s) - START_TIME))
+        if [ "$ELAPSED" -ge 60 ]; then
+            MINS=$((ELAPSED / 60))
+            SECS=$((ELAPSED % 60))
+            TIME_STR="${MINS}m ${SECS}s"
+        else
+            TIME_STR="${ELAPSED}s"
+        fi
+        CHAR=$(printf '%s' "$SPINNER" | cut -c$((SPINNER_IDX % 10 + 1)))
+        printf "\r     ${DIM}${CHAR} Indexing... (${TIME_STR} elapsed)${RESET}          "
+        SPINNER_IDX=$((SPINNER_IDX + 1))
+        sleep 0.2
+    done
+
+    # Clear the spinner line
+    printf "\r                                                    \r"
+
+    # Check exit status
+    wait "$INGEST_PID"
+    INGEST_STATUS=$?
+
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+
+    if [ "$INGEST_STATUS" -eq 0 ]; then
+        if [ "$ELAPSED" -gt 60 ]; then
+            MINS=$((ELAPSED / 60))
+            SECS=$((ELAPSED % 60))
+            printf "  ${CHECK} Transcripts indexed ${DIM}(${MINS}m ${SECS}s)${RESET}\n"
+        elif [ "$ELAPSED" -gt 5 ]; then
+            printf "  ${CHECK} Transcripts indexed ${DIM}(${ELAPSED}s)${RESET}\n"
+        else
+            printf "  ${CHECK} Transcripts indexed\n"
+        fi
     else
         printf "  ${YELLOW}Ingestion had issues - run 'contextify ingest' for details${RESET}\n"
     fi
