@@ -519,13 +519,9 @@ public actor LightweightDiscoveryService {
   nonisolated private func inferPathFromTranscripts(_ transcripts: [URL]) -> String? {
     guard !transcripts.isEmpty else { return nil }
 
-    let sorted = transcripts.sorted { lhs, rhs in
-      let lhsSize = (try? lhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-      let rhsSize = (try? rhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-      return lhsSize > rhsSize
-    }
-
-    for file in sorted {
+    // Try first few files to find CWD - no need to sort by size
+    // (CWD is the same for all transcripts in a project, any file will do)
+    for file in transcripts.prefix(5) {
       if let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file),
          !cwd.isEmpty {
         return PathUtils.canonicalizePath(cwd)
