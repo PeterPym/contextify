@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/manifest.schema.json",
   "schema_version": 1,
-  "current_version": "1.1.0",
+  "current_version": "1.2.1",
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
@@ -199,6 +199,30 @@
       },
       "linux": {
         "status": "pending"
+      },
+      "marketing": {
+        "changelog_published": false,
+        "announcement_posted": false
+      }
+    },
+    "1.2.1": {
+      "created": "2026-01-23",
+      "status": "complete",
+      "target_channels": [
+        "dmg"
+      ],
+      "git_tag": "v1.2.1",
+      "git_commit": "a50bfc88b9b0a50908e49ac5997675f743558c73",
+      "dmg": {
+        "status": "shipped",
+        "released_at": "2026-01-23"
+      },
+      "appstore": {
+        "status": "skipped",
+        "build_number": 1
+      },
+      "linux": {
+        "status": "skipped"
       },
       "marketing": {
         "changelog_published": false,
