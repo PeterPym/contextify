@@ -75,7 +75,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 usage() {
-    echo "Contextify Linux Installer"
+    OS_NAME=$(uname -s 2>/dev/null || echo unknown)
+    case "$OS_NAME" in
+        Linux)  echo "Contextify Linux Installer" ;;
+        Darwin) echo "Contextify macOS Installer" ;;
+        *)      echo "Contextify Installer" ;;
+    esac
     echo ""
     echo "Usage: curl -fsSL https://contextify.sh/install.sh | sh"
     echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
@@ -349,7 +354,15 @@ install_macos_dmg() {
     fi
 
     printf "  ${ARROW} Mounting DMG...\n"
+    set +e
     ATTACH_OUTPUT=$(hdiutil attach -nobrowse -noautoopen "$DMG_PATH" 2>&1)
+    ATTACH_STATUS=$?
+    set -e
+    if [ "$ATTACH_STATUS" -ne 0 ]; then
+        printf "${RED}Error:${RESET} Failed to mount DMG.\n"
+        printf "${DIM}%s${RESET}\n" "$ATTACH_OUTPUT"
+        exit 1
+    fi
 
     # Extract mount point from hdiutil output (handles spaces in volume names)
     MOUNT_POINT=$(printf "%s\n" "$ATTACH_OUTPUT" | awk 'match($0,/\/Volumes\/.*/){print substr($0,RSTART,RLENGTH); exit}')
