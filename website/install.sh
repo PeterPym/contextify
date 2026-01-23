@@ -58,7 +58,10 @@ EOF
 }
 
 # Cleanup and error handling on exit
+CLEANUP_DONE=0
 cleanup() {
+    [ "$CLEANUP_DONE" -eq 1 ] && return
+    CLEANUP_DONE=1
     exit_code=$?
     if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
         rm -rf "$TMPDIR"
@@ -197,7 +200,7 @@ check_transcripts() {
         fi
     fi
     if [ "$CLAUDE_TRANSCRIPTS" -gt 0 ]; then
-        printf "     ${CHECK} Claude Code: ${BOLD}${CLAUDE_TRANSCRIPTS}${RESET} transcripts found\n"
+        printf "     ${CHECK} Claude Code: transcripts found\n"
     else
         printf "     ${CROSS} Claude Code: no transcripts found ${DIM}(~/.claude/projects/)${RESET}\n"
     fi
@@ -210,7 +213,7 @@ check_transcripts() {
         fi
     fi
     if [ "$CODEX_TRANSCRIPTS" -gt 0 ]; then
-        printf "     ${CHECK} Codex: ${BOLD}${CODEX_TRANSCRIPTS}${RESET} transcripts found\n"
+        printf "     ${CHECK} Codex: transcripts found\n"
     else
         printf "     ${CROSS} Codex: no transcripts found ${DIM}(~/.codex/sessions/)${RESET}\n"
     fi
@@ -561,71 +564,100 @@ try_install_cron() {
 }
 
 run_initial_ingest() {
-    TOTAL_TRANSCRIPTS=$((CLAUDE_TRANSCRIPTS + CODEX_TRANSCRIPTS))
     printf "  ${ARROW} Indexing your transcripts...\n"
-    if [ "$TOTAL_TRANSCRIPTS" -gt 500 ]; then
-        printf "     ${DIM}(${TOTAL_TRANSCRIPTS} transcripts - this one-time setup may take anywhere from${RESET}\n"
-        printf "     ${DIM} a few minutes to longer than a Who's the Boss? episode)${RESET}\n"
-    fi
+    printf "     ${DIM}(one-time database setup)${RESET}\n"
 
-    # Run ingest in background and show progress
     START_TIME=$(date +%s)
-    "$INSTALL_DIR/contextify" ingest --quiet 2>&1 &
+    PROGRESS_FILE="$(mktemp /tmp/contextify-ingest-progress.XXXXXX)"
+    LOG_FILE="$(mktemp /tmp/contextify-ingest.XXXXXX.log)"
+    export CONTEXTIFY_INGEST_PROGRESS_FILE="$PROGRESS_FILE"
+
+    "$INSTALL_DIR/contextify" ingest --quiet >"$LOG_FILE" 2>&1 &
     INGEST_PID=$!
 
-    # Show spinner with elapsed time and progress while ingest runs
-    # Use ASCII spinner for maximum terminal compatibility
-    SPINNER_IDX=0
-    PROGRESS_FILE="/tmp/contextify-ingest-progress"
+    # Forward signals to ingest process (prevents orphaned DB locks)
+    # Uses escalation ladder: INT -> TERM (2s) -> KILL (5s)
+    CANCELLED=0
+    trap '
+        CANCELLED=1
+        kill -INT "$INGEST_PID" 2>/dev/null
+        ( sleep 2; kill -0 "$INGEST_PID" 2>/dev/null && kill -TERM "$INGEST_PID" 2>/dev/null
+          sleep 3; kill -0 "$INGEST_PID" 2>/dev/null && kill -9 "$INGEST_PID" 2>/dev/null
+        ) &
+        wait "$INGEST_PID" 2>/dev/null
+    ' INT TERM
+
+    # Progress display loop
     while kill -0 "$INGEST_PID" 2>/dev/null; do
         ELAPSED=$(($(date +%s) - START_TIME))
         if [ "$ELAPSED" -ge 60 ]; then
-            MINS=$((ELAPSED / 60))
-            SECS=$((ELAPSED % 60))
-            TIME_STR="${MINS}m ${SECS}s"
+            TIME_STR="$((ELAPSED / 60))m $((ELAPSED % 60))s"
         else
             TIME_STR="${ELAPSED}s"
         fi
-        # ASCII spinner: | / - \
-        case $((SPINNER_IDX % 4)) in
-            0) CHAR='|' ;;
-            1) CHAR='/' ;;
-            2) CHAR='-' ;;
-            3) CHAR='\' ;;
-        esac
-        # Read progress from CLI if available
-        if [ -f "$PROGRESS_FILE" ]; then
-            PROGRESS=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
-            printf "\r     ${DIM}${CHAR} Indexing ${PROGRESS} transcripts (${TIME_STR})${RESET}          "
+        PROGRESS=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
+        if [ -n "$PROGRESS" ]; then
+            case "$PROGRESS" in
+                done:*) break ;;
+                *) printf "\r     ${DIM}Indexing ${PROGRESS} transcripts (${TIME_STR})${RESET}          " ;;
+            esac
         else
-            printf "\r     ${DIM}${CHAR} Indexing... (${TIME_STR})${RESET}          "
+            printf "\r     ${DIM}Indexing... (${TIME_STR})${RESET}          "
         fi
-        SPINNER_IDX=$((SPINNER_IDX + 1))
-        sleep 0.2
+        sleep 0.5
     done
 
-    # Clear the spinner line
+    # Clear the progress line
     printf "\r                                                    \r"
 
-    # Check exit status
     wait "$INGEST_PID"
     INGEST_STATUS=$?
+    trap - INT TERM
 
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
 
-    if [ "$INGEST_STATUS" -eq 0 ]; then
-        if [ "$ELAPSED" -gt 60 ]; then
-            MINS=$((ELAPSED / 60))
-            SECS=$((ELAPSED % 60))
-            printf "  ${CHECK} Transcripts indexed ${DIM}(${MINS}m ${SECS}s)${RESET}\n"
-        elif [ "$ELAPSED" -gt 5 ]; then
-            printf "  ${CHECK} Transcripts indexed ${DIM}(${ELAPSED}s)${RESET}\n"
-        else
-            printf "  ${CHECK} Transcripts indexed\n"
-        fi
+    # Handle exit codes (CANCELLED flag takes priority)
+    if [ "$CANCELLED" -eq 1 ] || [ "$INGEST_STATUS" -eq 130 ] || [ "$INGEST_STATUS" -eq 143 ]; then
+        printf "  ${YELLOW}Cancelled. Run 'contextify ingest' to resume.${RESET}\n"
+    elif [ "$INGEST_STATUS" -eq 0 ]; then
+        # Read final count from progress file (CLI leaves it for us)
+        FINAL=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
+        case "$FINAL" in
+            done:*)
+                COUNT="${FINAL#done:}"
+                if [ "$ELAPSED" -gt 5 ]; then
+                    printf "  ${CHECK} ${COUNT} transcripts indexed ${DIM}(${ELAPSED}s)${RESET}\n"
+                else
+                    printf "  ${CHECK} ${COUNT} transcripts indexed\n"
+                fi
+                ;;
+            *)
+                if [ "$ELAPSED" -gt 60 ]; then
+                    MINS=$((ELAPSED / 60))
+                    SECS=$((ELAPSED % 60))
+                    printf "  ${CHECK} Transcripts indexed ${DIM}(${MINS}m ${SECS}s)${RESET}\n"
+                elif [ "$ELAPSED" -gt 5 ]; then
+                    printf "  ${CHECK} Transcripts indexed ${DIM}(${ELAPSED}s)${RESET}\n"
+                else
+                    printf "  ${CHECK} Transcripts indexed\n"
+                fi
+                ;;
+        esac
     else
-        printf "  ${YELLOW}Ingestion had issues - run 'contextify ingest' for details${RESET}\n"
+        printf "  ${YELLOW}Indexing had issues:${RESET}\n"
+        tail -n 10 "$LOG_FILE" 2>/dev/null | while IFS= read -r line; do
+            printf "     ${DIM}%s${RESET}\n" "$line"
+        done
+        printf "     ${DIM}Full log: $LOG_FILE${RESET}\n"
+        printf "     ${DIM}Run 'contextify ingest' manually to retry.${RESET}\n"
+    fi
+
+    # Installer owns progress file cleanup
+    rm -f "$PROGRESS_FILE"
+    # Keep log file on error, clean on success/cancel
+    if [ "$INGEST_STATUS" -eq 0 ] || [ "$CANCELLED" -eq 1 ]; then
+        rm -f "$LOG_FILE"
     fi
 }
 

@@ -408,6 +408,19 @@ colima start --arch x86_64 --vm-type vz --vz-rosetta
 - Check network: `docker exec contextify-qa curl -I https://contextify.sh`
 - Run with deps-ready state first: `/linux-env --state deps-ready`
 
+### macOS tar includes `._*` resource fork files
+When copying files from macOS into a Linux container via `tar`, macOS tar includes AppleDouble (`._*`) resource fork files by default. This doubles the file count and confuses transcript discovery.
+
+**Fix:** Always set `COPYFILE_DISABLE=1` when creating tarballs on macOS:
+```bash
+COPYFILE_DISABLE=1 tar -czf archive.tar.gz -C ~/path files/
+```
+
+Or when piping from `find`:
+```bash
+COPYFILE_DISABLE=1 find .claude/projects -name "*.jsonl" | COPYFILE_DISABLE=1 tar -czf /tmp/transcripts.tar.gz -T -
+```
+
 ### "Illegal instruction" during builds
 Colima is using QEMU instead of Rosetta. Recreate with `--vz-rosetta` flag.
 
