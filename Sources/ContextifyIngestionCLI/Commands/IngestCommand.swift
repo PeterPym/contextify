@@ -278,7 +278,7 @@ public struct IngestCommand: AsyncParsableCommand {
     if shouldStop() {
       sigintSource.cancel()
       sigtermSource.cancel()
-      try? pool.write { db in try db.checkpoint(.passive) }
+      try? await pool.write { db in try db.checkpoint(.passive) }
       throw ExitCode(Int32(128 + receivedSignal.value))
     }
 
@@ -391,7 +391,7 @@ public struct IngestCommand: AsyncParsableCommand {
       // Clean exit
       sigintSource.cancel()
       sigtermSource.cancel()
-      try? pool.write { db in try db.checkpoint(.passive) }
+      try? await pool.write { db in try db.checkpoint(.passive) }
       return
     }
 
@@ -568,7 +568,7 @@ public struct IngestCommand: AsyncParsableCommand {
     sigtermSource.cancel()
 
     // WAL checkpoint for clean DB state (best effort)
-    try? pool.write { db in try db.checkpoint(.passive) }
+    try? await pool.write { db in try db.checkpoint(.passive) }
 
     // Handle cancellation: exit with conventional signal code
     let sig = receivedSignal.value
