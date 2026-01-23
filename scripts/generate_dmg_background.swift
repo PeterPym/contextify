@@ -29,9 +29,9 @@ let arrowPadding: CGFloat = 50  // padding from icon edges
 let arrowStartX = appCenterX + iconRadius + arrowPadding
 let arrowEndX = appsCenterX - iconRadius - arrowPadding
 let arrowY = centerY
-let arrowHeadLength: CGFloat = 56
-let arrowHeadWidth: CGFloat = 44
-let arrowShaftWidth: CGFloat = 24.0
+let arrowHeadLength: CGFloat = 42
+let arrowHeadWidth: CGFloat = 33
+let arrowShaftWidth: CGFloat = 18.0
 
 // Create bitmap representation at exact pixel dimensions
 let rep = NSBitmapImageRep(
