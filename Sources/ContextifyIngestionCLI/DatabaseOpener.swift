@@ -49,7 +49,7 @@ public struct DatabaseOpener {
     // Configure database
     var config = Configuration()
     config.foreignKeysEnabled = true
-    config.busyMode = .timeout(5.0)
+    config.busyMode = .timeout(2.0)
     config.prepareDatabase { db in
       try db.execute(sql: "PRAGMA journal_mode=WAL")
       try db.execute(sql: "PRAGMA synchronous=NORMAL")
