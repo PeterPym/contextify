@@ -399,14 +399,11 @@ Install and authenticate the required CLI tools:
 
 ## Nightly Scheduled Runs
 
+> **Status: DISABLED (Jan 2026)** - Nightly runs are currently disabled pending test maintenance.
+
 The E2E suite can be scheduled to run automatically at 4am daily using macOS launchd.
 
-See `scripts/qa/schedule/README.md` for setup instructions.
-
-**Quick summary:**
-- Logs persist in `scripts/qa/schedule/logs/` (gitignored)
-- Pass/fail history in `scripts/qa/schedule/history.log`
-- Desktop marker file created on failure
+See `scripts/qa/schedule/README.md` for setup instructions (currently disabled).
 
 ## Methodology
 
