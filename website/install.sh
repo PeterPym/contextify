@@ -611,14 +611,14 @@ run_initial_ingest() {
         sleep 0.5
     done
 
-    # Clear the progress line
-    printf "\r                                                    \r"
-
     # Guard wait: set -e would abort on non-zero exit (130/143 from signals)
     set +e
     wait "$INGEST_PID"
     INGEST_STATUS=$?
     set -e
+
+    # Clear the progress line (after wait so "Finalizing..." stays visible)
+    printf "\r                                                    \r"
 
     # Restore top-level signal handler (trap - would remove cleanup entirely)
     trap cleanup INT TERM
@@ -629,7 +629,8 @@ run_initial_ingest() {
 
     # Handle exit codes (CANCELLED flag takes priority)
     if [ "$CANCELLED" -eq 1 ] || [ "$INGEST_STATUS" -eq 130 ] || [ "$INGEST_STATUS" -eq 143 ]; then
-        printf "  ${YELLOW}Cancelled. Run 'contextify ingest' to resume.${RESET}\n"
+        printf "  ${YELLOW}Cancelled indexing. Contextify is installed.${RESET}\n"
+        printf "     ${DIM}Run 'contextify ingest' later to finish indexing.${RESET}\n"
     elif [ "$INGEST_STATUS" -eq 0 ]; then
         # Read final count from progress file (CLI leaves it for us)
         FINAL=""
