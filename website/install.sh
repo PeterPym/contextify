@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Contextify Linux Installer
+# Contextify Installer (Linux + macOS)
 # Usage: curl -fsSL https://contextify.sh/install.sh | sh
 #    or: curl -fsSL https://contextify.sh/install.sh | sh -s -- --install-service
 
@@ -11,6 +11,7 @@ SKIP_SKILL=0
 INSTALL_SERVICE=0
 INSTALL_CRON=0
 SKIP_INGEST=0
+KEEP_TMPDIR=0
 NON_INTERACTIVE=0
 HAS_TRANSCRIPTS=0
 HAS_PROVIDER=0
@@ -63,7 +64,7 @@ cleanup() {
     [ "$CLEANUP_DONE" -eq 1 ] && return
     CLEANUP_DONE=1
     exit_code=$?
-    if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
+    if [ "$KEEP_TMPDIR" -eq 0 ] && [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
         rm -rf "$TMPDIR"
     fi
     if [ $exit_code -ne 0 ]; then
@@ -248,6 +249,14 @@ main() {
     parse_args "$@"
     warn_if_root
     check_os
+
+    # macOS: native DMG install (Finder drag-drop)
+    if [ "$OS" = "Darwin" ]; then
+        detect_version
+        install_macos_dmg
+        exit 0
+    fi
+
     check_dependencies
     detect_arch
     detect_version
@@ -312,19 +321,69 @@ check_os() {
     OS=$(uname -s 2>/dev/null || echo unknown)
     case "$OS" in
         Linux) ;;
-        Darwin)
-            echo "Error: This installer is for Linux only."
-            echo ""
-            echo "For macOS, download from: https://contextify.sh/download/"
-            echo "Or see documentation: https://contextify.sh/docs/"
-            exit 1
-            ;;
+        Darwin) ;;  # supported via DMG flow
         *)
             echo "Error: Unsupported operating system: $OS"
-            echo "This installer supports Linux only."
+            echo "This installer supports Linux and macOS."
             exit 1
             ;;
     esac
+}
+
+install_macos_dmg() {
+    echo ""
+    printf "${BOLD}Installing Contextify v$VERSION (macOS)${RESET}\n"
+
+    DMG_NAME="Contextify-${VERSION}.dmg"
+    DMG_URL="https://github.com/$REPO/releases/download/v${VERSION}/${DMG_NAME}"
+
+    # Create a temp directory for the DMG
+    TMPDIR=$(mktemp -d 2>/dev/null || mktemp -d -t contextify.XXXXXX)
+    DMG_PATH="$TMPDIR/$DMG_NAME"
+
+    printf "  ${ARROW} Downloading DMG...\n"
+    if ! curl -fsSL "$DMG_URL" -o "$DMG_PATH"; then
+        printf "${RED}Error:${RESET} Failed to download:\n"
+        printf "  %s\n" "$DMG_URL"
+        exit 1
+    fi
+
+    printf "  ${ARROW} Mounting DMG...\n"
+    ATTACH_OUTPUT=$(hdiutil attach -nobrowse -noautoopen "$DMG_PATH" 2>&1)
+
+    # Extract mount point from hdiutil output (handles spaces in volume names)
+    MOUNT_POINT=$(printf "%s\n" "$ATTACH_OUTPUT" | awk 'match($0,/\/Volumes\/.*/){print substr($0,RSTART,RLENGTH); exit}')
+    if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
+        printf "${RED}Error:${RESET} Could not determine DMG mount point.\n"
+        printf "${DIM}%s${RESET}\n" "$ATTACH_OUTPUT"
+        exit 1
+    fi
+
+    # Leave DMG + tmpdir in place so the mounted volume remains usable
+    KEEP_TMPDIR=1
+
+    echo ""
+    printf "${CHECK} DMG mounted at: ${BOLD}%s${RESET}\n" "$MOUNT_POINT"
+
+    # Open in Finder (print manual command if it fails in headless env)
+    if command -v open >/dev/null 2>&1; then
+        if ! open "$MOUNT_POINT" >/dev/null 2>&1; then
+            printf "${YELLOW}Note:${RESET} Could not open Finder automatically.\n"
+            printf "  Open manually: open \"%s\"\n" "$MOUNT_POINT"
+        fi
+    else
+        printf "  Open manually: open \"%s\"\n" "$MOUNT_POINT"
+    fi
+
+    echo ""
+    printf "${BOLD}Next steps:${RESET}\n"
+    printf "  1) Drag ${BOLD}Contextify.app${RESET} into ${BOLD}Applications${RESET}\n"
+    printf "  2) Eject the disk image when done\n"
+    printf "     Finder: click the eject icon next to \"Contextify\"\n"
+    printf "     Or run: ${BOLD}hdiutil detach \"%s\"${RESET}\n" "$MOUNT_POINT"
+    echo ""
+    printf "${DIM}(After ejecting, you may delete: %s)${RESET}\n" "$DMG_PATH"
+    echo ""
 }
 
 check_dependencies() {
