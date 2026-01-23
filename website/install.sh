@@ -576,15 +576,18 @@ run_initial_ingest() {
     INGEST_PID=$!
 
     # Forward signals to ingest process (prevents orphaned DB locks)
-    # Uses escalation ladder: INT -> TERM (2s) -> KILL (5s)
+    # Escalation ladder: INT -> TERM (2s) -> KILL (5s)
+    # NOTE: Do NOT wait inside the trap (double-reap bug + set -e abort)
     CANCELLED=0
     trap '
         CANCELLED=1
-        kill -INT "$INGEST_PID" 2>/dev/null
-        ( sleep 2; kill -0 "$INGEST_PID" 2>/dev/null && kill -TERM "$INGEST_PID" 2>/dev/null
-          sleep 3; kill -0 "$INGEST_PID" 2>/dev/null && kill -9 "$INGEST_PID" 2>/dev/null
+        kill -INT "$INGEST_PID" 2>/dev/null || true
+        (
+          sleep 2
+          kill -0 "$INGEST_PID" 2>/dev/null && kill -TERM "$INGEST_PID" 2>/dev/null || true
+          sleep 3
+          kill -0 "$INGEST_PID" 2>/dev/null && kill -9 "$INGEST_PID" 2>/dev/null || true
         ) &
-        wait "$INGEST_PID" 2>/dev/null
     ' INT TERM
 
     # Progress display loop
@@ -595,10 +598,11 @@ run_initial_ingest() {
         else
             TIME_STR="${ELAPSED}s"
         fi
-        PROGRESS=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
+        PROGRESS=""
+        IFS= read -r PROGRESS < "$PROGRESS_FILE" 2>/dev/null || true
         if [ -n "$PROGRESS" ]; then
             case "$PROGRESS" in
-                done:*) break ;;
+                done:*) printf "\r     ${DIM}Finalizing... (${TIME_STR})${RESET}          "; break ;;
                 *) printf "\r     ${DIM}Indexing ${PROGRESS} transcripts (${TIME_STR})${RESET}          " ;;
             esac
         else
@@ -610,9 +614,15 @@ run_initial_ingest() {
     # Clear the progress line
     printf "\r                                                    \r"
 
+    # Guard wait: set -e would abort on non-zero exit (130/143 from signals)
+    set +e
     wait "$INGEST_PID"
     INGEST_STATUS=$?
-    trap - INT TERM
+    set -e
+
+    # Restore top-level signal handler (trap - would remove cleanup entirely)
+    trap cleanup INT TERM
+    unset CONTEXTIFY_INGEST_PROGRESS_FILE
 
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
@@ -622,7 +632,8 @@ run_initial_ingest() {
         printf "  ${YELLOW}Cancelled. Run 'contextify ingest' to resume.${RESET}\n"
     elif [ "$INGEST_STATUS" -eq 0 ]; then
         # Read final count from progress file (CLI leaves it for us)
-        FINAL=$(cat "$PROGRESS_FILE" 2>/dev/null | tr -d '\n')
+        FINAL=""
+        IFS= read -r FINAL < "$PROGRESS_FILE" 2>/dev/null || true
         case "$FINAL" in
             done:*)
                 COUNT="${FINAL#done:}"
