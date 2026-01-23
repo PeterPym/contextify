@@ -45,8 +45,8 @@
       },
       "linux": {
         "built": false,
-        "shipped": false,
-        "shipped_at": null,
+        "shipped": true,
+        "shipped_at": "2026-01-23",
         "github_release_url": null,
         "x86_64": {
           "built": false,
@@ -111,6 +111,11 @@
       "date": "2026-01-23",
       "author": "system",
       "note": "dmg marked as shipped (guard bypassed)"
+    },
+    {
+      "date": "2026-01-23",
+      "author": "system",
+      "note": "linux marked as shipped (guard bypassed)"
     }
   ]
 }

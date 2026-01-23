@@ -222,7 +222,8 @@
         "build_number": 1
       },
       "linux": {
-        "status": "skipped"
+        "status": "shipped",
+        "shipped_at": "2026-01-23"
       },
       "marketing": {
         "changelog_published": false,
