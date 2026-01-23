@@ -52,6 +52,13 @@ Review each public surface and determine if this release requires updates.
 - [ ] Download URL correct?
 - [ ] Signature included?
 
+### Download Infrastructure Verification
+Verify the download link, appcast, and GitHub are all in sync:
+```bash
+./scripts/release/check-dmg-consistency.sh --strict
+```
+- [ ] All checks passed? [ ] Yes / [ ] No (fix before proceeding)
+
 ### DMG Integrity Verification
 Verify the publicly downloadable DMG matches the built artifact:
 ```bash

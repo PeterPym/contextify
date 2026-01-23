@@ -457,6 +457,28 @@ else
     info "Linux CLI: Not included in this release"
   fi
 
+  # Check 4: DMG download consistency (macos-version + appcast + GitHub)
+  DMG_CHECK_SCRIPT="$(dirname "$0")/check-dmg-consistency.sh"
+  if [ -f "$DMG_CHECK_SCRIPT" ]; then
+    echo ""
+    if [ "$NO_COLOR" = true ]; then
+      echo "DMG Download Consistency:"
+    else
+      echo -e "${BOLD}DMG Download Consistency:${NC}"
+    fi
+    DMG_CHECK_EXIT=0
+    "$DMG_CHECK_SCRIPT" --quiet || DMG_CHECK_EXIT=$?
+    if [ $DMG_CHECK_EXIT -eq 0 ]; then
+      success "Download infrastructure consistent (macos-version + appcast + GitHub)"
+    elif [ $DMG_CHECK_EXIT -eq 3 ]; then
+      warn "Appcast behind macos-version (non-critical if release in progress)"
+    elif [ $DMG_CHECK_EXIT -eq 1 ]; then
+      fail "DMG download link is broken (macos-version points to missing DMG)"
+      INTEGRITY_OK=false
+      ISSUES+=("DMG download infrastructure inconsistent - run check-dmg-consistency.sh for details")
+    fi
+  fi
+
   echo ""
 
   # Summary

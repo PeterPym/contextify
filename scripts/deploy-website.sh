@@ -12,6 +12,7 @@
 #   - Working tree must be clean (no uncommitted changes in website/)
 #   - Current branch must be pushed to origin
 #   - Warns if not on main branch (prompts to stop)
+#   - DMG download consistency (macos-version vs GitHub vs appcast)
 #
 # Safety features:
 #   - Archives current site before deploying (rolling 5 backups)
@@ -121,6 +122,24 @@ if ! $FORCE; then
             exit 1
         fi
         echo ""
+    fi
+fi
+
+# DMG download consistency check (always runs, even with --force)
+DMG_CHECK_SCRIPT="$(dirname "$0")/release/check-dmg-consistency.sh"
+if [ -f "$DMG_CHECK_SCRIPT" ]; then
+    DMG_CHECK_EXIT=0
+    "$DMG_CHECK_SCRIPT" --quiet || DMG_CHECK_EXIT=$?
+    if [ $DMG_CHECK_EXIT -eq 1 ]; then
+        echo -e "${RED}Error: DMG download link will be broken after deploy${NC}"
+        echo "Run: ./scripts/release/check-dmg-consistency.sh for details"
+        if ! $FORCE; then
+            exit 1
+        else
+            echo -e "${YELLOW}Continuing anyway (--force)${NC}"
+        fi
+    elif [ $DMG_CHECK_EXIT -eq 3 ]; then
+        echo -e "${YELLOW}Note: appcast.xml behind macos-version (OK if updating)${NC}"
     fi
 fi
 

@@ -240,6 +240,21 @@ This verifies:
 - GitHub DMG URL matches Sparkle appcast URL (binary integrity)
 - Version numbers match across GitHub and Sparkle
 - Linux CLI version matches DMG version (if applicable)
+- DMG download infrastructure (macos-version + appcast + GitHub asset)
+
+### DMG Download Consistency
+
+After uploading a DMG to GitHub or before deploying the website:
+
+```bash
+# Check macos-version, appcast.xml, and GitHub are in sync
+./scripts/release/check-dmg-consistency.sh
+
+# Strict mode (appcast lag = error)
+./scripts/release/check-dmg-consistency.sh --strict
+```
+
+This catches the case where `website/macos-version` points to a DMG that doesn't exist on GitHub (which causes a 404 on the download page). Also run automatically by `deploy-website.sh`.
 
 **Exit codes:** 0 = all OK, 1 = inconsistencies found, 2 = fetch error
 
