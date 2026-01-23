@@ -191,11 +191,13 @@
       "git_tag": "v1.2.0",
       "git_commit": "55fd96bc898cb78ccd7667460fc221e9a1fe3f09",
       "dmg": {
-        "status": "pending"
+        "status": "shipped",
+        "released_at": "2026-01-23"
       },
       "appstore": {
-        "status": "pending",
-        "build_number": 1
+        "status": "approved",
+        "build_number": 20,
+        "approved_at": "2026-01-23"
       },
       "linux": {
         "status": "pending"
