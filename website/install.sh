@@ -86,17 +86,21 @@ usage() {
     echo "   or: curl -fsSL https://contextify.sh/install.sh | sh -s -- [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --no-ingest         Skip initial transcript indexing"
-    echo "  --install-service   Enable automatic background ingestion (systemd)"
-    echo "  --install-cron      Enable automatic background ingestion (cron)"
-    echo "  --uninstall         Remove Contextify and related files"
-    echo "  --no-skill          Skip Total Recall skill installation"
-    echo "  --non-interactive   Skip all prompts (for scripting)"
+    if [ "$OS_NAME" != "Darwin" ]; then
+        echo "  --no-ingest         Skip initial transcript indexing"
+        echo "  --install-service   Enable automatic background ingestion (systemd)"
+        echo "  --install-cron      Enable automatic background ingestion (cron)"
+        echo "  --uninstall         Remove Contextify and related files"
+        echo "  --no-skill          Skip Total Recall skill installation"
+        echo "  --non-interactive   Skip all prompts (for scripting)"
+    fi
     echo "  --help              Show this help"
     echo ""
     echo "Environment:"
     echo "  VERSION       Use specific version (default: latest)"
-    echo "  INSTALL_DIR   Install location (default: ~/.local/bin)"
+    if [ "$OS_NAME" != "Darwin" ]; then
+        echo "  INSTALL_DIR   Install location (default: ~/.local/bin)"
+    fi
     exit 0
 }
 
