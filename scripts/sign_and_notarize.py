@@ -214,6 +214,88 @@ def load_dmg_settings() -> dict:
         return json.load(fp)
 
 
+def replace_applications_symlink(dmg_path: Path, settings: dict) -> None:
+    """Replace the Applications symlink with a Finder alias.
+
+    Finder aliases inherit their target's icon (the blue Applications folder),
+    while symlinks show a generic dashed rectangle. This post-processes the DMG
+    to swap the symlink for an alias.
+    """
+    print("🔄 Replacing Applications symlink with Finder alias...")
+
+    # Convert compressed DMG to read-write
+    rw_dmg = dmg_path.with_suffix(".rw.dmg")
+    if rw_dmg.exists():
+        rw_dmg.unlink()
+    run(["hdiutil", "convert", str(dmg_path), "-format", "UDRW", "-o", str(rw_dmg)])
+
+    # Mount read-write DMG
+    result = subprocess.run(
+        ["hdiutil", "attach", str(rw_dmg), "-readwrite", "-noautoopen", "-noverify"],
+        capture_output=True, text=True, check=True,
+    )
+    # Parse mount point from hdiutil output (last column of last line)
+    mount_point = None
+    for line in result.stdout.strip().split("\n"):
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            mount_point = parts[-1].strip()
+    if not mount_point or not Path(mount_point).is_dir():
+        sys.exit(f"✖ Could not determine mount point from: {result.stdout}")
+
+    try:
+        app_link = Path(mount_point) / "Applications"
+
+        # Remove existing symlink
+        if app_link.is_symlink() or app_link.exists():
+            app_link.unlink()
+
+        # Create Finder alias to /Applications using osascript
+        script = f'''
+            tell application "Finder"
+                make new alias file at POSIX file "{mount_point}" to POSIX file "/Applications"
+            end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True,
+                       capture_output=True, text=True)
+
+        # Verify the alias was created
+        alias_path = Path(mount_point) / "Applications"
+        if not alias_path.exists():
+            sys.exit("✖ Failed to create Finder alias for Applications")
+
+        # Set the Applications folder icon on the alias
+        # macOS Tahoe (26) no longer renders symlink/alias target icons automatically
+        icon_script = f'''
+            use framework "AppKit"
+            set ws to current application's NSWorkspace's sharedWorkspace()
+            set iconPath to "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/ApplicationsFolderIcon.icns"
+            set theIcon to current application's NSImage's alloc()'s initWithContentsOfFile:iconPath
+            set result to (ws's setIcon:theIcon forFile:"{alias_path}" options:0)
+            return result as boolean
+        '''
+        icon_result = subprocess.run(
+            ["osascript", "-l", "AppleScript", "-e", icon_script],
+            capture_output=True, text=True,
+        )
+        if icon_result.returncode == 0 and "true" in icon_result.stdout.lower():
+            print(f"  ✓ Applications folder icon set")
+        else:
+            print(f"  ⚠ Could not set icon (will use default alias icon)")
+
+        print(f"  ✓ Finder alias created at {mount_point}/Applications")
+    finally:
+        # Eject
+        subprocess.run(["hdiutil", "detach", mount_point], check=True,
+                       capture_output=True, text=True)
+
+    # Convert back to compressed read-only
+    dmg_path.unlink()
+    run(["hdiutil", "convert", str(rw_dmg), "-format", "UDZO",
+         "-imagekey", "zlib-level=9", "-o", str(dmg_path)])
+    rw_dmg.unlink()
+
+
 def create_dmg(settings: dict, *, skip_sign: bool, skip_notarize: bool) -> None:
     if DMG_PATH.exists():
         DMG_PATH.unlink()
@@ -265,15 +347,27 @@ def create_dmg(settings: dict, *, skip_sign: bool, skip_notarize: bool) -> None:
         elif item["type"] == "link" and item["path"] == "/Applications":
             args += ["--app-drop-link", str(item["x"]), str(item["y"])]
 
-    if not skip_sign:
-        args += ["--codesign", CERT_ID]
-    if not skip_sign and not skip_notarize:
-        args += ["--notarize", NOTARY_PROFILE]
-
+    # Don't pass --codesign/--notarize to create-dmg; we handle them after
+    # post-processing the DMG (replacing symlink with Finder alias).
     args += [str(DMG_PATH), str(STAGING)]
 
     # Run from ROOT to resolve relative paths correctly
     run(args, cwd=ROOT)
+
+    # Replace Applications symlink with Finder alias (shows proper folder icon)
+    replace_applications_symlink(DMG_PATH, settings)
+
+    # Codesign and notarize the final DMG
+    if not skip_sign:
+        print("🔏 Codesigning DMG...")
+        run(["codesign", "-s", CERT_ID, str(DMG_PATH)])
+        run(["codesign", "--verify", "--verbose=2", str(DMG_PATH)])
+    if not skip_sign and not skip_notarize:
+        print("📦 Notarizing DMG (this may take a few minutes)...")
+        run(["xcrun", "notarytool", "submit", str(DMG_PATH),
+             "--keychain-profile", NOTARY_PROFILE, "--wait"])
+        print("📎 Stapling notarization ticket...")
+        run(["xcrun", "stapler", "staple", str(DMG_PATH)])
 
 
 # --------------------------------------------------------------------------- #
