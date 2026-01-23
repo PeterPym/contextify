@@ -261,7 +261,7 @@ main() {
 
     # macOS: native DMG install (Finder drag-drop)
     if [ "$OS" = "Darwin" ]; then
-        detect_version
+        detect_macos_version
         install_macos_dmg
         exit 0
     fi
@@ -456,6 +456,23 @@ detect_version() {
     if [ -z "$VERSION" ]; then
         printf "${RED}Error:${RESET} Could not detect latest version\n"
         echo "Try: VERSION=1.1.0 curl -fsSL https://contextify.sh/install.sh | sh"
+        exit 1
+    fi
+    printf "  ${CHECK} Latest version: ${BOLD}$VERSION${RESET}\n"
+}
+
+detect_macos_version() {
+    # Allow override via environment
+    if [ -n "$VERSION" ]; then
+        printf "  ${CHECK} Using version: ${BOLD}$VERSION${RESET} (from environment)\n"
+        return
+    fi
+
+    VERSION=$(curl -fsSL "https://contextify.sh/macos-version" 2>/dev/null | tr -d '\r\n' || true)
+
+    if [ -z "$VERSION" ]; then
+        printf "${RED}Error:${RESET} Could not detect latest macOS version\n"
+        echo "Try: VERSION=1.2.0 curl -fsSL https://contextify.sh/install.sh | sh"
         exit 1
     fi
     printf "  ${CHECK} Latest version: ${BOLD}$VERSION${RESET}\n"
