@@ -584,6 +584,7 @@ run_initial_ingest() {
         ( sleep 2; kill -0 "$INGEST_PID" 2>/dev/null && kill -TERM "$INGEST_PID" 2>/dev/null
           sleep 3; kill -0 "$INGEST_PID" 2>/dev/null && kill -9 "$INGEST_PID" 2>/dev/null
         ) &
+        wait "$INGEST_PID" 2>/dev/null
     ' INT TERM
 
     # Progress display loop

@@ -12,7 +12,7 @@ import ContextifyIngestionCore
 #endif
 
 /// Thread-safe signal flag for graceful shutdown.
-/// Uses a lock-free pattern: signal handler writes, main loop polls.
+/// Uses a lock-protected flag: signal handler writes, main loop polls.
 /// Values: 0 = no signal, SIGINT (2), SIGTERM (15)
 private final class SignalFlag: @unchecked Sendable {
   private var _value: Int32 = 0
@@ -131,6 +131,9 @@ public struct IngestCommand: AsyncParsableCommand {
   }
 
   public mutating func run() async throws {
+    // Reset signal flag in case of re-entry (e.g., tests or subcommand chaining)
+    receivedSignal.set(0)
+
     // Set quiet mode for logging before anything else runs
     if quiet || systemd {
       CrossPlatformLogger.quietMode = true
@@ -275,7 +278,7 @@ public struct IngestCommand: AsyncParsableCommand {
     if shouldStop() {
       sigintSource.cancel()
       sigtermSource.cancel()
-      try? pool.write { db in try db.checkpoint(.truncate) }
+      try? pool.write { db in try db.checkpoint(.passive) }
       throw ExitCode(Int32(128 + receivedSignal.value))
     }
 
@@ -363,12 +366,20 @@ public struct IngestCommand: AsyncParsableCommand {
 
     // Progress file path (set by install.sh for IPC; nil for standalone CLI runs)
     let progressFile = ProcessInfo.processInfo.environment["CONTEXTIFY_INGEST_PROGRESS_FILE"]
+    var progressWriteWarned = false
 
     // Nothing to do: all transcripts already indexed
     if totalTranscripts == 0 {
       // Write done marker for install.sh IPC (CLI does NOT delete - installer owns cleanup)
       if let progressFile = progressFile {
-        try? "done:\(skippedCount)\n".write(toFile: progressFile, atomically: true, encoding: .utf8)
+        do {
+          try "done:\(skippedCount)\n".write(toFile: progressFile, atomically: true, encoding: .utf8)
+        } catch {
+          if !progressWriteWarned {
+            progressWriteWarned = true
+            FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+          }
+        }
       }
       if showHumanOutput {
         if skippedCount > 0 {
@@ -380,7 +391,7 @@ public struct IngestCommand: AsyncParsableCommand {
       // Clean exit
       sigintSource.cancel()
       sigtermSource.cancel()
-      try? pool.write { db in try db.checkpoint(.truncate) }
+      try? pool.write { db in try db.checkpoint(.passive) }
       return
     }
 
@@ -516,7 +527,14 @@ public struct IngestCommand: AsyncParsableCommand {
 
           // Write progress file for install.sh IPC (only when env var is set)
           if let pf = progressFile {
-            try? "\(transcriptsProcessed)/\(totalTranscripts)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+            do {
+              try "\(transcriptsProcessed)/\(totalTranscripts)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+            } catch {
+              if !progressWriteWarned {
+                progressWriteWarned = true
+                FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+              }
+            }
           }
 
           if showHumanOutput && outcome.entriesInserted > 0 {
@@ -535,7 +553,14 @@ public struct IngestCommand: AsyncParsableCommand {
     // Write final done marker for install.sh (total = processed + already indexed)
     if let pf = progressFile, !shouldStop() {
       let totalComplete = transcriptsProcessed + skippedCount
-      try? "done:\(totalComplete)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+      do {
+        try "done:\(totalComplete)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+      } catch {
+        if !progressWriteWarned {
+          progressWriteWarned = true
+          FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+        }
+      }
     }
 
     // Clean up signal sources
@@ -543,7 +568,7 @@ public struct IngestCommand: AsyncParsableCommand {
     sigtermSource.cancel()
 
     // WAL checkpoint for clean DB state (best effort)
-    try? pool.write { db in try db.checkpoint(.truncate) }
+    try? pool.write { db in try db.checkpoint(.passive) }
 
     // Handle cancellation: exit with conventional signal code
     let sig = receivedSignal.value
