@@ -170,7 +170,7 @@ struct ContextifyQueryCLI {
     }
   }
 
-  static let cliVersion = "1.1.0"
+  static let cliVersion = "1.3.0"
 
   static func main() {
     // Emit deprecation warning if invoked as contextify-query

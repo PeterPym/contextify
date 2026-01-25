@@ -21,7 +21,7 @@ import ContextifyIngestionCommands
 #if GENERATED_VERSION
 let cliVersion = generatedCLIVersion
 #else
-let cliVersion = "1.1.0-dev"
+let cliVersion = "1.3.0-dev"
 #endif
 
 // MARK: - Deprecation Warnings
