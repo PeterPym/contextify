@@ -32,10 +32,10 @@ It works with Claude Code and Codex CLI.
 1) Check CLI availability:
 
 ```bash
-command -v contextify-query
+command -v contextify
 ```
 
-2) If `contextify-query` is missing:
+2) If `contextify` is missing:
 
 **Error response:**
 > Contextify CLI not found.
@@ -51,7 +51,7 @@ command -v contextify-query
 1) Confirm database availability:
 
 ```bash
-contextify-query status --json
+contextify status --json
 ```
 
 If database not found, respond:
@@ -64,7 +64,7 @@ If database not found, respond:
 2) Search for an anchor:
 
 ```bash
-contextify-query search "<query>" --project . --days 30 --limit 10 --json
+contextify search "<query>" --project . --days 30 --limit 10 --json
 ```
 
 Anchor selection guidance:
@@ -76,7 +76,7 @@ Anchor selection guidance:
 3) Retrieve context around the anchor:
 
 ```bash
-contextify-query context "<entry-uuid>" --before 10 --after 20 --project . --json
+contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
 ```
 
 4) Format response:
@@ -106,7 +106,7 @@ contextify-query context "<entry-uuid>" --before 10 --after 20 --project . --jso
 If search returns 0 results:
 1. Widen `--days` (try 90 or 365)
 2. If not clearly about current repo, retry without `--project .`
-3. Use `contextify-query projects --json` to discover other projects
+3. Use `contextify projects --json` to discover other projects
 4. Ask user to clarify what they're looking for
 
 ## Delegating to researcher agent

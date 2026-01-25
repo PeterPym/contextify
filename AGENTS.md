@@ -187,7 +187,7 @@ Skipping architecture docs leads to incomplete implementations and repeated mist
 - `build/docs/architecture/transcript-access-security.md` - Security-scoped access
 - **Rule:** All FileManager ops must use `accessProvider.withAccess()`
 
-**CLI tool work (contextify-query):**
+**CLI tool work (contextify):**
 - `build/docs/architecture/cli-tool-architecture.md` - **START HERE** for CLI work
   - Component model (shim, cache, manifest, skills, agents)
   - Platform support matrix and how to add new platforms

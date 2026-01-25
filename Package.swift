@@ -27,9 +27,11 @@ import PackageDescription
 
 #if os(macOS)
 // macOS: Full build with all targets
+// Unified CLI: 'contextify' is primary, 'contextify-query' kept for backwards compat
 let products: [Product] = [
   .library(name: "ContextifyCore", targets: ["ContextifyCore"]),
   .executable(name: "TranscriptValidatorCLI", targets: ["TranscriptValidatorCLI"]),
+  .executable(name: "contextify", targets: ["ContextifyQueryCLI"]),
   .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
   .executable(name: "contextify-ingest", targets: ["ContextifyIngestionCLI"]),
 ]

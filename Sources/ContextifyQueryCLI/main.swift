@@ -15,6 +15,37 @@ import Glibc
 import GRDB
 #endif
 
+// MARK: - Deprecation Warnings
+
+/// Check if stderr is a TTY (for deprecation warning gating)
+private func isStderrTTY() -> Bool {
+  return isatty(STDERR_FILENO) != 0
+}
+
+/// Emit a deprecation warning to stderr if appropriate
+/// Only shows when stderr is a TTY and CONTEXTIFY_NO_DEPRECATIONS is not set
+private func warnDeprecated(_ message: String) {
+  // Show on TTY unless explicitly suppressed
+  guard isStderrTTY() ||
+        ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_DEPRECATIONS"] == "1" else {
+    return
+  }
+  guard ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" else {
+    return
+  }
+  FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
+}
+
+/// Get the executable name from argv[0]
+private func executableName() -> String {
+  return URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
+}
+
+/// Check if running as legacy contextify-query
+private func isLegacyInvocation() -> Bool {
+  return executableName() == "contextify-query"
+}
+
 // MARK: - Response Types
 
 private enum ResponseConstants {
@@ -142,10 +173,16 @@ struct ContextifyQueryCLI {
   static let cliVersion = "1.1.0"
 
   static func main() {
+    // Emit deprecation warning if invoked as contextify-query
+    if isLegacyInvocation() {
+      warnDeprecated("'contextify-query' is deprecated. Use 'contextify' instead.")
+    }
+
     // Handle --version early (before any other parsing)
     let allArgs = CommandLine.arguments
     if allArgs.contains("--version") || allArgs.contains("-v") {
-      print("contextify-query \(cliVersion)")
+      // Use actual executable name in version output
+      print("\(executableName()) \(cliVersion)")
       exit(0)
     }
 
