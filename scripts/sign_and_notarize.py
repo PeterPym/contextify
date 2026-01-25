@@ -333,7 +333,7 @@ def main() -> None:
         if not args.skip_cli:
             print()
             print("CLI for Homebrew:")
-            cli_tarball = BUILD / "cli-release" / f"contextify-query-{os.uname().machine}.tar.gz"
+            cli_tarball = BUILD / "cli-release" / f"contextify-{os.uname().machine}.tar.gz"
             if cli_tarball.exists():
                 print(f"  4. Upload CLI: {cli_tarball}")
                 sha_file = BUILD / "cli-release" / "sha256.txt"

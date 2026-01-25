@@ -2,9 +2,8 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.3.0",
   "target_channels": [
-  "dmg",
-  "linux"
-],
+    "dmg"
+  ],
   "created": "2026-01-25",
   "updated": "2026-01-25",
 
@@ -16,25 +15,25 @@
 
   "phases": {
     "pre_release": {
-      "status": "pending",
-      "completed_at": null,
+      "status": "complete",
+      "completed_at": "2026-01-25T15:30:00Z",
       "validation": {
-        "tests_passed": null,
-        "test_count": null,
-        "warnings": null,
-        "working_directory_clean": null
+        "tests_passed": true,
+        "test_count": 335,
+        "warnings": 0,
+        "working_directory_clean": true
       }
     },
 
     "build": {
-      "status": "pending",
+      "status": "complete",
       "dmg": {
-        "built": false,
-        "path": null,
-        "sha256": null,
-        "size_bytes": null,
-        "signed": false,
-        "notarized": false,
+        "built": true,
+        "path": "dist/Contextify.dmg",
+        "sha256": "7d61a9bf1f111b399887a1ca3c424267075e156734dbd4a79ce032d4f104a23d",
+        "size_bytes": 22959877,
+        "signed": true,
+        "notarized": true,
         "sparkle_signature": null
       },
       "appstore": {
@@ -45,28 +44,28 @@
         "uploaded": false,
         "upload_receipt": null
       },
-      "linux": {
-        "built": false,
-        "shipped": false,
-        "shipped_at": null,
-        "github_release_url": null,
-        "x86_64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
-        },
+      "cli": {
+        "built": true,
+        "shipped": true,
+        "shipped_at": "2026-01-25T15:39:00Z",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.0",
         "arm64": {
-          "built": false,
-          "path": null,
-          "sha256": null,
-          "size_bytes": null
+          "built": true,
+          "path": "build/cli-release/contextify-arm64.tar.gz",
+          "sha256": "4b2166480700fdcae6da0cab171990cf32222603b024f045faa394968154ef25",
+          "size_bytes": 3474715
+        },
+        "x86_64": {
+          "built": true,
+          "path": "build/cli-release/contextify-x86_64.tar.gz",
+          "sha256": "87599b7f97e0dee6f201398d18ffb698307c6ec764243f3c74cf36fbcb8616ed",
+          "size_bytes": 3662341
         }
       }
     },
 
     "review_materials": {
-      "status": "pending",
+      "status": "not_applicable",
       "demo_video": {
         "recorded": false,
         "path": null,
@@ -80,7 +79,7 @@
     },
 
     "submission": {
-      "status": "pending",
+      "status": "not_applicable",
       "submitted_at": null,
       "rejection": null,
       "resubmission": null
@@ -89,8 +88,8 @@
     "marketing": {
       "status": "pending",
       "changelog": {
-        "written": false,
-        "published": false
+        "written": true,
+        "published": true
       },
       "announcements": {
         "twitter": false,
@@ -102,7 +101,7 @@
 
     "post_release": {
       "status": "pending",
-      "documentation_updated": false,
+      "documentation_updated": true,
       "support_faq_updated": false,
       "monitoring_enabled": false
     }
@@ -113,6 +112,11 @@
       "date": "2026-01-25",
       "author": "system",
       "note": "Release initialized"
+    },
+    {
+      "date": "2026-01-25",
+      "author": "claude",
+      "note": "DMG built, signed, and notarized. CLI tarballs uploaded to GitHub. Homebrew formula updated and pushed."
     }
   ]
 }
