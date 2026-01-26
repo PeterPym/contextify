@@ -583,6 +583,66 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  /// Returns total match count for a search query without fetching results.
+  /// Uses the same filters as `search()` but runs COUNT(*) instead.
+  public func searchCount(
+    query: String,
+    projectIds: [String]? = nil,
+    transcriptId: String? = nil,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    kinds: [String]? = nil,
+    treatAsFTS: Bool = false
+  ) throws -> Int {
+    let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
+    guard !safeQuery.isEmpty else { return 0 }
+
+    return try pool.read { db in
+      guard try db.tableExists("transcript_entries_fts") else {
+        throw QueryError.featureUnavailable(feature: "fts_search", message: "FTS search is not available in this database.")
+      }
+
+      var sql = """
+        SELECT COUNT(*)
+        FROM transcript_entries_fts
+        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+        WHERE transcript_entries_fts MATCH ?
+      """
+      var args: [DatabaseValueConvertible] = [safeQuery]
+
+      if !includeHidden {
+        sql += " AND e.display_in_timeline = 1"
+      }
+      if let projectIds = projectIds {
+        if projectIds.isEmpty { return 0 }
+        let uniqueIds = Array(Set(projectIds)).sorted()
+        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.project_id IN (\(placeholders))"
+        for id in uniqueIds { args.append(id) }
+      }
+      if let transcriptId {
+        sql += " AND e.transcript_id = ?"
+        args.append(transcriptId)
+      }
+      if let kinds, !kinds.isEmpty {
+        let sortedKinds = Array(Set(kinds)).sorted()
+        let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.kind IN (\(placeholders))"
+        args.append(contentsOf: sortedKinds)
+      }
+      if let since = timeRange.sinceTimestamp {
+        sql += " AND e.timestamp >= ?"
+        args.append(since)
+      }
+      if let until = timeRange.untilTimestamp {
+        sql += " AND e.timestamp <= ?"
+        args.append(until)
+      }
+
+      return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(args)) ?? 0
+    }
+  }
+
   // Backward compatibility overload for old single projectId parameter
   @available(*, deprecated, message: "Use search(query:projectIds:...) instead")
   @_disfavoredOverload

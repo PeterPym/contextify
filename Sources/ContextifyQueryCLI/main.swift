@@ -426,10 +426,21 @@ struct ContextifyQueryCLI {
             dict[pair.key] = .number(Double(pair.value))
           }
 
+        let totalCount = try service.searchCount(
+          query: query,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
+          transcriptId: options.transcriptId,
+          includeHidden: options.includeHidden,
+          timeRange: timeRange,
+          kinds: kinds,
+          treatAsFTS: true
+        )
+
         var metadataDict: [String: JSONValue] = [
           "returned": .number(Double(trimmedResults.count)),
           "limit": .number(Double(requestedLimit)),
-          "hasMore": .bool(hasMore)
+          "hasMore": .bool(hasMore),
+          "totalCount": .number(Double(totalCount))
         ]
 
         // Add worktree expansion metadata when group detected
