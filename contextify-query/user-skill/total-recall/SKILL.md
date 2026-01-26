@@ -54,6 +54,22 @@ command -v contextify
 contextify status --json
 ```
 
+Returns:
+```json
+{
+  "data": {
+    "databasePath": "/Users/.../contextify.db",
+    "entryCount": 315465,
+    "projectCount": 46,
+    "transcriptCount": 3285,
+    "ftsEnabled": true,
+    "summariesEnabled": true
+  },
+  "schemaVersion": 1,
+  "type": "status"
+}
+```
+
 If database not found, respond:
 > Contextify database not found.
 >
@@ -67,6 +83,33 @@ If database not found, respond:
 contextify search "<query>" --project . --days 30 --limit 10 --json
 ```
 
+Search query syntax (FTS5): Use `OR`, `AND`, `NOT` operators and quoted phrases. Example: `"memory leak" OR "out of memory"`.
+
+Returns:
+```json
+{
+  "data": [
+    {
+      "id": "e897a104-...",
+      "contentSnippet": "...matched text with context...",
+      "contentTruncated": true,
+      "kind": "assistant",
+      "score": -12.34,
+      "timestamp": 1769380895,
+      "projectName": "my-project",
+      "projectId": "AB12CD34-...",
+      "transcriptId": "5F9816DE-...",
+      "provider": "claude.code"
+    }
+  ],
+  "metadata": { "hasMore": true, "limit": 10, "returned": 10 },
+  "schemaVersion": 1,
+  "type": "search"
+}
+```
+
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. The `contentSnippet` is truncated; use `context` or `entry` to get full text.
+
 Anchor selection guidance:
 
 - If asking about earlier context (not "in this chat"), prefer anchors NOT from the active transcript.
@@ -79,7 +122,55 @@ Anchor selection guidance:
 contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
 ```
 
-4) Format response:
+Returns:
+```json
+{
+  "data": {
+    "before": [
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791 }
+    ],
+    "anchor": {
+      "id": "e897a104-...", "kind": "assistant", "content": "full text here...",
+      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+    },
+    "after": [
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900 }
+    ],
+    "meta": {
+      "transcriptEntryCount": 75,
+      "hasMoreBefore": true,
+      "hasMoreAfter": false
+    }
+  },
+  "schemaVersion": 1,
+  "type": "context"
+}
+```
+
+**Important:** `data` is an object with `before` (array), `anchor` (object), and `after` (array). The `before` array is in chronological order. Read the entries directly from the JSON; do not pipe through `jq` or write parsers.
+
+4) If a snippet is too short and you need the full entry:
+
+```bash
+contextify entry "<entry-uuid>" --json
+```
+
+Returns:
+```json
+{
+  "data": {
+    "entry": {
+      "id": "...", "kind": "assistant", "content": "full untruncated text...",
+      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+    },
+    "projectName": "my-project"
+  },
+  "schemaVersion": 1,
+  "type": "entry"
+}
+```
+
+5) Format response:
 
 > **Contextify Total Recall**
 >
@@ -90,6 +181,19 @@ contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
 > [Key excerpts with citations]
 >
 > **Entry ID:** `<uuid>` (for reference)
+
+## Working with the JSON output
+
+All commands return `{"data": ..., "schemaVersion": 1, "type": "..."}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+
+- **search**: `data` is an **array** of result objects
+- **context**: `data` is an **object** with `before`, `anchor`, `after`, and `meta`
+- **entry**: `data` is an **object** with `entry` and `projectName`
+- **status**: `data` is an **object** with database stats
+- **activity**: `data` is an **array** of `{entry, projectName}` objects
+- **projects**: `data` is an **array** of project objects
+
+Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `timestamp` (Unix), `projectId`, `transcriptId`, `provider` (claude.code/codex).
 
 ## Error handling
 
