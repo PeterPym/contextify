@@ -70,6 +70,8 @@ Returns:
 }
 ```
 
+Real output may include additional fields (e.g., `appSchemaVersion`). Ignore unknown keys.
+
 If database not found, respond:
 > Contextify database not found.
 >
@@ -108,13 +110,14 @@ Returns:
 }
 ```
 
-**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. The `contentSnippet` is truncated; use `context` or `entry` to get full text.
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+
+If `--project .` returns a `dbProjectNotFound` error, retry without `--project` (omit it entirely) to search all projects. If you need a specific project, run `contextify projects --json` which returns a `data` array of objects with `name` and `rootPath` fields, then pass `--project <name>`.
 
 Anchor selection guidance:
 
-- If asking about earlier context (not "in this chat"), prefer anchors NOT from the active transcript.
-- If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, treat hits from that transcript as lower priority unless user explicitly wants current session.
-- If transcript ID missing and multiple hits exist, avoid auto-selecting anchors from last 30 minutes.
+- Prefer older transcripts unless the user asked about the current chat session.
+- If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, down-rank hits from that transcript unless the user explicitly wants current session results.
 
 3) Retrieve context around the anchor:
 
@@ -184,20 +187,32 @@ Returns:
 
 ## Working with the JSON output
 
-All commands return `{"data": ..., "schemaVersion": 1, "type": "..."}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+**Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
 
-- **search**: `data` is an **array** of result objects
-- **context**: `data` is an **object** with `before`, `anchor`, `after`, and `meta`
+- **search**: `data` is an **array** of result objects; pagination info in `metadata`
+- **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
 - **entry**: `data` is an **object** with `entry` and `projectName`
 - **status**: `data` is an **object** with database stats
-- **activity**: `data` is an **array** of `{entry, projectName}` objects
-- **projects**: `data` is an **array** of project objects
 
 Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `timestamp` (Unix), `projectId`, `transcriptId`, `provider` (claude.code/codex).
 
 ## Error handling
 
-| Error | Response |
+Error responses have `"type": "error"` and a `code` field:
+```json
+{
+  "code": "dbNotFound",
+  "details": null,
+  "message": "Database not found at expected location",
+  "type": "error"
+}
+```
+
+`details` may be `null` or an object with additional context (e.g., `details.suggestions` for `dbProjectNotFound`).
+
+Branch on `code`:
+
+| `code` | Response |
 |-------|----------|
 | `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" |
 | `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |
@@ -210,7 +225,7 @@ Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `ti
 If search returns 0 results:
 1. Widen `--days` (try 90 or 365)
 2. If not clearly about current repo, retry without `--project .`
-3. Use `contextify projects --json` to discover other projects
+3. Run `contextify projects --json` to list available projects (returns `data` array with `name` fields)
 4. Ask user to clarify what they're looking for
 
 ## Delegating to researcher agent
