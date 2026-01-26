@@ -454,6 +454,65 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Shared FTS Filter Builder
+
+  /// Shared WHERE clause components for FTS search and count queries.
+  /// Prevents filter divergence between search() and searchCount().
+  private struct FTSFilterClause {
+    /// SQL fragment to append after "WHERE ... MATCH ?", e.g. " AND e.display_in_timeline = 1 AND ..."
+    let whereSQL: String
+    /// All arguments: first is the MATCH query, followed by filter arguments
+    let arguments: [DatabaseValueConvertible]
+    /// If true, the caller should short-circuit with an empty/zero result (empty projectIds array)
+    let emptyResult: Bool
+  }
+
+  private func buildFTSFilterClause(
+    query: String,
+    projectIds: [String]?,
+    transcriptId: String?,
+    includeHidden: Bool,
+    timeRange: QueryTimeRange,
+    kinds: [String]?
+  ) -> FTSFilterClause {
+    var whereParts: [String] = []
+    var args: [DatabaseValueConvertible] = [query]
+
+    if !includeHidden {
+      whereParts.append("e.display_in_timeline = 1")
+    }
+    if let projectIds = projectIds {
+      if projectIds.isEmpty {
+        return FTSFilterClause(whereSQL: "", arguments: args, emptyResult: true)
+      }
+      let uniqueIds = Array(Set(projectIds)).sorted()
+      let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
+      whereParts.append("e.project_id IN (\(placeholders))")
+      for id in uniqueIds { args.append(id) }
+    }
+    if let transcriptId {
+      whereParts.append("e.transcript_id = ?")
+      args.append(transcriptId)
+    }
+    if let kinds, !kinds.isEmpty {
+      let sortedKinds = Array(Set(kinds)).sorted()
+      let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
+      whereParts.append("e.kind IN (\(placeholders))")
+      args.append(contentsOf: sortedKinds)
+    }
+    if let since = timeRange.sinceTimestamp {
+      whereParts.append("e.timestamp >= ?")
+      args.append(since)
+    }
+    if let until = timeRange.untilTimestamp {
+      whereParts.append("e.timestamp <= ?")
+      args.append(until)
+    }
+
+    let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
+    return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
+  }
+
   public func search(
     query: String,
     projectIds: [String]? = nil,
@@ -466,6 +525,16 @@ public struct ContextifyQueryService: Sendable {
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
+
+    let filter = buildFTSFilterClause(
+      query: safeQuery,
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      includeHidden: includeHidden,
+      timeRange: timeRange,
+      kinds: kinds
+    )
+    guard !filter.emptyResult else { return [] }
 
     return try pool.read { db in
       guard try db.tableExists("transcript_entries_fts") else {
@@ -494,46 +563,12 @@ public struct ContextifyQueryService: Sendable {
         LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
         WHERE transcript_entries_fts MATCH ?
       """
-      var args: [DatabaseValueConvertible] = [safeQuery]
-
-      if !includeHidden {
-        sql += " AND e.display_in_timeline = 1"
-      }
-      if let projectIds = projectIds {
-        if projectIds.isEmpty {
-          return []  // Empty array = no results
-        }
-        // Dedupe and sort for deterministic SQL and reduced query work
-        let uniqueIds = Array(Set(projectIds)).sorted()
-        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
-        sql += " AND e.project_id IN (\(placeholders))"
-        for id in uniqueIds {
-          args.append(id)
-        }
-      }
-      if let transcriptId {
-        sql += " AND e.transcript_id = ?"
-        args.append(transcriptId)
-      }
-      if let kinds, !kinds.isEmpty {
-        // Dedupe and sort for deterministic SQL
-        let sortedKinds = Array(Set(kinds)).sorted()
-        let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
-        sql += " AND e.kind IN (\(placeholders))"
-        args.append(contentsOf: sortedKinds)
-      }
-      if let since = timeRange.sinceTimestamp {
-        sql += " AND e.timestamp >= ?"
-        args.append(since)
-      }
-      if let until = timeRange.untilTimestamp {
-        sql += " AND e.timestamp <= ?"
-        args.append(until)
-      }
+      sql += filter.whereSQL
 
       // Order by BM25 relevance (more negative = better match), then recency, then id for stability
       sql += " ORDER BY score ASC, e.timestamp DESC, e.id ASC"
       sql += " LIMIT ?"
+      var args = filter.arguments
       args.append(limit)
 
       struct Row: FetchableRecord, Decodable {
@@ -597,8 +632,12 @@ public struct ContextifyQueryService: Sendable {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
 
+    // Deduplicate and cap at 10 terms to bound query cost
+    let uniqueTerms = Array(Set(terms))
+    guard uniqueTerms.count <= 10 else { return nil }
+
     var result: [String: Int] = [:]
-    for term in terms {
+    for term in uniqueTerms {
       let count = try searchCount(
         query: term,
         projectIds: projectIds,
@@ -625,19 +664,25 @@ public struct ContextifyQueryService: Sendable {
     if trimmed.range(of: "\\bNOT\\b", options: .regularExpression) != nil { return [] }
     if trimmed.contains("(") || trimmed.contains(")") { return [] }
 
-    // Must contain OR
-    guard trimmed.range(of: "\\bOR\\b", options: .regularExpression) != nil else { return [] }
+    // Must contain OR (case-sensitive, FTS5 convention)
+    guard trimmed.range(of: "\\s+OR\\s+", options: .regularExpression) != nil else { return [] }
 
-    // Split on OR (case-sensitive, FTS5 convention)
-    let parts = trimmed.components(separatedBy: " OR ")
-    let terms = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    // Split on OR with flexible whitespace using regex replacement
+    let normalized = trimmed.replacingOccurrences(
+      of: "\\s+OR\\s+",
+      with: "\n",
+      options: .regularExpression
+    )
+    let terms = normalized.components(separatedBy: "\n")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
 
     guard terms.count >= 2 else { return [] }
     return terms
   }
 
   /// Returns total match count for a search query without fetching results.
-  /// Uses the same filters as `search()` but runs COUNT(*) instead.
+  /// Uses the same filters as `search()` via shared `buildFTSFilterClause()`.
   public func searchCount(
     query: String,
     projectIds: [String]? = nil,
@@ -650,49 +695,29 @@ public struct ContextifyQueryService: Sendable {
     let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
 
+    let filter = buildFTSFilterClause(
+      query: safeQuery,
+      projectIds: projectIds,
+      transcriptId: transcriptId,
+      includeHidden: includeHidden,
+      timeRange: timeRange,
+      kinds: kinds
+    )
+    guard !filter.emptyResult else { return 0 }
+
     return try pool.read { db in
       guard try db.tableExists("transcript_entries_fts") else {
         throw QueryError.featureUnavailable(feature: "fts_search", message: "FTS search is not available in this database.")
       }
 
-      var sql = """
+      let sql = """
         SELECT COUNT(*)
         FROM transcript_entries_fts
         JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
         WHERE transcript_entries_fts MATCH ?
-      """
-      var args: [DatabaseValueConvertible] = [safeQuery]
+      """ + filter.whereSQL
 
-      if !includeHidden {
-        sql += " AND e.display_in_timeline = 1"
-      }
-      if let projectIds = projectIds {
-        if projectIds.isEmpty { return 0 }
-        let uniqueIds = Array(Set(projectIds)).sorted()
-        let placeholders = uniqueIds.map { _ in "?" }.joined(separator: ", ")
-        sql += " AND e.project_id IN (\(placeholders))"
-        for id in uniqueIds { args.append(id) }
-      }
-      if let transcriptId {
-        sql += " AND e.transcript_id = ?"
-        args.append(transcriptId)
-      }
-      if let kinds, !kinds.isEmpty {
-        let sortedKinds = Array(Set(kinds)).sorted()
-        let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
-        sql += " AND e.kind IN (\(placeholders))"
-        args.append(contentsOf: sortedKinds)
-      }
-      if let since = timeRange.sinceTimestamp {
-        sql += " AND e.timestamp >= ?"
-        args.append(since)
-      }
-      if let until = timeRange.untilTimestamp {
-        sql += " AND e.timestamp <= ?"
-        args.append(until)
-      }
-
-      return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(args)) ?? 0
+      return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(filter.arguments)) ?? 0
     }
   }
 

@@ -480,15 +480,20 @@ struct ContextifyQueryCLI {
               dict[pair.key] = .number(Double(pair.value))
             }
 
-          let totalCount = try service.searchCount(
-            query: query,
-            projectIds: projectIds,
-            transcriptId: options.transcriptId,
-            includeHidden: options.includeHidden,
-            timeRange: timeRange,
-            kinds: kinds,
-            treatAsFTS: true
-          )
+          let totalCount: Int
+          if hasMore {
+            totalCount = try service.searchCount(
+              query: query,
+              projectIds: projectIds,
+              transcriptId: options.transcriptId,
+              includeHidden: options.includeHidden,
+              timeRange: timeRange,
+              kinds: kinds,
+              treatAsFTS: true
+            )
+          } else {
+            totalCount = trimmedResults.count
+          }
 
           var metadataDict: [String: JSONValue] = [
             "returned": .number(Double(trimmedResults.count)),
