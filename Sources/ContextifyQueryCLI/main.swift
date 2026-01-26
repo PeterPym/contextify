@@ -153,6 +153,9 @@ struct ContextifyQueryCLI {
     var force: Bool = false
     var edit: Bool = false
 
+    // Search options
+    var countOnly: Bool = false
+
     // Worktree options
     var thisWorktreeOnly: Bool = false
     var exclude: String?
@@ -313,6 +316,8 @@ struct ContextifyQueryCLI {
           options.limit = n
         case "--json":
           options.jsonOutput = true
+        case "--count-only":
+          options.countOnly = true
         case "--this-worktree":
           options.thisWorktreeOnly = true
         case "--exclude":
@@ -400,93 +405,143 @@ struct ContextifyQueryCLI {
         }
 
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
-        let requestedLimit = options.limit
-        let results = try service.search(
-          query: query,
-          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
-          transcriptId: options.transcriptId,
-          limit: requestedLimit + 1,
-          includeHidden: options.includeHidden,
-          timeRange: timeRange,
-          kinds: kinds,
-          treatAsFTS: true
-        )
-        var trimmedResults = results
-        var hasMore = false
-        if results.count > requestedLimit {
-          trimmedResults = Array(results.prefix(requestedLimit))
-          hasMore = true
-        }
+        let projectIds = scope.projectIds.isEmpty ? nil : scope.projectIds
 
-        // Compute source counts by grouping results by projectId
-        let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
-          .mapValues { $0.count }
-          .sorted { $0.key < $1.key }
-          .reduce(into: [String: JSONValue]()) { dict, pair in
-            dict[pair.key] = .number(Double(pair.value))
+        if options.countOnly {
+          // Count-only mode: return total count (and term counts for OR queries) without result bodies
+          let totalCount = try service.searchCount(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds,
+            treatAsFTS: true
+          )
+
+          var metadataDict: [String: JSONValue] = [
+            "totalCount": .number(Double(totalCount))
+          ]
+
+          if let termCounts = try service.searchTermCounts(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds
+          ) {
+            metadataDict["termCounts"] = .object(
+              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                dict[pair.key] = .number(Double(pair.value))
+              }
+            )
           }
 
-        let totalCount = try service.searchCount(
-          query: query,
-          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
-          transcriptId: options.transcriptId,
-          includeHidden: options.includeHidden,
-          timeRange: timeRange,
-          kinds: kinds,
-          treatAsFTS: true
-        )
+          let emptyResults: [ContextifyQueryService.SearchHit] = []
+          let metadata: JSONValue = .object(metadataDict)
+          try printResponse(type: "search", data: emptyResults, json: options.jsonOutput, metadata: metadata) {
+            if let tc = metadataDict["termCounts"], case .object(let terms) = tc {
+              let lines = terms.sorted(by: { $0.key < $1.key }).map { key, val -> String in
+                if case .number(let n) = val { return "  \(key): \(Int(n))" }
+                return "  \(key): ?"
+              }
+              print("Term counts:\n\(lines.joined(separator: "\n"))")
+              print("Total: \(totalCount)")
+            } else {
+              print("Total matches: \(totalCount)")
+            }
+          }
+        } else {
+          // Normal mode: fetch results with metadata
+          let requestedLimit = options.limit
+          let results = try service.search(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            limit: requestedLimit + 1,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds,
+            treatAsFTS: true
+          )
+          var trimmedResults = results
+          var hasMore = false
+          if results.count > requestedLimit {
+            trimmedResults = Array(results.prefix(requestedLimit))
+            hasMore = true
+          }
 
-        var metadataDict: [String: JSONValue] = [
-          "returned": .number(Double(trimmedResults.count)),
-          "limit": .number(Double(requestedLimit)),
-          "hasMore": .bool(hasMore),
-          "totalCount": .number(Double(totalCount))
-        ]
-
-        // Add per-term counts for OR queries
-        if let termCounts = try service.searchTermCounts(
-          query: query,
-          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
-          transcriptId: options.transcriptId,
-          includeHidden: options.includeHidden,
-          timeRange: timeRange,
-          kinds: kinds
-        ) {
-          metadataDict["termCounts"] = .object(
-            termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+          // Compute source counts by grouping results by projectId
+          let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
+            .mapValues { $0.count }
+            .sorted { $0.key < $1.key }
+            .reduce(into: [String: JSONValue]()) { dict, pair in
               dict[pair.key] = .number(Double(pair.value))
             }
+
+          let totalCount = try service.searchCount(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds,
+            treatAsFTS: true
           )
-        }
 
-        // Add worktree expansion metadata when group detected
-        if scope.worktreeGroupDetected {
-          metadataDict["worktreeExpansion"] = .object([
-            "enabled": .bool(scope.expansionApplied),
-            "worktrees": .array(scope.displayNames.map { .string($0) }),
-            "excluded": .array(scope.excluded.map { .string($0) }),
-            "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
-          ])
-          metadataDict["sourceCounts"] = .object(sourceCounts)
+          var metadataDict: [String: JSONValue] = [
+            "returned": .number(Double(trimmedResults.count)),
+            "limit": .number(Double(requestedLimit)),
+            "hasMore": .bool(hasMore),
+            "totalCount": .number(Double(totalCount))
+          ]
 
-          // Skew warning: when results truncated and >90% from one worktree
-          // Only show when expansion was actually applied and we have 2+ projects
-          if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
-            let maxCount = sourceCounts.values.compactMap { value -> Int? in
-              if case .number(let n) = value { return Int(n) }
-              return nil
-            }.max() ?? 0
-            let total = trimmedResults.count
-            // Also require minimum result count to avoid noisy warnings for small limits
-            if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
-              fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+          // Add per-term counts for OR queries
+          if let termCounts = try service.searchTermCounts(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds
+          ) {
+            metadataDict["termCounts"] = .object(
+              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                dict[pair.key] = .number(Double(pair.value))
+              }
+            )
+          }
+
+          // Add worktree expansion metadata when group detected
+          if scope.worktreeGroupDetected {
+            metadataDict["worktreeExpansion"] = .object([
+              "enabled": .bool(scope.expansionApplied),
+              "worktrees": .array(scope.displayNames.map { .string($0) }),
+              "excluded": .array(scope.excluded.map { .string($0) }),
+              "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
+            ])
+            metadataDict["sourceCounts"] = .object(sourceCounts)
+
+            // Skew warning: when results truncated and >90% from one worktree
+            // Only show when expansion was actually applied and we have 2+ projects
+            if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
+              let maxCount = sourceCounts.values.compactMap { value -> Int? in
+                if case .number(let n) = value { return Int(n) }
+                return nil
+              }.max() ?? 0
+              let total = trimmedResults.count
+              // Also require minimum result count to avoid noisy warnings for small limits
+              if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
+                fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+              }
             }
           }
-        }
 
-        let metadata: JSONValue = .object(metadataDict)
-        try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
-          printSearchHits(trimmedResults)
+          let metadata: JSONValue = .object(metadataDict)
+          try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
+            printSearchHits(trimmedResults)
+          }
         }
 
       case .activity:
