@@ -59,13 +59,15 @@ command -v contextify-query
 
 ## FTS5 search behavior
 
-The search backend uses SQLite FTS5 with **exact token matching**. There is no stemming.
+The Contextify search backend currently uses FTS5 with **exact token matching** and no stemming.
 
 - `"run"` matches only the exact token "run", NOT "running", "runs", or "ran"
 - `"deploy"` does NOT match "deployment" or "deployed"
 - Searches are case-insensitive
 - The prefix operator `*` matches token prefixes: `run*` matches "run", "running", "runs", "runner"
 - Quoted phrases match exact sequences: `"memory leak"` requires both words adjacent in order
+
+**Tokenization and special characters:** Hyphens, underscores, and most punctuation act as token separators. For example, `CT-97` is tokenized as two separate tokens `CT` and `97`. To match hyphenated or snake_case identifiers, search for `CT AND 97` or try the quoted form `"CT 97"`. File paths and punctuation-heavy identifiers may need simplified forms.
 
 Because there is no stemming, you must explicitly include morphological variants in your queries. See "Query construction" below.
 
@@ -82,6 +84,8 @@ Determine the query type to set your strategy:
 | **Counting** | "how many", "count", "every time", "frequency" | Maximize recall. Expand all variants. Use `--limit 200` or higher. |
 | **Lookup** | "what did we decide", "find the discussion", "when did we" | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
 | **Exploratory** | "what have we talked about", "find anything about" | Start broad, refine iteratively. Use `--limit 20`. |
+
+**Counting note:** Counts refer to matched entries (messages) returned by Contextify search, not individual word occurrences within those entries. If scoped by time or project (e.g., "how many times in the last month"), apply `--days` and `--project` filters accordingly and still paginate to completion.
 
 ### Step 2: Expand query terms
 
@@ -102,7 +106,7 @@ This matches deploy, deploys, deployed, deploying, deployment, deployments.
 - Prefix `*` is simpler and catches variants you might not think of
 - Explicit OR is better when the stem is ambiguous (e.g., `run*` also matches "rune", "rung")
 - Explicit OR is required for irregular forms (e.g., "ran" is not matched by `run*`)
-- For counting queries, prefer explicit OR with all known variants for precision
+- For counting queries, start with explicit OR plus any irregular forms, then use a prefix query as a recall backstop if counts look low
 
 **Compound queries:** Combine expanded terms with AND when the user's query has multiple concepts:
 ```
@@ -123,6 +127,8 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 - **Counting queries:** `--limit 200` minimum. If `hasMore` is true, paginate with `--offset`.
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
+
+**Quick recipe:** Classify intent, build expanded query, choose limit, search, paginate if `hasMore`, answer with citations.
 
 ## Canonical loop
 
@@ -149,7 +155,7 @@ contextify-query search "<expanded-query>" --project . --days 30 --limit <N> --j
 
 Set `--limit` based on intent: 200+ for counting, 10 for lookup, 20 for exploratory.
 
-**Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching.
+**Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching. Use parentheses when mixing AND/OR to control grouping; do not rely on default operator precedence.
 
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
@@ -177,8 +183,12 @@ contextify-query context "<entry-uuid>" --before 10 --after 20 --project . --jso
 
 Before formatting your response, check:
 
-- **`hasMore` flag:** If `true`, you have not retrieved all matches. For counting queries, paginate with `--offset` until `hasMore` is `false`.
-- **Variant coverage:** Scan returned snippets for word forms you did not search for. If you searched `deploy*` and see "redeployment" in results, verify your query also captures that.
+- **`hasMore` flag:** If `true`, you have not retrieved all matches. For counting queries, paginate with `--offset` until `hasMore` is `false`:
+  ```bash
+  contextify-query search "<expanded-query>" --project . --days 365 --limit 200 --offset 200 --json
+  ```
+  Increment `--offset` by `--limit` each page (200, 400, 600...) until `hasMore` is `false`.
+- **(Counting intent only) Variant coverage:** Scan returned snippets for word forms you did not search for. If you searched `deploy*` and see "redeployment" in results, verify your query also captures that.
 - **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form? A synonym?
 - **For counting queries:** Report the total count, note whether `hasMore` was encountered, and list which search terms were used so the user can judge completeness.
 
@@ -198,7 +208,7 @@ If results seem incomplete, run additional searches with expanded terms before a
 
 For counting queries, also include:
 > **Search terms used:** [list the OR-expanded terms]
-> **Total matches:** [count] across [N] conversations
+> **Matched entries:** [count] entries across [N] conversations
 > **Complete:** [Yes/No -- based on whether hasMore was false on final page]
 
 ## Error handling
