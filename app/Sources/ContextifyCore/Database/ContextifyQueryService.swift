@@ -632,8 +632,9 @@ public struct ContextifyQueryService: Sendable {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
 
-    // Deduplicate and cap at 10 terms to bound query cost
-    let uniqueTerms = Array(Set(terms))
+    // Deduplicate preserving first-seen order, cap at 10 terms to bound query cost
+    var seen = Set<String>()
+    let uniqueTerms = terms.filter { seen.insert($0).inserted }
     guard uniqueTerms.count <= 10 else { return nil }
 
     var result: [String: Int] = [:]
@@ -667,6 +668,8 @@ public struct ContextifyQueryService: Sendable {
     // Must contain OR (case-sensitive, FTS5 convention)
     guard trimmed.range(of: "\\s+OR\\s+", options: .regularExpression) != nil else { return [] }
 
+    // Bail if OR appears inside a quoted phrase (e.g., "fear OR loathing" OR vegas)
+    // Check: after splitting, if any term has unbalanced quotes, the split was wrong
     // Split on OR with flexible whitespace using regex replacement
     let normalized = trimmed.replacingOccurrences(
       of: "\\s+OR\\s+",
@@ -678,6 +681,13 @@ public struct ContextifyQueryService: Sendable {
       .filter { !$0.isEmpty }
 
     guard terms.count >= 2 else { return [] }
+
+    // Bail if any term has unbalanced quotes (split broke a quoted phrase)
+    for term in terms {
+      let quoteCount = term.filter { $0 == "\"" }.count
+      if quoteCount % 2 != 0 { return [] }
+    }
+
     return terms
   }
 
