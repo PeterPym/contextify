@@ -583,6 +583,59 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  /// Returns per-term match counts for an OR query.
+  /// For "term1 OR term2 OR term3", returns ["term1": 42, "term2": 18, "term3": 5].
+  /// Returns nil if the query is not an OR query.
+  public func searchTermCounts(
+    query: String,
+    projectIds: [String]? = nil,
+    transcriptId: String? = nil,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    kinds: [String]? = nil
+  ) throws -> [String: Int]? {
+    let terms = Self.parseORTerms(query)
+    guard terms.count >= 2 else { return nil }
+
+    var result: [String: Int] = [:]
+    for term in terms {
+      let count = try searchCount(
+        query: term,
+        projectIds: projectIds,
+        transcriptId: transcriptId,
+        includeHidden: includeHidden,
+        timeRange: timeRange,
+        kinds: kinds,
+        treatAsFTS: true
+      )
+      result[term] = count
+    }
+    return result
+  }
+
+  /// Parses a simple OR query into individual terms.
+  /// "fuck OR fucking OR fucked" -> ["fuck", "fucking", "fucked"]
+  /// "\"memory leak\" OR \"out of memory\"" -> ["\"memory leak\"", "\"out of memory\""]
+  /// Returns empty array if the query doesn't use OR or has complex structure (AND, NOT, parentheses).
+  static func parseORTerms(_ query: String) -> [String] {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Bail on complex queries with AND, NOT, or parentheses
+    if trimmed.range(of: "\\bAND\\b", options: .regularExpression) != nil { return [] }
+    if trimmed.range(of: "\\bNOT\\b", options: .regularExpression) != nil { return [] }
+    if trimmed.contains("(") || trimmed.contains(")") { return [] }
+
+    // Must contain OR
+    guard trimmed.range(of: "\\bOR\\b", options: .regularExpression) != nil else { return [] }
+
+    // Split on OR (case-sensitive, FTS5 convention)
+    let parts = trimmed.components(separatedBy: " OR ")
+    let terms = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+
+    guard terms.count >= 2 else { return [] }
+    return terms
+  }
+
   /// Returns total match count for a search query without fetching results.
   /// Uses the same filters as `search()` but runs COUNT(*) instead.
   public func searchCount(

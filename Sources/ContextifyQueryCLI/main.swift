@@ -443,6 +443,22 @@ struct ContextifyQueryCLI {
           "totalCount": .number(Double(totalCount))
         ]
 
+        // Add per-term counts for OR queries
+        if let termCounts = try service.searchTermCounts(
+          query: query,
+          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
+          transcriptId: options.transcriptId,
+          includeHidden: options.includeHidden,
+          timeRange: timeRange,
+          kinds: kinds
+        ) {
+          metadataDict["termCounts"] = .object(
+            termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+              dict[pair.key] = .number(Double(pair.value))
+            }
+          )
+        }
+
         // Add worktree expansion metadata when group detected
         if scope.worktreeGroupDetected {
           metadataDict["worktreeExpansion"] = .object([
