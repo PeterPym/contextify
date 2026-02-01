@@ -803,7 +803,7 @@ struct ContextifyQueryCLI {
     }
     fputs(
       """
-      Usage: swift run contextify-query [options] <command> [args]
+      Usage: contextify [options] <command> [args]
 
       Options:
         --db-path <path>     Full path to contextify.db
