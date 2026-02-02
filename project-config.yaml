@@ -23,7 +23,7 @@ remote: origin
 sync:
   strategy: merge
   push_landing: true
-  publish_to_canonical: false
+  push_to_canonical: true
 
 hooks:
   pre_sync_all: null
