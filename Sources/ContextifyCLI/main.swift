@@ -21,7 +21,7 @@ import ContextifyIngestionCommands
 #if GENERATED_VERSION
 let cliVersion = generatedCLIVersion
 #else
-let cliVersion = "1.1.0-dev"
+let cliVersion = "1.2.1-dev"
 #endif
 
 // MARK: - Deprecation Warnings
@@ -148,13 +148,12 @@ struct Contextify: AsyncParsableCommand {
 
     // Check for backwards-compatible invocation
     if let transformedArgs = handleArgv0Dispatch() {
-      // Re-invoke with transformed arguments
-      let allArgs = ["contextify"] + transformedArgs
-      await Contextify.main(allArgs)
+      // Re-invoke with transformed arguments (without program name)
+      await Contextify.main(transformedArgs)
     } else {
-      // Normal invocation - pass through original arguments
+      // Normal invocation - pass args without program name (argv[0])
       // Note: Must call main(_:) not main() to avoid infinite recursion
-      await Contextify.main(CommandLine.arguments)
+      await Contextify.main(Array(CommandLine.arguments.dropFirst()))
     }
   }
 }

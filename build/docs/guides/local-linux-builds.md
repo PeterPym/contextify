@@ -1,36 +1,58 @@
 # Local Linux Builds with Docker
 
-Build Linux CLI binaries locally using Docker as an alternative to GitHub Actions CI.
+Build Linux CLI binaries locally using Docker.
 
-## Build Strategy
+## Build Strategy (ARM Mac)
 
-Ranked approach for building Linux binaries:
+| Architecture | Method | Time | Notes |
+|--------------|--------|------|-------|
+| **x86_64** | **CI ONLY** | ~10 min | NEVER build locally on ARM Mac |
+| **arm64** | Local Docker | ~12 min | Native on ARM Mac via Colima arm64 profile |
 
-| Rank | Method | When to Use |
-|------|--------|-------------|
-| 1 | **Local Docker (amd64)** | Development iteration, quick validation |
-| 2 | **CI (amd64 only)** | Pre-release validation, need amd64 artifact |
-| 3 | **CI (both architectures)** | Final release builds, need arm64 |
-| 4 | **Local Docker (arm64)** | Emergency only (2-3 hours on ARM Mac) |
+**CRITICAL: x86_64 builds MUST use GitHub CI.** Local x86_64 builds on ARM Mac are unreliable:
+- Rosetta translation causes crashes and "illegal instruction" errors
+- Builds may silently produce wrong architecture binaries
+- Switching Colima profiles disrupts running containers
 
-**Why this order?**
-- Local amd64 builds are fast (~5-10 min) with Colima on ARM Mac
-- CI preserves GitHub Actions minutes (limited budget)
-- arm64 builds are slow everywhere (QEMU emulation)
-- CI arm64 builds timeout at 90 minutes; local takes 2-3 hours
+```bash
+# x86_64: ALWAYS use CI
+gh workflow run linux-build.yml --repo banagale/contextify -f architecture=x86_64
+
+# arm64: Build locally (fast, native)
+docker context use colima-arm64
+# ... then run build command below
+```
 
 ## Prerequisites
 
-### Docker Runtime (Colima on ARM Mac)
+### Docker Runtime (Dual Colima Profiles on ARM Mac)
 
-ARM Macs require Colima configured with Rosetta for x86_64 builds. QEMU emulation does not work with Swift.
+For optimal build speeds, set up **two Colima profiles**:
+- `default` (x86_64 via Rosetta) - for x86_64 builds when CI unavailable
+- `arm64` (native aarch64) - for fast arm64 builds (~12 min)
 
 ```bash
 # Install
 brew install colima docker lima-additional-guestagents
 
-# Start with Rosetta support (required for x86_64 builds)
+# Profile 1: x86_64 with Rosetta (for local x86 builds)
 colima start --arch x86_64 --vm-type vz --vz-rosetta
+
+# Profile 2: Native arm64 (for fast arm64 builds)
+colima start --profile arm64 --arch aarch64 --vm-type vz
+```
+
+**Switching between profiles:**
+```bash
+# For x86_64 builds
+docker context use colima
+
+# For arm64 builds
+docker context use colima-arm64
+
+# Verify active architecture
+docker run --rm swift:6.0-jammy uname -m
+# Should show: x86_64 or aarch64
 ```
 
 ### Verify Configuration
@@ -47,52 +69,51 @@ If ARCH shows `aarch64`, you need to recreate Colima (see Troubleshooting below)
 - ARM Mac (Apple Silicon) for native arm64 builds
 - x86_64 builds require Colima with Rosetta (see setup above)
 
-## Quick Start: Build x86_64 (Recommended)
+## Docker Context (CRITICAL)
+
+When multiple Colima profiles exist (e.g., both `colima` and `colima-arm64`), the **active Docker context** determines which VM handles builds.
+
+**The `--platform` flag and `DOCKER_HOST` environment variables are IGNORED if the context points elsewhere.** This causes silent architecture mismatches where you think you're building x86_64 but actually get arm64 (or vice versa).
+
+### Pre-flight Check (Required Before Any Build)
 
 ```bash
-# Create output directory
-mkdir -p dist
+# Check current context - the * shows which is active
+docker context ls
 
-# Build x86_64 binary (~5-10 minutes on ARM Mac with Colima)
-docker run --rm \
-  -v "$PWD":/workspace:ro \
-  -v "$PWD/dist":/output:rw \
-  -e CLI_VERSION="1.1.0" \
-  -w /build \
-  --platform linux/amd64 \
-  swift:6.0-jammy \
-  bash -c '
-    set -e
-    cp -r /workspace/Sources /workspace/Package.swift /workspace/Package.resolved /workspace/app /workspace/contextify-query /build/
-    apt-get update -qq && apt-get install -y build-essential curl pkg-config -qq > /dev/null 2>&1
+# Switch to x86_64 (default Colima profile)
+docker context use colima
 
-    # Build SQLite with required features
-    cd /tmp
-    curl -sL "https://www.sqlite.org/2024/sqlite-autoconf-3450100.tar.gz" | tar xz
-    cd sqlite-autoconf-*
-    CFLAGS="-DSQLITE_ENABLE_SNAPSHOT -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -O2" \
-      ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --disable-shared --quiet
-    make -j$(nproc) --quiet && make install --quiet && ldconfig
+# Or switch to arm64
+docker context use colima-arm64
 
-    # Build unified CLI
-    cd /build
-    printf "// Generated at build time\npublic let generatedCLIVersion = \"%s\"\n" "$CLI_VERSION" > Sources/ContextifyCLI/Version.generated.swift
-    swift build -c release --product contextify --static-swift-stdlib -Xswiftc -DGENERATED_VERSION
-
-    # Package
-    mkdir -p /output
-    cp .build/release/contextify /output/
-    ln -sf contextify /output/contextify-ingest
-    ln -sf contextify /output/contextify-query
-    cp -R contextify-query/user-skill /output/
-    cd /output && tar -czvf contextify-linux-x86_64.tar.gz contextify contextify-ingest contextify-query user-skill
-    rm -f contextify contextify-ingest contextify-query && rm -rf user-skill
-  '
+# Verify architecture matches your intent
+docker run --rm swift:6.0-noble uname -m
+# Should show: x86_64 (for colima) or aarch64 (for colima-arm64)
 ```
 
-## Build arm64 (Native on Apple Silicon - SLOW)
+## x86_64 Builds: USE CI ONLY
 
-Only use this when CI arm64 build times out or CI is unavailable. Takes 2-3 hours.
+**DO NOT build x86_64 locally on ARM Mac.** Use GitHub Actions CI:
+
+```bash
+# Trigger CI build
+gh workflow run linux-build.yml --repo banagale/contextify -f architecture=x86_64
+
+# Monitor progress
+gh run list --workflow=linux-build.yml --repo banagale/contextify --limit 1
+gh run watch --repo banagale/contextify
+
+# Download artifact when complete
+gh run download <run-id> --repo banagale/contextify -n linux-cli-x86_64
+```
+
+CI builds take ~10 minutes on native x86_64 runners and produce reliable binaries.
+
+## Build arm64 (Native on Apple Silicon - FAST with native profile)
+
+With a dedicated arm64 Colima profile, builds take ~12 minutes (native, no emulation).
+This is the **recommended approach** for arm64 - much faster than CI's QEMU emulation.
 
 ```bash
 docker run --rm \
@@ -131,27 +152,27 @@ docker run --rm \
   '
 ```
 
-## Using CI Instead (Recommended for arm64)
+## Using CI (Recommended for x86_64 only)
 
-CI builds are manual-only. Use `/linux-ci-trigger` skill or trigger directly:
+CI builds are manual-only. Use `/linux-ci-trigger` skill or trigger directly.
+
+**Recommended workflow:**
+- x86_64: Build via CI (native runners, fast)
+- arm64: Build locally with native Colima profile (see above)
 
 ```bash
-# amd64 only (faster, ~10 min)
+# x86_64 only (recommended, ~10 min)
 gh workflow run "Linux Release" --repo banagale/contextify \
-  -f version=1.1.0 \
+  -f version=1.2.1 \
   -f build_amd64=true \
   -f build_arm64=false
-
-# Both architectures (slow, ~90 min)
-gh workflow run "Linux Release" --repo banagale/contextify \
-  -f version=1.1.0 \
-  -f build_amd64=true \
-  -f build_arm64=true
 
 # Monitor progress
 gh run list --workflow="Linux Release" --repo banagale/contextify --limit 1
 gh run watch --repo banagale/contextify
 ```
+
+**Note:** CI arm64 builds use QEMU emulation and take 60+ minutes. Prefer local arm64 builds on ARM Mac.
 
 ## Build Artifacts
 
@@ -165,7 +186,7 @@ Contents:
 
 ## Verification
 
-After building, verify static linking:
+After building, verify static linking and architecture:
 
 ```bash
 # Check tarball contents
@@ -175,6 +196,11 @@ tar -tzf dist/contextify-linux-x86_64.tar.gz
 docker run --rm -v "$PWD/dist":/dist swift:6.0-jammy \
   sh -c 'tar -xzf /dist/contextify-linux-x86_64.tar.gz -C /tmp && ldd /tmp/contextify'
 # Should NOT show libsqlite3.so
+
+# Verify binary architecture matches intent
+file .build-linux/debug/contextify
+# Should show: ELF 64-bit LSB pie executable, x86-64
+# OR: ELF 64-bit LSB pie executable, ARM aarch64
 ```
 
 ## Worktree Compatibility
@@ -217,11 +243,28 @@ Mount workspace as read-only (`:ro`) and copy files to container-internal path.
 These warnings are harmless - SwiftPM can't write to the cache in the read-only mount but downloads work.
 
 ### arm64 build takes too long
-This is expected. Swift compilation under QEMU is slow. Use CI for arm64 when possible.
+If using QEMU emulation (wrong profile), it takes hours. Ensure you're using native arm64:
+```bash
+docker context use colima-arm64
+docker run --rm swift:6.0-jammy uname -m  # Should show: aarch64
+```
+Native arm64 builds take ~12 minutes. If you don't have an arm64 profile, create one (see Prerequisites).
 
 ### Build fails with "cannot find X in scope"
 Check that Version.generated.swift is being written to the correct path (`Sources/ContextifyCLI/`).
 
+### Built wrong architecture
+
+If `file` shows arm64 when you wanted x86_64 (or vice versa):
+
+1. Check `docker context ls` - the `*` shows active context
+2. Switch context: `docker context use colima` (x86) or `docker context use colima-arm64`
+3. Rebuild
+
+The `--platform` flag does NOT override the Docker context. The context determines which Colima VM handles the build, and that VM's architecture is what you get.
+
+Reference: Session 4d16edb0-adcf-4f9d-9539-dde014bc69f9
+
 ---
 
-**Last Updated**: 2026-01-14
+**Last Updated**: 2026-01-19

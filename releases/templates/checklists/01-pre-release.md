@@ -30,13 +30,13 @@
 - [ ] Current version in Xcode: `grep MARKETING_VERSION Contextify/Contextify.xcodeproj/project.pbxproj | head -1`
 
 ### Build Number (App Store)
-- [ ] Check if this version was ever submitted to App Store:
+- [ ] Get highest build number ever used:
   ```bash
-  grep -A5 '"{version}"' releases/manifest.json | grep -q '"submitted"' && echo "Was submitted" || echo "Never submitted"
+  grep '"build_number"' releases/manifest.json | grep -o '[0-9]*' | sort -n | tail -1
   ```
-- [ ] If **never submitted**: Reset `CURRENT_PROJECT_VERSION` to `1`
-- [ ] If **resubmitting after rejection**: Increment from last submitted build
+- [ ] Increment by 1 for this release (build numbers NEVER reset, always increment globally)
 - [ ] Current build in Xcode: `grep CURRENT_PROJECT_VERSION Contextify/Contextify.xcodeproj/project.pbxproj | head -1`
+- [ ] Update `CURRENT_PROJECT_VERSION` to the new build number
 
 ### Release Notes
 - [ ] Draft release notes content

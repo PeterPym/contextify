@@ -23,14 +23,28 @@ remote: origin
 sync:
   strategy: merge
   push_landing: true
-  publish_to_canonical: false
+  push_to_canonical: true
 
 hooks:
   pre_sync_all: null
   post_sync_all: null
   pre_sync: null
   post_sync: null
-  post_init: null
+  post_init:
+    - /Users/rob/code/projects/cli-ai-setup/utils/gitops/hooks/setup-worktree.sh
+    - /Users/rob/code/projects/cli-ai-setup/utils/gitops/hooks/post-init-color.sh
+
+# ─────────────────────────────────────────────────────────────────
+# iTerm2 Tab Colors
+# ─────────────────────────────────────────────────────────────────
+# Custom palette using Contextify brand colors
+color_palette:
+  - "#F9B233"  # Brand Yellow (orange-ish) - from logomark left loop
+  - "#4AC4E0"  # Brand Cyan - from logomark center
+  - "#8B5CF6"  # Brand Purple - from logomark right loop
+  - "#4A7BA7"  # Contextify Primary - darker blue
+  - "#51A86B"  # Contextify Success - green
+  - "#9C88C8"  # Contextify Accent (dark mode) - lighter purple
 
 # ─────────────────────────────────────────────────────────────────
 # Worktrees
@@ -39,18 +53,26 @@ worktrees:
   - name: primary
     path: ~/code/projects/contextify
     landing_branch: main
+    meta:
+      color: "#F9B233"  # Brand Yellow (orange-ish)
 
   - name: wb1
     path: ~/code/projects/contextify-wb1
     landing_branch: main-wb1
+    meta:
+      color: "#4AC4E0"  # Brand Cyan
 
   - name: wb2
     path: ~/code/projects/contextify-wb2
     landing_branch: main-wb2
+    meta:
+      color: "#8B5CF6"  # Brand Purple
 
   - name: wb3
     path: ~/code/projects/contextify-wb3
     landing_branch: main-wb3
+    meta:
+      color: "#4A7BA7"  # Contextify Primary (darker blue)
 
   - name: liquid-glass
     path: ~/code/projects/contextify-liquid-glass

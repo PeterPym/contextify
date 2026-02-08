@@ -220,6 +220,27 @@ curl -s https://contextify.sh/appcast.xml | head -30
 | DMG | Embedded in app bundle |
 | Appcast | `sparkle:shortVersionString` |
 | GitHub Release | Tag `vX.Y.Z` |
+| Website download | `website/macos-version` |
+| Install script | Fetches `https://contextify.sh/macos-version` |
+
+### `website/macos-version`
+
+This file contains the bare version number of the latest macOS DMG (e.g., `1.2.0`). It is the source of truth for:
+- The website download button (`/go/dmg/` redirect page)
+- The `curl|sh` installer on macOS (`detect_macos_version()`)
+
+**This file MUST be updated every time a new DMG is uploaded to GitHub.**
+
+It exists because GitHub's `releases/latest` pointer may point to a Linux-only release, so macOS needs its own version pointer.
+
+### Consistency Check
+
+Run after any release or before website deploy:
+```bash
+./scripts/release/check-dmg-consistency.sh
+```
+
+This verifies `macos-version`, `appcast.xml`, and the GitHub DMG asset are all in sync. Use `--strict` to treat appcast lag as an error.
 
 ### Audit Checklist
 

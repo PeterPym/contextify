@@ -334,6 +334,8 @@ Marketing waits for App Store approval.
 
 **Build scripts:** `scripts/xc.sh` (dev), `scripts/release/build.sh` (release)
 
+**DMG version pointer:** `website/macos-version` must be updated every time a new DMG is uploaded to GitHub. This file drives both the website download button and the `curl|sh` installer on macOS. Run `./scripts/release/check-dmg-consistency.sh` to verify it's in sync with appcast.xml and GitHub.
+
 ## Transcript Access (App Store Builds)
 
 Sandbox builds require security-scoped bookmarks for `~/.claude/projects/` and `~/.codex/sessions/`.

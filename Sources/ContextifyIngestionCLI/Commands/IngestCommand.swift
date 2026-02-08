@@ -2,6 +2,7 @@
 // IngestCommand.swift - Main ingestion command with HooverEngine
 
 import ArgumentParser
+import Dispatch
 import Foundation
 import GRDB
 #if os(macOS)
@@ -9,6 +10,28 @@ import ContextifyCore
 #else
 import ContextifyIngestionCore
 #endif
+
+/// Thread-safe signal flag for graceful shutdown.
+/// Uses a lock-protected flag: signal handler writes, main loop polls.
+/// Values: 0 = no signal, SIGINT (2), SIGTERM (15)
+private final class SignalFlag: @unchecked Sendable {
+  private var _value: Int32 = 0
+  private let lock = NSLock()
+
+  var value: Int32 {
+    lock.lock()
+    defer { lock.unlock() }
+    return _value
+  }
+
+  func set(_ newValue: Int32) {
+    lock.lock()
+    _value = newValue
+    lock.unlock()
+  }
+}
+
+private let receivedSignal = SignalFlag()
 
 public struct IngestCommand: AsyncParsableCommand {
   public static let configuration = CommandConfiguration(
@@ -108,6 +131,14 @@ public struct IngestCommand: AsyncParsableCommand {
   }
 
   public mutating func run() async throws {
+    // Reset signal flag in case of re-entry (e.g., tests or subcommand chaining)
+    receivedSignal.set(0)
+
+    // Set quiet mode for logging before anything else runs
+    if quiet || systemd {
+      CrossPlatformLogger.quietMode = true
+    }
+
     let runId = UUID().uuidString.prefix(8).lowercased()
     let startTime = Date()
 
@@ -124,9 +155,31 @@ public struct IngestCommand: AsyncParsableCommand {
     let isQuiet = quiet || systemd
     let showHumanOutput = format == .human && !isQuiet
 
-    // Set up event sink (only for non-quiet jsonl output)
+    // Set up signal handling for graceful shutdown
+    // Ignore default signal action so process doesn't terminate before our handler fires
+    signal(SIGINT, SIG_IGN)
+    signal(SIGTERM, SIG_IGN)
+
+    let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
+    sigintSource.setEventHandler {
+      receivedSignal.set(SIGINT)
+    }
+    sigintSource.resume()
+
+    let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+    sigtermSource.setEventHandler {
+      receivedSignal.set(SIGTERM)
+    }
+    sigtermSource.resume()
+
+    /// Check if a shutdown signal has been received
+    func shouldStop() -> Bool {
+      receivedSignal.value != 0
+    }
+
+    // Set up event sink
     let sinkFormat: CLIEventSink.OutputFormat = format == .jsonl ? .jsonl : .human
-    let sink = isQuiet ? CLIEventSink(format: .human) : CLIEventSink(format: sinkFormat)
+    let sink = CLIEventSink(format: sinkFormat, quiet: isQuiet)
 
     // Parse --since date if provided
     let sinceDate = try parseSinceDate()
@@ -221,6 +274,14 @@ public struct IngestCommand: AsyncParsableCommand {
       projects = await discovery.discoverProjectsLightweight()
     }
 
+    // Check for cancellation after discovery (discovery takes 5-7s)
+    if shouldStop() {
+      sigintSource.cancel()
+      sigtermSource.cancel()
+      try? await pool.write { db in try db.checkpoint(.passive) }
+      throw ExitCode(Int32(128 + receivedSignal.value))
+    }
+
     // Filter by provider if specified
     if provider != .auto {
       let providerFilter = provider == .claude ? "claude.code" : "codex.cli"
@@ -257,11 +318,89 @@ public struct IngestCommand: AsyncParsableCommand {
       projects = filteredProjects
     }
 
-    // Count total transcripts
-    let totalTranscripts = projects.reduce(0) { $0 + $1.transcriptFiles.count }
+    // Query completed transcripts to enable resume (skip already-processed files)
+    // Key: canonical file path, Value: stored mtime (seconds since epoch)
+    let completedTranscripts: [String: Int] = try await pool.read { db in
+      var result: [String: Int] = [:]
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT file_path, last_modified FROM transcripts
+        WHERE ingest_state = 'complete'
+      """)
+      for row in rows {
+        // GRDB Row subscript returns DatabaseValue - use type annotation for conversion
+        let path: String? = row["file_path"]
+        let mtime: Int? = row["last_modified"]
+        if let path = path, let mtime = mtime {
+          result[path] = mtime
+        }
+      }
+      return result
+    }
+
+    // Build set of files that actually need work (not already complete, or file changed)
+    var filesNeedingWork: Set<String> = []
+    let fm = FileManager.default
+    for project in projects {
+      for fileURL in project.transcriptFiles {
+        let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+
+        // Check if already complete with unchanged mtime
+        if let storedMtime = completedTranscripts[filePath] {
+          if let attrs = try? fm.attributesOfItem(atPath: fileURL.path),
+             let currentMtime = attrs[.modificationDate] as? Date {
+            let currentMtimeInt = Int(currentMtime.timeIntervalSince1970)
+            if currentMtimeInt == storedMtime {
+              // File unchanged since last complete ingest - skip
+              continue
+            }
+          }
+        }
+
+        filesNeedingWork.insert(filePath)
+      }
+    }
+
+    // Count only files that need work
+    let totalTranscripts = filesNeedingWork.count
+    let skippedCount = completedTranscripts.count
+
+    // Progress file path (set by install.sh for IPC; nil for standalone CLI runs)
+    let progressFile = ProcessInfo.processInfo.environment["CONTEXTIFY_INGEST_PROGRESS_FILE"]
+    var progressWriteWarned = false
+
+    // Nothing to do: all transcripts already indexed
+    if totalTranscripts == 0 {
+      // Write done marker for install.sh IPC (CLI does NOT delete - installer owns cleanup)
+      if let progressFile = progressFile {
+        do {
+          try "done:\(skippedCount)\n".write(toFile: progressFile, atomically: true, encoding: .utf8)
+        } catch {
+          if !progressWriteWarned {
+            progressWriteWarned = true
+            FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+          }
+        }
+      }
+      if showHumanOutput {
+        if skippedCount > 0 {
+          print("\(skippedCount) transcripts indexed (already up to date)")
+        } else {
+          print("No transcripts found")
+        }
+      }
+      // Clean exit
+      sigintSource.cancel()
+      sigtermSource.cancel()
+      try? await pool.write { db in try db.checkpoint(.passive) }
+      return
+    }
 
     if showHumanOutput {
-      print("Found \(projects.count) projects with \(totalTranscripts) transcripts")
+      if skippedCount > 0 {
+        print("Found \(projects.count) projects (\(totalTranscripts) to process, \(skippedCount) already indexed)")
+      } else {
+        print("Found \(projects.count) projects with \(totalTranscripts) transcripts")
+      }
     }
 
     // Emit start event
@@ -278,7 +417,7 @@ public struct IngestCommand: AsyncParsableCommand {
     let runNow = Int(Date().timeIntervalSince1970)
 
     // Process each project
-    for project in projects {
+    for project in projects where !shouldStop() {
       let projectId: String
       do {
         // Get or create project using direct SQL
@@ -311,14 +450,20 @@ public struct IngestCommand: AsyncParsableCommand {
 
       // Process each transcript in the project
       for fileURL in project.transcriptFiles {
+        // Check for cancellation between transcripts
+        if shouldStop() { break }
+
+        // Skip files already processed (resume support)
+        let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+        if !filesNeedingWork.contains(filePath) {
+          continue
+        }
+
         do {
           // Get file attributes
           let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
           let lastModified = (attrs[.modificationDate] as? Date) ?? Date()
           let fileSize = (attrs[.size] as? Int) ?? 0
-
-          // Compute canonical path first (used for storage and provider derivation)
-          let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
           let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
 
           // Derive provider from canonical path using anchored patterns
@@ -380,6 +525,18 @@ public struct IngestCommand: AsyncParsableCommand {
           totalEntriesSkipped += outcome.entriesSkipped
           transcriptsProcessed += 1
 
+          // Write progress file for install.sh IPC (only when env var is set)
+          if let pf = progressFile {
+            do {
+              try "\(transcriptsProcessed)/\(totalTranscripts)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+            } catch {
+              if !progressWriteWarned {
+                progressWriteWarned = true
+                FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+              }
+            }
+          }
+
           if showHumanOutput && outcome.entriesInserted > 0 {
             print("  \(fileURL.lastPathComponent): \(outcome.entriesInserted) entries")
           }
@@ -393,6 +550,35 @@ public struct IngestCommand: AsyncParsableCommand {
 
     let duration = Date().timeIntervalSince(startTime)
 
+    // Write final done marker for install.sh (total = processed + already indexed)
+    if let pf = progressFile, !shouldStop() {
+      let totalComplete = transcriptsProcessed + skippedCount
+      do {
+        try "done:\(totalComplete)\n".write(toFile: pf, atomically: true, encoding: .utf8)
+      } catch {
+        if !progressWriteWarned {
+          progressWriteWarned = true
+          FileHandle.standardError.write(Data("warning: failed to write progress file: \(error.localizedDescription)\n".utf8))
+        }
+      }
+    }
+
+    // Clean up signal sources
+    sigintSource.cancel()
+    sigtermSource.cancel()
+
+    // WAL checkpoint for clean DB state (best effort)
+    try? await pool.write { db in try db.checkpoint(.passive) }
+
+    // Handle cancellation: exit with conventional signal code
+    let sig = receivedSignal.value
+    if sig != 0 {
+      if showHumanOutput {
+        print("\nCancelled. Run again to resume.")
+      }
+      throw ExitCode(Int32(128 + sig))
+    }
+
     // Secure database file and sidecars (WAL/SHM) permissions
     XDGPaths.setSecureDatabasePermissions(URL(fileURLWithPath: dbPath))
 
@@ -404,8 +590,8 @@ public struct IngestCommand: AsyncParsableCommand {
       durationSeconds: duration
     )
 
-    // Emit completion event (for jsonl format when not quiet)
-    if !isQuiet {
+    // Emit completion event (only for jsonl format, not human - avoids duplicate output)
+    if !isQuiet && format == .jsonl {
       sink.ingestionCompleted(runId: String(runId), success: totalErrors == 0, summary: summary)
     }
 
@@ -427,14 +613,12 @@ public struct IngestCommand: AsyncParsableCommand {
       print("Use 'contextify verify --db \(dbPath)' to verify the database.")
     }
 
-    // Exit codes: 0=success, 1=error, 2=noop
+    // Exit codes: 0=success (including "nothing to do"), 1=error
+    // "No transcripts found" is a valid success state for fresh installs
     if totalErrors > 0 {
       throw ExitCode.failure
     }
-    if totalEntriesInserted == 0 && transcriptsProcessed == 0 {
-      // Nothing to do - exit code 2 for scripts
-      throw ExitCode(CLIExitCode.noop.rawValue)
-    }
+    // Exit 0 - success (even if nothing was processed)
   }
 
   /// Resolve database path using precedence: --db > env var > XDG default

@@ -29,14 +29,7 @@
 
 Review each public surface and determine if this release requires updates.
 
-<!-- IF:appstore -->
-### App Store Listing
-- [ ] Parse `appstore-metadata/fastlane/metadata/en-US/description.txt`
-- [ ] System requirements still accurate?
-- [ ] Feature list reflects current capabilities?
-- [ ] Screenshots show current UI? (if UI changed)
-- [ ] Required updates: ____
-<!-- ENDIF:appstore -->
+**Note:** App Store listing content review moved to Phase 5 (Marketing) - should be done before submission.
 
 ### Website (contextify.sh)
 - [ ] Parse `website/index.html` - landing page current?
@@ -58,6 +51,13 @@ Review each public surface and determine if this release requires updates.
 - [ ] New `<item>` added to `website/appcast.xml`?
 - [ ] Download URL correct?
 - [ ] Signature included?
+
+### Download Infrastructure Verification
+Verify the download link, appcast, and GitHub are all in sync:
+```bash
+./scripts/release/check-dmg-consistency.sh --strict
+```
+- [ ] All checks passed? [ ] Yes / [ ] No (fix before proceeding)
 
 ### DMG Integrity Verification
 Verify the publicly downloadable DMG matches the built artifact:

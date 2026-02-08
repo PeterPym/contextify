@@ -91,9 +91,24 @@ docker run --rm \
   '
 ```
 
-### arm64 Build (Slow, 2-3 hours)
+### arm64 Build (Fast with native profile, ~12 min)
 
-Only use when CI arm64 times out. See `build/docs/guides/local-linux-builds.md` for the full command.
+**Recommended approach** - faster than CI's QEMU emulation.
+
+```bash
+# Ensure arm64 Colima profile exists (one-time setup)
+colima start --profile arm64 --arch aarch64 --vm-type vz
+
+# Switch to arm64 context
+docker context use colima-arm64
+
+# Verify native architecture
+docker run --rm swift:6.0-jammy uname -m  # Should show: aarch64
+```
+
+Then run the same docker build command but with `--platform linux/arm64` and output to `contextify-linux-arm64.tar.gz`.
+
+See `build/docs/guides/local-linux-builds.md` for the full command.
 
 ## Verification
 

@@ -94,9 +94,12 @@ jobs:
           swift build --product contextify-ingest 2>&1
           echo "Build succeeded!"
 
-      - name: Build contextify-query CLI
+      - name: Build contextify unified CLI
         run: |
-          swift build --product contextify-query 2>&1
+          swift build --product contextify 2>&1
+          # Create backwards-compatible symlinks
+          ln -sf contextify .build/debug/contextify-query
+          ln -sf contextify .build/debug/contextify-ingest-unified
           echo "Build succeeded!"
 
       - name: Verify CLI runs
@@ -109,12 +112,18 @@ jobs:
           .build/debug/contextify-ingest --version
           echo "CLI verification passed!"
 
-      - name: Verify contextify-query health check
+      - name: Verify contextify unified CLI
         run: |
-          .build/debug/contextify-query install-plugin
-          .build/debug/contextify-query doctor
-          .build/debug/contextify-query doctor --json
-          echo "contextify-query verification passed!"
+          # Test via symlink (backwards compat) and direct invocation
+          .build/debug/contextify --help
+          .build/debug/contextify --version
+          .build/debug/contextify install-skill --help
+          # doctor returns exit 2 when unconfigured (expected in CI)
+          .build/debug/contextify doctor || [ $? -eq 2 ]
+          .build/debug/contextify doctor --json || [ $? -eq 2 ]
+          # Test symlink works
+          .build/debug/contextify-query doctor || [ $? -eq 2 ]
+          echo "contextify verification passed!"
 
       - name: E2E ingest test
         run: |

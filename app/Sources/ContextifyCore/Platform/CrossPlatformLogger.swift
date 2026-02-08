@@ -30,6 +30,11 @@ public struct CrossPlatformLogger: Sendable {
   private let _osLogger: Logger
   #endif
 
+  /// When true, suppresses all log output on Linux. Has no effect on Darwin (use Console.app filters).
+  /// Set this before any logging occurs for quiet CLI modes.
+  /// Note: nonisolated(unsafe) is acceptable here as this is set once at startup before any logging.
+  nonisolated(unsafe) public static var quietMode: Bool = false
+
   /// Create a logger with the given subsystem and category.
   ///
   /// - Parameters:
@@ -85,6 +90,9 @@ public struct CrossPlatformLogger: Sendable {
 
   #if !os(macOS) && !os(iOS) && !os(tvOS) && !os(watchOS) && !os(visionOS)
   private func logToStderr(level: String, message: String) {
+    // Suppress all output in quiet mode (for CLI --quiet flag)
+    guard !CrossPlatformLogger.quietMode else { return }
+
     // Use Swift's value-type ISO8601 formatting - no shared mutable state needed.
     // This is thread-safe unlike ISO8601DateFormatter which requires synchronization.
     let timestamp = Date().ISO8601Format(.iso8601WithTimeZone(includingFractionalSeconds: true))
