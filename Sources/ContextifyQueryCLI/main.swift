@@ -514,6 +514,9 @@ struct ContextifyQueryCLI {
         guard let entryId = commandArgs.first else {
           throw CLIError(code: "invalidArgs", message: "Missing entry id", exitCode: .invalidArgs)
         }
+        if options.project != nil || options.projectId != nil {
+          fputs("Warning: --project/--project-id has no effect on context (context retrieves entries by ID regardless of project)\n", stderr)
+        }
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
         let maxWindow = options.maxWindow ?? 200
