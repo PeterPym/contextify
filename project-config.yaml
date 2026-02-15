@@ -9,6 +9,14 @@ repo: contextify
 description: macOS SwiftUI HUD for AI sessions
 
 # ─────────────────────────────────────────────────────────────────
+# Cross-Project Availability
+# Make this project's AI artifacts available across all your projects
+# ─────────────────────────────────────────────────────────────────
+
+cross_project_availability:
+  skills: none
+
+# ─────────────────────────────────────────────────────────────────
 # Task Management
 # ─────────────────────────────────────────────────────────────────
 task:
