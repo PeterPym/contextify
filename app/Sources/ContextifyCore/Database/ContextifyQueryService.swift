@@ -463,6 +463,7 @@ public struct ContextifyQueryService: Sendable {
     projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
+    offset: Int = 0,
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
@@ -539,6 +540,10 @@ public struct ContextifyQueryService: Sendable {
       sql += " ORDER BY score ASC, e.timestamp DESC, e.id ASC"
       sql += " LIMIT ?"
       args.append(limit)
+      if offset > 0 {
+        sql += " OFFSET ?"
+        args.append(offset)
+      }
 
       struct Row: FetchableRecord, Decodable {
         let id: String
