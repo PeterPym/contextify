@@ -44,7 +44,7 @@ public actor LightweightDiscoveryService {
       let hasCodex = (try? provider.withAccess(for: TranscriptProviderID.codex) { _ in true }) ?? false
       log.info("[DISC-LIGHT] Provider state: claude=\(hasClaude ? "✓" : "✗"), codex=\(hasCodex ? "✓" : "✗")")
     } else {
-      log.info("[DISC-LIGHT] Provider state: nil (DMG build, direct filesystem access)")
+      log.info("[DISC-LIGHT] Provider state: nil (direct filesystem access)")
     }
 
     async let claudeProjectsTask = scanClaudeProjects()
@@ -251,7 +251,12 @@ public actor LightweightDiscoveryService {
       )
       log.info("[DISC-LIGHT] Found \(dirs.count) entries in Claude directory")
     } catch {
-      log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path): \(error.localizedDescription)")
+      // Missing directory is normal for fresh installs - not an error
+      if isNotFoundError(error) {
+        log.info("[DISC-LIGHT] Claude directory not found (normal for new installs): \(root.path)")
+      } else {
+        log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path): \(error.localizedDescription)")
+      }
       return []
     }
 
@@ -514,13 +519,9 @@ public actor LightweightDiscoveryService {
   nonisolated private func inferPathFromTranscripts(_ transcripts: [URL]) -> String? {
     guard !transcripts.isEmpty else { return nil }
 
-    let sorted = transcripts.sorted { lhs, rhs in
-      let lhsSize = (try? lhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-      let rhsSize = (try? rhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-      return lhsSize > rhsSize
-    }
-
-    for file in sorted {
+    // Try first few files to find CWD - no need to sort by size
+    // (CWD is the same for all transcripts in a project, any file will do)
+    for file in transcripts.prefix(5) {
       if let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file),
          !cwd.isEmpty {
         return PathUtils.canonicalizePath(cwd)
@@ -538,5 +539,25 @@ public actor LightweightDiscoveryService {
     let simpleDecoded = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
     let last = URL(fileURLWithPath: simpleDecoded).lastPathComponent
     return last.isEmpty ? hashFolder : last
+  }
+
+  /// Check if an error represents "file/directory not found"
+  /// Handles both Cocoa (macOS) and POSIX (Linux) error domains
+  nonisolated private func isNotFoundError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+
+    // Cocoa missing file (some APIs use NSFileNoSuchFileError, others NSFileReadNoSuchFileError)
+    if nsError.domain == NSCocoaErrorDomain &&
+       (nsError.code == NSFileReadNoSuchFileError || nsError.code == NSFileNoSuchFileError) {
+      return true
+    }
+
+    // POSIX missing file/dir (cross-platform, common on Linux)
+    if nsError.domain == NSPOSIXErrorDomain &&
+       nsError.code == Int(POSIXErrorCode.ENOENT.rawValue) {
+      return true
+    }
+
+    return false
   }
 }

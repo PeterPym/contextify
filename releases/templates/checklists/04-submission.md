@@ -31,11 +31,22 @@
 - [ ] Select new build (build number: ____)
 - [ ] Build selected successfully
 
-### Update Metadata (if needed)
-- [ ] Version description up to date
-- [ ] What's New text updated
-- [ ] Screenshots current
-- [ ] Preview video current (if applicable)
+### Review & Update Metadata
+
+Review App Store listing content before submission:
+- [ ] Parse `appstore-metadata/metadata.json` - source of truth
+- [ ] System requirements still accurate?
+- [ ] Feature list reflects current capabilities?
+- [ ] What's New text updated for this version?
+- [ ] Screenshots show current UI? (if UI changed significantly)
+- [ ] Keywords still relevant?
+
+If changes needed, update `metadata.json` and upload:
+```bash
+FASTLANE_API_KEY_PATH=".secrets/fastlane_api_key.json" fastlane deliver \
+  --skip_binary_upload --skip_screenshots --force --run_precheck_before_submit false
+```
+- [ ] Metadata uploaded (or no changes needed)
 
 ### Review Information
 - [ ] Paste review notes from: `appstore-metadata/fastlane/metadata/review_information/notes.txt`

@@ -31,10 +31,12 @@ public final class CLIEventSink: IngestionEventSink, @unchecked Sendable {
   private let lock = NSLock()
   private var _state = State()
   private let progressThrottleInterval: TimeInterval = 0.5
+  private let quiet: Bool
 
-  public init(format: OutputFormat = .jsonl, outputStream: FileHandle = .standardOutput) {
+  public init(format: OutputFormat = .jsonl, outputStream: FileHandle = .standardOutput, quiet: Bool = false) {
     self.format = format
     self.outputStream = outputStream
+    self.quiet = quiet
   }
 
   // MARK: - Private Output Helpers
@@ -61,6 +63,7 @@ public final class CLIEventSink: IngestionEventSink, @unchecked Sendable {
   // MARK: - IngestionEventSink Protocol
 
   public func ingestionStarted(runId: String, transcriptCount: Int) {
+    guard !quiet else { return }
     switch format {
     case .jsonl:
       emitJSON([
@@ -77,6 +80,7 @@ public final class CLIEventSink: IngestionEventSink, @unchecked Sendable {
   }
 
   public func progressUpdate(transcriptId: String, entriesInserted: Int, totalEntries: Int?) {
+    guard !quiet else { return }
     switch format {
     case .jsonl:
       var output: [String: Any] = [
@@ -120,6 +124,7 @@ public final class CLIEventSink: IngestionEventSink, @unchecked Sendable {
   }
 
   public func ingestionCompleted(runId: String, success: Bool, summary: IngestionSummary) {
+    guard !quiet else { return }
     switch format {
     case .jsonl:
       emitJSON([

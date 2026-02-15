@@ -1,8 +1,12 @@
 # Nightly E2E Test Schedule
 
-Automated nightly runs of the E2E test suite at 4am.
+> **Status: DISABLED (Jan 2026)**
+> Nightly runs are currently disabled. The E2E tests need maintenance before re-enabling.
+> Run tests manually with `./scripts/qa/run-all-tests.sh` when needed.
 
-## Setup
+~~Automated nightly runs of the E2E test suite at 4am.~~
+
+## Re-enable (when tests are fixed)
 
 1. **Copy the plist to LaunchAgents:**
    ```bash

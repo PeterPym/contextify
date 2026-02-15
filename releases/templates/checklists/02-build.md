@@ -40,6 +40,7 @@ This script:
 - [ ] Commit: ____
 <!-- IF:dmg -->
 - [ ] DMG SHA256: ____
+- [ ] Reminder: `website/macos-version` must be updated in Phase 5 after GitHub upload
 <!-- ENDIF:dmg -->
 
 ---

@@ -587,7 +587,7 @@ public enum DatabaseSchema {
         """)
         logger.info("[MIGRATION-v27] is_queued column added successfully")
       } else {
-        logger.info("[MIGRATION-v27] is_queued column already exists, skipping")
+        logger.debug("[MIGRATION-v27] is_queued column already exists, skipping")
       }
 
       // Add index for efficient queue operations
@@ -794,7 +794,7 @@ public enum DatabaseSchema {
         """)
         logger.info("[MIGRATION-v30] is_sidechain column added successfully")
       } else {
-        logger.info("[MIGRATION-v30] is_sidechain column already exists, skipping")
+        logger.debug("[MIGRATION-v30] is_sidechain column already exists, skipping")
       }
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_entries_sidechain ON transcript_entries(is_sidechain)")
 
@@ -858,7 +858,7 @@ public enum DatabaseSchema {
         """)
         logger.info("[MIGRATION-v31] Added pending_rehoover column")
       } else {
-        logger.info("[MIGRATION-v31] pending_rehoover column already exists, skipping")
+        logger.debug("[MIGRATION-v31] pending_rehoover column already exists, skipping")
       }
 
       try db.execute(sql: """

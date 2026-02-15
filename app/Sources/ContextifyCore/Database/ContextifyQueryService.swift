@@ -1,8 +1,12 @@
 import Foundation
 import GRDB
-import OSLog
 
+#if canImport(OSLog)
+import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "ContextifyQueryService")
+#else
+private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "ContextifyQueryService")
+#endif
 
 /// Read-only query core for external tools.
 public struct ContextifyQueryService: Sendable {
@@ -185,10 +189,10 @@ public struct ContextifyQueryService: Sendable {
     config.prepareDatabase { db in
       // Defense-in-depth: ensure this connection never writes, even if misused.
       do { try db.execute(sql: "PRAGMA query_only = ON") }
-      catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription, privacy: .public)") }
+      catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription)") }
       // Defense-in-depth: avoid loading/using schema from untrusted sources.
       do { try db.execute(sql: "PRAGMA trusted_schema = OFF") }
-      catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription, privacy: .public)") }
+      catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription)") }
     }
     self.pool = try DatabasePool(path: databaseURL.path, configuration: config)
   }
@@ -523,7 +527,7 @@ public struct ContextifyQueryService: Sendable {
     kinds: [String]? = nil,
     treatAsFTS: Bool = false
   ) throws -> [SearchHit] {
-    let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
+    let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
 
     let filter = buildFTSFilterClause(
@@ -1267,7 +1271,7 @@ public struct ContextifyQueryService: Sendable {
 
   /// Full-text search across entries (FTS5), optionally project scoped.
   public func ftsSearch(query: String, projectId: String? = nil, limit: Int = 50) throws -> [TranscriptEntry] {
-    let safeQuery = ConversationSearchService.buildSafeFTSQuery(query)
+    let safeQuery = FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
     return try pool.read { db in
       guard try db.tableExists("transcript_entries_fts") else {

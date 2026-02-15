@@ -112,6 +112,12 @@ let linuxIngestionSources: [String] = [
   "Database/TranscriptParsers.swift",
   "Database/IngestProgress.swift",
   "Database/Utilities/TimeUnits.swift",
+  // Query service (search, activity, context, projects)
+  "Database/EntryFilter.swift",
+  "Database/QueryTimeFilters.swift",
+  "Database/QueryContentTruncator.swift",
+  "Database/FTSQueryBuilder.swift",
+  "Database/ContextifyQueryService.swift",
   // Discovery
   "Discovery/LightweightDiscoveryService.swift",
   // Installation (CLI health checking)

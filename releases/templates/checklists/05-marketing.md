@@ -66,6 +66,13 @@
 - [ ] Release page accessible
 - [ ] DMG downloadable
 - [ ] Release notes render correctly
+
+### Update Download Pointers
+- [ ] Update `website/macos-version` to `{version}`
+- [ ] Deploy website: `./scripts/deploy-website.sh --force`
+- [ ] Verify: `curl -fsSL https://contextify.sh/macos-version` returns `{version}`
+- [ ] Verify: `https://contextify.sh/go/dmg/` triggers correct download
+- [ ] Run: `./scripts/release/version-audit.sh`
 <!-- ENDIF:dmg -->
 
 ## Announcements
