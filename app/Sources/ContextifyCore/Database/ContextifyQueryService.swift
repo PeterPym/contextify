@@ -467,6 +467,7 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
+    snippetTokens: Int = 10,
     treatAsFTS: Bool = false
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
@@ -488,9 +489,9 @@ public struct ContextifyQueryService: Sendable {
           e.kind AS kind,
           e.timestamp AS timestamp,
           bm25(transcript_entries_fts) AS score,
-          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet,
+          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '') AS snippet,
           CASE
-            WHEN instr(snippet(transcript_entries_fts, 0, '', '', '…', 10), '…') > 0 THEN 1
+            WHEN instr(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '…') > 0 THEN 1
             ELSE 0
           END AS content_truncated
         FROM transcript_entries_fts

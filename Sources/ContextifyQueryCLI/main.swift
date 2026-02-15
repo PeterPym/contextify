@@ -110,6 +110,7 @@ struct ContextifyQueryCLI {
     var limitWasProvided: Bool = false
     var limit: Int = 50
     var offset: Int = 0
+    var snippetTokens: Int?
     var jsonOutput: Bool = false
 
     // Feedback options
@@ -282,6 +283,15 @@ struct ContextifyQueryCLI {
           }
           guard n >= 0 else { throw CLIError(code: "invalidArgs", message: "--offset must be >= 0", exitCode: .invalidArgs) }
           options.offset = n
+        case "--snippet-tokens":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --snippet-tokens", exitCode: .invalidArgs)
+          }
+          guard n >= 1 && n <= 100 else {
+            throw CLIError(code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100", exitCode: .invalidArgs)
+          }
+          options.snippetTokens = n
         case "--json":
           options.jsonOutput = true
         case "--this-worktree":
@@ -382,6 +392,7 @@ struct ContextifyQueryCLI {
           includeHidden: options.includeHidden,
           timeRange: timeRange,
           kinds: kinds,
+          snippetTokens: options.snippetTokens ?? 10,
           treatAsFTS: true
         )
         var trimmedResults = results
@@ -837,6 +848,7 @@ struct ContextifyQueryCLI {
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
+        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
         --json               Emit JSON output
 
       Commands:
