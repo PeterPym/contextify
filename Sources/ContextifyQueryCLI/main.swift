@@ -140,6 +140,8 @@ struct ContextifyQueryCLI {
     var maxWindow: Int?
     var limitWasProvided: Bool = false
     var limit: Int = 50
+    var offset: Int = 0
+    var snippetTokens: Int?
     var jsonOutput: Bool = false
 
     // Feedback options
@@ -314,6 +316,22 @@ struct ContextifyQueryCLI {
           guard n > 0 else { throw CLIError(code: "invalidArgs", message: "--limit must be > 0", exitCode: .invalidArgs) }
           options.limitWasProvided = true
           options.limit = n
+        case "--offset":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --offset", exitCode: .invalidArgs)
+          }
+          guard n >= 0 else { throw CLIError(code: "invalidArgs", message: "--offset must be >= 0", exitCode: .invalidArgs) }
+          options.offset = n
+        case "--snippet-tokens":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --snippet-tokens", exitCode: .invalidArgs)
+          }
+          guard n >= 1 && n <= 100 else {
+            throw CLIError(code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100", exitCode: .invalidArgs)
+          }
+          options.snippetTokens = n
         case "--json":
           options.jsonOutput = true
         case "--count-only":
@@ -455,14 +473,17 @@ struct ContextifyQueryCLI {
         } else {
           // Normal mode: fetch results with metadata
           let requestedLimit = options.limit
+          let requestedOffset = options.offset
           let results = try service.search(
             query: query,
             projectIds: projectIds,
             transcriptId: options.transcriptId,
             limit: requestedLimit + 1,
+            offset: requestedOffset,
             includeHidden: options.includeHidden,
             timeRange: timeRange,
             kinds: kinds,
+            snippetTokens: options.snippetTokens ?? 10,
             treatAsFTS: true
           )
           var trimmedResults = results
@@ -498,6 +519,7 @@ struct ContextifyQueryCLI {
           var metadataDict: [String: JSONValue] = [
             "returned": .number(Double(trimmedResults.count)),
             "limit": .number(Double(requestedLimit)),
+            "offset": .number(Double(requestedOffset)),
             "hasMore": .bool(hasMore),
             "totalCount": .number(Double(totalCount))
           ]
@@ -626,6 +648,9 @@ struct ContextifyQueryCLI {
       case .context:
         guard let entryId = commandArgs.first else {
           throw CLIError(code: "invalidArgs", message: "Missing entry id", exitCode: .invalidArgs)
+        }
+        if options.project != nil || options.projectId != nil {
+          fputs("Warning: --project/--project-id has no effect on context (context retrieves entries by ID regardless of project)\n", stderr)
         }
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
@@ -946,6 +971,8 @@ struct ContextifyQueryCLI {
         --no-content         Emit content as null (metadata only)
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
+        --offset <n>         Skip first n results (for pagination, default 0)
+        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
         --json               Emit JSON output
 
       Commands:

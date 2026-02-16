@@ -522,9 +522,11 @@ public struct ContextifyQueryService: Sendable {
     projectIds: [String]? = nil,
     transcriptId: String? = nil,
     limit: Int = 50,
+    offset: Int = 0,
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
+    snippetTokens: Int = 10,
     treatAsFTS: Bool = false
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
@@ -556,9 +558,9 @@ public struct ContextifyQueryService: Sendable {
           e.kind AS kind,
           e.timestamp AS timestamp,
           bm25(transcript_entries_fts) AS score,
-          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet,
+          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '') AS snippet,
           CASE
-            WHEN instr(snippet(transcript_entries_fts, 0, '', '', '…', 10), '…') > 0 THEN 1
+            WHEN instr(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '…') > 0 THEN 1
             ELSE 0
           END AS content_truncated
         FROM transcript_entries_fts
@@ -574,6 +576,10 @@ public struct ContextifyQueryService: Sendable {
       sql += " LIMIT ?"
       var args = filter.arguments
       args.append(limit)
+      if offset > 0 {
+        sql += " OFFSET ?"
+        args.append(offset)
+      }
 
       struct Row: FetchableRecord, Decodable {
         let id: String
