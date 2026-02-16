@@ -4,7 +4,7 @@
 # ============================================================================
 #
 # Purpose:
-#   Builds contextify-query CLI, signs with Developer ID, notarizes with Apple,
+#   Builds unified contextify CLI, signs with Developer ID, notarizes with Apple,
 #   and packages for Homebrew distribution. Designed to be called as part of
 #   the main app release process or standalone.
 #
@@ -19,10 +19,10 @@
 #   --help           Show this help message
 #
 # Outputs:
-#   build/cli-release/contextify-query                    Signed binary
-#   build/cli-release/contextify-query-{arch}.tar.gz     Homebrew package
-#   build/cli-release/sha256.txt                          SHA256 for formula
-#   build/cli-release/.last-build-commit                  Commit hash of last build
+#   build/cli-release/contextify                    Signed binary
+#   build/cli-release/contextify-{arch}.tar.gz     Homebrew package
+#   build/cli-release/sha256.txt                    SHA256 for formula
+#   build/cli-release/.last-build-commit            Commit hash of last build
 #
 # Exit Codes:
 #   0 - Success (or no rebuild needed with --check-only)
@@ -54,7 +54,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Output locations
 OUTPUT_DIR="$ROOT_DIR/build/cli-release"
-BINARY_NAME="contextify-query"
+BINARY_NAME="contextify"
 LAST_BUILD_FILE="$OUTPUT_DIR/.last-build-commit"
 
 # CLI source paths (for change detection)
@@ -352,7 +352,7 @@ package_cli() {
   echo ""
   echo -e "${BLUE}To update Homebrew formula:${NC}"
   echo "  1. Upload $tarball to GitHub releases"
-  echo "  2. Update Formula/contextify-query.rb:"
+  echo "  2. Update homebrew-contextify Formula/contextify-query.rb:"
   echo "     sha256 \"$sha256\""
 }
 

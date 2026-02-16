@@ -43,10 +43,10 @@ It works with Claude Code and Codex CLI.
 1) Check CLI availability:
 
 ```bash
-command -v contextify-query
+command -v contextify
 ```
 
-2) If `contextify-query` is missing:
+2) If `contextify` is missing:
 
 **Error response:**
 > Contextify CLI not found.
@@ -135,8 +135,26 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 1) Confirm database availability:
 
 ```bash
-contextify-query status --json
+contextify status --json
 ```
+
+Returns:
+```json
+{
+  "data": {
+    "databasePath": "/Users/.../contextify.db",
+    "entryCount": 315465,
+    "projectCount": 46,
+    "transcriptCount": 3285,
+    "ftsEnabled": true,
+    "summariesEnabled": true
+  },
+  "schemaVersion": 1,
+  "type": "status"
+}
+```
+
+Real output may include additional fields (e.g., `appSchemaVersion`). Ignore unknown keys.
 
 If database not found, respond:
 > Contextify database not found.
@@ -167,19 +185,93 @@ Example -- user asks "what did we decide about the database schema":
 contextify-query search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
 ```
 
+Returns:
+```json
+{
+  "data": [
+    {
+      "id": "e897a104-...",
+      "contentSnippet": "...matched text with context...",
+      "contentTruncated": true,
+      "kind": "assistant",
+      "score": -12.34,
+      "timestamp": 1769380895,
+      "projectName": "my-project",
+      "projectId": "AB12CD34-...",
+      "transcriptId": "5F9816DE-...",
+      "provider": "claude.code"
+    }
+  ],
+  "metadata": { "hasMore": true, "limit": 10, "returned": 10 },
+  "schemaVersion": 1,
+  "type": "search"
+}
+```
+
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+
+If `--project .` returns a `dbProjectNotFound` error, retry without `--project` (omit it entirely) to search all projects. If you need a specific project, run `contextify projects --json` which returns a `data` array of objects with `name` and `rootPath` fields, then pass `--project <name>`.
+
 Anchor selection guidance:
 
-- If asking about earlier context (not "in this chat"), prefer anchors NOT from the active transcript.
-- If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, treat hits from that transcript as lower priority unless user explicitly wants current session.
-- If transcript ID missing and multiple hits exist, avoid auto-selecting anchors from last 30 minutes.
+- Prefer older transcripts unless the user asked about the current chat session.
+- If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, down-rank hits from that transcript unless the user explicitly wants current session results.
 
 3) Retrieve context around the anchor:
 
 ```bash
-contextify-query context "<entry-uuid>" --before 10 --after 20 --project . --json
+contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
 ```
 
-4) Validate results before answering:
+Returns:
+```json
+{
+  "data": {
+    "before": [
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791 }
+    ],
+    "anchor": {
+      "id": "e897a104-...", "kind": "assistant", "content": "full text here...",
+      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+    },
+    "after": [
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900 }
+    ],
+    "meta": {
+      "transcriptEntryCount": 75,
+      "hasMoreBefore": true,
+      "hasMoreAfter": false
+    }
+  },
+  "schemaVersion": 1,
+  "type": "context"
+}
+```
+
+**Important:** `data` is an object with `before` (array), `anchor` (object), and `after` (array). The `before` array is in chronological order. Read the entries directly from the JSON; do not pipe through `jq` or write parsers.
+
+4) If a snippet is too short and you need the full entry:
+
+```bash
+contextify-query entry "<entry-uuid>" --json
+```
+
+Returns:
+```json
+{
+  "data": {
+    "entry": {
+      "id": "...", "kind": "assistant", "content": "full untruncated text...",
+      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+    },
+    "projectName": "my-project"
+  },
+  "schemaVersion": 1,
+  "type": "entry"
+}
+```
+
+5) Validate results before answering:
 
 Before formatting your response, check:
 
@@ -194,7 +286,7 @@ Before formatting your response, check:
 
 If results seem incomplete, run additional searches with expanded terms before answering.
 
-5) Format response:
+6) Format response:
 
 > **Contextify Total Recall**
 >
@@ -211,9 +303,34 @@ For counting queries, also include:
 > **Matched entries:** [count] entries across [N] conversations
 > **Complete:** [Yes/No -- based on whether hasMore was false on final page]
 
+## Working with the JSON output
+
+**Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+
+- **search**: `data` is an **array** of result objects; pagination info in `metadata`
+- **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
+- **entry**: `data` is an **object** with `entry` and `projectName`
+- **status**: `data` is an **object** with database stats
+
+Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `timestamp` (Unix), `projectId`, `transcriptId`, `provider` (claude.code/codex).
+
 ## Error handling
 
-| Error | Response |
+Error responses have `"type": "error"` and a `code` field:
+```json
+{
+  "code": "dbNotFound",
+  "details": null,
+  "message": "Database not found at expected location",
+  "type": "error"
+}
+```
+
+`details` may be `null` or an object with additional context (e.g., `details.suggestions` for `dbProjectNotFound`).
+
+Branch on `code`:
+
+| `code` | Response |
 |-------|----------|
 | `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" |
 | `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |

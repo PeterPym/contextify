@@ -411,17 +411,29 @@ public final class CLICoordinator: ObservableObject {
     return nil
   }
 
-  /// Find contextify-query at known Homebrew paths
+  /// Find contextify at known Homebrew paths
   /// Note: Sandboxed apps cannot run `which`, so we check paths directly
+  /// Checks for unified 'contextify' first, falls back to legacy 'contextify-query'
   private static func findHomebrewCLI() -> String? {
-    let homebrewPaths = [
-      "/opt/homebrew/bin/contextify-query",  // Apple Silicon Homebrew
-      "/usr/local/bin/contextify-query"      // Intel Homebrew
+    let homebrewDirs = [
+      "/opt/homebrew/bin",  // Apple Silicon Homebrew
+      "/usr/local/bin"      // Intel Homebrew
     ]
 
-    for path in homebrewPaths {
+    // Check for unified 'contextify' first
+    for dir in homebrewDirs {
+      let path = "\(dir)/contextify"
       if FileManager.default.isExecutableFile(atPath: path) {
         log.debug("[CLI] Found Homebrew CLI at \(path, privacy: .public)")
+        return path
+      }
+    }
+
+    // Fall back to legacy 'contextify-query'
+    for dir in homebrewDirs {
+      let path = "\(dir)/contextify-query"
+      if FileManager.default.isExecutableFile(atPath: path) {
+        log.debug("[CLI] Found legacy Homebrew CLI at \(path, privacy: .public)")
         return path
       }
     }
@@ -432,7 +444,7 @@ public final class CLICoordinator: ObservableObject {
 
   /// Read version from CLI binary
   /// Note: Sandboxed apps cannot spawn processes, so we return "installed" as placeholder
-  /// The actual version can be checked by running `contextify-query --version` in terminal
+  /// The actual version can be checked by running `contextify --version` in terminal
   private static func readVersionFromCLI(at path: String) -> String? {
     // In sandbox, we can't run the CLI to get version
     // Just confirm it exists and return a placeholder
@@ -485,7 +497,8 @@ public final class CLICoordinator: ObservableObject {
     let tempDir = fileManager.temporaryDirectory
 
     // 1. Copy shim to temp location
-    let tempShimURL = tempDir.appendingPathComponent("contextify-query-\(UUID().uuidString)")
+    // Note: The bundled binary is still named contextify-query-shim but we install it as 'contextify'
+    let tempShimURL = tempDir.appendingPathComponent("contextify-\(UUID().uuidString)")
     guard let bundledShimURL = Bundle.main.url(forResource: "contextify-query/shim/contextify-query-shim", withExtension: nil) else {
       throw InstallError.bundledShimMissing
     }
@@ -534,12 +547,14 @@ public final class CLICoordinator: ObservableObject {
       try fileManager.createDirectory(at: pluginParent, withIntermediateDirectories: true)
     }
 
-    // 7. Install shim
+    // 7. Install shim as 'contextify' (unified CLI)
     if Sandbox.isSandboxed {
       // App Store: Write shell script shim (binary won't pass Gatekeeper)
+      // Note: Still points to contextify-query in app bundle for now (Xcode target not renamed)
       let shellScript = """
 #!/bin/bash
-# Contextify CLI shim - finds and runs contextify-query from Contextify.app
+# Contextify CLI - unified command-line interface
+# Symlinks: contextify-query -> contextify, contextify-ingest -> contextify
 
 # 1. Production: /Applications (App Store install)
 CLI="/Applications/Contextify.app/Contents/MacOS/contextify-query"
@@ -582,16 +597,19 @@ exit 1
       try fileManager.moveItem(at: tempShimURL, to: finalShimURL)
     }
 
-    // 8. Install plugin (always regular move)
+    // 8. Create backwards-compatibility symlinks
+    try createBackwardsCompatSymlinks(at: shimParent, primaryBinary: finalShimURL, requiresAdmin: requiresAdmin)
+
+    // 9. Install plugin (always regular move)
     if fileManager.fileExists(atPath: finalPluginURL.path) {
       try fileManager.removeItem(at: finalPluginURL)
     }
     try fileManager.moveItem(at: tempPluginURL, to: finalPluginURL)
 
-    // 9. Update plugin manifest
+    // 10. Update plugin manifest
     try Self.updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
 
-    // 10. For DMG builds: run install-plugin to install user skill
+    // 11. For DMG builds: run install-plugin to install user skill
     // This installs /total-recall to ~/.claude/skills/total-recall/
     if !Sandbox.isSandboxed {
       log.info("[CLI-INSTALL] Running install-plugin to install user skill...")
@@ -614,7 +632,34 @@ exit 1
       }
     }
 
-    log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path, privacy: .public) plugin=\(finalPluginURL.path, privacy: .public)")
+    log.info("[CLI-INSTALL-SUCCESS] binary=\(finalShimURL.path, privacy: .public) plugin=\(finalPluginURL.path, privacy: .public)")
+  }
+
+  /// Create symlinks for backwards compatibility: contextify-query -> contextify, contextify-ingest -> contextify
+  private func createBackwardsCompatSymlinks(at installDir: URL, primaryBinary: URL, requiresAdmin: Bool) throws {
+    let fileManager = FileManager.default
+    let symlinks = ["contextify-query", "contextify-ingest"]
+
+    for name in symlinks {
+      let symlinkPath = installDir.appendingPathComponent(name)
+
+      // Remove existing file/symlink if present
+      if fileManager.fileExists(atPath: symlinkPath.path) {
+        try? fileManager.removeItem(at: symlinkPath)
+      }
+
+      // Create symlink pointing to contextify (just the filename, not full path)
+      do {
+        try fileManager.createSymbolicLink(
+          atPath: symlinkPath.path,
+          withDestinationPath: "contextify"
+        )
+        log.info("[CLI-SYMLINK] Created \(name) -> contextify")
+      } catch {
+        log.warning("[CLI-SYMLINK] Failed to create \(name) symlink: \(error.localizedDescription)")
+        // Non-fatal: primary binary is installed, symlinks are convenience
+      }
+    }
   }
 
   private func upgradePlugin(to version: String) async throws {
@@ -624,14 +669,15 @@ exit 1
   }
 
   private func removeShimAndPlugin() {
-    log.info("[CLI-REMOVE] Removing shim and plugin...")
+    log.info("[CLI-REMOVE] Removing CLI binaries and plugin...")
     let fileManager = FileManager.default
+
+    // Binary names to remove: unified + backwards-compat symlinks
+    let binaryNames = ["contextify", "contextify-query", "contextify-ingest"]
 
     // For sandboxed builds: use stored bookmark location
     if Sandbox.isSandboxed {
       if let storedURL = resolveStoredCLIBookmark() {
-        let shimPath = storedURL.appendingPathComponent("contextify-query")
-
         // Start security-scoped access
         guard storedURL.startAccessingSecurityScopedResource() else {
           log.error("[CLI-REMOVE] Failed to access stored location: \(storedURL.path, privacy: .public)")
@@ -644,9 +690,12 @@ exit 1
           storedURL.stopAccessingSecurityScopedResource()
         }
 
-        if fileManager.fileExists(atPath: shimPath.path) {
-          try? fileManager.removeItem(at: shimPath)
-          log.info("[CLI-REMOVE] Removed shim at \(shimPath.path, privacy: .public)")
+        for name in binaryNames {
+          let binaryPath = storedURL.appendingPathComponent(name)
+          if fileManager.fileExists(atPath: binaryPath.path) {
+            try? fileManager.removeItem(at: binaryPath)
+            log.info("[CLI-REMOVE] Removed \(name) at \(binaryPath.path, privacy: .public)")
+          }
         }
 
         // Clear the stored bookmark
@@ -657,25 +706,30 @@ exit 1
     } else {
       // QA test override: check override directory first (see kDMGInstallDirOverrideKey)
       if let overrideDir = dmgInstallDirOverride() {
-        let overridePath = overrideDir.appendingPathComponent("contextify-query").path
-        if fileManager.fileExists(atPath: overridePath) {
-          try? fileManager.removeItem(atPath: overridePath)
-          log.info("[CLI-REMOVE] Removed shim at override path \(overridePath, privacy: .public)")
+        for name in binaryNames {
+          let path = overrideDir.appendingPathComponent(name).path
+          if fileManager.fileExists(atPath: path) {
+            try? fileManager.removeItem(atPath: path)
+            log.info("[CLI-REMOVE] Removed \(name) at override path \(path, privacy: .public)")
+          }
         }
       }
 
-      // DMG: Remove shim from all possible locations
-      let possibleShimPaths = [
-        "/opt/homebrew/bin/contextify-query",
-        "/usr/local/bin/contextify-query",
-        fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
-        fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
+      // DMG: Remove binaries from all possible locations
+      let searchDirs = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin").path,
+        fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path
       ]
 
-      for path in possibleShimPaths {
-        if fileManager.fileExists(atPath: path) {
-          try? fileManager.removeItem(atPath: path)
-          log.info("[CLI-REMOVE] Removed shim at \(path, privacy: .public)")
+      for dir in searchDirs {
+        for name in binaryNames {
+          let path = "\(dir)/\(name)"
+          if fileManager.fileExists(atPath: path) {
+            try? fileManager.removeItem(atPath: path)
+            log.info("[CLI-REMOVE] Removed \(name) at \(path, privacy: .public)")
+          }
         }
       }
     }
@@ -719,9 +773,9 @@ exit 1
     let alert = NSAlert()
     alert.messageText = "Administrator Access Required"
     alert.informativeText = """
-      Contextify will request administrator privileges to install the 'contextify-query' command to /usr/local/bin.
+      Contextify will request administrator privileges to install the 'contextify' command to /usr/local/bin.
 
-      The request to make changes will come from 'osascript'. This one-time access is used solely to add the contextify-query command to your system path.
+      The request to make changes will come from 'osascript'. This one-time access is used solely to add the contextify command to your system path.
       """
     alert.alertStyle = .informational
     alert.addButton(withTitle: "Install")
@@ -799,18 +853,19 @@ exit 1
     return false
   }
 
-  /// Find installed shim in common locations
+  /// Find installed CLI binary in common locations
+  /// Checks for unified 'contextify' first, falls back to legacy 'contextify-query'
   private static func findInstalledShim() -> String? {
     let fileManager = FileManager.default
 
     // For sandboxed builds: check stored bookmark location first
     if Sandbox.isSandboxed {
       if let stored = HUDPreferences.getCLIInstallLocation() {
-        let shimPath = URL(fileURLWithPath: stored.path).appendingPathComponent("contextify-query").path
         // Note: We can't check fileExists without security-scoped access,
         // but if we have a stored bookmark, assume it's installed there
-        // The actual existence will be verified when we try to use it
-        return shimPath
+        // Prefer unified binary path
+        let contextifyPath = URL(fileURLWithPath: stored.path).appendingPathComponent("contextify").path
+        return contextifyPath
       }
       // No stored bookmark = not installed in sandboxed build
       return nil
@@ -818,30 +873,48 @@ exit 1
 
     // QA test override: check override directory first (see kDMGInstallDirOverrideKey)
     if let overrideDir = dmgInstallDirOverride() {
-      let overridePath = overrideDir.appendingPathComponent("contextify-query").path
-      if fileManager.fileExists(atPath: overridePath) {
-        return overridePath
+      // Check unified first, then legacy
+      let contextifyPath = overrideDir.appendingPathComponent("contextify").path
+      if fileManager.fileExists(atPath: contextifyPath) {
+        return contextifyPath
+      }
+      let queryPath = overrideDir.appendingPathComponent("contextify-query").path
+      if fileManager.fileExists(atPath: queryPath) {
+        return queryPath
       }
     }
 
     // DMG: check all possible locations
-    let possiblePaths = [
-      "/opt/homebrew/bin/contextify-query",
-      "/usr/local/bin/contextify-query",
-      fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
-      fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
+    // Priority: unified 'contextify' first, then legacy 'contextify-query'
+    let homeDir = fileManager.homeDirectoryForCurrentUser
+    let searchDirs = [
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      homeDir.appendingPathComponent("bin").path,
+      homeDir.appendingPathComponent(".local/bin").path
     ]
 
-    for path in possiblePaths {
+    // First pass: look for unified 'contextify' binary
+    for dir in searchDirs {
+      let path = "\(dir)/contextify"
       if fileManager.fileExists(atPath: path) {
         return path
       }
     }
+
+    // Second pass: look for legacy 'contextify-query' binary
+    for dir in searchDirs {
+      let path = "\(dir)/contextify-query"
+      if fileManager.fileExists(atPath: path) {
+        return path
+      }
+    }
+
     return nil
   }
 
-  /// Determine where to install shim (DMG: homebrew/local/admin, App Store: user-selected folder)
-  /// Returns tuple: (url: final install path, requiresAdmin: whether to use osascript)
+  /// Determine where to install unified CLI binary (DMG: homebrew/local/admin, App Store: user-selected folder)
+  /// Returns tuple: (url: final install path for 'contextify', requiresAdmin: whether to use osascript)
   private func determineShimPath() async throws -> (url: URL, requiresAdmin: Bool) {
     let fileManager = FileManager.default
 
@@ -850,7 +923,7 @@ exit 1
       // Check for existing bookmark first
       if let existingURL = resolveStoredCLIBookmark() {
         log.info("[CLI-APPSTORE] Using stored location: \(existingURL.path, privacy: .public)")
-        return (url: existingURL.appendingPathComponent("contextify-query"), requiresAdmin: false)
+        return (url: existingURL.appendingPathComponent("contextify"), requiresAdmin: false)
       }
 
       // No stored bookmark - show file picker
@@ -859,13 +932,13 @@ exit 1
       // Store for future use (upgrades)
       HUDPreferences.setCLIInstallLocation(selectedDir, bookmarkData: bookmark)
 
-      return (url: selectedDir.appendingPathComponent("contextify-query"), requiresAdmin: false)
+      return (url: selectedDir.appendingPathComponent("contextify"), requiresAdmin: false)
     }
 
     // QA test override: install to specified directory (see kDMGInstallDirOverrideKey)
     if let overrideDir = dmgInstallDirOverride() {
       return (
-        url: overrideDir.appendingPathComponent("contextify-query"),
+        url: overrideDir.appendingPathComponent("contextify"),
         requiresAdmin: false
       )
     }
@@ -880,7 +953,7 @@ exit 1
     for path in systemPaths {
       if fileManager.isWritableFile(atPath: path) {
         return (
-          url: URL(fileURLWithPath: "\(path)/contextify-query"),
+          url: URL(fileURLWithPath: "\(path)/contextify"),
           requiresAdmin: false
         )
       }
@@ -894,7 +967,7 @@ exit 1
     switch choice {
     case .install:
       return (
-        url: URL(fileURLWithPath: "/usr/local/bin/contextify-query"),
+        url: URL(fileURLWithPath: "/usr/local/bin/contextify"),
         requiresAdmin: true
       )
     case .cancel:
@@ -919,7 +992,7 @@ exit 1
     panel.allowsMultipleSelection = false
     panel.canCreateDirectories = true  // User can create ~/bin if it doesn't exist
     panel.prompt = "Open"
-    panel.message = "Select where to install contextify-query"
+    panel.message = "Select where to install contextify"
 
     // Start in home directory, prefer ~/bin if it exists
     let homeURL = FileManager.default.homeDirectoryForCurrentUser
