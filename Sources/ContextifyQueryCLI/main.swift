@@ -15,6 +15,37 @@ import Glibc
 import GRDB
 #endif
 
+// MARK: - Deprecation Warnings
+
+/// Check if stderr is a TTY (for deprecation warning gating)
+private func isStderrTTY() -> Bool {
+  return isatty(STDERR_FILENO) != 0
+}
+
+/// Emit a deprecation warning to stderr if appropriate
+/// Only shows when stderr is a TTY and CONTEXTIFY_NO_DEPRECATIONS is not set
+private func warnDeprecated(_ message: String) {
+  // Show on TTY unless explicitly suppressed
+  guard isStderrTTY() ||
+        ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_DEPRECATIONS"] == "1" else {
+    return
+  }
+  guard ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" else {
+    return
+  }
+  FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
+}
+
+/// Get the executable name from argv[0]
+private func executableName() -> String {
+  return URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
+}
+
+/// Check if running as legacy contextify-query
+private func isLegacyInvocation() -> Bool {
+  return executableName() == "contextify-query"
+}
+
 // MARK: - Response Types
 
 private enum ResponseConstants {
@@ -109,6 +140,8 @@ struct ContextifyQueryCLI {
     var maxWindow: Int?
     var limitWasProvided: Bool = false
     var limit: Int = 50
+    var offset: Int = 0
+    var snippetTokens: Int?
     var jsonOutput: Bool = false
 
     // Feedback options
@@ -121,6 +154,9 @@ struct ContextifyQueryCLI {
     var all: Bool = false
     var force: Bool = false
     var edit: Bool = false
+
+    // Search options
+    var countOnly: Bool = false
 
     // Worktree options
     var thisWorktreeOnly: Bool = false
@@ -139,13 +175,19 @@ struct ContextifyQueryCLI {
     }
   }
 
-  static let cliVersion = "1.1.0"
+  static let cliVersion = "1.3.0"
 
   static func main() {
+    // Emit deprecation warning if invoked as contextify-query
+    if isLegacyInvocation() {
+      warnDeprecated("'contextify-query' is deprecated. Use 'contextify' instead.")
+    }
+
     // Handle --version early (before any other parsing)
     let allArgs = CommandLine.arguments
     if allArgs.contains("--version") || allArgs.contains("-v") {
-      print("contextify-query \(cliVersion)")
+      // Use actual executable name in version output
+      print("\(executableName()) \(cliVersion)")
       exit(0)
     }
 
@@ -274,8 +316,26 @@ struct ContextifyQueryCLI {
           guard n > 0 else { throw CLIError(code: "invalidArgs", message: "--limit must be > 0", exitCode: .invalidArgs) }
           options.limitWasProvided = true
           options.limit = n
+        case "--offset":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --offset", exitCode: .invalidArgs)
+          }
+          guard n >= 0 else { throw CLIError(code: "invalidArgs", message: "--offset must be >= 0", exitCode: .invalidArgs) }
+          options.offset = n
+        case "--snippet-tokens":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --snippet-tokens", exitCode: .invalidArgs)
+          }
+          guard n >= 1 && n <= 100 else {
+            throw CLIError(code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100", exitCode: .invalidArgs)
+          }
+          options.snippetTokens = n
         case "--json":
           options.jsonOutput = true
+        case "--count-only":
+          options.countOnly = true
         case "--this-worktree":
           options.thisWorktreeOnly = true
         case "--exclude":
@@ -363,66 +423,152 @@ struct ContextifyQueryCLI {
         }
 
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
-        let requestedLimit = options.limit
-        let results = try service.search(
-          query: query,
-          projectIds: scope.projectIds.isEmpty ? nil : scope.projectIds,
-          transcriptId: options.transcriptId,
-          limit: requestedLimit + 1,
-          includeHidden: options.includeHidden,
-          timeRange: timeRange,
-          kinds: kinds,
-          treatAsFTS: true
-        )
-        var trimmedResults = results
-        var hasMore = false
-        if results.count > requestedLimit {
-          trimmedResults = Array(results.prefix(requestedLimit))
-          hasMore = true
-        }
+        let projectIds = scope.projectIds.isEmpty ? nil : scope.projectIds
 
-        // Compute source counts by grouping results by projectId
-        let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
-          .mapValues { $0.count }
-          .sorted { $0.key < $1.key }
-          .reduce(into: [String: JSONValue]()) { dict, pair in
-            dict[pair.key] = .number(Double(pair.value))
+        if options.countOnly {
+          // Count-only mode: return total count (and term counts for OR queries) without result bodies
+          let totalCount = try service.searchCount(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds,
+            treatAsFTS: true
+          )
+
+          var metadataDict: [String: JSONValue] = [
+            "totalCount": .number(Double(totalCount))
+          ]
+
+          if let termCounts = try service.searchTermCounts(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds
+          ) {
+            metadataDict["termCounts"] = .object(
+              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                dict[pair.key] = .number(Double(pair.value))
+              }
+            )
           }
 
-        var metadataDict: [String: JSONValue] = [
-          "returned": .number(Double(trimmedResults.count)),
-          "limit": .number(Double(requestedLimit)),
-          "hasMore": .bool(hasMore)
-        ]
-
-        // Add worktree expansion metadata when group detected
-        if scope.worktreeGroupDetected {
-          metadataDict["worktreeExpansion"] = .object([
-            "enabled": .bool(scope.expansionApplied),
-            "worktrees": .array(scope.displayNames.map { .string($0) }),
-            "excluded": .array(scope.excluded.map { .string($0) }),
-            "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
-          ])
-          metadataDict["sourceCounts"] = .object(sourceCounts)
-
-          // Skew warning: when results truncated and >90% from one worktree
-          // Only show when expansion was actually applied and we have 2+ projects
-          if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
-            let maxCount = sourceCounts.values.compactMap { value -> Int? in
-              if case .number(let n) = value { return Int(n) }
-              return nil
-            }.max() ?? 0
-            let total = trimmedResults.count
-            // Also require minimum result count to avoid noisy warnings for small limits
-            if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
-              fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+          let emptyResults: [ContextifyQueryService.SearchHit] = []
+          let metadata: JSONValue = .object(metadataDict)
+          try printResponse(type: "search", data: emptyResults, json: options.jsonOutput, metadata: metadata) {
+            if let tc = metadataDict["termCounts"], case .object(let terms) = tc {
+              let lines = terms.sorted(by: { $0.key < $1.key }).map { key, val -> String in
+                if case .number(let n) = val { return "  \(key): \(Int(n))" }
+                return "  \(key): ?"
+              }
+              print("Term counts:\n\(lines.joined(separator: "\n"))")
+              print("Total: \(totalCount)")
+            } else {
+              print("Total matches: \(totalCount)")
             }
           }
-        }
+        } else {
+          // Normal mode: fetch results with metadata
+          let requestedLimit = options.limit
+          let requestedOffset = options.offset
+          let results = try service.search(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            limit: requestedLimit + 1,
+            offset: requestedOffset,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds,
+            snippetTokens: options.snippetTokens ?? 10,
+            treatAsFTS: true
+          )
+          var trimmedResults = results
+          var hasMore = false
+          if results.count > requestedLimit {
+            trimmedResults = Array(results.prefix(requestedLimit))
+            hasMore = true
+          }
 
-        let metadata: JSONValue = .object(metadataDict)
-        try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
-          printSearchHits(trimmedResults)
+          // Compute source counts by grouping results by projectId
+          let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
+            .mapValues { $0.count }
+            .sorted { $0.key < $1.key }
+            .reduce(into: [String: JSONValue]()) { dict, pair in
+              dict[pair.key] = .number(Double(pair.value))
+            }
+
+          let totalCount: Int
+          if hasMore {
+            totalCount = try service.searchCount(
+              query: query,
+              projectIds: projectIds,
+              transcriptId: options.transcriptId,
+              includeHidden: options.includeHidden,
+              timeRange: timeRange,
+              kinds: kinds,
+              treatAsFTS: true
+            )
+          } else {
+            totalCount = trimmedResults.count
+          }
+
+          var metadataDict: [String: JSONValue] = [
+            "returned": .number(Double(trimmedResults.count)),
+            "limit": .number(Double(requestedLimit)),
+            "offset": .number(Double(requestedOffset)),
+            "hasMore": .bool(hasMore),
+            "totalCount": .number(Double(totalCount))
+          ]
+
+          // Add per-term counts for OR queries
+          if let termCounts = try service.searchTermCounts(
+            query: query,
+            projectIds: projectIds,
+            transcriptId: options.transcriptId,
+            includeHidden: options.includeHidden,
+            timeRange: timeRange,
+            kinds: kinds
+          ) {
+            metadataDict["termCounts"] = .object(
+              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                dict[pair.key] = .number(Double(pair.value))
+              }
+            )
+          }
+
+          // Add worktree expansion metadata when group detected
+          if scope.worktreeGroupDetected {
+            metadataDict["worktreeExpansion"] = .object([
+              "enabled": .bool(scope.expansionApplied),
+              "worktrees": .array(scope.displayNames.map { .string($0) }),
+              "excluded": .array(scope.excluded.map { .string($0) }),
+              "unresolved": .array(scope.unresolvedSiblings.map { .string($0) })
+            ])
+            metadataDict["sourceCounts"] = .object(sourceCounts)
+
+            // Skew warning: when results truncated and >90% from one worktree
+            // Only show when expansion was actually applied and we have 2+ projects
+            if hasMore && !trimmedResults.isEmpty && scope.expansionApplied && scope.projectIds.count >= 2 {
+              let maxCount = sourceCounts.values.compactMap { value -> Int? in
+                if case .number(let n) = value { return Int(n) }
+                return nil
+              }.max() ?? 0
+              let total = trimmedResults.count
+              // Also require minimum result count to avoid noisy warnings for small limits
+              if total >= 10 && Double(maxCount) / Double(total) > 0.9 {
+                fputs("Note: Results heavily skewed to one worktree. Consider --limit \(requestedLimit * 2)\n", stderr)
+              }
+            }
+          }
+
+          let metadata: JSONValue = .object(metadataDict)
+          try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
+            printSearchHits(trimmedResults)
+          }
         }
 
       case .activity:
@@ -502,6 +648,9 @@ struct ContextifyQueryCLI {
       case .context:
         guard let entryId = commandArgs.first else {
           throw CLIError(code: "invalidArgs", message: "Missing entry id", exitCode: .invalidArgs)
+        }
+        if options.project != nil || options.projectId != nil {
+          fputs("Warning: --project/--project-id has no effect on context (context retrieves entries by ID regardless of project)\n", stderr)
         }
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
@@ -822,6 +971,8 @@ struct ContextifyQueryCLI {
         --no-content         Emit content as null (metadata only)
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
+        --offset <n>         Skip first n results (for pagination, default 0)
+        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
         --json               Emit JSON output
 
       Commands:

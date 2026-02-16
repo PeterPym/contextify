@@ -1,6 +1,6 @@
 # CLI Installation Guide
 
-The `contextify-query` CLI enables Contextify skills in Claude Code and Codex CLI, providing deterministic search and context reinjection capabilities.
+The `contextify` CLI enables Contextify skills in Claude Code and Codex CLI, providing deterministic search and context reinjection capabilities.
 
 ## Installation by Build Type
 
@@ -15,8 +15,8 @@ The `contextify-query` CLI enables Contextify skills in Claude Code and Codex CL
 
 To verify:
 ```bash
-contextify-query --version
-contextify-query status
+contextify --version
+contextify status
 ```
 
 ### App Store Build
@@ -30,14 +30,14 @@ contextify-query status
 
 2. Install the Total Recall skill:
    ```bash
-   contextify-query install-plugin
+   contextify install-skill
    ```
 
 3. Restart Claude Code or Codex CLI
 
 4. Verify installation:
    ```bash
-   contextify-query status
+   contextify status
    ```
 
 ## CLI Commands
@@ -46,42 +46,42 @@ contextify-query status
 
 ```bash
 # Check database status and connection
-contextify-query status
+contextify status
 
 # Search entries by text
-contextify-query search "error handling" --limit 10
+contextify search "error handling" --limit 10
 
 # List all projects
-contextify-query projects
+contextify projects
 
 # List transcripts for a project
-contextify-query transcripts --project myproject
+contextify transcripts --project myproject
 
 # Get a specific entry by UUID
-contextify-query entry <uuid>
+contextify entry <uuid>
 
 # Get context around an entry
-contextify-query context <uuid>
+contextify context <uuid>
 ```
 
-### Plugin Commands
+### Skill Commands
 
 ```bash
 # Install/update Total Recall skill for Claude Code and Codex CLI
-contextify-query install-plugin
+contextify install-skill
 
 # Remove Total Recall skill from Claude Code and Codex CLI
-contextify-query uninstall-plugin
+contextify uninstall-skill
 ```
 
 ### Health Check Commands
 
 ```bash
 # Verify CLI installation health
-contextify-query doctor
+contextify doctor
 
 # Machine-readable health check
-contextify-query doctor --json
+contextify doctor --json
 ```
 
 Local development via Claude Code:
@@ -95,13 +95,23 @@ claude plugin install query@contextify
 
 ```bash
 # Show version
-contextify-query --version
+contextify --version
 
 # Show help
-contextify-query --help
+contextify --help
 
 # Output as JSON (for scripting)
-contextify-query status --json
+contextify status --json
+```
+
+## Backwards Compatibility
+
+The legacy `contextify-query` command still works via symlink:
+
+```bash
+# These are equivalent:
+contextify search "query"
+contextify-query search "query"  # Deprecated, shows warning
 ```
 
 ## Plugin and Skill Locations
@@ -178,7 +188,7 @@ The CLI cannot find the Contextify database.
 
 ### Plugin not appearing in Claude Code
 
-1. Run `contextify-query install-plugin`
+1. Run `contextify install-skill`
 2. Completely quit and restart Claude Code (not just close window)
 3. Verify plugin registration:
    ```bash
@@ -187,9 +197,9 @@ The CLI cannot find the Contextify database.
 
 ### CLI health check reports degraded
 
-1. Run `contextify-query doctor` to see missing components
-2. Run `contextify-query install-plugin`
-3. Re-run `contextify-query doctor` to confirm healthy status
+1. Run `contextify doctor` to see missing components
+2. Run `contextify install-skill`
+3. Re-run `contextify doctor` to confirm healthy status
 
 ### CLI not found after Homebrew install
 
@@ -210,7 +220,7 @@ export PATH="/opt/homebrew/bin:$PATH"
 **Homebrew:**
 ```bash
 brew upgrade contextify-query
-contextify-query install-plugin  # Re-run to update plugin
+contextify install-skill  # Re-run to update skill
 ```
 
 ## Architecture
@@ -219,7 +229,9 @@ contextify-query install-plugin  # Re-run to update plugin
 ┌─────────────────────────────────────────────────────────────┐
 │                      DMG Build                               │
 ├─────────────────────────────────────────────────────────────┤
-│ CLI: Embedded in app bundle, shim installed to system path  │
+│ CLI: Embedded in app bundle, installed to system path       │
+│   - Primary binary: contextify                              │
+│   - Symlinks: contextify-query, contextify-ingest           │
 │ Plugin: Auto-installed to ~/.claude/plugins/                │
 │ Permissions: Unrestricted filesystem access                 │
 │ Database: ~/Library/Application Support/Contextify/         │
@@ -229,7 +241,7 @@ contextify-query install-plugin  # Re-run to update plugin
 │                    App Store Build                           │
 ├─────────────────────────────────────────────────────────────┤
 │ CLI: Installed via Homebrew to /opt/homebrew/bin/           │
-│ Plugin: User runs `contextify-query install-plugin`         │
+│ Plugin: User runs `contextify install-skill`                │
 │ Permissions: Requires security-scoped bookmark grants       │
 │   - Status bar shows "No CLI Access" if none granted        │
 │ Database: ~/Library/Application Support/Contextify/         │
@@ -241,7 +253,7 @@ contextify-query install-plugin  # Re-run to update plugin
 │ User skill (discoverable):                                   │
 │   - /total-recall: Search past conversations & decisions    │
 │ Plugin provides background agents and session hooks         │
-│ Skills call contextify-query CLI for database access        │
+│ Skills call contextify CLI for database access              │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -249,7 +261,7 @@ contextify-query install-plugin  # Re-run to update plugin
 ├─────────────────────────────────────────────────────────────┤
 │ User skill (discoverable):                                   │
 │   - /total-recall: Search past conversations & decisions    │
-│ Skill runs contextify-query CLI for database access         │
+│ Skill runs contextify CLI for database access               │
 │ No agent delegation (Codex lacks Task tool)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
