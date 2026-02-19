@@ -112,6 +112,8 @@ public struct ConversationSearchResult: Sendable {
 /// It wraps GRDB's read pool; it does not manage its own connection.
 public actor ConversationSearchService {
   private let dbManager: DatabaseManager
+  private var cachedPKIndex: String?
+  private var pkIndexDetected = false
 
   public init(dbManager: DatabaseManager = .shared) {
     self.dbManager = dbManager
@@ -120,6 +122,24 @@ public actor ConversationSearchService {
   /// Execute a search request
   public func search(_ request: ConversationSearchRequest) async throws -> ConversationSearchResult {
     let pool = try dbManager.pool
+
+    // Resolve PK index name before entering @Sendable closure
+    let entriesJoin: String
+    if !pkIndexDetected {
+      let idx: String? = try await pool.read { db in
+        let sql = "SELECT name FROM pragma_index_list('transcript_entries') WHERE origin = 'pk' LIMIT 1"
+        guard let name = try String.fetchOne(db, sql: sql),
+              name.range(of: #"^[A-Za-z0-9_]+$"#, options: .regularExpression) != nil else { return nil }
+        return name
+      }
+      cachedPKIndex = idx
+      pkIndexDetected = true
+    }
+    if let idx = cachedPKIndex {
+      entriesJoin = "LEFT JOIN transcript_entries e INDEXED BY \(idx) ON e.id = f.entry_id"
+    } else {
+      entriesJoin = "LEFT JOIN transcript_entries e ON e.id = f.entry_id"
+    }
 
     return try await pool.read { db in
       // Build safe FTS query
@@ -145,8 +165,7 @@ public actor ConversationSearchService {
           e.is_sidechain AS is_sidechain
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
-        LEFT JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
-          ON e.id = f.entry_id
+        \(entriesJoin)
         WHERE transcript_entries_fts MATCH ?
           AND e.id IS NOT NULL
       """

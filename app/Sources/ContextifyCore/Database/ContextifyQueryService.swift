@@ -14,6 +14,7 @@ public struct ContextifyQueryService: Sendable {
     case featureUnavailable(feature: String, message: String)
   }
   private let pool: DatabasePool
+  private let entriesPKIndex: String?
 
   public struct ProjectListItem: Codable, Sendable {
     public let id: String
@@ -195,6 +196,28 @@ public struct ContextifyQueryService: Sendable {
       catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription)") }
     }
     self.pool = try DatabasePool(path: databaseURL.path, configuration: config)
+    self.entriesPKIndex = try Self.detectPKIndex(pool: self.pool)
+  }
+
+  /// Detect the PK autoindex name for transcript_entries at runtime.
+  /// Returns nil if no PK index exists (rowid table) or name is unexpected.
+  private static func detectPKIndex(pool: DatabasePool) throws -> String? {
+    try pool.read { db in
+      let sql = "SELECT name FROM pragma_index_list('transcript_entries') WHERE origin = 'pk' LIMIT 1"
+      guard let name = try String.fetchOne(db, sql: sql) else { return nil }
+      guard name.range(of: #"^[A-Za-z0-9_]+$"#, options: .regularExpression) != nil else { return nil }
+      return name
+    }
+  }
+
+  /// Build JOIN clause for FTS queries, using INDEXED BY when PK index is known.
+  /// Falls back to plain JOIN if PK index wasn't detected (slower but correct).
+  func ftsJoinEntries(alias: String = "e", ftsAlias: String = "transcript_entries_fts", left: Bool = false) -> String {
+    let joinType = left ? "LEFT JOIN" : "JOIN"
+    if let idx = entriesPKIndex {
+      return "\(joinType) transcript_entries \(alias) INDEXED BY \(idx) ON \(alias).id = \(ftsAlias).entry_id"
+    }
+    return "\(joinType) transcript_entries \(alias) ON \(alias).id = \(ftsAlias).entry_id"
   }
 
   public func listProjects(includeHidden: Bool = false, limit: Int? = nil) throws -> [ProjectListItem] {
@@ -564,8 +587,7 @@ public struct ContextifyQueryService: Sendable {
             ELSE 0
           END AS content_truncated
         FROM transcript_entries_fts
-        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
-          ON e.id = transcript_entries_fts.entry_id
+        \(ftsJoinEntries())
         LEFT JOIN projects p ON p.id = e.project_id
         LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
         WHERE transcript_entries_fts MATCH ?
@@ -735,14 +757,14 @@ public struct ContextifyQueryService: Sendable {
       let trimmedWhere = filter.whereSQL.trimmingCharacters(in: .whitespacesAndNewlines)
       if trimmedWhere.isEmpty {
         let sql = "SELECT COUNT(*) FROM transcript_entries_fts WHERE transcript_entries_fts MATCH ?"
-        return try Int.fetchOne(db, sql: sql, arguments: [filter.arguments[0]]) ?? 0
+        guard let matchArg = filter.arguments.first else { return 0 }
+        return try Int.fetchOne(db, sql: sql, arguments: [matchArg]) ?? 0
       }
 
       let sql = """
         SELECT COUNT(*)
         FROM transcript_entries_fts
-        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
-          ON e.id = transcript_entries_fts.entry_id
+        \(ftsJoinEntries())
         WHERE transcript_entries_fts MATCH ?
       """ + filter.whereSQL
 
@@ -1295,8 +1317,7 @@ public struct ContextifyQueryService: Sendable {
       var sql = """
         SELECT e.*
         FROM transcript_entries_fts f
-        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
-          ON e.id = f.entry_id
+        \(ftsJoinEntries(ftsAlias: "f"))
         WHERE f.transcript_entries_fts MATCH ?
       """
       var args: [DatabaseValueConvertible] = [safeQuery]

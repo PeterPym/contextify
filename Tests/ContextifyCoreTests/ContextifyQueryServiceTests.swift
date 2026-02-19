@@ -270,11 +270,9 @@ final class ContextifyQueryServiceTests: XCTestCase {
       "Last entry timestamp should be 300")
   }
 
-  // MARK: - FTS Search Performance Regression Tests (ct-178)
+  // MARK: - FTS Search Correctness & Query Plan Guards (ct-178)
 
-  /// Regression test: search() with display_in_timeline filter must use FTS-first query plan.
-  /// Before fix: SQLite chose idx_entries_cursor (partial index) causing full table scan (64s).
-  /// After fix: INDEXED BY forces PK lookup after FTS match (7ms).
+  /// Verifies OR queries return correct results through search, searchCount, and searchTermCounts.
   func testSearch_withORQuery_returnsResults() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("contextify-fts-perf-\(UUID().uuidString)")
@@ -420,5 +418,77 @@ final class ContextifyQueryServiceTests: XCTestCase {
     // Single term returns empty (not an OR query)
     let single = ContextifyQueryService.parseORTerms("single")
     XCTAssertEqual(single, [])
+  }
+
+  /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
+  /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
+  /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).
+  func testFTSSearch_queryPlan_usesPKIndex() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fts-plan-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert minimal data so FTS table exists
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'h1', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, timestamp, content,
+          content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES ('e1', 't1', 'p1', 'claude.code', 'user', 100, 'test content', 'sha1', 1, 0, 100, 100, 0)
+      """)
+    }
+
+    // Verify PK index is detected
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Run EXPLAIN QUERY PLAN for the search SQL pattern
+    try await pool.read { db in
+      let sql = """
+        EXPLAIN QUERY PLAN
+        SELECT e.id, bm25(transcript_entries_fts) AS score
+        FROM transcript_entries_fts
+        \(service.ftsJoinEntries())
+        WHERE transcript_entries_fts MATCH 'test'
+          AND e.display_in_timeline = 1
+        ORDER BY score ASC
+        LIMIT 10
+      """
+      let rows = try Row.fetchAll(db, sql: sql)
+      let plan = rows.map { $0["detail"] as? String ?? "" }.joined(separator: "\n")
+
+      // FTS must be scanned first (not the entries table)
+      XCTAssertTrue(
+        plan.contains("SCAN transcript_entries_fts"),
+        "Query plan must scan FTS table first, got: \(plan)"
+      )
+      // Entries table must use index lookup, not full scan
+      XCTAssertTrue(
+        plan.contains("USING INDEX") || plan.contains("SEARCH e"),
+        "Query plan must use index for entries lookup, got: \(plan)"
+      )
+      // Must NOT use the partial index that causes the catastrophic plan
+      XCTAssertFalse(
+        plan.contains("idx_entries_cursor"),
+        "Query plan must NOT use idx_entries_cursor (causes full table scan), got: \(plan)"
+      )
+    }
   }
 }

@@ -980,6 +980,8 @@ struct ContextifyQueryCLI {
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
         --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
+        --count-only         Search: return only totalCount (no result bodies)
+        --term-counts        Search: include per-term counts for OR queries (opt-in)
         --json               Emit JSON output
 
       Commands:
