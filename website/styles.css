@@ -519,6 +519,60 @@ body {
   color: #fff;
 }
 
+/* "New!" badge pill */
+.badge-new {
+  display: inline-block;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+/* Hero Linux button */
+.hero-linux-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.25rem;
+  border: 1.5px solid var(--slate-400);
+  border-radius: 8px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.hero-linux-btn:hover {
+  border-color: var(--contextify-primary);
+  color: var(--contextify-primary);
+  text-decoration: none;
+}
+
+/* Download card Linux CTA */
+.linux-cta {
+  border-top: 1px solid var(--slate-700);
+}
+
+.linux-cta-link {
+  color: var(--slate-200);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.linux-cta-link:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
 /* ==========================================================================
    Download Page
    ========================================================================== */
