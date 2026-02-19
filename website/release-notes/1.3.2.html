@@ -1,0 +1,13 @@
+<html>
+<body>
+<h2>Contextify 1.3.2</h2>
+<p><strong>Performance Hotfix</strong></p>
+<ul>
+  <li><strong>Fixed search hanging on OR queries</strong> - Resolved a critical regression where CLI searches with multiple terms could hang for minutes.</li>
+  <li><strong>85x faster search</strong> - Cold cache searches improved from 74s to under 1 second.</li>
+  <li><strong>Term counts now opt-in</strong> - Per-term match counts available via <code>--term-counts</code> flag instead of running automatically.</li>
+  <li>Optimized searchCount with FTS-only fast path.</li>
+  <li>Fixed SQLite query plan inversion that bypassed FTS index.</li>
+</ul>
+</body>
+</html>
