@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/manifest.schema.json",
   "schema_version": 1,
-  "current_version": "1.2.1",
+  "current_version": "1.3.1",
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
@@ -254,6 +254,36 @@
         "status": "shipped",
         "shipped_at": "2026-01-25",
         "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.0"
+      },
+      "marketing": {
+        "changelog_published": false,
+        "announcement_posted": false
+      }
+    },
+    "1.3.1": {
+      "created": "2026-02-18",
+      "status": "in_progress",
+      "target_channels": [
+        "dmg",
+        "appstore",
+        "linux"
+      ],
+      "git_tag": "v1.3.1",
+      "git_commit": "e2f215887fd7858fde2549315bf42a6191677c16",
+      "dmg": {
+        "status": "shipped",
+        "built_at": "2026-02-18",
+        "released_at": "2026-02-18",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.1"
+      },
+      "appstore": {
+        "status": "uploaded",
+        "build_number": 22,
+        "built_at": "2026-02-18",
+        "uploaded_at": "2026-02-18"
+      },
+      "linux": {
+        "status": "pending"
       },
       "marketing": {
         "changelog_published": false,
