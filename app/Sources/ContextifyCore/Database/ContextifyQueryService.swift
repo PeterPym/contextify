@@ -730,6 +730,13 @@ public struct ContextifyQueryService: Sendable {
         throw QueryError.featureUnavailable(feature: "fts_search", message: "FTS search is not available in this database.")
       }
 
+      // When no additional filters reference the entries table, use faster FTS-only count
+      let trimmedWhere = filter.whereSQL.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmedWhere.isEmpty {
+        let sql = "SELECT COUNT(*) FROM transcript_entries_fts WHERE transcript_entries_fts MATCH ?"
+        return try Int.fetchOne(db, sql: sql, arguments: [filter.arguments[0]]) ?? 0
+      }
+
       let sql = """
         SELECT COUNT(*)
         FROM transcript_entries_fts
