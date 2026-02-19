@@ -712,7 +712,7 @@ public struct ContextifyQueryService: Sendable {
     kinds: [String]? = nil,
     treatAsFTS: Bool = false
   ) throws -> Int {
-    let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
+    let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
 
     let filter = buildFTSFilterClause(
