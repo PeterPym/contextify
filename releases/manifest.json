@@ -277,17 +277,22 @@
         "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.1"
       },
       "appstore": {
-        "status": "uploaded",
+        "status": "submitted",
         "build_number": 22,
         "built_at": "2026-02-18",
-        "uploaded_at": "2026-02-18"
+        "uploaded_at": "2026-02-18",
+        "submitted_at": "2026-02-19"
       },
       "linux": {
-        "status": "pending"
+        "status": "shipped",
+        "shipped_at": "2026-02-19",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.1"
       },
       "marketing": {
-        "changelog_published": false,
-        "announcement_posted": false
+        "changelog_published": true,
+        "announcement_posted": true,
+        "blog_post_url": "https://contextify.sh/blog/contextify-for-linux-backup-search-ai-conversations.html",
+        "website_deployed_at": "2026-02-19"
       }
     }
   }
