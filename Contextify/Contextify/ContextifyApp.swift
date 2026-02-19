@@ -23,14 +23,14 @@ struct WindowCommands: Commands {
 
   var body: some Commands {
     CommandMenu("Window") {
-      Toggle("Keep Window on Top", isOn: Binding(
+      Toggle("Keep on Top", isOn: Binding(
         get: { windowAlwaysOnTop },
         set: { newValue in
           windowAlwaysOnTop = newValue
           MainWindowTracker.shared.window?.level = newValue ? .floating : .normal
         }
       ))
-      .keyboardShortcut("t", modifiers: [.command, .shift])
+      .keyboardShortcut("f", modifiers: [.command, .option])
 
       Divider()
 
