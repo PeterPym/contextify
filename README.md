@@ -9,22 +9,41 @@ Monitor your AI coding sessions with real-time timeline and LLM-powered summarie
 - **Real-time timeline** of your AI coding sessions
 - **Local database backup** of all conversations
 - **LLM-generated summaries** using macOS on-device intelligence
+- **Always-on-top window** to monitor sessions while you work
 - **Project-centric view** across multiple sessions
 - **Search** across all your AI conversations
+- **Total Recall** - teach your AI to search your conversation history
+- **Companion CLI** for macOS and Linux
 
 ## Download
 
+### macOS App
 - [Direct Download (DMG)](https://github.com/PeterPym/contextify/releases/latest)
 - [Mac App Store](https://apps.apple.com/us/app/contextify/id6753190666?mt=12)
 
+### CLI (macOS)
+```bash
+brew tap peterpym/contextify && brew install contextify-query
+contextify install-plugin
+```
+
+### CLI (Linux)
+```bash
+curl -fsSL https://contextify.sh/install.sh | sh
+```
+
+The CLI enables [Total Recall](https://contextify.sh/docs/cli) - semantic search of your conversation history from Claude Code or Codex CLI.
+
 ## System Requirements
 
-- macOS 26 (Tahoe) or later
+- macOS 15 (Sequoia) or later
+- AI summaries require macOS 26 (Tahoe). On Sequoia, Lite Mode provides timeline and search.
 - Works with Claude Code and Codex CLI
+- Linux CLI requires a shared database (Dropbox, iCloud Drive) from a Mac with Contextify
 
 ## Documentation
 
-Visit [contextify.sh/help](https://contextify.sh/help/) for documentation and support.
+Visit [contextify.sh](https://contextify.sh) for documentation and support.
 
 ## Support
 
