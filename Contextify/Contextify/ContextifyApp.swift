@@ -27,8 +27,9 @@ struct WindowCommands: Commands {
         get: { windowAlwaysOnTop },
         set: { newValue in
           windowAlwaysOnTop = newValue
-          MainWindowTracker.shared.window?.level = newValue ? .floating : .normal
-          MainWindowTracker.shared.window?.hidesOnDeactivate = !newValue
+          if let window = MainWindowTracker.shared.window {
+            applyKeepOnTop(window, enabled: newValue)
+          }
         }
       ))
       .keyboardShortcut("f", modifiers: [.command, .option])
