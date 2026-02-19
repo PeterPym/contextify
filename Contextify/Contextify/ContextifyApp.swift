@@ -22,7 +22,7 @@ struct WindowCommands: Commands {
   private var windowAlwaysOnTop: Bool = false
 
   var body: some Commands {
-    CommandMenu("Window") {
+    CommandGroup(before: .windowArrangement) {
       Toggle("Keep on Top", isOn: Binding(
         get: { windowAlwaysOnTop },
         set: { newValue in
