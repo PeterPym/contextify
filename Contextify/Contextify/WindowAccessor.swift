@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ContextifyCore
 
 struct WindowAccessor: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView {
@@ -10,6 +11,10 @@ struct WindowAccessor: NSViewRepresentable {
         window.isReleasedWhenClosed = false
         // Enforce minimum window size: compose(100) + timeline(340) + divider(11) + padding(16) = 467px
         window.minSize = NSSize(width: 467, height: 360)
+        // Apply saved always-on-top preference
+        if HUDPreferences.isWindowAlwaysOnTop() {
+          window.level = .floating
+        }
       }
     }
     return view

@@ -28,6 +28,9 @@ public enum HUDPreferences {
   // Lite mode info modal
   public static let liteModeInfoDismissedKey = "dev.contextify.liteModeInfoDismissed"
 
+  // Window behavior
+  public static let windowAlwaysOnTopKey = "dev.contextify.windowAlwaysOnTop"
+
   // CLI install location (App Store builds)
   public static let cliInstallLocationKey = "dev.contextify.cliInstallLocation"
   public static let cliInstallBookmarkKey = "dev.contextify.cliInstallBookmark"
@@ -210,6 +213,18 @@ public enum HUDPreferences {
   /// Mark the lite mode info modal as dismissed.
   public static func setLiteModeInfoDismissed(_ dismissed: Bool) {
     sharedDefaults.set(dismissed, forKey: liteModeInfoDismissedKey)
+  }
+
+  // MARK: - Window Behavior
+
+  /// Returns true if the window should float above other windows.
+  public static func isWindowAlwaysOnTop() -> Bool {
+    return sharedDefaults.bool(forKey: windowAlwaysOnTopKey)
+  }
+
+  /// Set whether the window should float above other windows.
+  public static func setWindowAlwaysOnTop(_ enabled: Bool) {
+    sharedDefaults.set(enabled, forKey: windowAlwaysOnTopKey)
   }
 
   // MARK: - CLI Install Location (App Store)
