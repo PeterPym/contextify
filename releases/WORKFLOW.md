@@ -369,7 +369,7 @@ The CLI binary ships as pre-built tarballs for Homebrew (macOS) and direct insta
 3. Notarizes with Apple
 4. Packages into a tarball with plugin files and user skill
 
-By default it builds for the host machine's architecture (`uname -m`). To cross-compile for x86_64 on an Apple Silicon Mac, the script should be run with `swift build --arch x86_64` (or the script modified to accept an arch flag).
+By default it builds for the host machine's architecture (`uname -m`). To cross-compile for x86_64 on an Apple Silicon Mac, pass `--arch x86_64` to the script (e.g. `scripts/sign_cli.sh --arch x86_64`).
 
 **Both macOS tarballs must be uploaded** to the GitHub release for Homebrew to work on both Intel and Apple Silicon Macs. The Homebrew formula selects the correct tarball based on `Hardware::CPU.arm?`.
 
