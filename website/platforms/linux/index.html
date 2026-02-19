@@ -119,7 +119,7 @@
     <div class="container py-5">
       <div class="row align-items-center g-5 py-4">
         <div class="col-lg-6">
-          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool <span class="badge bg-secondary text-light" style="font-size: 0.7rem; vertical-align: middle;">Alpha</span></p>
+          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool</p>
           <h1 class="fw-bold mb-4">Total Recall for your AI coding sessions</h1>
           <p class="lead mb-4">
             Search across every Claude Code and Codex CLI conversation you've ever had. Find that command, that fix, that solution from weeks ago in seconds.
@@ -223,37 +223,40 @@
     <div class="container">
       <h2 class="text-center fw-bold mb-5">Get Started</h2>
 
-      <!-- Alpha Status Callout -->
+      <!-- One-Line Installer -->
+      <div class="row justify-content-center mb-5">
+        <div class="col-md-10">
+          <h3 class="h5 fw-bold mb-3 text-center">One-line install</h3>
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-prompt">$</span> curl -fsSL https://contextify.sh/install.sh | sh
+            </code>
+          </div>
+          <p class="text-secondary small text-center mt-3">
+            Detects your architecture (x86_64 or ARM64), installs the binary, ingests existing transcripts, and sets up automatic ingestion via systemd.
+          </p>
+        </div>
+      </div>
+
+      <!-- What the installer does -->
       <div class="row justify-content-center mb-5">
         <div class="col-md-10">
           <div class="p-4 rounded" style="background: var(--contextify-surface); border-left: 4px solid var(--contextify-primary);">
-            <h3 class="h5 fw-bold mb-3">
-              <span class="badge bg-secondary text-light me-2" style="font-size: 0.75rem;">Alpha</span>
-              Current Status
-            </h3>
-            <p class="mb-3">
-              The Linux CLI is functional but requires manual setup. In this Alpha release:
-            </p>
-            <ul class="text-secondary mb-4" style="padding-left: 1.25rem;">
-              <li>Manual tarball download and extraction</li>
-              <li>Manual ingestion (you run <code>contextify-ingest</code> yourself)</li>
-              <li>Database stored in <code>~/.local/share/contextify/</code></li>
-            </ul>
-            <h4 class="h6 fw-bold mb-2">What we're building for v1.0</h4>
+            <h4 class="h6 fw-bold mb-3">The installer will:</h4>
             <ul class="text-secondary mb-0" style="padding-left: 1.25rem;">
-              <li><strong>One-line install:</strong> <code>curl -sSL contextify.sh/install.sh | sh</code></li>
-              <li><strong>Automatic ingestion:</strong> systemd user service runs in the background</li>
-              <li><strong>XDG-compliant paths:</strong> respects <code>$XDG_DATA_HOME</code>, <code>$XDG_CONFIG_HOME</code></li>
-              <li><strong>CLI polish:</strong> shell completions, <code>--quiet</code> mode, proper exit codes</li>
-              <li><strong>Status command:</strong> see what's indexed at a glance</li>
+              <li>Download the latest <code>contextify</code> binary for your architecture</li>
+              <li>Install to <code>~/.local/bin/</code> (XDG-compliant)</li>
+              <li>Install the Total Recall skill for Claude Code and Codex</li>
+              <li>Ingest any existing transcripts from <code>~/.claude/</code> and <code>~/.codex/</code></li>
+              <li>Set up a systemd user timer for automatic periodic ingestion</li>
             </ul>
           </div>
         </div>
       </div>
 
-      <h3 class="h5 fw-bold mb-4 text-center">Download</h3>
+      <!-- Manual download option -->
+      <h3 class="h5 fw-bold mb-4 text-center">Or download manually</h3>
       <div class="row g-4 justify-content-center">
-        <!-- x86_64 Card -->
         <div class="col-md-5 d-flex">
           <div class="install-option text-center d-flex flex-column w-100">
             <h3 class="h5 fw-bold mb-2">Intel / AMD</h3>
@@ -263,12 +266,10 @@
             </a>
           </div>
         </div>
-
-        <!-- ARM64 Card -->
         <div class="col-md-5 d-flex">
           <div class="install-option text-center d-flex flex-column w-100">
             <h3 class="h5 fw-bold mb-2">ARM64</h3>
-            <p class="text-secondary mb-4 flex-grow-1">Raspberry Pi, AWS Graviton, Apple Silicon</p>
+            <p class="text-secondary mb-4 flex-grow-1">Raspberry Pi, AWS Graviton</p>
             <a href="/go/linux-arm64" class="btn btn-primary">
               Download ARM64
             </a>
@@ -276,36 +277,16 @@
         </div>
       </div>
 
-      <!-- Extract -->
+      <!-- Post-install verification -->
       <div class="row justify-content-center mt-5">
         <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">Extract and install</h3>
+          <h3 class="h5 fw-bold mb-3 text-center">Verify and use</h3>
           <div class="terminal-block">
             <code>
-              <span class="terminal-comment"># Extract the tarball</span><br>
-              <span class="terminal-prompt">$</span> tar -xzf contextify-linux-*.tar.gz<br><br>
-              <span class="terminal-comment"># Move binaries to your PATH</span><br>
-              <span class="terminal-prompt">$</span> mkdir -p ~/.local/bin<br>
-              <span class="terminal-prompt">$</span> mv contextify-query contextify-ingest ~/.local/bin/<br><br>
-              <span class="terminal-comment"># Add to PATH if not already (add to ~/.bashrc or ~/.zshrc)</span><br>
-              <span class="terminal-prompt">$</span> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc<br>
-              <span class="terminal-prompt">$</span> source ~/.bashrc
-            </code>
-          </div>
-        </div>
-      </div>
-
-      <!-- Post-install -->
-      <div class="row justify-content-center mt-5">
-        <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">Install the skill</h3>
-          <div class="terminal-block">
-            <code>
-              <span class="terminal-comment"># Install the Total Recall skill for Claude Code and Codex</span><br>
-              <span class="terminal-prompt">$</span> contextify-query install-skill<br><br>
-              <span class="terminal-comment"># Verify installation</span><br>
-              <span class="terminal-prompt">$</span> contextify-query --version<br>
-              <span class="terminal-output">contextify-query 1.1.0</span><br><br>
+              <span class="terminal-comment"># Check installation</span><br>
+              <span class="terminal-prompt">$</span> contextify status<br><br>
+              <span class="terminal-comment"># Run health check</span><br>
+              <span class="terminal-prompt">$</span> contextify doctor<br><br>
               <span class="terminal-comment"># Then in Claude Code or Codex, use the skill:</span><br>
               <span class="terminal-prompt">$</span> /total-recall what did we build yesterday?
             </code>
