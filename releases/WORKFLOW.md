@@ -348,8 +348,32 @@ Two build scripts serve different purposes:
 | `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
 | `scripts/build-release.sh` | Release builds (DMG + App Store) | Standalone release build |
 | `scripts/release/build.sh` | Release workflow build | Building with version tracking |
+| `scripts/sign_cli.sh` | macOS CLI tarball (sign + notarize) | Homebrew distribution |
 
 The release workflow script `scripts/release/build.sh` wraps `build-release.sh` with version tracking and archiving to `build/archives/v{VERSION}/`.
+
+## CLI Artifact Build Matrix
+
+The CLI binary ships as pre-built tarballs for Homebrew (macOS) and direct install (Linux).
+
+| Artifact | Arch | Where Built | How | Output |
+|----------|------|-------------|-----|--------|
+| macOS CLI | arm64 | Local Mac (Apple Silicon) | `scripts/sign_cli.sh` | `build/cli-release/contextify-arm64.tar.gz` |
+| macOS CLI | x86_64 | Local Mac (`swift build --arch x86_64`) | `scripts/sign_cli.sh --arch x86_64` | `build/cli-release/contextify-x86_64.tar.gz` |
+| Linux CLI | x86_64 | GitHub Actions CI | `linux-release.yml` | `contextify-linux-x86_64.tar.gz` |
+| Linux CLI | arm64 | GitHub Actions CI (QEMU, slow) | `linux-release.yml` | `contextify-linux-arm64.tar.gz` |
+
+**macOS CLI builds** are produced by `scripts/sign_cli.sh`, which:
+1. Runs `swift build -c release` for the target architecture
+2. Signs with Developer ID certificate
+3. Notarizes with Apple
+4. Packages into a tarball with plugin files and user skill
+
+By default it builds for the host machine's architecture (`uname -m`). To cross-compile for x86_64 on an Apple Silicon Mac, the script should be run with `swift build --arch x86_64` (or the script modified to accept an arch flag).
+
+**Both macOS tarballs must be uploaded** to the GitHub release for Homebrew to work on both Intel and Apple Silicon Macs. The Homebrew formula selects the correct tarball based on `Hardware::CPU.arm?`.
+
+**Linux CLI builds** are triggered by `scripts/release/build.sh` via `linux-release.yml` on GitHub Actions. x86_64 builds in ~10 minutes. arm64 uses QEMU and is slow (~60+ min), so it is typically skipped for minor releases.
 
 ## Handling Rejections
 
@@ -618,8 +642,9 @@ cd ~/code/projects/homebrew-contextify
 # Update version
 sed -i '' 's/version ".*"/version "X.Y.Z"/' Formula/contextify-query.rb
 
-# Get SHA256 from release tarball
-curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-query-arm64.tar.gz" | shasum -a 256
+# Get SHA256 from release tarballs
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-arm64.tar.gz" | shasum -a 256
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-x86_64.tar.gz" | shasum -a 256
 
 # Update sha256 in Formula with output
 # Edit Formula/contextify-query.rb manually
