@@ -1,0 +1,83 @@
+{
+  "app_info": {
+    "name": "Contextify",
+    "bundle_id": "sh.contextify.Contextify",
+    "sku": "CONTEXTIFY-001",
+    "primary_language": "en-US",
+    "platforms": ["macOS"],
+    "minimum_os_version": "15.0"
+  },
+
+  "metadata": {
+    "en-US": {
+      "name": "Contextify",
+      "subtitle": "AI Coding History, Searchable",
+      "promotional_text": "A private, searchable timeline of your Claude Code and Codex sessions.",
+      "description": "Contextify keeps a searchable record of every Claude Code and Codex conversation you have.\n\nWatch sessions unfold in real-time. Each message is summarized so you can skim what happened while you were away, or follow along as your AI works.\n\nSearch across every conversation you've ever had. Find that one command, that specific fix, or that brilliant solution from weeks ago in seconds.\n\nAll processing happens locally using Apple Intelligence. Your transcripts never leave your machine.\n\nFEATURES\n\n• Real-time timeline of Claude Code and Codex sessions\n• AI-powered summaries generated on-device\n• Always-on-top window to monitor sessions while you work\n• Incredibly powerful search\n  - Full-text search directly in the Contextify app\n  - Semantic search from Claude Code or Codex via Total Recall\n• Companion CLI for macOS and Linux\n• Automatic project organization\n• Support for custom database locations (Dropbox, iCloud Drive)\n\nTOTAL RECALL - SEMANTIC SEARCH\n\nInstall via Settings > CLI.\n\nAsk your AI to search your conversation history:\n\n\"Use total recall to figure out why our last release used varying hashes for the same version number across multiple platforms.\"\n\n\"Use total recall to find when I was most frustrated and what my greatest insights were over the past quarter.\"\n\n\"Use total recall to find where we decided to use Redis instead of Postgres for the session cache.\"\n\nPRIVACY\n\nYour conversations stay on your Mac.\n\nREQUIREMENTS\n\n• macOS 15 (Sequoia) or later\n• macOS 26+ for AI summaries (Lite Mode on macOS 15)\n• Claude Code or Codex CLI installed",
+
+      "keywords": "AI,Claude,developer,productivity,conversation,search,context,timeline,code,tracking,Codex",
+
+      "release_notes": "What's New in v1.3.1\n• Always-on-Top Window - Keep Contextify floating above other windows while you work. Toggle from the Window menu or use the standard keyboard shortcut. Works across Spaces and full-screen apps.\n• Unified CLI - The primary command is now just `contextify` (replacing `contextify-query`). Existing installs are migrated automatically via symlink.\n• Total Recall Skill Improvements - The skill that teaches your AI how to search your history got significantly smarter:\n  - Query expansion and intent classification help your AI construct better searches on your behalf\n  - JSON schema documentation so your AI understands the exact response format\n  - Improved error handling and response envelopes\n• Companion Linux CLI - Linux users can now install the contextify CLI to search and ingest transcripts. Pair it with a shared database (Dropbox, iCloud Drive) to search your Mac conversations from any Linux machine.\n\nFrom v1.2.0 and before\n• Tab Persistence - Hidden project tabs now stay hidden after restarting the app.\n• Total Recall Expanded - Supports Codex CLI and git worktrees.\n• Tab Groups - Visually group tabs from related projects.\n• Inline Images - Images render inline with Quick Look preview.\n• Markdown Tables - Tables in conversation details now render nicely.\n• Faster Imports - 2.5x faster bulk transcript ingestion.",
+
+      "support_url": "https://contextify.sh/support.html",
+      "marketing_url": "https://contextify.sh",
+      "privacy_url": "https://contextify.sh/privacy.html"
+    }
+  },
+
+  "app_store_information": {
+    "copyright": "2025 Contextify",
+    "primary_category": "DEVELOPER_TOOLS",
+    "secondary_category": "PRODUCTIVITY",
+    "age_rating": "4+"
+  },
+
+  "review_information": {
+    "first_name": "Rob",
+    "last_name": "Banagale",
+    "phone_number": "503-730-6015",
+    "email_address": "rob@banagale.com",
+    "notes": "Hello. Thank you for reviewing my app.\n\nSAMPLE DATA:\nhttps://contextify.sh/review-4a125b1d/sample-data.zip\n\nDEMO VIDEO:\nhttps://contextify.sh/review-4a125b1d/demo-video.mp4\n\nSETUP INSTRUCTIONS (also in README.txt inside the archive):\n1. Download and extract sample-data.zip\n2. Create directories (needed if Claude Code/Codex not installed):\n   mkdir -p ~/.claude/projects\n   mkdir -p ~/.codex/sessions\n3. Copy the claude/ folder contents to ~/.claude/projects/\n4. Copy the codex/ folder contents to ~/.codex/sessions/\n5. Launch Contextify\n6. Grant permission when prompted for ~/.claude/ access\n7. App will detect sample projects (taskflow, weatherly, recipebox)\n8. Timeline displays conversations, LLM summaries generate automatically\n\nFEATURES TO TEST:\n- Timeline view - shows conversation history with timestamps\n- LLM summaries - auto-generated for each conversation\n- Quick Search (Cmd+F) - filter current project\n- Deep Search (Cmd+Shift+F) - search across all projects\n- Project switching - click tabs to switch between projects\n\nThe sample data contains synthetic Claude Code and Codex CLI transcript files demonstrating all app features."
+  },
+
+  "app_privacy": {
+    "privacy_policy_url": "https://contextify.sh/privacy.html",
+    "collects_data": false,
+    "data_usage": "All data is stored locally on the user's Mac. No data is transmitted to external servers."
+  },
+
+  "app_store_connect_api": {
+    "issuer_id": "69a6de89-2083-47e3-e053-5b8c7c11a4d1",
+    "key_id": "AG868N57U6"
+  },
+
+  "screenshots": {
+    "macos": [
+      {
+        "filename": "01-search.png",
+        "title": "Never lose a conversation with Claude Code or Codex again",
+        "description": "Deep Search window showing full-text search across all AI conversations. Results pane on left with highlighted matches, context pane on right showing surrounding conversation. Search for any message, code snippet, or topic discussed."
+      },
+      {
+        "filename": "02-main-hud-20251125-005030-with-text.png",
+        "title": "Stay in the loop during long AI conversations",
+        "description": "Main HUD showing real-time conversation timeline with Claude Code. Project tabs at top, git branch indicator, timestamped entries with AI-generated summaries. Terminal window shows Claude Code session in progress."
+      },
+      {
+        "filename": "03-dual-provider-20251205-with-text.png",
+        "title": "Codex sessions, right alongside Claude",
+        "description": "Demonstrates dual provider support. Contextify tracks both Claude Code and OpenAI Codex sessions. Shows conversation log with entries from both providers, with Codex terminal visible."
+      },
+      {
+        "filename": "04-transcript-inventory-20251120-004532-with-text.png",
+        "title": "Explore source transcripts and gain insights",
+        "description": "Transcript Inventory view with searchable list of all conversations. Shows conversation metadata, AI-generated summaries with topic tags, file details, and regenerate option. Filter by Conversations, Metadata, or All."
+      },
+      {
+        "filename": "05-onboarding-20251205-010119-with-text.png",
+        "title": "Your AI history, synced and searchable",
+        "description": "Onboarding wizard showing database location selection with Dropbox folder. Store your conversation history in Dropbox, iCloud Drive, or any location you control for automatic backup and multi-machine sync."
+      }
+    ]
+  }
+}

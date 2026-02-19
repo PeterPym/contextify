@@ -450,6 +450,16 @@ This includes:
 - Copyright, categories
 - Review information (contact, notes with sample data URLs)
 
+### Metadata Snapshots
+
+During Phase 4 (Submission), snapshot `metadata.json` into the release directory:
+
+```bash
+cp appstore-metadata/metadata.json releases/v{VERSION}/metadata.json
+```
+
+This preserves the exact metadata submitted for each version alongside other release artifacts, without needing to dig through git history. After the App Store version reaches "Ready for Sale," verify the working `metadata.json` reflects the approved state (it usually already does since it was the source for submission).
+
 ### Setup
 
 ```

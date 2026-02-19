@@ -67,6 +67,14 @@ FASTLANE_API_KEY_PATH=".secrets/fastlane_api_key.json" fastlane deliver \
 - [ ] Screenshot submission confirmation
 - [ ] Save to: `releases/v{version}/assets/submission-screenshot.png`
 
+## Snapshot Metadata
+
+Preserve the metadata submitted for this version:
+```bash
+cp appstore-metadata/metadata.json releases/v{version}/metadata.json
+```
+- [ ] metadata.json copied to release directory
+
 ## Record Submission
 
 ```bash
