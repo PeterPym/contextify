@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Contextify is now available on Linux. A headless service that backs up your Claude Code and Codex CLI transcripts into a searchable database, powering Total Recall and the contextify-researcher agent.">
+    <title>Contextify for Linux: Back Up Your AI Conversations and Make Them Searchable - Contextify Blog</title>
+
+    <!-- Open Graph -->
+    <meta property="og:url" content="https://contextify.sh/blog/contextify-for-linux-backup-search-ai-conversations.html">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Contextify for Linux: Back Up Your AI Conversations and Make Them Searchable">
+    <meta property="og:description" content="Contextify is now available on Linux. A headless service that backs up your Claude Code and Codex CLI transcripts into a searchable database.">
+    <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Contextify for Linux: Back Up Your AI Conversations and Make Them Searchable">
+    <meta name="twitter:description" content="Contextify is now available on Linux. A headless service that backs up your Claude Code and Codex CLI transcripts into a searchable database.">
+    <meta name="twitter:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+    <style>
+        :root {
+            /* Contextify Design System */
+            --bg: #F8FAFC;           /* slate-50 */
+            --bg-surface: #FFFFFF;
+            --text: #1E293B;         /* slate-800 */
+            --text-muted: #64748B;   /* slate-500 */
+            --accent: #4A7BA7;       /* contextify-primary */
+            --accent-hover: #3D6A94; /* contextify-primary-hover */
+            --border: #E2E8F0;       /* slate-200 */
+            --code-bg: #F1F5F9;      /* slate-100 */
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F172A;           /* slate-900 */
+                --bg-surface: #1E293B;   /* slate-800 */
+                --text: #F1F5F9;         /* slate-100 */
+                --text-muted: #94A3B8;   /* slate-400 */
+                --accent: #6A9BC7;       /* contextify-primary dark */
+                --accent-hover: #7AABDA; /* contextify-primary-hover dark */
+                --border: #334155;       /* slate-700 */
+                --code-bg: #334155;      /* slate-700 */
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+
+        .post-meta {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 35px 0 15px 0;
+        }
+
+        p {
+            margin-bottom: 18px;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        ul, ol {
+            margin: 0 0 18px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.9em;
+        }
+
+        blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 12px 20px;
+            margin: 20px 0;
+            background: var(--code-bg);
+            border-radius: 0 6px 6px 0;
+            font-style: italic;
+        }
+
+        blockquote p {
+            margin-bottom: 0;
+        }
+
+        .highlight-box {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+        }
+
+        .highlight-box h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .cta-section {
+            background: var(--code-bg);
+            padding: 25px;
+            border-radius: 8px;
+            margin: 35px 0;
+            text-align: center;
+        }
+
+        .cta-section h3 {
+            margin-bottom: 10px;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: var(--accent);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        .cta-btn:hover {
+            background: var(--accent-hover);
+            text-decoration: none;
+            color: white;
+        }
+
+        /* Install command bar */
+        .install-command {
+            display: flex;
+            align-items: center;
+            background: #1e1e1e;
+            border-radius: 10px;
+            padding: 0;
+            overflow: hidden;
+            max-width: 600px;
+            margin: 20px auto;
+            border: 1px solid #333;
+            transition: border-color 0.2s ease;
+        }
+        .install-command:hover {
+            border-color: #555;
+        }
+        .install-command-text {
+            flex: 1;
+            padding: 1rem 1.25rem;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+            font-size: 0.95rem;
+            color: #e0e0e0;
+            white-space: nowrap;
+            overflow-x: auto;
+            line-height: 1.4;
+        }
+        .install-command-text .cmd-accent {
+            color: #4ec9b0;
+        }
+        .install-command-text .cmd-url {
+            color: #ce9178;
+        }
+        .install-command-text .cmd-pipe {
+            color: #569cd6;
+        }
+        .install-command-copy {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            min-width: 48px;
+            height: 100%;
+            padding: 1rem 0.75rem;
+            background: none;
+            border: none;
+            border-left: 1px solid #333;
+            cursor: pointer;
+            color: #888;
+            transition: color 0.2s ease, background 0.2s ease;
+        }
+        .install-command-copy:hover {
+            color: #e0e0e0;
+            background: rgba(255,255,255,0.05);
+        }
+        .install-command-copy svg {
+            width: 18px;
+            height: 18px;
+        }
+        .install-command-copy .copied-text {
+            display: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 0.75rem;
+            color: #4ec9b0;
+            white-space: nowrap;
+        }
+        .install-command-copy.is-copied svg { display: none; }
+        .install-command-copy.is-copied .copied-text { display: block; }
+
+        .install-links {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        footer {
+            margin-top: 60px;
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer-links {
+            margin-bottom: 16px;
+            color: var(--text-muted);
+        }
+
+        .footer-links a {
+            color: var(--accent);
+            text-decoration: none;
+            margin: 0 8px;
+        }
+
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links .separator {
+            color: var(--text-muted);
+        }
+
+        .footer-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .footer-copyright {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.6rem;
+            }
+
+            body {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <p class="breadcrumb"><a href="/">Contextify</a> / <a href="/blog/">Blog</a></p>
+            <h1>Contextify for Linux: Back Up Your AI Conversations and Make Them Searchable</h1>
+            <p class="post-meta">February 19, 2026</p>
+        </header>
+
+        <main>
+            <h2>Your AI conversations are stored in brittle .jsonl files</h2>
+
+            <p>Every conversation you have with Claude Code or Codex CLI gets written to a <code>.jsonl</code> file on disk. These files are append-only logs with no indexing, no search, and no structure beyond raw JSON lines. They accumulate silently in <code>~/.claude/</code> and <code>~/.codex/</code>, and if they get corrupted or deleted, those conversations are gone.</p>
+
+            <p>Contextify changes that. It reads those transcript files, parses them, and stores every message in a proper SQLite database with full-text search indexes. On macOS, this happens automatically in the background with a visual timeline. Now it works on Linux too.</p>
+
+            <h2>One command to install</h2>
+
+            <div class="install-command">
+                <div class="install-command-text">
+                    <span class="cmd-accent">curl -fsSL</span> <span class="cmd-url">https://contextify.sh/install.sh</span> <span class="cmd-pipe">| sh</span>
+                </div>
+                <button class="install-command-copy" data-copy="curl -fsSL https://contextify.sh/install.sh | sh" aria-label="Copy command to clipboard">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span class="copied-text">Copied!</span>
+                </button>
+            </div>
+
+            <p>The installer detects your architecture (x86_64 or ARM64), downloads the binary, ingests any existing transcripts it finds, and sets up a systemd user timer for automatic periodic ingestion. If systemd is not available, it falls back to cron.</p>
+
+            <p>Once running, every new conversation you have with Claude Code or Codex gets indexed automatically.</p>
+
+            <h2>The database powers Total Recall</h2>
+
+            <p>The database Contextify builds is the same one that powers the <a href="/blog/total-recall-rag-search-claude-code-codex.html"><code>/total-recall</code> skill</a>. Total Recall teaches your AI how to search your conversation history. Instead of trying to remember which session had that one useful solution, you just ask:</p>
+
+            <blockquote>
+                <p>"Use total recall to find where we decided to use Redis instead of Postgres for the session cache."</p>
+            </blockquote>
+
+            <p>The skill translates your question into targeted database queries and returns the relevant conversation excerpts. For more complex research, it spawns a <code>contextify-researcher</code> agent that runs multiple queries and synthesizes results across sessions.</p>
+
+            <p>This release also improves the skill itself: query expansion helps your AI construct better searches, JSON schema documentation reduces parsing errors, and better error handling means more reliable results.</p>
+
+            <h2>Shared database, searchable from anywhere</h2>
+
+            <p>If you store the database on Dropbox or iCloud Drive, you can use Contextify on your Mac to browse conversations visually and search on your Linux machine via the CLI. Same database, two interfaces.</p>
+
+            <h2>Also in this release</h2>
+
+            <p><strong>Always-on-Top Window (macOS)</strong> - Contextify can now float above other windows. Toggle via Window > Float on Top. Useful for keeping the timeline visible while your AI works on a long task.</p>
+
+            <p><strong>Unified CLI</strong> - The primary command is now just <code>contextify</code> (replacing <code>contextify-query</code>). Old name still works via symlink.</p>
+
+            <div class="cta-section">
+                <h3>Install / Update</h3>
+                <p style="margin-bottom: 8px;"><strong>Linux:</strong> <code>curl -fsSL https://contextify.sh/install.sh | sh</code></p>
+                <p style="margin-bottom: 8px;"><strong>macOS DMG:</strong> <a href="https://github.com/PeterPym/contextify/releases/latest">Download from GitHub</a></p>
+                <p style="margin-bottom: 8px;"><strong>macOS App Store:</strong> <a href="/go/appstore">Update via the App Store</a></p>
+                <p style="margin-bottom: 8px;"><strong>Homebrew:</strong> <code>brew upgrade contextify-query</code></p>
+                <p><a href="/platforms/linux/">Full Linux documentation</a></p>
+            </div>
+
+            <p>Questions or feedback? <a href="mailto:support@contextify.sh">Email support</a> or <a href="https://github.com/PeterPym/contextify/issues">open an issue on GitHub</a>.</p>
+        </main>
+
+        <footer>
+            <div class="footer-links">
+                <a href="/download/">Download</a>
+                <span class="separator">|</span>
+                <a href="/platforms/linux/">Linux</a>
+                <span class="separator">|</span>
+                <a href="/blog/">Blog</a>
+                <span class="separator">|</span>
+                <a href="/privacy/">Privacy</a>
+                <span class="separator">|</span>
+                <a href="/terms/">Terms</a>
+                <span class="separator">|</span>
+                <a href="/support/">Support</a>
+                <span class="separator">|</span>
+                <a href="mailto:support@contextify.sh">Contact</a>
+            </div>
+            <div class="footer-brand">Contextify</div>
+            <p class="footer-copyright">&copy; 2026 Contextify</p>
+        </footer>
+    </div>
+
+    <script>
+    document.querySelectorAll('.install-command-copy').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var text = this.getAttribute('data-copy');
+            navigator.clipboard.writeText(text).then(function() {
+                btn.classList.add('is-copied');
+                setTimeout(function() { btn.classList.remove('is-copied'); }, 2000);
+            });
+        });
+    });
+    </script>
+</body>
+</html>

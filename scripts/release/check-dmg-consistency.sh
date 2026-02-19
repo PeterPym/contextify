@@ -113,7 +113,7 @@ fi
 info "appcast.xml latest: ${BOLD}$APPCAST_VERSION${NC}"
 
 # 3. Check GitHub for DMG existence
-DMG_NAME="Contextify-${MACOS_VERSION}.dmg"
+DMG_NAME="Contextify.dmg"
 DMG_URL="https://github.com/$GITHUB_REPO/releases/download/v${MACOS_VERSION}/${DMG_NAME}"
 info "Expected DMG URL:   ${DMG_URL}"
 info ""
@@ -152,7 +152,7 @@ else
 fi
 
 # Check 3: appcast URL matches expected pattern
-EXPECTED_APPCAST_URL="https://github.com/$GITHUB_REPO/releases/download/v${APPCAST_VERSION}/Contextify-${APPCAST_VERSION}.dmg"
+EXPECTED_APPCAST_URL="https://github.com/$GITHUB_REPO/releases/download/v${APPCAST_VERSION}/Contextify.dmg"
 if [ "$APPCAST_URL" = "$EXPECTED_APPCAST_URL" ]; then
   ok "Appcast download URL follows expected pattern"
 else

@@ -716,10 +716,34 @@ Apple App ID capabilities unlock platform integrations. Currently Contextify use
 
 ---
 
-#### iCloud
+#### Contextify Cloud (ACTIVE - promoted from P5)
+
+**Status:** Active development. See bloon epics ct-166 through ct-173.
+**Spec:** `/tmp/contextify-cloud-complete-spec.md`
+**Repo:** `contextify-cloud/` (Python FastAPI + PostgreSQL)
+
+Contextify Cloud provides cloud sync and team features via a separate Python FastAPI service backed by PostgreSQL. Three deployment models: hosted SaaS (contextify.sh), self-hosted (Docker), homeserver (Mac Mini + Tailscale). Four revenue tiers: Free ($0), Pro ($19/seat/mo), Team ($49/seat/mo), Enterprise ($99/seat/mo).
+
+The local app stays SQLite/GRDB. Cloud is a separate service. No GRDB migration needed.
+
+**Phases:**
+- Phase 0: FastAPI + PostgreSQL skeleton (ct-166, P1)
+- Phase 1: Personal cloud sync (ct-167, P1)
+- Phase 2: Cloud search API (ct-168, P2)
+- Phase 3: Stripe + pricing page (ct-169, P2)
+- Phase 4: Web dashboard (ct-170, P2)
+- Phase 5: Multi-user teams (ct-171, P3)
+- Phase 6: Self-hosted + enterprise (ct-172, P3)
+- Phase 7: Launch prep (ct-173, P3)
+
+**Related:** ct-165 (licensing with Kyle Mitchell)
+
+---
+
+#### iCloud (deprioritized in favor of Contextify Cloud)
 
 **Capability:** iCloud (CloudKit or iCloud Documents)
-**Likelihood:** Medium (user-requested feature path)
+**Likelihood:** Low (Contextify Cloud covers the multi-machine sync use case)
 **Effort:** Large
 
 **Possible Behaviors:**
@@ -734,26 +758,27 @@ Apple App ID capabilities unlock platform integrations. Currently Contextify use
 - Native CloudKit would be more robust (conflict resolution, offline support)
 - Significant architecture change from current SQLite-only approach
 - Privacy consideration: user transcripts in Apple's cloud
+- Deprioritized: Contextify Cloud sync covers multi-machine use case with more flexibility
 
 ---
 
-#### Sign In with Apple
+#### Sign In with Apple (bundled with Contextify Cloud)
 
 **Capability:** Sign In with Apple
-**Likelihood:** Low (only if adding cloud/team features)
+**Likelihood:** Medium (part of Contextify Cloud Phase 4-5)
 **Effort:** Medium
 
 **Possible Behaviors:**
 - Authenticate for cloud sync features
 - Team accounts: share project contexts across team
-- Web dashboard login (contextify.sh/dashboard)
+- Web dashboard login (contextify.sh/cloud/)
 - License management for paid tiers
 - Anonymous usage analytics opt-in tied to account
 
 **Implementation Notes:**
-- Requires backend service for token validation
-- Not needed for local-only app
-- Would enable SaaS pivot if desired
+- Requires backend service for token validation (Contextify Cloud API provides this)
+- Part of cloud dashboard authentication (Phase 4)
+- Would complement API key auth with OAuth flow
 
 ---
 

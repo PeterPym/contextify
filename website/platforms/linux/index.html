@@ -88,6 +88,73 @@
       margin-bottom: 1rem;
       font-size: 1.5rem;
     }
+    /* Install command bar */
+    .install-command {
+      display: flex;
+      align-items: center;
+      background: #1e1e1e;
+      border-radius: 10px;
+      padding: 0;
+      overflow: hidden;
+      max-width: 600px;
+      margin: 0 auto;
+      border: 1px solid #333;
+      transition: border-color 0.2s ease;
+    }
+    .install-command:hover {
+      border-color: #555;
+    }
+    .install-command-text {
+      flex: 1;
+      padding: 1rem 1.25rem;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+      font-size: 0.95rem;
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow-x: auto;
+      line-height: 1.4;
+    }
+    .install-command-text .cmd-accent {
+      color: #4ec9b0;
+    }
+    .install-command-text .cmd-url {
+      color: #ce9178;
+    }
+    .install-command-text .cmd-pipe {
+      color: #569cd6;
+    }
+    .install-command-copy {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      min-width: 48px;
+      height: 100%;
+      padding: 1rem 0.75rem;
+      background: none;
+      border: none;
+      border-left: 1px solid #333;
+      cursor: pointer;
+      color: #888;
+      transition: color 0.2s ease, background 0.2s ease;
+    }
+    .install-command-copy:hover {
+      color: #e0e0e0;
+      background: rgba(255,255,255,0.05);
+    }
+    .install-command-copy svg {
+      width: 18px;
+      height: 18px;
+    }
+    .install-command-copy .copied-text {
+      display: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 0.75rem;
+      color: #4ec9b0;
+      white-space: nowrap;
+    }
+    .install-command-copy.is-copied svg { display: none; }
+    .install-command-copy.is-copied .copied-text { display: block; }
   </style>
 
   <!-- Dark mode detection -->
@@ -119,7 +186,7 @@
     <div class="container py-5">
       <div class="row align-items-center g-5 py-4">
         <div class="col-lg-6">
-          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool <span class="badge bg-secondary text-light" style="font-size: 0.7rem; vertical-align: middle;">Alpha</span></p>
+          <p class="text-uppercase fw-bold mb-2" style="color: var(--contextify-primary); letter-spacing: 0.05em;">Linux CLI Tool</p>
           <h1 class="fw-bold mb-4">Total Recall for your AI coding sessions</h1>
           <p class="lead mb-4">
             Search across every Claude Code and Codex CLI conversation you've ever had. Find that command, that fix, that solution from weeks ago in seconds.
@@ -223,37 +290,44 @@
     <div class="container">
       <h2 class="text-center fw-bold mb-5">Get Started</h2>
 
-      <!-- Alpha Status Callout -->
+      <!-- One-Line Installer -->
+      <div class="row justify-content-center mb-5">
+        <div class="col-md-10">
+          <h3 class="h5 fw-bold mb-3 text-center">One-line install</h3>
+          <div class="install-command">
+            <div class="install-command-text">
+              <span class="cmd-accent">curl -fsSL</span> <span class="cmd-url">https://contextify.sh/install.sh</span> <span class="cmd-pipe">| sh</span>
+            </div>
+            <button class="install-command-copy" data-copy="curl -fsSL https://contextify.sh/install.sh | sh" aria-label="Copy command to clipboard">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 21" fill="none"><path d="M12.5 3.6C13.33 3.6 14 4.28 14 5.1V6.6H15.5C16.33 6.6 17 7.28 17 8.1V16.1C17 16.94 16.33 17.6 15.5 17.6H7.5C6.67 17.6 6 16.94 6 16.1V14.6H4.5C3.67 14.6 3 13.94 3 13.1V5.1C3 4.28 3.67 3.6 4.5 3.6H12.5ZM14 13.1C14 13.94 13.33 14.6 12.5 14.6H7V16.1C7 16.39 7.22 16.6 7.5 16.6H15.5C15.78 16.6 16 16.39 16 16.1V8.1C16 7.83 15.78 7.6 15.5 7.6H14V13.1ZM4.5 4.6C4.22 4.6 4 4.83 4 5.1V13.1C4 13.39 4.22 13.6 4.5 13.6H12.5C12.78 13.6 13 13.39 13 13.1V5.1C13 4.83 12.78 4.6 12.5 4.6H4.5Z" fill="currentColor"/></svg>
+              <span class="copied-text">Copied!</span>
+            </button>
+          </div>
+          <p class="text-secondary small text-center mt-3">
+            Detects your architecture (x86_64 or ARM64), installs the binary, ingests existing transcripts, and sets up automatic ingestion via systemd.
+          </p>
+        </div>
+      </div>
+
+      <!-- What the installer does -->
       <div class="row justify-content-center mb-5">
         <div class="col-md-10">
           <div class="p-4 rounded" style="background: var(--contextify-surface); border-left: 4px solid var(--contextify-primary);">
-            <h3 class="h5 fw-bold mb-3">
-              <span class="badge bg-secondary text-light me-2" style="font-size: 0.75rem;">Alpha</span>
-              Current Status
-            </h3>
-            <p class="mb-3">
-              The Linux CLI is functional but requires manual setup. In this Alpha release:
-            </p>
-            <ul class="text-secondary mb-4" style="padding-left: 1.25rem;">
-              <li>Manual tarball download and extraction</li>
-              <li>Manual ingestion (you run <code>contextify-ingest</code> yourself)</li>
-              <li>Database stored in <code>~/.local/share/contextify/</code></li>
-            </ul>
-            <h4 class="h6 fw-bold mb-2">What we're building for v1.0</h4>
+            <h4 class="h6 fw-bold mb-3">The installer will:</h4>
             <ul class="text-secondary mb-0" style="padding-left: 1.25rem;">
-              <li><strong>One-line install:</strong> <code>curl -sSL contextify.sh/install.sh | sh</code></li>
-              <li><strong>Automatic ingestion:</strong> systemd user service runs in the background</li>
-              <li><strong>XDG-compliant paths:</strong> respects <code>$XDG_DATA_HOME</code>, <code>$XDG_CONFIG_HOME</code></li>
-              <li><strong>CLI polish:</strong> shell completions, <code>--quiet</code> mode, proper exit codes</li>
-              <li><strong>Status command:</strong> see what's indexed at a glance</li>
+              <li>Download the latest <code>contextify</code> binary for your architecture</li>
+              <li>Install to <code>~/.local/bin/</code> (XDG-compliant)</li>
+              <li>Install the Total Recall skill for Claude Code and Codex</li>
+              <li>Ingest any existing transcripts from <code>~/.claude/</code> and <code>~/.codex/</code></li>
+              <li>Set up a systemd user timer for automatic periodic ingestion</li>
             </ul>
           </div>
         </div>
       </div>
 
-      <h3 class="h5 fw-bold mb-4 text-center">Download</h3>
+      <!-- Manual download option -->
+      <h3 class="h5 fw-bold mb-4 text-center">Or download manually</h3>
       <div class="row g-4 justify-content-center">
-        <!-- x86_64 Card -->
         <div class="col-md-5 d-flex">
           <div class="install-option text-center d-flex flex-column w-100">
             <h3 class="h5 fw-bold mb-2">Intel / AMD</h3>
@@ -263,12 +337,10 @@
             </a>
           </div>
         </div>
-
-        <!-- ARM64 Card -->
         <div class="col-md-5 d-flex">
           <div class="install-option text-center d-flex flex-column w-100">
             <h3 class="h5 fw-bold mb-2">ARM64</h3>
-            <p class="text-secondary mb-4 flex-grow-1">Raspberry Pi, AWS Graviton, Apple Silicon</p>
+            <p class="text-secondary mb-4 flex-grow-1">Raspberry Pi, AWS Graviton</p>
             <a href="/go/linux-arm64" class="btn btn-primary">
               Download ARM64
             </a>
@@ -276,36 +348,16 @@
         </div>
       </div>
 
-      <!-- Extract -->
+      <!-- Post-install verification -->
       <div class="row justify-content-center mt-5">
         <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">Extract and install</h3>
+          <h3 class="h5 fw-bold mb-3 text-center">Verify and use</h3>
           <div class="terminal-block">
             <code>
-              <span class="terminal-comment"># Extract the tarball</span><br>
-              <span class="terminal-prompt">$</span> tar -xzf contextify-linux-*.tar.gz<br><br>
-              <span class="terminal-comment"># Move binaries to your PATH</span><br>
-              <span class="terminal-prompt">$</span> mkdir -p ~/.local/bin<br>
-              <span class="terminal-prompt">$</span> mv contextify-query contextify-ingest ~/.local/bin/<br><br>
-              <span class="terminal-comment"># Add to PATH if not already (add to ~/.bashrc or ~/.zshrc)</span><br>
-              <span class="terminal-prompt">$</span> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc<br>
-              <span class="terminal-prompt">$</span> source ~/.bashrc
-            </code>
-          </div>
-        </div>
-      </div>
-
-      <!-- Post-install -->
-      <div class="row justify-content-center mt-5">
-        <div class="col-md-10">
-          <h3 class="h5 fw-bold mb-3 text-center">Install the skill</h3>
-          <div class="terminal-block">
-            <code>
-              <span class="terminal-comment"># Install the Total Recall skill for Claude Code and Codex</span><br>
-              <span class="terminal-prompt">$</span> contextify-query install-skill<br><br>
-              <span class="terminal-comment"># Verify installation</span><br>
-              <span class="terminal-prompt">$</span> contextify-query --version<br>
-              <span class="terminal-output">contextify-query 1.1.0</span><br><br>
+              <span class="terminal-comment"># Check installation</span><br>
+              <span class="terminal-prompt">$</span> contextify status<br><br>
+              <span class="terminal-comment"># Run health check</span><br>
+              <span class="terminal-prompt">$</span> contextify doctor<br><br>
               <span class="terminal-comment"># Then in Claude Code or Codex, use the skill:</span><br>
               <span class="terminal-prompt">$</span> /total-recall what did we build yesterday?
             </code>
@@ -385,5 +437,23 @@
 
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+  <!-- Copy to clipboard -->
+  <script>
+    (function() {
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-copy]');
+        if (!btn) return;
+        var text = btn.getAttribute('data-copy');
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(text).then(function() {
+          btn.classList.add('is-copied');
+          setTimeout(function() {
+            btn.classList.remove('is-copied');
+          }, 1500);
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

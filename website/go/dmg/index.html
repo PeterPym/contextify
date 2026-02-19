@@ -115,7 +115,7 @@
       .then(function(r) { return r.text(); })
       .then(function(v) {
         v = v.trim();
-        var url = 'https://github.com/PeterPym/contextify/releases/download/v' + v + '/Contextify-' + v + '.dmg';
+        var url = 'https://github.com/PeterPym/contextify/releases/download/v' + v + '/Contextify.dmg';
         document.getElementById('manual-link').href = url;
         document.getElementById('download-status').textContent = 'Downloading Contextify v' + v + ' for macOS.';
         window.location.href = url;
