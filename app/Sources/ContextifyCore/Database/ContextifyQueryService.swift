@@ -564,7 +564,8 @@ public struct ContextifyQueryService: Sendable {
             ELSE 0
           END AS content_truncated
         FROM transcript_entries_fts
-        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
+          ON e.id = transcript_entries_fts.entry_id
         LEFT JOIN projects p ON p.id = e.project_id
         LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
         WHERE transcript_entries_fts MATCH ?
@@ -740,7 +741,8 @@ public struct ContextifyQueryService: Sendable {
       let sql = """
         SELECT COUNT(*)
         FROM transcript_entries_fts
-        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
+          ON e.id = transcript_entries_fts.entry_id
         WHERE transcript_entries_fts MATCH ?
       """ + filter.whereSQL
 
@@ -1293,7 +1295,8 @@ public struct ContextifyQueryService: Sendable {
       var sql = """
         SELECT e.*
         FROM transcript_entries_fts f
-        JOIN transcript_entries e ON e.id = f.entry_id
+        JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
+          ON e.id = f.entry_id
         WHERE f.transcript_entries_fts MATCH ?
       """
       var args: [DatabaseValueConvertible] = [safeQuery]

@@ -145,7 +145,8 @@ public actor ConversationSearchService {
           e.is_sidechain AS is_sidechain
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
-        LEFT JOIN transcript_entries e ON e.id = f.entry_id
+        LEFT JOIN transcript_entries e INDEXED BY sqlite_autoindex_transcript_entries_1
+          ON e.id = f.entry_id
         WHERE transcript_entries_fts MATCH ?
           AND e.id IS NOT NULL
       """
