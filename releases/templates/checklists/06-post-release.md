@@ -143,8 +143,28 @@ rm /tmp/verify.dmg
 - [ ] All checklists filled out
 
 ### Update Manifest
-- [ ] Update `releases/manifest.json` with final status
-- [ ] Set `status: "complete"` for this release
+
+Record each channel as shipped. The script updates `releases/manifest.json`, `release.json`, `current_version`, and overall status automatically.
+
+<!-- IF:dmg -->
+- [ ] DMG shipped:
+  ```bash
+  ./scripts/release/mark-shipped.sh {version} --dmg
+  ```
+<!-- ENDIF:dmg -->
+<!-- IF:appstore -->
+- [ ] App Store approved:
+  ```bash
+  ./scripts/release/mark-shipped.sh {version} --appstore --build <BUILD_NUMBER>
+  ```
+<!-- ENDIF:appstore -->
+<!-- IF:linux -->
+- [ ] Linux shipped:
+  ```bash
+  ./scripts/release/mark-shipped.sh {version} --linux
+  ```
+<!-- ENDIF:linux -->
+- [ ] Verify manifest is correct: `cat releases/manifest.json | python3 -m json.tool | grep -A20 '"{version}"'`
 
 ### Git Housekeeping
 - [ ] Release tag exists: `git tag -l v{version}`

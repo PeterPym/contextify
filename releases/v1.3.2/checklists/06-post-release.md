@@ -135,8 +135,22 @@ rm /tmp/verify.dmg
 - [ ] All checklists filled out
 
 ### Update Manifest
-- [ ] Update `releases/manifest.json` with final status
-- [ ] Set `status: "complete"` for this release
+
+Record each channel as shipped. The script updates `releases/manifest.json`, `release.json`, `current_version`, and overall status automatically.
+
+- [ ] DMG shipped:
+  ```bash
+  ./scripts/release/mark-shipped.sh 1.3.2 --dmg
+  ```
+- [ ] App Store approved:
+  ```bash
+  ./scripts/release/mark-shipped.sh 1.3.2 --appstore --build 23
+  ```
+- [ ] Linux shipped:
+  ```bash
+  ./scripts/release/mark-shipped.sh 1.3.2 --linux
+  ```
+- [ ] Verify manifest is correct: `cat releases/manifest.json | python3 -m json.tool | grep -A20 '"1.3.2"'`
 
 ### Git Housekeeping
 - [ ] Release tag exists: `git tag -l v1.3.2`
