@@ -41,11 +41,15 @@ Review App Store listing content before submission:
 - [ ] Screenshots show current UI? (if UI changed significantly)
 - [ ] Keywords still relevant?
 
-If changes needed, update `metadata.json` and upload:
+If changes needed:
+1. Update `releases/v1.3.2/metadata.json` with new release_notes, etc.
+2. Copy to canonical location: `cp releases/v1.3.2/metadata.json appstore-metadata/metadata.json`
+3. Upload via fastlane (must run from the fastlane directory):
 ```bash
-FASTLANE_API_KEY_PATH=".secrets/fastlane_api_key.json" fastlane deliver \
+cd appstore-metadata/fastlane && fastlane deliver \
   --skip_binary_upload --skip_screenshots --force --run_precheck_before_submit false
 ```
+**Prerequisite:** `.secrets/fastlane_api_key.json` must exist. See `releases/WORKFLOW.md` "First-Time Setup".
 - [ ] Metadata uploaded (or no changes needed)
 
 ### Review Information

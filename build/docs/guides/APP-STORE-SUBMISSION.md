@@ -33,11 +33,28 @@ Store CSR somewhere permanent: `/Users/yourname/code/certificates/CertificateSig
 5. Download the `.p8` file (only available once!)
 6. Note the **Key ID** and **Issuer ID**
 
-Store the key:
+Store the key in the project's `.secrets/` directory (gitignored):
 ```bash
-mkdir -p ~/.private_keys
-cp ~/Downloads/AuthKey_XXXXXXXX.p8 ~/.private_keys/
+mkdir -p .secrets
+cp ~/Downloads/AuthKey_XXXXXXXX.p8 .secrets/
 ```
+
+Create the fastlane API key JSON wrapper (required for `fastlane deliver`):
+```bash
+# The "key" field MUST contain the .p8 contents inline, not a file path.
+python3 -c "
+import json
+key = open('.secrets/AuthKey_XXXXXXXX.p8').read().strip()
+json.dump({
+    'key_id': 'YOUR_KEY_ID',
+    'issuer_id': 'YOUR_ISSUER_ID',
+    'key': key,
+    'in_house': False
+}, open('.secrets/fastlane_api_key.json', 'w'), indent=2)
+"
+```
+
+See `releases/WORKFLOW.md` "First-Time Setup" section for Contextify-specific values.
 
 ### 2. Create Certificates
 
@@ -384,7 +401,8 @@ build/*.xcarchive/
 
 ## Contextify-Specific Reference
 
-- **Team ID:** J8P5B23FK7
+- **Team ID (Developer Portal):** J8P5B23FK7
+- **Team ID (App Store Connect/fastlane):** VQ7RPM8H77
 - **Bundle ID:** sh.contextify.Contextify
 - **App Store Connect:** https://appstoreconnect.apple.com/apps/6753190666
 - **API Key ID:** AG868N57U6

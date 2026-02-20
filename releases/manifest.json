@@ -312,8 +312,9 @@
         "status": "pending"
       },
       "appstore": {
-        "status": "pending",
-        "build_number": 1
+        "status": "submitted",
+        "build_number": 23,
+        "submitted_at": "2026-02-20T01:01:18Z"
       },
       "linux": {
         "status": "pending"
