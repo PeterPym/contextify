@@ -9,12 +9,13 @@ Search your conversation history to find past decisions, solutions, and discussi
 
 ## IMPORTANT: Command Format
 
-**The CLI command is `contextify-query` (hyphenated, one word).**
+**The CLI command is `contextify` (one word, no hyphen).**
 
-- Correct: `contextify-query search "my query"`
-- Correct: `contextify-query status --json`
-- **WRONG:** `contextify query` (this is Linux-only and will fail on macOS)
-- **WRONG:** `contextify search` (this is Linux-only and will fail on macOS)
+- Correct: `contextify search "my query"`
+- Correct: `contextify status --json`
+- **WRONG:** `contextify query search` (no `query` subcommand)
+
+The legacy name `contextify-query` still works (backwards-compatible symlink) but `contextify` is the canonical command.
 
 Always use the exact commands shown in this skill file. Do not improvise command formats.
 
@@ -53,7 +54,7 @@ command -v contextify
 >
 > **DMG users:** Open Contextify -> Settings -> CLI -> "Install/Repair CLI"
 >
-> **App Store users:** Run `brew install PeterPym/contextify/contextify-query`
+> **App Store users:** Run `brew install PeterPym/contextify/contextify-query` (installs as `contextify`)
 >
 > For help: https://contextify.sh/help
 
@@ -168,7 +169,7 @@ If database not found, respond:
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify-query search "<expanded-query>" --project . --days 30 --limit <N> --json
+contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
 ```
 
 Set `--limit` based on intent: 200+ for counting, 10 for lookup, 20 for exploratory.
@@ -177,12 +178,12 @@ Set `--limit` based on intent: 200+ for counting, 10 for lookup, 20 for explorat
 
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
-contextify-query search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --limit 200 --json
+contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --limit 200 --json
 ```
 
 Example -- user asks "what did we decide about the database schema":
 ```bash
-contextify-query search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
+contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
 ```
 
 Returns:
@@ -253,7 +254,7 @@ Returns:
 4) If a snippet is too short and you need the full entry:
 
 ```bash
-contextify-query entry "<entry-uuid>" --json
+contextify entry "<entry-uuid>" --json
 ```
 
 Returns:
@@ -277,7 +278,7 @@ Before formatting your response, check:
 
 - **`hasMore` flag:** If `true`, you have not retrieved all matches. For counting queries, paginate with `--offset` until `hasMore` is `false`:
   ```bash
-  contextify-query search "<expanded-query>" --project . --days 365 --limit 200 --offset 200 --json
+  contextify search "<expanded-query>" --project . --days 365 --limit 200 --offset 200 --json
   ```
   Increment `--offset` by `--limit` each page (200, 400, 600...) until `hasMore` is `false`.
 - **(Counting intent only) Variant coverage:** Scan returned snippets for word forms you did not search for. If you searched `deploy*` and see "redeployment" in results, verify your query also captures that.
@@ -346,7 +347,7 @@ If search returns 0 results:
 1. Widen `--days` (try 90, then 365)
 2. If not clearly about current repo, retry without `--project .`
 3. Try prefix matching (`deploy*` instead of `deploy`)
-4. Use `contextify-query projects --json` to discover other projects
+4. Use `contextify projects --json` to discover other projects
 5. Ask user to clarify what they're looking for
 
 ### Partial or suspicious results
