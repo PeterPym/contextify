@@ -1,6 +1,6 @@
 # Submission Checklist
 
-**Release:** {version}
+**Release:** 1.3.2
 **Phase:** 4 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
@@ -42,8 +42,8 @@ Review App Store listing content before submission:
 - [ ] Keywords still relevant?
 
 If changes needed:
-1. Update `releases/v{VERSION}/metadata.json` with new release_notes, etc.
-2. Copy to canonical location: `cp releases/v{VERSION}/metadata.json appstore-metadata/metadata.json`
+1. Update `releases/v1.3.2/metadata.json` with new release_notes, etc.
+2. Copy to canonical location: `cp releases/v1.3.2/metadata.json appstore-metadata/metadata.json`
 3. Upload via fastlane (must run from the fastlane directory):
 ```bash
 cd appstore-metadata/fastlane && fastlane deliver \
@@ -69,13 +69,13 @@ cd appstore-metadata/fastlane && fastlane deliver \
 
 ### Take Screenshot
 - [ ] Screenshot submission confirmation
-- [ ] Save to: `releases/v{version}/assets/submission-screenshot.png`
+- [ ] Save to: `releases/v1.3.2/assets/submission-screenshot.png`
 
 ## Snapshot Metadata
 
 Preserve the metadata submitted for this version:
 ```bash
-cp appstore-metadata/metadata.json releases/v{version}/metadata.json
+cp appstore-metadata/metadata.json releases/v1.3.2/metadata.json
 ```
 - [ ] metadata.json copied to release directory
 
@@ -83,7 +83,7 @@ cp appstore-metadata/metadata.json releases/v{version}/metadata.json
 
 ```bash
 # Record in tracking system
-./scripts/release/mark-submitted.sh {version} --build ____
+./scripts/release/mark-submitted.sh 1.3.2 --build ____
 ```
 
 This updates both `release.json` and `manifest.json` automatically.
@@ -94,13 +94,13 @@ If rejected:
 - [ ] Read rejection reason in App Store Connect Resolution Center
 - [ ] Record rejection:
   ```bash
-  ./scripts/release/mark-rejected.sh {version} --interactive
+  ./scripts/release/mark-rejected.sh 1.3.2 --interactive
   ```
 - [ ] Determine fix:
   - Metadata issue? Fix in App Store Connect, resubmit same build
   - Code issue? Fix code, reset for new build:
     ```bash
-    ./scripts/release/init.sh {version} --reset
+    ./scripts/release/init.sh 1.3.2 --reset
     # Return to Phase 2 (build)
     ```
 - [ ] Address rejection and resubmit

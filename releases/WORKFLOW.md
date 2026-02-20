@@ -348,8 +348,32 @@ Two build scripts serve different purposes:
 | `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
 | `scripts/build-release.sh` | Release builds (DMG + App Store) | Standalone release build |
 | `scripts/release/build.sh` | Release workflow build | Building with version tracking |
+| `scripts/sign_cli.sh` | macOS CLI tarball (sign + notarize) | Homebrew distribution |
 
 The release workflow script `scripts/release/build.sh` wraps `build-release.sh` with version tracking and archiving to `build/archives/v{VERSION}/`.
+
+## CLI Artifact Build Matrix
+
+The CLI binary ships as pre-built tarballs for Homebrew (macOS) and direct install (Linux).
+
+| Artifact | Arch | Where Built | How | Output |
+|----------|------|-------------|-----|--------|
+| macOS CLI | arm64 | Local Mac (Apple Silicon) | `scripts/sign_cli.sh` | `build/cli-release/contextify-arm64.tar.gz` |
+| macOS CLI | x86_64 | Local Mac (`swift build --arch x86_64`) | `scripts/sign_cli.sh --arch x86_64` | `build/cli-release/contextify-x86_64.tar.gz` |
+| Linux CLI | x86_64 | GitHub Actions CI | `linux-release.yml` | `contextify-linux-x86_64.tar.gz` |
+| Linux CLI | arm64 | GitHub Actions CI (QEMU, slow) | `linux-release.yml` | `contextify-linux-arm64.tar.gz` |
+
+**macOS CLI builds** are produced by `scripts/sign_cli.sh`, which:
+1. Runs `swift build -c release` for the target architecture
+2. Signs with Developer ID certificate
+3. Notarizes with Apple
+4. Packages into a tarball with plugin files and user skill
+
+By default it builds for the host machine's architecture (`uname -m`). To cross-compile for x86_64 on an Apple Silicon Mac, pass `--arch x86_64` to the script (e.g. `scripts/sign_cli.sh --arch x86_64`).
+
+**Both macOS tarballs must be uploaded** to the GitHub release for Homebrew to work on both Intel and Apple Silicon Macs. The Homebrew formula selects the correct tarball based on `Hardware::CPU.arm?`.
+
+**Linux CLI builds** are triggered by `scripts/release/build.sh` via `linux-release.yml` on GitHub Actions. x86_64 builds in ~10 minutes. arm64 uses QEMU and is slow (~60+ min), so it is typically skipped for minor releases.
 
 ## Handling Rejections
 
@@ -426,6 +450,16 @@ This includes:
 - Copyright, categories
 - Review information (contact, notes with sample data URLs)
 
+### Metadata Snapshots
+
+During Phase 4 (Submission), snapshot `metadata.json` into the release directory:
+
+```bash
+cp appstore-metadata/metadata.json releases/v{VERSION}/metadata.json
+```
+
+This preserves the exact metadata submitted for each version alongside other release artifacts, without needing to dig through git history. After the App Store version reaches "Ready for Sale," verify the working `metadata.json` reflects the approved state (it usually already does since it was the source for submission).
+
 ### Setup
 
 ```
@@ -436,32 +470,75 @@ appstore-metadata/
     └── Appfile            # App identification
 ```
 
-API credentials in `.secrets/`:
-- `fastlane_api_key.json` - App Store Connect API key (JSON with inline key content)
-- `AuthKey_*.p8` - The actual private key file
+API credentials in `.secrets/` (gitignored, see First-Time Setup below):
+- `fastlane_api_key.json` - App Store Connect API key wrapper
+- `AuthKey_AG868N57U6.p8` - The actual private key file
+
+### First-Time Setup (`.secrets/`)
+
+The `.secrets/` directory is gitignored. On a fresh clone or new machine, create it:
+
+```bash
+mkdir -p .secrets
+
+# Copy the .p8 key (download from App Store Connect if needed:
+# Users and Access > Integrations > Keys > AG868N57U6)
+cp /path/to/AuthKey_AG868N57U6.p8 .secrets/
+
+# Create the fastlane API key JSON wrapper.
+# IMPORTANT: The "key" field must contain the .p8 file contents inline,
+# NOT a file path. Fastlane rejects "key_filepath".
+cat > .secrets/fastlane_api_key.json << 'JSONEOF'
+{
+  "key_id": "AG868N57U6",
+  "issuer_id": "69a6de89-2083-47e3-e053-5b8c7c11a4d1",
+  "key": "<paste contents of AuthKey_AG868N57U6.p8 here, including BEGIN/END lines>",
+  "in_house": false
+}
+JSONEOF
+
+# Or generate it automatically from the .p8 file:
+python3 -c "
+import json
+key = open('.secrets/AuthKey_AG868N57U6.p8').read().strip()
+json.dump({
+    'key_id': 'AG868N57U6',
+    'issuer_id': '69a6de89-2083-47e3-e053-5b8c7c11a4d1',
+    'key': key,
+    'in_house': False
+}, open('.secrets/fastlane_api_key.json', 'w'), indent=2)
+"
+```
 
 ### Uploading Metadata
 
 ```bash
-cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots
+# IMPORTANT: Must run from the fastlane directory (Deliverfile resolves
+# ../metadata.json relative to itself)
+cd appstore-metadata/fastlane
+fastlane deliver --skip_binary_upload --skip_screenshots
 ```
 
 **Requirements:**
 - An editable App Store version must exist (not in review, not approved)
-- API key must be properly configured
+- `.secrets/fastlane_api_key.json` must exist with inline key content (see above)
+- `appstore-metadata/metadata.json` must have the current release_notes
 
 **Notes:**
-- Binary upload still uses `bash scripts/xc.sh upload` (altool)
+- Binary upload still uses `bash scripts/xc.sh upload` (altool, uses keychain profile)
 - Screenshots are managed manually in App Store Connect
 - Fastlane won't work while a version is in review
+- The precheck step may warn but metadata uploads still succeed
 
 ### Workflow Integration
 
 During release:
-1. Update `appstore-metadata/metadata.json` with new release_notes, etc.
-2. Build and upload binary: `bash scripts/xc.sh upload`
-3. Upload metadata: `cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots`
-4. Submit for review in App Store Connect
+1. Update release_notes in `releases/v{VERSION}/metadata.json`
+2. Copy to canonical location: `cp releases/v{VERSION}/metadata.json appstore-metadata/metadata.json`
+3. Build and upload binary: `bash scripts/xc.sh --dist=appstore Release dev-archive && bash scripts/xc.sh export-pkg && bash scripts/xc.sh upload`
+4. Upload metadata: `cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots`
+5. Submit for review in App Store Connect
+6. Snapshot: `cp appstore-metadata/metadata.json releases/v{VERSION}/metadata.json` (usually already done from step 1-2)
 
 ## Versions, Builds, and Tags
 
@@ -618,8 +695,9 @@ cd ~/code/projects/homebrew-contextify
 # Update version
 sed -i '' 's/version ".*"/version "X.Y.Z"/' Formula/contextify-query.rb
 
-# Get SHA256 from release tarball
-curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-query-arm64.tar.gz" | shasum -a 256
+# Get SHA256 from release tarballs
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-arm64.tar.gz" | shasum -a 256
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/contextify-x86_64.tar.gz" | shasum -a 256
 
 # Update sha256 in Formula with output
 # Edit Formula/contextify-query.rb manually

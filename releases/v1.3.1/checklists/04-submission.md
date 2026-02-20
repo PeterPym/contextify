@@ -1,6 +1,6 @@
 # Submission Checklist
 
-**Release:** {version}
+**Release:** 1.3.1
 **Phase:** 4 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
@@ -41,15 +41,11 @@ Review App Store listing content before submission:
 - [ ] Screenshots show current UI? (if UI changed significantly)
 - [ ] Keywords still relevant?
 
-If changes needed:
-1. Update `releases/v{VERSION}/metadata.json` with new release_notes, etc.
-2. Copy to canonical location: `cp releases/v{VERSION}/metadata.json appstore-metadata/metadata.json`
-3. Upload via fastlane (must run from the fastlane directory):
+If changes needed, update `metadata.json` and upload:
 ```bash
-cd appstore-metadata/fastlane && fastlane deliver \
+FASTLANE_API_KEY_PATH=".secrets/fastlane_api_key.json" fastlane deliver \
   --skip_binary_upload --skip_screenshots --force --run_precheck_before_submit false
 ```
-**Prerequisite:** `.secrets/fastlane_api_key.json` must exist. See `releases/WORKFLOW.md` "First-Time Setup".
 - [ ] Metadata uploaded (or no changes needed)
 
 ### Review Information
@@ -69,21 +65,13 @@ cd appstore-metadata/fastlane && fastlane deliver \
 
 ### Take Screenshot
 - [ ] Screenshot submission confirmation
-- [ ] Save to: `releases/v{version}/assets/submission-screenshot.png`
-
-## Snapshot Metadata
-
-Preserve the metadata submitted for this version:
-```bash
-cp appstore-metadata/metadata.json releases/v{version}/metadata.json
-```
-- [ ] metadata.json copied to release directory
+- [ ] Save to: `releases/v1.3.1/assets/submission-screenshot.png`
 
 ## Record Submission
 
 ```bash
 # Record in tracking system
-./scripts/release/mark-submitted.sh {version} --build ____
+./scripts/release/mark-submitted.sh 1.3.1 --build ____
 ```
 
 This updates both `release.json` and `manifest.json` automatically.
@@ -94,13 +82,13 @@ If rejected:
 - [ ] Read rejection reason in App Store Connect Resolution Center
 - [ ] Record rejection:
   ```bash
-  ./scripts/release/mark-rejected.sh {version} --interactive
+  ./scripts/release/mark-rejected.sh 1.3.1 --interactive
   ```
 - [ ] Determine fix:
   - Metadata issue? Fix in App Store Connect, resubmit same build
   - Code issue? Fix code, reset for new build:
     ```bash
-    ./scripts/release/init.sh {version} --reset
+    ./scripts/release/init.sh 1.3.1 --reset
     # Return to Phase 2 (build)
     ```
 - [ ] Address rejection and resubmit

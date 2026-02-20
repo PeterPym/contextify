@@ -343,7 +343,7 @@ install_macos_dmg() {
     echo ""
     printf "${BOLD}Installing Contextify v$VERSION (macOS)${RESET}\n"
 
-    DMG_NAME="Contextify-${VERSION}.dmg"
+    DMG_NAME="Contextify.dmg"
     DMG_URL="https://github.com/$REPO/releases/download/v${VERSION}/${DMG_NAME}"
 
     # Create a temp directory for the DMG

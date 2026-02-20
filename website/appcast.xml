@@ -8,6 +8,56 @@
 
     <!-- Latest version should be first -->
     <item>
+      <title>Version 1.3.2</title>
+      <pubDate>Wed, 19 Feb 2026 15:15:00 -0800</pubDate>
+
+      <!-- Build number (monotonic, for Sparkle comparison) -->
+      <sparkle:version>23</sparkle:version>
+
+      <!-- User-visible version -->
+      <sparkle:shortVersionString>1.3.2</sparkle:shortVersionString>
+
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+
+      <sparkle:releaseNotesLink>
+        https://contextify.sh/release-notes/1.3.2.html
+      </sparkle:releaseNotesLink>
+
+      <enclosure
+        url="https://github.com/PeterPym/contextify/releases/download/v1.3.2/Contextify.dmg"
+        sparkle:edSignature="cpECm6xCmE5OBNvnREQ/0kpOgKFs3mU8u+2O4ZwoKgdn6vE5tNCkjGOrVSGZ5VSyYX5jj/Rwn/5kcWXAUYa/Aw=="
+        length="24419655"
+        type="application/octet-stream"
+        sparkle:os="macos"
+      />
+    </item>
+
+    <item>
+      <title>Version 1.3.1</title>
+      <pubDate>Tue, 18 Feb 2026 22:50:00 -0800</pubDate>
+
+      <!-- Build number (monotonic, for Sparkle comparison) -->
+      <sparkle:version>22</sparkle:version>
+
+      <!-- User-visible version -->
+      <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+
+      <sparkle:releaseNotesLink>
+        https://contextify.sh/release-notes/1.3.1.html
+      </sparkle:releaseNotesLink>
+
+      <enclosure
+        url="https://github.com/PeterPym/contextify/releases/download/v1.3.1/Contextify.dmg"
+        sparkle:edSignature="HYbIsQsdAKGzmftg4Lt5wzBigHRgO8H54EOcglL90fRqIwPyqFa5It7Y/7/eme3q14tit1T2Hk7AoHAJV48MBw=="
+        length="25754639"
+        type="application/octet-stream"
+        sparkle:os="macos"
+      />
+    </item>
+
+    <item>
       <title>Version 1.2.1</title>
       <pubDate>Thu, 23 Jan 2026 14:30:00 -0800</pubDate>
 

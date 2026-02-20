@@ -157,6 +157,7 @@ struct ContextifyQueryCLI {
 
     // Search options
     var countOnly: Bool = false
+    var termCounts: Bool = false
 
     // Worktree options
     var thisWorktreeOnly: Bool = false
@@ -175,7 +176,7 @@ struct ContextifyQueryCLI {
     }
   }
 
-  static let cliVersion = "1.3.0"
+  static let cliVersion = "1.3.2"
 
   static func main() {
     // Emit deprecation warning if invoked as contextify-query
@@ -336,6 +337,8 @@ struct ContextifyQueryCLI {
           options.jsonOutput = true
         case "--count-only":
           options.countOnly = true
+        case "--term-counts":
+          options.termCounts = true
         case "--this-worktree":
           options.thisWorktreeOnly = true
         case "--exclude":
@@ -441,19 +444,21 @@ struct ContextifyQueryCLI {
             "totalCount": .number(Double(totalCount))
           ]
 
-          if let termCounts = try service.searchTermCounts(
-            query: query,
-            projectIds: projectIds,
-            transcriptId: options.transcriptId,
-            includeHidden: options.includeHidden,
-            timeRange: timeRange,
-            kinds: kinds
-          ) {
-            metadataDict["termCounts"] = .object(
-              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
-                dict[pair.key] = .number(Double(pair.value))
-              }
-            )
+          if options.termCounts {
+            if let termCounts = try service.searchTermCounts(
+              query: query,
+              projectIds: projectIds,
+              transcriptId: options.transcriptId,
+              includeHidden: options.includeHidden,
+              timeRange: timeRange,
+              kinds: kinds
+            ) {
+              metadataDict["termCounts"] = .object(
+                termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                  dict[pair.key] = .number(Double(pair.value))
+                }
+              )
+            }
           }
 
           let emptyResults: [ContextifyQueryService.SearchHit] = []
@@ -524,20 +529,22 @@ struct ContextifyQueryCLI {
             "totalCount": .number(Double(totalCount))
           ]
 
-          // Add per-term counts for OR queries
-          if let termCounts = try service.searchTermCounts(
-            query: query,
-            projectIds: projectIds,
-            transcriptId: options.transcriptId,
-            includeHidden: options.includeHidden,
-            timeRange: timeRange,
-            kinds: kinds
-          ) {
-            metadataDict["termCounts"] = .object(
-              termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
-                dict[pair.key] = .number(Double(pair.value))
-              }
-            )
+          // Add per-term counts for OR queries (opt-in via --term-counts)
+          if options.termCounts {
+            if let termCounts = try service.searchTermCounts(
+              query: query,
+              projectIds: projectIds,
+              transcriptId: options.transcriptId,
+              includeHidden: options.includeHidden,
+              timeRange: timeRange,
+              kinds: kinds
+            ) {
+              metadataDict["termCounts"] = .object(
+                termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
+                  dict[pair.key] = .number(Double(pair.value))
+                }
+              )
+            }
           }
 
           // Add worktree expansion metadata when group detected
@@ -973,6 +980,8 @@ struct ContextifyQueryCLI {
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
         --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
+        --count-only         Search: return only totalCount (no result bodies)
+        --term-counts        Search: include per-term counts for OR queries (opt-in)
         --json               Emit JSON output
 
       Commands:

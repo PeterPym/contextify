@@ -18,9 +18,24 @@ enum DiscoveryError: Error {
 
 struct WindowCommands: Commands {
   @Environment(\.openWindow) private var openWindow
+  @AppStorage(HUDPreferences.windowAlwaysOnTopKey, store: ContextifyDefaults.shared)
+  private var windowAlwaysOnTop: Bool = false
 
   var body: some Commands {
-    CommandMenu("Window") {
+    CommandGroup(before: .windowArrangement) {
+      Toggle("Keep on Top", isOn: Binding(
+        get: { windowAlwaysOnTop },
+        set: { newValue in
+          windowAlwaysOnTop = newValue
+          if let window = MainWindowTracker.shared.window {
+            applyKeepOnTop(window, enabled: newValue)
+          }
+        }
+      ))
+      .keyboardShortcut("f", modifiers: [.command, .option])
+
+      Divider()
+
       Button("Show Transcripts") {
         openWindow(id: "transcript-inventory")
       }

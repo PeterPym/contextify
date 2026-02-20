@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/manifest.schema.json",
   "schema_version": 1,
-  "current_version": "1.2.1",
+  "current_version": "1.3.1",
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
@@ -234,20 +234,87 @@
     },
     "1.3.0": {
       "created": "2026-01-25",
+      "status": "complete",
+      "target_channels": [
+        "dmg",
+        "linux"
+      ],
+      "git_tag": "v1.3.0",
+      "git_commit": "e426b7b044683a5ac7b60c09b055618194e50630",
+      "dmg": {
+        "status": "shipped",
+        "built_at": "2026-01-25",
+        "released_at": "2026-01-25",
+        "sha256": "7d61a9bf1f111b399887a1ca3c424267075e156734dbd4a79ce032d4f104a23d"
+      },
+      "appstore": {
+        "status": "skipped"
+      },
+      "linux": {
+        "status": "shipped",
+        "shipped_at": "2026-01-25",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.0"
+      },
+      "marketing": {
+        "changelog_published": false,
+        "announcement_posted": false
+      }
+    },
+    "1.3.1": {
+      "created": "2026-02-18",
+      "status": "complete",
+      "target_channels": [
+        "dmg",
+        "appstore",
+        "linux"
+      ],
+      "git_tag": "v1.3.1",
+      "git_commit": "e2f215887fd7858fde2549315bf42a6191677c16",
+      "dmg": {
+        "status": "shipped",
+        "built_at": "2026-02-18",
+        "released_at": "2026-02-18",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.1"
+      },
+      "appstore": {
+        "status": "approved",
+        "build_number": 22,
+        "built_at": "2026-02-18",
+        "uploaded_at": "2026-02-18",
+        "submitted_at": "2026-02-19",
+        "approved_at": "2026-02-19",
+        "apple_state": "READY_FOR_SALE",
+        "apple_state_updated_at": "2026-02-19"
+      },
+      "linux": {
+        "status": "shipped",
+        "shipped_at": "2026-02-19",
+        "github_release_url": "https://github.com/PeterPym/contextify/releases/tag/v1.3.1"
+      },
+      "marketing": {
+        "changelog_published": true,
+        "announcement_posted": true,
+        "blog_post_url": "https://contextify.sh/blog/contextify-for-linux-backup-search-ai-conversations.html",
+        "website_deployed_at": "2026-02-19"
+      }
+    },
+    "1.3.2": {
+      "created": "2026-02-19",
       "status": "in_progress",
       "target_channels": [
         "dmg",
         "appstore",
         "linux"
       ],
-      "git_tag": "v1.3.0",
-      "git_commit": "e426b7b044683a5ac7b60c09b055618194e50630",
+      "git_tag": "v1.3.2",
+      "git_commit": "61105471787bf87c2a3ac952c17115c58719bcb2",
       "dmg": {
         "status": "pending"
       },
       "appstore": {
-        "status": "pending",
-        "build_number": 1
+        "status": "submitted",
+        "build_number": 23,
+        "submitted_at": "2026-02-20T01:01:18Z"
       },
       "linux": {
         "status": "pending"

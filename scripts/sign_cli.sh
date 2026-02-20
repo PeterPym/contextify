@@ -12,6 +12,8 @@
 #   ./scripts/sign_cli.sh [OPTIONS]
 #
 # Options:
+#   --arch ARCH      Target architecture (default: host arch via uname -m)
+#                    e.g. --arch x86_64 to cross-compile on Apple Silicon
 #   --force          Force rebuild even if no changes detected
 #   --no-notarize    Skip notarization (faster for testing)
 #   --check-only     Only check if rebuild is needed, don't build
@@ -73,9 +75,14 @@ FORCE_BUILD=false
 SKIP_NOTARIZE=false
 CHECK_ONLY=false
 VERSION_OVERRIDE=""
+TARGET_ARCH=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --arch)
+      TARGET_ARCH="$2"
+      shift 2
+      ;;
     --force)
       FORCE_BUILD=true
       shift
@@ -102,6 +109,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Default to host architecture if --arch not provided
+if [ -z "$TARGET_ARCH" ]; then
+  TARGET_ARCH="$(uname -m)"
+fi
 
 # ============================================================================
 # Logging helpers
@@ -214,8 +226,8 @@ build_cli() {
   # Clean previous build
   rm -rf .build/release/$BINARY_NAME
 
-  # Build release
-  if ! swift build -c release --product "$BINARY_NAME" 2>&1; then
+  # Build release for target architecture
+  if ! swift build -c release --arch "$TARGET_ARCH" --product "$BINARY_NAME" 2>&1; then
     log_error "Swift build failed"
     exit 1
   fi
@@ -300,7 +312,7 @@ package_cli() {
   log_info "Packaging for Homebrew..."
 
   local binary="$ROOT_DIR/.build/release/$BINARY_NAME"
-  local arch=$(uname -m)
+  local arch="$TARGET_ARCH"
   local tarball="$OUTPUT_DIR/${BINARY_NAME}-${arch}.tar.gz"
   local staging="$OUTPUT_DIR/staging"
 
@@ -374,7 +386,7 @@ main() {
     VERSION=$(grep -m1 "MARKETING_VERSION" "$ROOT_DIR/Contextify/Contextify.xcodeproj/project.pbxproj" | sed 's/.*= //' | tr -d ';' | tr -d ' ')
   fi
   echo "  Version: $VERSION"
-  echo "  Arch:    $(uname -m)"
+  echo "  Arch:    $TARGET_ARCH"
   echo ""
 
   # Check if rebuild needed
