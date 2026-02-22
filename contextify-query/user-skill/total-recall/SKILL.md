@@ -58,6 +58,16 @@ command -v contextify
 >
 > For help: https://contextify.sh/help
 
+## Data model
+
+Contextify organizes conversations into three levels:
+
+- **Project:** A codebase or working directory (e.g., `~/code/my-app`). Maps 1:1 with a git repo or folder.
+- **Transcript:** A single conversation session within a project. Each time you start a new Claude Code or Codex session, a new transcript is created.
+- **Entry:** One message within a transcript. Each user prompt, assistant response, or system message is an entry with a `kind` (user/assistant/system), `content`, and `timestamp`.
+
+Search results return entries. Use `transcriptId` to see the full conversation, `projectId` to scope by codebase.
+
 ## FTS5 search behavior
 
 The Contextify search backend currently uses FTS5 with **exact token matching** and no stemming.
@@ -266,14 +276,17 @@ Returns:
 {
   "data": {
     "before": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791 }
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791,
+        "createdAt": 1769380791, "provider": "claude.code" }
     ],
     "anchor": {
       "id": "e897a104-...", "kind": "assistant", "content": "full text here...",
-      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+      "timestamp": 1769380895, "createdAt": 1769380895,
+      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
     },
     "after": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900 }
+      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900,
+        "createdAt": 1769380900, "provider": "claude.code" }
     ],
     "meta": {
       "transcriptEntryCount": 75,
@@ -300,7 +313,8 @@ Returns:
   "data": {
     "entry": {
       "id": "...", "kind": "assistant", "content": "full untruncated text...",
-      "timestamp": 1769380895, "transcriptId": "...", "projectId": "..."
+      "timestamp": 1769380895, "createdAt": 1769380895,
+      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
     },
     "projectName": "my-project"
   },
