@@ -7,7 +7,7 @@
     "linux"
   ],
   "created": "2026-02-19",
-  "updated": "2026-02-19",
+  "updated": "2026-02-20",
   "git": {
     "tag": "v1.3.2",
     "commit": "61105471787bf87c2a3ac952c17115c58719bcb2",
@@ -33,7 +33,9 @@
         "size_bytes": null,
         "signed": false,
         "notarized": false,
-        "sparkle_signature": null
+        "sparkle_signature": null,
+        "shipped": true,
+        "shipped_at": "2026-02-20"
       },
       "appstore": {
         "archived": false,
@@ -45,8 +47,8 @@
       },
       "linux": {
         "built": false,
-        "shipped": false,
-        "shipped_at": null,
+        "shipped": true,
+        "shipped_at": "2026-02-20",
         "github_release_url": null,
         "x86_64": {
           "built": false,
@@ -76,10 +78,11 @@
       }
     },
     "submission": {
-      "status": "submitted",
+      "status": "approved",
       "submitted_at": "2026-02-20T01:01:18Z",
       "rejection": null,
-      "resubmission": null
+      "resubmission": null,
+      "approved_at": "2026-02-20"
     },
     "marketing": {
       "status": "pending",
@@ -111,6 +114,21 @@
       "date": "2026-02-19",
       "author": "system",
       "note": "Submitted build 23 to App Store Connect (guard bypassed)"
+    },
+    {
+      "date": "2026-02-20",
+      "author": "system",
+      "note": "appstore marked as approved"
+    },
+    {
+      "date": "2026-02-20",
+      "author": "system",
+      "note": "dmg marked as shipped (guard bypassed)"
+    },
+    {
+      "date": "2026-02-20",
+      "author": "system",
+      "note": "linux marked as shipped (guard bypassed)"
     }
   ]
 }
