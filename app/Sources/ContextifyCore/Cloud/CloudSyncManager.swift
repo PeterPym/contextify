@@ -53,6 +53,23 @@ public struct PullResult: Sendable {
   public let pagesFetched: Int
 }
 
+/// Process-wide cached machine ID. Computed once on first access to avoid
+/// spawning ioreg on every push. Thread-safe via NSLock.
+private final class CachedMachineId: @unchecked Sendable {
+  static let shared = CachedMachineId()
+  private var _value: String?
+  private let _lock = NSLock()
+
+  func get(compute: () -> String) -> String {
+    _lock.lock()
+    defer { _lock.unlock() }
+    if let v = _value { return v }
+    let v = compute()
+    _value = v
+    return v
+  }
+}
+
 // MARK: - CloudSyncManager
 
 /// Orchestrator for cloud sync push and pull operations.
@@ -120,6 +137,13 @@ public final class CloudSyncManager: @unchecked Sendable {
     }
 
     log.info("Configured cloud sync with server: \(config.serverURL, privacy: .public)")
+  }
+
+  /// Set an error message for UI display. Used when sync cannot even start
+  /// (e.g., database open failure) and the caller needs to surface the error.
+  @MainActor
+  public func setErrorForUI(_ message: String) {
+    self.syncState = .error(message)
   }
 
   /// Load configuration from ~/.config/contextify/cloud.json.
@@ -205,17 +229,9 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     log.info("Starting push")
 
-    // Export data from local database
-    let exportData = try queryService.exportForCloudPush(limit: 500)
-
-    if exportData.entries.isEmpty {
-      log.info("Push: no entries to push")
-      return PushResult(entriesPushed: 0, duplicatesSkipped: 0, serverSequence: 0)
-    }
-
-    // Build the push payload with device identity fallbacks
+    // Build device info once (cached machine ID avoids repeated ioreg calls)
     let machineId = config.deviceId.isEmpty
-      ? getStableMachineId()
+      ? CachedMachineId.shared.get(compute: computeMachineId)
       : config.deviceId
     let machineName = config.deviceName.isEmpty
       ? (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
@@ -227,57 +243,92 @@ public final class CloudSyncManager: @unchecked Sendable {
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     )
 
-    let payload = CloudPushPayload(
-      idempotencyKey: UUID().uuidString,
-      device: device,
-      projects: exportData.projects.map { proj in
-        CloudPushProject(id: proj.id, name: proj.name, rootPath: proj.rootPath)
-      },
-      transcripts: exportData.transcripts.map { tx in
-        CloudPushTranscript(
-          id: tx.id,
-          projectId: tx.projectId,
-          filePath: tx.filePath,
-          provider: tx.provider,
-          providerSessionId: tx.providerSessionId,
-          lineCount: tx.lineCount,
-          createdAt: tx.createdAt,
-          updatedAt: tx.updatedAt
-        )
-      },
-      entries: exportData.entries.map { entry in
-        CloudPushEntry(
-          id: entry.id,
-          transcriptId: entry.transcriptId,
-          projectId: entry.projectId,
-          sessionId: entry.sessionId,
-          provider: entry.provider,
-          kind: entry.kind,
-          timestamp: entry.timestamp,
-          content: entry.content,
-          contentSha256: entry.contentSha256,
-          displayInTimeline: entry.displayInTimeline,
-          gitBranch: entry.gitBranch,
-          gitCommit: entry.gitCommit,
-          cwd: entry.cwd,
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt
-        )
+    // Keyset pagination: loop batches until a short page is returned
+    let batchSize = 500
+    var afterTimestamp: Int?
+    var afterEntryId: String?
+    var totalAccepted = 0
+    var totalDupes = 0
+    var lastServerSequence = 0
+
+    while true {
+      let exportData = try queryService.exportForCloudPush(
+        afterTimestamp: afterTimestamp,
+        afterEntryId: afterEntryId,
+        limit: batchSize
+      )
+
+      if exportData.entries.isEmpty {
+        if afterTimestamp == nil {
+          log.info("Push: no entries to push")
+        }
+        break
       }
-    )
 
-    log.info("Pushing \(payload.entries.count, privacy: .public) entries")
+      let payload = CloudPushPayload(
+        idempotencyKey: UUID().uuidString,
+        device: device,
+        projects: exportData.projects.map { proj in
+          CloudPushProject(id: proj.id, name: proj.name, rootPath: proj.rootPath)
+        },
+        transcripts: exportData.transcripts.map { tx in
+          CloudPushTranscript(
+            id: tx.id,
+            projectId: tx.projectId,
+            filePath: tx.filePath,
+            provider: tx.provider,
+            providerSessionId: tx.providerSessionId,
+            lineCount: tx.lineCount,
+            createdAt: tx.createdAt,
+            updatedAt: tx.updatedAt
+          )
+        },
+        entries: exportData.entries.map { entry in
+          CloudPushEntry(
+            id: entry.id,
+            transcriptId: entry.transcriptId,
+            projectId: entry.projectId,
+            sessionId: entry.sessionId,
+            provider: entry.provider,
+            kind: entry.kind,
+            timestamp: entry.timestamp,
+            content: entry.content,
+            contentSha256: entry.contentSha256,
+            displayInTimeline: entry.displayInTimeline,
+            gitBranch: entry.gitBranch,
+            gitCommit: entry.gitCommit,
+            cwd: entry.cwd,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt
+          )
+        }
+      )
 
-    let response = try await client.push(payload)
+      log.info("Pushing batch: \(payload.entries.count, privacy: .public) entries")
+      let response = try await client.push(payload)
 
-    let accepted = response.accepted
-    let dupes = response.duplicatesSkipped
-    log.info("Push response: accepted=\(accepted, privacy: .public), duplicates=\(dupes, privacy: .public)")
+      totalAccepted += response.accepted
+      totalDupes += response.duplicatesSkipped
+      lastServerSequence = response.serverSequence
+
+      // Advance keyset cursor from last entry in this batch
+      if let last = exportData.entries.last {
+        afterTimestamp = last.timestamp
+        afterEntryId = last.id
+      }
+
+      // Short page means we have exported everything
+      if exportData.entries.count < batchSize {
+        break
+      }
+    }
+
+    log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public)")
 
     return PushResult(
-      entriesPushed: response.accepted,
-      duplicatesSkipped: response.duplicatesSkipped,
-      serverSequence: response.serverSequence
+      entriesPushed: totalAccepted,
+      duplicatesSkipped: totalDupes,
+      serverSequence: lastServerSequence
     )
   }
 
@@ -402,7 +453,8 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Stable machine identifier using IOPlatformUUID on macOS, /etc/machine-id on Linux.
   /// If ioreg fails (e.g. in a sandboxed app), falls back to a persisted UUID stored
   /// in Application Support to ensure stability across reboots and hostname changes.
-  private func getStableMachineId() -> String {
+  /// Called once via `cachedMachineId` lazy property; do not call directly.
+  private func computeMachineId() -> String {
     #if os(macOS)
     // Try IOPlatformUUID first (works outside sandbox)
     let process = Process()

@@ -17,7 +17,7 @@ struct CloudSettingsView: View {
 
   @State private var isConfigured: Bool = false
   @State private var autoSyncEnabled: Bool = false
-  @State private var autoSyncTimer: Timer?
+  @State private var autoSyncTask: Task<Void, Never>?
   @State private var showDisconnectConfirmation: Bool = false
   @State private var saveMessage: String?
 
@@ -172,9 +172,7 @@ struct CloudSettingsView: View {
 
         HStack(spacing: 12) {
           Button("Sync Now") {
-            Task {
-              await performSync()
-            }
+            startOneShotSync()
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
@@ -302,16 +300,18 @@ struct CloudSettingsView: View {
     }
   }
 
-  private func performSync() async {
+  private func startOneShotSync() {
     guard isConfigured else { return }
 
-    do {
-      let dbURL = try DatabaseManager.shared.databasePath()
-      let queryService = try ContextifyQueryService(databaseURL: dbURL)
-      await syncManager.sync(using: queryService)
-      log.info("[CLOUD-SETTINGS] Manual sync completed")
-    } catch {
-      log.error("[CLOUD-SETTINGS] Failed to create query service for sync: \(error.localizedDescription, privacy: .public)")
+    let manager = syncManager
+    Task.detached(priority: .userInitiated) {
+      do {
+        let dbURL = try DatabaseManager.shared.databasePath()
+        let queryService = try ContextifyQueryService(databaseURL: dbURL)
+        await manager.sync(using: queryService)
+      } catch {
+        await manager.setErrorForUI("Failed to open local database for sync.")
+      }
     }
   }
 
@@ -319,17 +319,24 @@ struct CloudSettingsView: View {
     stopAutoSync()
     log.info("[CLOUD-SETTINGS] Starting auto-sync (every 5 minutes)")
 
-    let timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
-      Task { @MainActor in
-        await performSync()
+    let manager = syncManager
+    autoSyncTask = Task.detached(priority: .background) {
+      while !Task.isCancelled {
+        do {
+          let dbURL = try DatabaseManager.shared.databasePath()
+          let queryService = try ContextifyQueryService(databaseURL: dbURL)
+          await manager.sync(using: queryService)
+        } catch {
+          await manager.setErrorForUI("Auto-sync failed to open local database.")
+        }
+        try? await Task.sleep(for: .seconds(300))
       }
     }
-    autoSyncTimer = timer
   }
 
   private func stopAutoSync() {
-    autoSyncTimer?.invalidate()
-    autoSyncTimer = nil
+    autoSyncTask?.cancel()
+    autoSyncTask = nil
   }
 
   private func disconnect() {
@@ -361,21 +368,14 @@ struct CloudSettingsView: View {
 
   // MARK: - Helpers
 
-  private func relativeTimeString(from date: Date) -> String {
-    let interval = Date().timeIntervalSince(date)
+  private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+    let f = RelativeDateTimeFormatter()
+    f.unitsStyle = .full
+    return f
+  }()
 
-    if interval < 60 {
-      return "just now"
-    } else if interval < 3600 {
-      let minutes = Int(interval / 60)
-      return "\(minutes) minute\(minutes == 1 ? "" : "s") ago"
-    } else if interval < 86400 {
-      let hours = Int(interval / 3600)
-      return "\(hours) hour\(hours == 1 ? "" : "s") ago"
-    } else {
-      let days = Int(interval / 86400)
-      return "\(days) day\(days == 1 ? "" : "s") ago"
-    }
+  private func relativeTimeString(from date: Date) -> String {
+    Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date())
   }
 }
 

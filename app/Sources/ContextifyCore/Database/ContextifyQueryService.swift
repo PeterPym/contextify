@@ -1428,19 +1428,43 @@ public struct ContextifyQueryService: Sendable {
 
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
-  public func exportForCloudPush(limit: Int = 500) throws -> CloudPushExport {
+  ///
+  /// Supports keyset pagination: pass `afterTimestamp` and `afterEntryId` from
+  /// the last entry of the previous batch to fetch the next page. Both must be
+  /// provided together for pagination to take effect.
+  ///
+  /// - Parameters:
+  ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
+  ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
+  ///   - limit: Maximum entries per batch (default 500).
+  public func exportForCloudPush(
+    afterTimestamp: Int? = nil,
+    afterEntryId: String? = nil,
+    limit: Int = 500
+  ) throws -> CloudPushExport {
     try pool.read { db in
-      // Get entries (ordered by timestamp for deterministic batching)
-      let entryRows = try Row.fetchAll(db, sql: """
+      // Get entries (ordered by timestamp, id for stable keyset paging)
+      var sql = """
         SELECT e.id, e.transcript_id, e.project_id, e.session_id,
                e.provider, e.kind, e.timestamp, e.content, e.content_sha256,
                e.display_in_timeline, e.git_branch, e.git_commit,
                e.cwd, e.created_at, e.updated_at
         FROM transcript_entries e
         WHERE e.display_in_timeline = 1
-        ORDER BY e.timestamp ASC
-        LIMIT ?
-        """, arguments: [limit])
+        """
+      var args: [DatabaseValueConvertible] = []
+      if let afterTimestamp, let afterEntryId {
+        sql += """
+          AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))
+          """
+        args.append(afterTimestamp)
+        args.append(afterTimestamp)
+        args.append(afterEntryId)
+      }
+      sql += " ORDER BY e.timestamp ASC, e.id ASC LIMIT ?"
+      args.append(limit)
+
+      let entryRows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
 
       let entries: [CloudPushExport.Entry] = entryRows.map { row in
         CloudPushExport.Entry(

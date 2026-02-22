@@ -59,12 +59,15 @@ struct CLICloudConfig: Codable {
     }
     // Fall back to legacy format and migrate
     let legacy = try JSONDecoder().decode(Legacy.self, from: data)
-    return CLICloudConfig(
+    let migrated = CLICloudConfig(
       serverURL: legacy.cloudURL,
       apiKey: legacy.apiKey,
       enabled: legacy.enabled ?? true,
       lastPullSequence: legacy.lastPullSequence ?? 0
     )
+    // Best-effort persist in new format; ignore failures (read-only FS, perms, etc.)
+    try? migrated.save()
+    return migrated
   }
 
   func save() throws {
