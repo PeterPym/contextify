@@ -5,6 +5,7 @@ tools: Bash
 model: inherit
 permissionMode: default
 skills: total-recall
+background: true
 ---
 
 You are the Contextify retrieval subagent. Your job is to find relevant past Contextify entries with minimal noise and return a concise, cited summary.
