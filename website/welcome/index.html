@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to Contextify Pro</title>
+  <meta name="description" content="Get started with Contextify Pro. Set up cloud sync in minutes.">
+  <link rel="canonical" href="https://contextify.sh/welcome/">
+
+  <!-- Favicon -->
+  <link rel="icon" href="../favicon.ico">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Custom styles -->
+  <link href="../styles.css?v=0b64c91b" rel="stylesheet">
+
+  <!-- Page-specific styles -->
+  <style>
+    /* Welcome Hero */
+    .welcome-hero {
+      background-color: var(--slate-900);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 70% 60%, rgba(74, 196, 224, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse 60% 40% at 30% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse 50% 30% at 90% 20%, rgba(249, 178, 51, 0.05) 0%, transparent 40%);
+      padding: 4rem 0 3rem;
+      text-align: center;
+    }
+
+    .welcome-hero h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--slate-50);
+      margin-bottom: 0.75rem;
+    }
+
+    .welcome-hero .lead {
+      font-size: 1.2rem;
+      color: var(--slate-300);
+    }
+
+    .welcome-hero .plan-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-cyan) 50%, var(--brand-purple) 100%);
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.3rem 1rem;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1.5rem;
+    }
+
+    /* API Key Box */
+    .api-key-section {
+      background-color: var(--bg-surface);
+      padding: 2rem 0;
+    }
+
+    [data-bs-theme="dark"] .api-key-section {
+      background-color: var(--slate-800);
+    }
+
+    .api-key-box {
+      background-color: var(--bg-muted);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    [data-bs-theme="dark"] .api-key-box {
+      background-color: var(--slate-700);
+      border-color: var(--slate-600);
+    }
+
+    .api-key-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-tertiary);
+      margin-bottom: 0.5rem;
+    }
+
+    #api-key {
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--contextify-primary);
+      word-break: break-all;
+      padding: 0.5rem;
+      min-height: 2rem;
+    }
+
+    .api-key-note {
+      font-size: 0.8rem;
+      color: var(--text-tertiary);
+      margin-top: 0.75rem;
+      margin-bottom: 0;
+    }
+
+    /* Steps Section */
+    .steps-section {
+      background-color: var(--bg-page);
+      padding: 4rem 0;
+    }
+
+    [data-bs-theme="dark"] .steps-section {
+      background-color: var(--slate-900);
+    }
+
+    .steps-section h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 2.5rem;
+    }
+
+    [data-bs-theme="dark"] .steps-section h2 {
+      color: var(--slate-50);
+    }
+
+    .step-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      padding: 2rem;
+      height: 100%;
+    }
+
+    [data-bs-theme="dark"] .step-card {
+      background-color: var(--slate-800);
+      border-color: var(--slate-700);
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--contextify-primary);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    .step-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+    }
+
+    [data-bs-theme="dark"] .step-title {
+      color: var(--slate-50);
+    }
+
+    .step-description {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    [data-bs-theme="dark"] .step-description {
+      color: var(--slate-400);
+    }
+
+    .step-command {
+      background-color: var(--slate-900);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.875rem;
+      color: var(--slate-100);
+      overflow-x: auto;
+      position: relative;
+    }
+
+    [data-bs-theme="dark"] .step-command {
+      background-color: var(--slate-950);
+    }
+
+    .step-command .prompt {
+      color: var(--contextify-success);
+      user-select: none;
+    }
+
+    .step-command .comment {
+      color: var(--slate-500);
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: var(--slate-700);
+      border: 1px solid var(--slate-600);
+      color: var(--slate-300);
+      border-radius: 6px;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .copy-btn:hover {
+      background: var(--slate-600);
+      color: var(--slate-100);
+    }
+
+    /* Next Steps Section */
+    .next-steps-section {
+      background-color: var(--bg-surface);
+      padding: 4rem 0;
+    }
+
+    [data-bs-theme="dark"] .next-steps-section {
+      background-color: var(--slate-800);
+    }
+
+    .next-steps-section h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 2rem;
+    }
+
+    [data-bs-theme="dark"] .next-steps-section h2 {
+      color: var(--slate-50);
+    }
+
+    .next-step-link {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.25rem;
+      background-color: var(--bg-page);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      margin-bottom: 1rem;
+    }
+
+    .next-step-link:hover {
+      border-color: var(--contextify-primary);
+      transform: translateX(4px);
+    }
+
+    [data-bs-theme="dark"] .next-step-link {
+      background-color: var(--slate-700);
+      border-color: var(--slate-600);
+    }
+
+    [data-bs-theme="dark"] .next-step-link:hover {
+      border-color: var(--contextify-primary);
+    }
+
+    .next-step-icon {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background-color: var(--contextify-primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    .next-step-link h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.2rem;
+    }
+
+    [data-bs-theme="dark"] .next-step-link h3 {
+      color: var(--slate-100);
+    }
+
+    .next-step-link p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+    }
+
+    [data-bs-theme="dark"] .next-step-link p {
+      color: var(--slate-400);
+    }
+
+    .next-step-arrow {
+      margin-left: auto;
+      color: var(--text-tertiary);
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    /* Open App CTA */
+    .open-app-section {
+      background-color: var(--slate-900);
+      background-image:
+        radial-gradient(ellipse 60% 40% at 50% 50%, rgba(74, 196, 224, 0.06) 0%, transparent 50%);
+      padding: 3rem 0;
+      text-align: center;
+    }
+
+    .open-app-section h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--slate-50);
+      margin-bottom: 0.5rem;
+    }
+
+    .open-app-section p {
+      color: var(--slate-400);
+      margin-bottom: 1.5rem;
+    }
+
+    .open-app-btn {
+      display: inline-block;
+      background-color: var(--contextify-primary);
+      border: 2px solid var(--contextify-primary);
+      color: #fff;
+      padding: 0.875rem 2rem;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .open-app-btn:hover {
+      background-color: var(--contextify-primary-hover);
+      border-color: var(--contextify-primary-hover);
+      color: #fff;
+      transform: scale(1.03);
+    }
+
+    .open-app-fallback {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--slate-500);
+    }
+
+    /* Responsive */
+    @media (max-width: 991.98px) {
+      .welcome-hero h1 {
+        font-size: 2rem;
+      }
+    }
+  </style>
+
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+</head>
+
+<body>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="../">
+        <img src="../assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- Welcome Hero -->
+  <section class="welcome-hero">
+    <div class="container">
+      <div class="plan-badge">You're in</div>
+      <h1>Welcome to Contextify Pro</h1>
+      <p class="lead">Your account is active. Let's get cloud sync running in under 2 minutes.</p>
+    </div>
+  </section>
+
+  <!-- Brand Gradient Divider -->
+  <div class="brand-divider"></div>
+
+  <!-- API Key Section -->
+  <section class="api-key-section">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8">
+          <div class="api-key-box">
+            <div class="api-key-label">Your API Key</div>
+            <div id="api-key">Loading...</div>
+            <p class="api-key-note">You will need this key during setup. It is also available in your account settings.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Setup Steps -->
+  <section class="steps-section">
+    <div class="container">
+      <h2 class="text-center">Get started in 3 steps</h2>
+
+      <div class="row g-4 justify-content-center">
+
+        <!-- Step 1: Install CLI -->
+        <div class="col-lg-4 col-md-6">
+          <div class="step-card">
+            <div class="step-number">1</div>
+            <div class="step-title">Install the CLI</div>
+            <p class="step-description">If you have not already installed the Contextify CLI, run this in your terminal. It works on both macOS and Linux.</p>
+            <div class="step-command">
+              <button class="copy-btn" onclick="copyCommand(this, 'curl -fsSL https://contextify.sh/install.sh | sh')">Copy</button>
+              <span class="prompt">$</span> curl -fsSL https://contextify.sh/install.sh | sh
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Cloud Sync -->
+        <div class="col-lg-4 col-md-6">
+          <div class="step-card">
+            <div class="step-number">2</div>
+            <div class="step-title">Configure cloud sync</div>
+            <p class="step-description">Run the setup command and paste your API key when prompted. This configures your machine for encrypted cloud sync.</p>
+            <div class="step-command">
+              <button class="copy-btn" onclick="copyCommand(this, 'contextify cloud setup')">Copy</button>
+              <span class="prompt">$</span> contextify cloud setup<br>
+              <span class="comment"># Paste your API key when prompted</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Start Syncing -->
+        <div class="col-lg-4 col-md-6">
+          <div class="step-card">
+            <div class="step-number">3</div>
+            <div class="step-title">Start syncing</div>
+            <p class="step-description">Push your existing transcripts to the cloud and pull down any sessions from your other machines.</p>
+            <div class="step-command">
+              <button class="copy-btn" onclick="copyCommand(this, 'contextify cloud sync')">Copy</button>
+              <span class="prompt">$</span> contextify cloud sync<br>
+              <span class="comment"># Syncs transcripts across machines</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Next Steps -->
+  <section class="next-steps-section">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8">
+          <h2 class="text-center">What's next</h2>
+
+          <a href="../docs/" class="next-step-link">
+            <div class="next-step-icon">&#128214;</div>
+            <div>
+              <h3>Read the docs</h3>
+              <p>Cloud sync configuration, advanced CLI usage, and more.</p>
+            </div>
+            <span class="next-step-arrow">&rarr;</span>
+          </a>
+
+          <a href="../support/" class="next-step-link">
+            <div class="next-step-icon">&#128172;</div>
+            <div>
+              <h3>Get support</h3>
+              <p>Priority email support is included with your Pro plan.</p>
+            </div>
+            <span class="next-step-arrow">&rarr;</span>
+          </a>
+
+          <a href="https://github.com/PeterPym/contextify/releases" class="next-step-link">
+            <div class="next-step-icon">&#128230;</div>
+            <div>
+              <h3>Release notes</h3>
+              <p>See what's new in the latest version of Contextify.</p>
+            </div>
+            <span class="next-step-arrow">&rarr;</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Open App CTA -->
+  <section class="open-app-section">
+    <div class="container">
+      <h2>Ready to go</h2>
+      <p>Open Contextify to see your synced timeline.</p>
+      <a href="contextify://open" class="open-app-btn">Open Contextify App</a>
+      <p class="open-app-fallback">If the app does not open, launch Contextify from your Applications folder or Dock.</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="../download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="../platforms/linux/" class="mx-2">Linux</a>
+        <span class="text-secondary">|</span>
+        <a href="../pricing/" class="mx-2">Pricing</a>
+        <span class="text-secondary">|</span>
+        <a href="../blog/" class="mx-2">Blog</a>
+        <span class="text-secondary">|</span>
+        <a href="../privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="../terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="../support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+  <script>
+    // Copy command to clipboard
+    function copyCommand(btn, text) {
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+        }, 2000);
+      }).catch(function() {
+        // Fallback for older browsers
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        btn.textContent = 'Copied!';
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+        }, 2000);
+      });
+    }
+
+    // API key population placeholder
+    // After Stripe checkout, the redirect URL will include session parameters.
+    // A server-side endpoint or client-side Stripe.js call would populate this.
+    (function() {
+      var apiKeyEl = document.getElementById('api-key');
+      // Check for API key in URL params (set by post-checkout redirect)
+      var params = new URLSearchParams(window.location.search);
+      var key = params.get('api_key');
+      if (key) {
+        apiKeyEl.textContent = key;
+      } else {
+        apiKeyEl.textContent = 'Your API key will appear here after checkout completes.';
+      }
+    })();
+  </script>
+</body>
+</html>
