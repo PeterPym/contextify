@@ -108,7 +108,8 @@ private func cloudRequest(
   method: String,
   path: String,
   body: Data? = nil,
-  queryItems: [URLQueryItem]? = nil
+  queryItems: [URLQueryItem]? = nil,
+  timeoutSeconds: TimeInterval = 30
 ) throws -> (Data, Int) {
   let baseURL = config.serverURL.hasSuffix("/")
     ? String(config.serverURL.dropLast())
@@ -124,6 +125,7 @@ private func cloudRequest(
   request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
   request.setValue("application/json", forHTTPHeaderField: "Content-Type")
   request.httpBody = body
+  request.timeoutInterval = timeoutSeconds
 
   let semaphore = DispatchSemaphore(value: 0)
   var responseData: Data?
@@ -137,7 +139,11 @@ private func cloudRequest(
     semaphore.signal()
   }
   task.resume()
-  semaphore.wait()
+  let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds + 5)
+  if waitResult == .timedOut {
+    task.cancel()
+    throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
+  }
 
   if let error = requestError {
     throw CloudError.networkError(error.localizedDescription)
@@ -623,6 +629,12 @@ struct CloudSearchCommand: ParsableCommand {
       """
   )
 
+  private static let entryDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    return f
+  }()
+
   @Argument(help: "Search query text")
   var query: String
 
@@ -706,8 +718,8 @@ struct CloudSearchCommand: ParsableCommand {
     }
 
     let results = response["results"] as? [[String: Any]] ?? []
-    let totalCount = response["total_count"] as? Int ?? 0
-    let queryMs = response["query_ms"] as? Double ?? 0
+    let totalCount = (response["total_count"] as? NSNumber)?.intValue ?? 0
+    let queryMs = (response["query_ms"] as? NSNumber)?.doubleValue ?? 0
     let hasMore = response["has_more"] as? Bool ?? false
 
     if results.isEmpty {
@@ -719,10 +731,11 @@ struct CloudSearchCommand: ParsableCommand {
 
     for (index, result) in results.enumerated() {
       let kind = result["kind"] as? String ?? "unknown"
-      let timestamp = result["timestamp"] as? Int ?? 0
+      let rawTs = (result["timestamp"] as? NSNumber)?.doubleValue ?? 0
+      let timestamp = Int(rawTs)
       let projectId = result["project_id"] as? String ?? ""
       let projectName = result["project_name"] as? String
-      let score = result["score"] as? Double ?? 0
+      let score = (result["score"] as? NSNumber)?.doubleValue ?? 0
       let snippet = result["snippet"] as? String ?? ""
 
       let displayProject = projectName ?? projectId
@@ -730,8 +743,8 @@ struct CloudSearchCommand: ParsableCommand {
       let num = offset + index + 1
 
       print("\(num). [\(kind)] \(dateStr)  (project: \(displayProject), score: \(String(format: "%.2f", score)))")
-      // Strip HTML bold tags and replace with terminal-friendly display
-      let cleanSnippet = stripHTMLBoldTags(snippet)
+      // Strip HTML bold tags and sanitize control characters for terminal safety
+      let cleanSnippet = sanitizeForTerminal(stripHTMLBoldTags(snippet))
       // Indent snippet lines
       let lines = cleanSnippet.components(separatedBy: "\n")
       for line in lines.prefix(4) {
@@ -760,13 +773,14 @@ struct CloudSearchCommand: ParsableCommand {
     return "\(Int(ms.rounded()))ms"
   }
 
-  /// Format epoch timestamp as human-readable date/time
+  /// Format epoch timestamp as human-readable date/time.
+  /// Tolerates both seconds and milliseconds from the server.
   private func formatEntryTimestamp(_ timestamp: Int) -> String {
     guard timestamp > 0 else { return "unknown" }
-    let date = Date(timeIntervalSince1970: Double(timestamp))
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd HH:mm"
-    return formatter.string(from: date)
+    // Heuristic: timestamps above 10 billion are likely milliseconds
+    let seconds = timestamp > 10_000_000_000 ? Double(timestamp) / 1000.0 : Double(timestamp)
+    let date = Date(timeIntervalSince1970: seconds)
+    return Self.entryDateFormatter.string(from: date)
   }
 
   /// Strip <b> and </b> HTML tags from snippet text for terminal display
@@ -774,6 +788,15 @@ struct CloudSearchCommand: ParsableCommand {
     return text
       .replacingOccurrences(of: "<b>", with: "")
       .replacingOccurrences(of: "</b>", with: "")
+  }
+
+  /// Remove terminal control characters (including ANSI escape sequences)
+  /// while preserving newlines and tabs for readable output.
+  private func sanitizeForTerminal(_ text: String) -> String {
+    String(text.unicodeScalars.filter { s in
+      if s == "\n" || s == "\r" || s == "\t" { return true }
+      return !s.properties.isControl
+    })
   }
 }
 
