@@ -396,56 +396,97 @@ struct CloudPushCommand: ParsableCommand {
     let dbURL = URL(fileURLWithPath: dbPath)
     let service = try ContextifyQueryService(databaseURL: dbURL)
 
-    // Export entries for push using the query service
-    let exportData = try service.exportForCloudPush(limit: limit)
-
-    if exportData.entries.isEmpty {
-      if json {
-        print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
-      } else {
-        print("No entries to push.")
-      }
-      return
-    }
-
-    // Build push payload, using config device identity with runtime fallbacks
+    // Build device info once
     #if os(macOS)
     let osName = "macos"
     #else
     let osName = "linux"
     #endif
-
     let machineId = config.deviceId.isEmpty ? getStableMachineId() : config.deviceId
-    let payload = buildPushPayload(
-      exportData: exportData,
-      machineId: machineId,
-      machineName: config.deviceName.isEmpty ? nil : config.deviceName,
-      osName: osName
-    )
-    let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-    if !json {
-      print("Pushing \(exportData.entries.count) entries to \(config.serverURL)...")
+    // Keyset pagination: loop batches until a short page is returned
+    var afterTimestamp: Int?
+    var afterEntryId: String?
+    var totalAccepted = 0
+    var totalDuplicates = 0
+    var totalErrors: [String] = []
+    var batchCount = 0
+
+    while true {
+      let exportData = try service.exportForCloudPush(
+        afterTimestamp: afterTimestamp,
+        afterEntryId: afterEntryId,
+        limit: limit
+      )
+
+      if exportData.entries.isEmpty {
+        if batchCount == 0 {
+          if json {
+            print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
+          } else {
+            print("No entries to push.")
+          }
+        }
+        break
+      }
+
+      batchCount += 1
+      let payload = buildPushPayload(
+        exportData: exportData,
+        machineId: machineId,
+        machineName: config.deviceName.isEmpty ? nil : config.deviceName,
+        osName: osName
+      )
+      let bodyData = try JSONSerialization.data(withJSONObject: payload)
+
+      if !json {
+        print("Pushing batch \(batchCount): \(exportData.entries.count) entries to \(config.serverURL)...")
+      }
+
+      let (responseData, status) = try cloudRequest(
+        config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+
+      guard status == 200 else {
+        let body = String(data: responseData, encoding: .utf8) ?? "unknown"
+        throw CloudError.apiError(status, body)
+      }
+
+      if let result = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
+        totalAccepted += result["accepted"] as? Int ?? 0
+        totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
+        let batchErrors = result["errors"] as? [String] ?? []
+        totalErrors.append(contentsOf: batchErrors)
+      }
+
+      // Advance keyset cursor from last entry in this batch
+      if let last = exportData.entries.last {
+        afterTimestamp = last.timestamp
+        afterEntryId = last.id
+      }
+
+      // Short page means we have exported everything
+      if exportData.entries.count < limit {
+        break
+      }
     }
 
-    let (responseData, status) = try cloudRequest(
-      config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
-
-    guard status == 200 else {
-      let body = String(data: responseData, encoding: .utf8) ?? "unknown"
-      throw CloudError.apiError(status, body)
-    }
-
-    if json {
-      print(String(data: responseData, encoding: .utf8) ?? "{}")
-    } else if let result = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
-      let accepted = result["accepted"] as? Int ?? 0
-      let duplicates = result["duplicates_skipped"] as? Int ?? 0
-      let errors = result["errors"] as? [String] ?? []
-      print("Push complete: \(accepted) accepted, \(duplicates) duplicates")
-      if !errors.isEmpty {
-        print("Errors: \(errors.count)")
-        for e in errors.prefix(5) { print("  - \(e)") }
+    // Print final summary
+    if batchCount > 0 {
+      if json {
+        let output: [String: Any] = [
+          "accepted": totalAccepted,
+          "duplicates_skipped": totalDuplicates,
+          "errors": Array(totalErrors.prefix(10)),
+          "batches": batchCount,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+        print(String(data: data, encoding: .utf8) ?? "{}")
+      } else {
+        print("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))")
+        if !totalErrors.isEmpty {
+          print("Errors: \(totalErrors.count)")
+          for e in totalErrors.prefix(5) { print("  - \(e)") }
+        }
       }
     }
   }

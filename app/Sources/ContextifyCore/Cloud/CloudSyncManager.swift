@@ -267,13 +267,18 @@ public final class CloudSyncManager: @unchecked Sendable {
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     )
 
-    // Keyset pagination: loop batches until a short page is returned
+    // Keyset pagination: loop batches until a short page is returned.
+    // Resume from saved cursor to avoid re-uploading the entire database.
     let batchSize = 500
-    var afterTimestamp: Int?
-    var afterEntryId: String?
+    var afterTimestamp: Int? = config.lastPushTimestamp
+    var afterEntryId: String? = config.lastPushEntryId
     var totalAccepted = 0
     var totalDupes = 0
     var lastServerSequence = 0
+
+    if let ts = afterTimestamp {
+      log.info("Push: resuming from saved cursor timestamp=\(ts, privacy: .public)")
+    }
 
     while true {
       let exportData = try queryService.exportForCloudPush(
@@ -345,6 +350,16 @@ public final class CloudSyncManager: @unchecked Sendable {
       if exportData.entries.count < batchSize {
         break
       }
+    }
+
+    // Persist the push cursor so next cycle is incremental
+    if let ts = afterTimestamp, let eid = afterEntryId {
+      var updatedConfig = config
+      updatedConfig.lastPushTimestamp = ts
+      updatedConfig.lastPushEntryId = eid
+      await MainActor.run { self.config = updatedConfig }
+      saveConfig(updatedConfig)
+      log.info("Push cursor saved: timestamp=\(ts, privacy: .public), entryId=\(eid, privacy: .public)")
     }
 
     log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public)")
