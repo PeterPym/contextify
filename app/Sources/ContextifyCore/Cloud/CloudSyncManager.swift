@@ -61,10 +61,18 @@ private final class CachedMachineId: @unchecked Sendable {
   private let _lock = NSLock()
 
   func get(compute: () -> String) -> String {
+    // Fast path: return cached value without computing
+    _lock.lock()
+    if let v = _value { _lock.unlock(); return v }
+    _lock.unlock()
+
+    // Compute outside lock (may spawn ioreg)
+    let v = compute()
+
+    // Double-checked: another thread may have computed while we were unlocked
     _lock.lock()
     defer { _lock.unlock() }
-    if let v = _value { return v }
-    let v = compute()
+    if let existing = _value { return existing }
     _value = v
     return v
   }
@@ -182,13 +190,22 @@ public final class CloudSyncManager: @unchecked Sendable {
   ///
   /// - Parameter queryService: The query service for database export/import.
   public func sync(using queryService: ContextifyQueryService) async {
-    let currentState = await syncState
-    guard currentState != .disabled else {
-      log.info("Sync skipped: cloud sync is disabled")
+    // Atomic check-and-set: skip if already syncing or disabled
+    let shouldStart = await MainActor.run { () -> Bool in
+      switch self.syncState {
+      case .disabled:
+        return false
+      case .syncing:
+        return false
+      default:
+        self.syncState = .syncing
+        return true
+      }
+    }
+    guard shouldStart else {
+      log.info("Sync skipped: already syncing or disabled")
       return
     }
-
-    await MainActor.run { self.syncState = .syncing }
     log.info("Starting full sync cycle")
 
     do {

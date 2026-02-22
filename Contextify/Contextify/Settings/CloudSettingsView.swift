@@ -17,6 +17,7 @@ struct CloudSettingsView: View {
 
   @State private var isConfigured: Bool = false
   @State private var autoSyncEnabled: Bool = false
+  @State private var oneShotSyncTask: Task<Void, Never>?
   @State private var autoSyncTask: Task<Void, Never>?
   @State private var showDisconnectConfirmation: Bool = false
   @State private var saveMessage: String?
@@ -35,6 +36,7 @@ struct CloudSettingsView: View {
       loadConfiguration()
     }
     .onDisappear {
+      oneShotSyncTask?.cancel()
       stopAutoSync()
     }
   }
@@ -304,10 +306,10 @@ struct CloudSettingsView: View {
     guard isConfigured else { return }
 
     let manager = syncManager
-    Task.detached(priority: .userInitiated) {
+    oneShotSyncTask = Task.detached(priority: .userInitiated) {
       do {
         let dbURL = try DatabaseManager.shared.databasePath()
-        let queryService = try ContextifyQueryService(databaseURL: dbURL)
+        let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
         await manager.sync(using: queryService)
       } catch {
         await manager.setErrorForUI("Failed to open local database for sync.")
@@ -324,7 +326,7 @@ struct CloudSettingsView: View {
       while !Task.isCancelled {
         do {
           let dbURL = try DatabaseManager.shared.databasePath()
-          let queryService = try ContextifyQueryService(databaseURL: dbURL)
+          let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
           await manager.sync(using: queryService)
         } catch {
           await manager.setErrorForUI("Auto-sync failed to open local database.")
@@ -340,6 +342,7 @@ struct CloudSettingsView: View {
   }
 
   private func disconnect() {
+    oneShotSyncTask?.cancel()
     stopAutoSync()
 
     // Remove the config file

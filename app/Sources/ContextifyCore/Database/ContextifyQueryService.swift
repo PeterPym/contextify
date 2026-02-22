@@ -183,14 +183,23 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
-  public init(databaseURL: URL) throws {
+  /// Create a query service connected to the given database.
+  ///
+  /// - Parameters:
+  ///   - databaseURL: Path to the SQLite database file.
+  ///   - readOnly: When true (default), the connection refuses writes via
+  ///     `config.readonly` and `PRAGMA query_only = ON`. Set to false for
+  ///     operations that need to write (e.g., cloud sync pull/import).
+  public init(databaseURL: URL, readOnly: Bool = true) throws {
     var config = Configuration()
-    config.readonly = true
+    config.readonly = readOnly
     config.busyMode = .timeout(5.0)
     config.prepareDatabase { db in
-      // Defense-in-depth: ensure this connection never writes, even if misused.
-      do { try db.execute(sql: "PRAGMA query_only = ON") }
-      catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription)") }
+      if readOnly {
+        // Defense-in-depth: ensure this connection never writes, even if misused.
+        do { try db.execute(sql: "PRAGMA query_only = ON") }
+        catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription)") }
+      }
       // Defense-in-depth: avoid loading/using schema from untrusted sources.
       do { try db.execute(sql: "PRAGMA trusted_schema = OFF") }
       catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription)") }
