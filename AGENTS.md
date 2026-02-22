@@ -27,6 +27,7 @@ These cause real problems when violated:
    - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
    - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
 10. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
+11. **No scratch files in repo** - Never write progress tracking, status, or temporary files to the repository. Use `/tmp/` with a unique filename for any scratch output. This applies to all agents and subagents.
     ```yaml
     ---
     branch: feature/example
