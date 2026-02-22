@@ -416,6 +416,9 @@ struct CloudPullCommand: ParsableCommand {
       """
   )
 
+  @Option(name: .long, help: "Path to the SQLite database file")
+  var db: String?
+
   @Option(name: .long, help: "Filter to specific project ID")
   var project: String?
 
@@ -425,7 +428,11 @@ struct CloudPullCommand: ParsableCommand {
   func run() throws {
     var config = try CloudConfig.load()
 
+    let dbPath = resolveDbPath()
+    let queryService = try ContextifyQueryService(databasePath: dbPath)
+
     var totalPulled = 0
+    var totalImported = 0
     var cursor = config.lastPullSequence
     var hasMore = true
 
@@ -436,7 +443,7 @@ struct CloudPullCommand: ParsableCommand {
     while hasMore {
       var queryItems = [
         URLQueryItem(name: "since", value: String(cursor)),
-        URLQueryItem(name: "limit", value: "500"),
+        URLQueryItem(name: "limit", value: "200"),
       ]
       if let proj = project {
         queryItems.append(URLQueryItem(name: "project_id", value: proj))
@@ -456,29 +463,46 @@ struct CloudPullCommand: ParsableCommand {
       }
 
       let entries = result["entries"] as? [[String: Any]] ?? []
+      let projects = result["projects"] as? [[String: Any]] ?? []
+      let transcripts = result["transcripts"] as? [[String: Any]] ?? []
+      let summaries = result["summaries"] as? [[String: Any]] ?? []
       hasMore = result["has_more"] as? Bool ?? false
       cursor = result["next_cursor"] as? Int ?? cursor
 
       totalPulled += entries.count
 
-      if !json && !entries.isEmpty {
-        print("  Received \(entries.count) entries (cursor: \(cursor))")
-      }
+      if !entries.isEmpty {
+        let importResult = try queryService.importFromCloudPull(
+          projects: projects,
+          transcripts: transcripts,
+          entries: entries,
+          summaries: summaries
+        )
+        totalImported += importResult.entriesImported
 
-      // TODO: Insert pulled entries into local SQLite via ContextifyQueryService
-      // For now we track the cursor; local insert requires extending the query service
+        if !json {
+          print("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))")
+        }
+      }
     }
 
     config.lastPullSequence = cursor
     try config.save()
 
     if json {
-      let output: [String: Any] = ["pulled": totalPulled, "cursor": cursor]
+      let output: [String: Any] = [
+        "pulled": totalPulled, "imported": totalImported, "cursor": cursor,
+      ]
       let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
       print(String(data: data, encoding: .utf8)!)
     } else {
-      print("Pull complete: \(totalPulled) entries, cursor at \(cursor)")
+      print("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)")
     }
+  }
+
+  private func resolveDbPath() -> String {
+    if let dbFlag = db { return XDGPaths.expandTilde(dbFlag) }
+    return XDGPaths.databasePath.path
   }
 }
 
@@ -515,6 +539,7 @@ struct CloudSyncCommand: ParsableCommand {
 
     if !json { print("\n=== Pull ===") }
     var pull = CloudPullCommand()
+    pull.db = db
     pull.project = project
     pull.json = json
     try pull.run()

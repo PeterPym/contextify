@@ -1499,6 +1499,122 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Cloud Pull Import
+
+  /// Import data received from a cloud pull response into the local database.
+  /// Upserts projects, transcripts, and entries. Skips entries that already
+  /// exist (by id) to avoid duplicates. Returns counts of imported items.
+  public func importFromCloudPull(
+    projects: [[String: Any]],
+    transcripts: [[String: Any]],
+    entries: [[String: Any]],
+    summaries: [[String: Any]]
+  ) throws -> CloudPullImportResult {
+    try pool.write { db in
+      var projectsImported = 0
+      var transcriptsImported = 0
+      var entriesImported = 0
+      var skipped = 0
+
+      let now = Int(Date().timeIntervalSince1970)
+
+      // Upsert projects
+      for proj in projects {
+        guard let id = proj["id"] as? String,
+              let rootPath = proj["root_path"] as? String else { continue }
+        let name = proj["name"] as? String
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM projects WHERE id = ?", arguments: [id])
+        if exists == nil {
+          try db.execute(sql: """
+            INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
+              is_orphaned, created_at, updated_at)
+            VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
+            """, arguments: [id, name, rootPath, now, now])
+          projectsImported += 1
+        }
+      }
+
+      // Upsert transcripts
+      for tx in transcripts {
+        guard let id = tx["id"] as? String,
+              let projectId = tx["project_id"] as? String,
+              let filePath = tx["file_path"] as? String,
+              let provider = tx["provider"] as? String else { continue }
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
+        if exists == nil {
+          let lineCount = tx["line_count"] as? Int ?? 0
+          let createdAt = tx["created_at"] as? Int ?? now
+          let updatedAt = tx["updated_at"] as? Int ?? now
+          try db.execute(sql: """
+            INSERT INTO transcripts (id, project_id, file_path, provider,
+              provider_session_id, last_modified, line_count,
+              last_processed_line, parser_version, status, ingest_state,
+              created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
+            """, arguments: [
+              id, projectId, filePath, provider,
+              tx["provider_session_id"] as? String,
+              updatedAt, lineCount, createdAt, updatedAt,
+            ])
+          transcriptsImported += 1
+        }
+      }
+
+      // Insert entries (skip existing by id)
+      for entry in entries {
+        guard let id = entry["id"] as? String,
+              let transcriptId = entry["transcript_id"] as? String,
+              let projectId = entry["project_id"] as? String,
+              let provider = entry["provider"] as? String,
+              let kind = entry["kind"] as? String,
+              let timestamp = entry["timestamp"] as? Int,
+              let content = entry["content"] as? String,
+              let contentSha256 = entry["content_sha256"] as? String else { continue }
+
+        // Skip 'summary' kind - local schema doesn't support it
+        let localKind = (kind == "summary") ? "system" : kind
+
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcript_entries WHERE id = ?", arguments: [id])
+        if exists != nil {
+          skipped += 1
+          continue
+        }
+
+        let createdAt = entry["created_at"] as? Int ?? now
+        let updatedAt = entry["updated_at"] as? Int ?? now
+        let displayInTimeline = entry["display_in_timeline"] as? Bool ?? true
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (id, transcript_id, project_id,
+            session_id, provider, kind, timestamp, content, content_sha256,
+            display_in_timeline, git_branch, git_commit, cwd,
+            created_at, updated_at, created_ts)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          """, arguments: [
+            id, transcriptId, projectId,
+            entry["session_id"] as? String,
+            provider, localKind, timestamp, content, contentSha256,
+            displayInTimeline ? 1 : 0,
+            entry["git_branch"] as? String,
+            entry["git_commit"] as? String,
+            entry["cwd"] as? String,
+            createdAt, updatedAt,
+            Double(timestamp),
+          ])
+        entriesImported += 1
+      }
+
+      return CloudPullImportResult(
+        projectsImported: projectsImported,
+        transcriptsImported: transcriptsImported,
+        entriesImported: entriesImported,
+        entriesSkipped: skipped
+      )
+    }
+  }
+
   /// Database version and feature availability.
   public func versionInfo() throws -> VersionInfo {
     try pool.read { db in
@@ -1513,6 +1629,16 @@ public struct ContextifyQueryService: Sendable {
       )
     }
   }
+}
+
+// MARK: - Cloud Pull Import Result
+
+/// Result of importing cloud pull data into the local database.
+public struct CloudPullImportResult: Sendable {
+  public let projectsImported: Int
+  public let transcriptsImported: Int
+  public let entriesImported: Int
+  public let entriesSkipped: Int
 }
 
 // MARK: - Cloud Push Export Types
