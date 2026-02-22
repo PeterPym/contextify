@@ -1563,6 +1563,7 @@ public struct ContextifyQueryService: Sendable {
       }
 
       // Insert entries (skip existing by id)
+      var summaryKindSkipped = 0
       for entry in entries {
         guard let id = entry["id"] as? String,
               let transcriptId = entry["transcript_id"] as? String,
@@ -1573,8 +1574,12 @@ public struct ContextifyQueryService: Sendable {
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
 
-        // Skip 'summary' kind - local schema doesn't support it
-        let localKind = (kind == "summary") ? "system" : kind
+        // Skip 'summary' kind entries entirely - local schema only supports
+        // user/assistant/system. Summaries are handled via the summaries table.
+        if kind == "summary" {
+          summaryKindSkipped += 1
+          continue
+        }
 
         let exists = try Int.fetchOne(db, sql:
           "SELECT 1 FROM transcript_entries WHERE id = ?", arguments: [id])
@@ -1595,7 +1600,7 @@ public struct ContextifyQueryService: Sendable {
           """, arguments: [
             id, transcriptId, projectId,
             entry["session_id"] as? String,
-            provider, localKind, timestamp, content, contentSha256,
+            provider, kind, timestamp, content, contentSha256,
             displayInTimeline ? 1 : 0,
             entry["git_branch"] as? String,
             entry["git_commit"] as? String,
@@ -1604,6 +1609,14 @@ public struct ContextifyQueryService: Sendable {
             Double(timestamp),
           ])
         entriesImported += 1
+      }
+
+      // Log ignored summaries (summary storage not yet implemented)
+      if !summaries.isEmpty || summaryKindSkipped > 0 {
+        #if canImport(OSLog)
+        let logger = Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+        logger.info("Cloud pull: ignored \(summaries.count, privacy: .public) summaries and \(summaryKindSkipped, privacy: .public) summary-kind entries (storage not implemented)")
+        #endif
       }
 
       return CloudPullImportResult(

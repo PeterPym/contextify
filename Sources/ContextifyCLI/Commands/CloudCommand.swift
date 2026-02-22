@@ -12,12 +12,25 @@ import ContextifyIngestionCore
 
 // MARK: - Cloud Config
 
-/// Configuration for cloud sync, stored in ~/.config/contextify/cloud.json
-struct CloudConfig: Codable {
-  var cloudURL: String
+/// Configuration for cloud sync, stored in ~/.config/contextify/cloud.json.
+/// Uses snake_case keys to match the Core CloudConfig schema so both CLI and app
+/// can read/write the same file without format mismatches.
+struct CLICloudConfig: Codable {
+  var serverURL: String
   var apiKey: String
+  var deviceId: String = ""
+  var deviceName: String = ""
   var enabled: Bool = true
   var lastPullSequence: Int = 0
+
+  enum CodingKeys: String, CodingKey {
+    case serverURL = "server_url"
+    case apiKey = "api_key"
+    case deviceId = "device_id"
+    case deviceName = "device_name"
+    case enabled
+    case lastPullSequence = "last_pull_sequence"
+  }
 
   static var configDir: URL {
     if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] {
@@ -29,18 +42,38 @@ struct CloudConfig: Codable {
 
   static var configFile: URL { configDir.appendingPathComponent("cloud.json") }
 
-  static func load() throws -> CloudConfig {
+  /// Legacy config format used before the snake_case unification.
+  /// Supports migration from configs written with the old CLI.
+  private struct Legacy: Codable {
+    var cloudURL: String
+    var apiKey: String
+    var enabled: Bool?
+    var lastPullSequence: Int?
+  }
+
+  static func load() throws -> CLICloudConfig {
     let data = try Data(contentsOf: configFile)
-    return try JSONDecoder().decode(CloudConfig.self, from: data)
+    // Try current format first
+    if let cfg = try? JSONDecoder().decode(CLICloudConfig.self, from: data) {
+      return cfg
+    }
+    // Fall back to legacy format and migrate
+    let legacy = try JSONDecoder().decode(Legacy.self, from: data)
+    return CLICloudConfig(
+      serverURL: legacy.cloudURL,
+      apiKey: legacy.apiKey,
+      enabled: legacy.enabled ?? true,
+      lastPullSequence: legacy.lastPullSequence ?? 0
+    )
   }
 
   func save() throws {
     try FileManager.default.createDirectory(
-      at: CloudConfig.configDir, withIntermediateDirectories: true)
+      at: CLICloudConfig.configDir, withIntermediateDirectories: true)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(self)
-    try data.write(to: CloudConfig.configFile, options: .atomic)
+    try data.write(to: CLICloudConfig.configFile, options: .atomic)
   }
 }
 
@@ -68,15 +101,15 @@ enum CloudError: Error, CustomStringConvertible {
 
 /// Synchronous HTTP request helper for cloud API calls
 private func cloudRequest(
-  config: CloudConfig,
+  config: CLICloudConfig,
   method: String,
   path: String,
   body: Data? = nil,
   queryItems: [URLQueryItem]? = nil
 ) throws -> (Data, Int) {
-  let baseURL = config.cloudURL.hasSuffix("/")
-    ? String(config.cloudURL.dropLast())
-    : config.cloudURL
+  let baseURL = config.serverURL.hasSuffix("/")
+    ? String(config.serverURL.dropLast())
+    : config.serverURL
 
   var components = URLComponents(string: "\(baseURL)\(path)")!
   if let queryItems = queryItems {
@@ -201,9 +234,20 @@ struct CloudSetupCommand: ParsableCommand {
       throw ValidationError("API key must start with 'ctx_'")
     }
 
+    // Populate device identity
+    let machineId = getStableMachineId()
+    let machineName: String
+    #if os(macOS)
+    machineName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    #else
+    machineName = ProcessInfo.processInfo.hostName
+    #endif
+
     // Test connection
     print("Testing connection to \(cloudURL)...")
-    let testConfig = CloudConfig(cloudURL: cloudURL, apiKey: apiKey)
+    let testConfig = CLICloudConfig(
+      serverURL: cloudURL, apiKey: apiKey,
+      deviceId: machineId, deviceName: machineName)
     do {
       let (_, status) = try cloudRequest(
         config: testConfig, method: "GET", path: "/api/v1/sync/status")
@@ -221,7 +265,7 @@ struct CloudSetupCommand: ParsableCommand {
 
     try testConfig.save()
     print()
-    print("Saved to \(CloudConfig.configFile.path)")
+    print("Saved to \(CLICloudConfig.configFile.path)")
     print("Run 'contextify cloud status' to verify.")
   }
 }
@@ -238,9 +282,9 @@ struct CloudStatusCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    let config: CloudConfig
+    let config: CLICloudConfig
     do {
-      config = try CloudConfig.load()
+      config = try CLICloudConfig.load()
     } catch {
       if json {
         print(#"{"configured":false,"error":"not_configured"}"#)
@@ -262,7 +306,7 @@ struct CloudStatusCommand: ParsableCommand {
       // Merge local config into server response
       if var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
         obj["configured"] = true
-        obj["cloud_url"] = config.cloudURL
+        obj["cloud_url"] = config.serverURL
         obj["last_pull_sequence"] = config.lastPullSequence
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         print(String(data: out, encoding: .utf8)!)
@@ -272,7 +316,7 @@ struct CloudStatusCommand: ParsableCommand {
     } else {
       print("Cloud Sync Status")
       print("=================")
-      print("Server:     \(config.cloudURL)")
+      print("Server:     \(config.serverURL)")
       print("Enabled:    \(config.enabled ? "yes" : "no")")
       print()
 
@@ -330,7 +374,7 @@ struct CloudPushCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    let config = try CloudConfig.load()
+    let config = try CLICloudConfig.load()
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -353,23 +397,24 @@ struct CloudPushCommand: ParsableCommand {
       return
     }
 
-    // Build push payload
+    // Build push payload, using config device identity with runtime fallbacks
     #if os(macOS)
     let osName = "macos"
     #else
     let osName = "linux"
     #endif
 
-    let machineId = getStableMachineId()
+    let machineId = config.deviceId.isEmpty ? getStableMachineId() : config.deviceId
     let payload = buildPushPayload(
       exportData: exportData,
       machineId: machineId,
+      machineName: config.deviceName.isEmpty ? nil : config.deviceName,
       osName: osName
     )
     let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
     if !json {
-      print("Pushing \(exportData.entries.count) entries to \(config.cloudURL)...")
+      print("Pushing \(exportData.entries.count) entries to \(config.serverURL)...")
     }
 
     let (responseData, status) = try cloudRequest(
@@ -426,7 +471,7 @@ struct CloudPullCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    var config = try CloudConfig.load()
+    var config = try CLICloudConfig.load()
 
     let dbPath = resolveDbPath()
     let queryService = try ContextifyQueryService(databasePath: dbPath)
@@ -437,7 +482,7 @@ struct CloudPullCommand: ParsableCommand {
     var hasMore = true
 
     if !json {
-      print("Pulling from \(config.cloudURL) (cursor: \(cursor))...")
+      print("Pulling from \(config.serverURL) (cursor: \(cursor))...")
     }
 
     while hasMore {
@@ -467,7 +512,13 @@ struct CloudPullCommand: ParsableCommand {
       let transcripts = result["transcripts"] as? [[String: Any]] ?? []
       let summaries = result["summaries"] as? [[String: Any]] ?? []
       hasMore = result["has_more"] as? Bool ?? false
-      cursor = result["next_cursor"] as? Int ?? cursor
+      let nextCursor = result["next_cursor"] as? Int ?? cursor
+
+      // Guard against non-advancing cursors to prevent infinite loops
+      if hasMore && nextCursor <= cursor {
+        throw CloudError.apiError(500, "Protocol error: next_cursor did not advance (stuck at \(cursor))")
+      }
+      cursor = nextCursor
 
       totalPulled += entries.count
 
@@ -523,7 +574,7 @@ struct CloudSyncCommand: ParsableCommand {
   @Option(name: .long, help: "Path to the SQLite database file")
   var db: String?
 
-  @Option(name: .long, help: "Filter to specific project name")
+  @Option(name: .long, help: "Filter to specific project ID")
   var project: String?
 
   @Flag(name: .long, help: "Output as JSON")
@@ -583,21 +634,26 @@ private func getStableMachineId() -> String {
 private func buildPushPayload(
   exportData: CloudPushExport,
   machineId: String,
+  machineName: String?,
   osName: String
 ) -> [String: Any] {
   let appVersion = ProcessInfo.processInfo.environment["CONTEXTIFY_CLI_VERSION"] ?? "unknown"
-  let machineName: String
-  #if os(macOS)
-  machineName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-  #else
-  machineName = ProcessInfo.processInfo.hostName
-  #endif
+  let resolvedName: String
+  if let name = machineName, !name.isEmpty {
+    resolvedName = name
+  } else {
+    #if os(macOS)
+    resolvedName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    #else
+    resolvedName = ProcessInfo.processInfo.hostName
+    #endif
+  }
 
   return [
     "idempotency_key": UUID().uuidString,
     "device": [
       "machine_id": machineId,
-      "machine_name": machineName,
+      "machine_name": resolvedName,
       "os": osName,
       "app_version": appVersion,
     ] as [String: Any],

@@ -14,12 +14,16 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Cl
 
 /// Errors that can occur during cloud sync API calls.
 public enum CloudSyncError: Error, Sendable {
+  /// Cloud sync is not configured. The user must run setup first.
+  case notConfigured
   /// The server returned HTTP 401 (unauthorized). The API key may be invalid or revoked.
   case unauthorized
   /// The server returned a non-success HTTP status code.
   case serverError(statusCode: Int, body: String)
   /// A network-level error occurred (DNS failure, timeout, connection refused, etc.).
   case networkError(Error)
+  /// The request payload could not be encoded to JSON.
+  case encodingError(Error)
   /// The response body could not be decoded into the expected type.
   case decodingError(Error)
 }
@@ -27,12 +31,16 @@ public enum CloudSyncError: Error, Sendable {
 extension CloudSyncError: LocalizedError {
   public var errorDescription: String? {
     switch self {
+    case .notConfigured:
+      return "Cloud sync not configured. Run setup first."
     case .unauthorized:
       return "Unauthorized: check your API key"
     case .serverError(let code, let body):
       return "Server error (HTTP \(code)): \(body)"
     case .networkError(let error):
       return "Network error: \(error.localizedDescription)"
+    case .encodingError(let error):
+      return "Encoding error: \(error.localizedDescription)"
     case .decodingError(let error):
       return "Decoding error: \(error.localizedDescription)"
     }
@@ -105,7 +113,7 @@ public actor CloudSyncClient {
     do {
       body = try encoder.encode(payload)
     } catch {
-      throw CloudSyncError.decodingError(error)
+      throw CloudSyncError.encodingError(error)
     }
 
     log.info("Pushing to cloud: \(payload.entries.count, privacy: .public) entries, \(payload.projects.count, privacy: .public) projects, \(payload.transcripts.count, privacy: .public) transcripts")

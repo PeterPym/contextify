@@ -60,28 +60,35 @@ public struct PullResult: Sendable {
 /// Coordinates between the local database (via `ContextifyQueryService`) and the
 /// remote cloud server (via `CloudSyncClient`). Manages configuration persistence,
 /// cursor tracking for incremental pulls, and exposes observable state for UI binding.
-@MainActor
+///
+/// Threading model:
+/// - Observable state properties are `@MainActor`-isolated for safe SwiftUI binding.
+/// - Private `client`/`config` are also `@MainActor`-isolated; sync methods snapshot
+///   them at the start via `MainActor.run` to avoid data races.
+/// - The class is `@unchecked Sendable` because all mutable state is either
+///   `@MainActor`-isolated or stack-local. Do NOT add non-isolated mutable state
+///   without adding synchronization.
 @Observable
-public final class CloudSyncManager {
+public final class CloudSyncManager: @unchecked Sendable {
 
-  // MARK: - Observable State
+  // MARK: - Observable State (MainActor-isolated for SwiftUI)
 
   /// Timestamp of the last successful sync completion.
-  public private(set) var lastSyncDate: Date?
+  @MainActor public private(set) var lastSyncDate: Date?
 
   /// Current sync state for UI display.
-  public private(set) var syncState: SyncState = .idle
+  @MainActor public private(set) var syncState: SyncState = .idle
 
   /// Result from the most recent push operation.
-  public private(set) var lastPushResult: PushResult?
+  @MainActor public private(set) var lastPushResult: PushResult?
 
   /// Result from the most recent pull operation.
-  public private(set) var lastPullResult: PullResult?
+  @MainActor public private(set) var lastPullResult: PullResult?
 
-  // MARK: - Private State
+  // MARK: - Private State (MainActor-isolated, snapshotted by sync methods)
 
-  private var client: CloudSyncClient?
-  private var config: CloudConfig?
+  @MainActor private var client: CloudSyncClient?
+  @MainActor private var config: CloudConfig?
 
   // MARK: - Initialization
 
@@ -95,6 +102,7 @@ public final class CloudSyncManager {
   /// Must be called before `sync()`, `push()`, or `pull()`.
   ///
   /// - Parameter config: Cloud configuration with server URL and API key.
+  @MainActor
   public func configure(config: CloudConfig) {
     guard let url = URL(string: config.serverURL) else {
       log.error("Invalid server URL in config: \(config.serverURL, privacy: .public)")
@@ -150,30 +158,32 @@ public final class CloudSyncManager {
   ///
   /// - Parameter queryService: The query service for database export/import.
   public func sync(using queryService: ContextifyQueryService) async {
-    guard syncState != .disabled else {
+    let currentState = await syncState
+    guard currentState != .disabled else {
       log.info("Sync skipped: cloud sync is disabled")
       return
     }
 
-    syncState = .syncing
+    await MainActor.run { self.syncState = .syncing }
     log.info("Starting full sync cycle")
 
     do {
       let pushResult = try await push(using: queryService)
-      lastPushResult = pushResult
+      await MainActor.run { self.lastPushResult = pushResult }
 
       let pullResult = try await pull(using: queryService)
-      lastPullResult = pullResult
-
-      lastSyncDate = Date()
-      syncState = .idle
+      await MainActor.run {
+        self.lastPullResult = pullResult
+        self.lastSyncDate = Date()
+        self.syncState = .idle
+      }
 
       let pushed = pushResult.entriesPushed
       let pulled = pullResult.entriesImported
       log.info("Sync complete: pushed \(pushed, privacy: .public), pulled \(pulled, privacy: .public)")
     } catch {
       let message = userFriendlyMessage(for: error)
-      syncState = .error(message)
+      await MainActor.run { self.syncState = .error(message) }
       log.error("Sync failed: \(message, privacy: .public)")
     }
   }
@@ -187,24 +197,32 @@ public final class CloudSyncManager {
   /// - Returns: The push result with counts.
   /// - Throws: `CloudSyncError` on failure.
   public func push(using queryService: ContextifyQueryService) async throws -> PushResult {
+    // Snapshot MainActor-isolated state to avoid data races
+    let (client, config) = await MainActor.run { (self.client, self.config) }
     guard let client, let config else {
-      throw CloudSyncError.networkError(URLError(.notConnectedToInternet))
+      throw CloudSyncError.notConfigured
     }
 
     log.info("Starting push")
 
     // Export data from local database
-    let exportData = try queryService.exportForCloudPush()
+    let exportData = try queryService.exportForCloudPush(limit: 500)
 
     if exportData.entries.isEmpty {
       log.info("Push: no entries to push")
       return PushResult(entriesPushed: 0, duplicatesSkipped: 0, serverSequence: 0)
     }
 
-    // Build the push payload
+    // Build the push payload with device identity fallbacks
+    let machineId = config.deviceId.isEmpty
+      ? getStableMachineId()
+      : config.deviceId
+    let machineName = config.deviceName.isEmpty
+      ? (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
+      : config.deviceName
     let device = CloudDeviceInfo(
-      machineId: config.deviceId,
-      machineName: config.deviceName,
+      machineId: machineId,
+      machineName: machineName,
       os: "macos",
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     )
@@ -273,8 +291,10 @@ public final class CloudSyncManager {
   /// - Returns: The pull result with import counts.
   /// - Throws: `CloudSyncError` on failure.
   public func pull(using queryService: ContextifyQueryService) async throws -> PullResult {
+    // Snapshot MainActor-isolated state to avoid data races
+    let (client, config) = await MainActor.run { (self.client, self.config) }
     guard let client, var config else {
-      throw CloudSyncError.networkError(URLError(.notConnectedToInternet))
+      throw CloudSyncError.notConfigured
     }
 
     var cursor = config.lastPullSequence
@@ -351,13 +371,21 @@ public final class CloudSyncManager {
         totalSkipped += importResult.entriesSkipped
       }
 
-      cursor = response.nextCursor
+      // Guard against non-advancing cursors to prevent infinite loops
+      let nextCursor = response.nextCursor
+      if response.hasMore && nextCursor <= cursor {
+        log.error("Pull cursor did not advance: stuck at \(cursor, privacy: .public)")
+        throw CloudSyncError.serverError(
+          statusCode: 500,
+          body: "Protocol error: next_cursor did not advance (stuck at \(cursor))")
+      }
+      cursor = nextCursor
       hasMore = response.hasMore
     }
 
     // Update cursor in config and persist
     config.lastPullSequence = cursor
-    self.config = config
+    await MainActor.run { self.config = config }
     saveConfig(config)
 
     log.info("Pull complete: imported=\(totalImported, privacy: .public), skipped=\(totalSkipped, privacy: .public), pages=\(pagesFetched, privacy: .public), cursor=\(cursor, privacy: .public)")
@@ -371,16 +399,81 @@ public final class CloudSyncManager {
 
   // MARK: - Private Helpers
 
+  /// Stable machine identifier using IOPlatformUUID on macOS, /etc/machine-id on Linux.
+  /// If ioreg fails (e.g. in a sandboxed app), falls back to a persisted UUID stored
+  /// in Application Support to ensure stability across reboots and hostname changes.
+  private func getStableMachineId() -> String {
+    #if os(macOS)
+    // Try IOPlatformUUID first (works outside sandbox)
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+    process.arguments = ["-rd1", "-c", "IOPlatformExpertDevice"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
+    process.waitUntilExit()
+    let output = String(
+      data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    if let range = output.range(of: "IOPlatformUUID\" = \"") {
+      let start = range.upperBound
+      if let end = output[start...].firstIndex(of: "\"") {
+        return String(output[start..<end])
+      }
+    }
+    // Fallback: persisted UUID in Application Support (sandbox-safe)
+    return getOrCreatePersistedDeviceId()
+    #else
+    if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
+      .trimmingCharacters(in: .whitespacesAndNewlines) {
+      return id
+    }
+    return ProcessInfo.processInfo.hostName
+    #endif
+  }
+
+  /// Returns a stable device ID persisted in Application Support.
+  /// Creates and stores a new UUID if one doesn't exist yet.
+  private func getOrCreatePersistedDeviceId() -> String {
+    let appSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory, in: .userDomainMask).first!
+    let contextifyDir = appSupport.appendingPathComponent("Contextify")
+    let deviceIdFile = contextifyDir.appendingPathComponent("device_id.txt")
+
+    // Try to read existing
+    if let existing = try? String(contentsOf: deviceIdFile, encoding: .utf8)
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+       !existing.isEmpty {
+      return existing
+    }
+
+    // Generate and persist a new UUID
+    let newId = UUID().uuidString
+    do {
+      try FileManager.default.createDirectory(
+        at: contextifyDir, withIntermediateDirectories: true)
+      try newId.write(to: deviceIdFile, atomically: true, encoding: .utf8)
+      log.info("Generated and persisted new device ID")
+    } catch {
+      log.warning("Failed to persist device ID: \(error.localizedDescription, privacy: .public)")
+    }
+    return newId
+  }
+
   /// Map CloudSyncError to a user-friendly message string.
   private func userFriendlyMessage(for error: Error) -> String {
     if let syncError = error as? CloudSyncError {
       switch syncError {
+      case .notConfigured:
+        return "Cloud sync not configured. Set up cloud sync in Settings."
       case .unauthorized:
         return "Authentication failed. Check your API key in cloud settings."
       case .serverError(let code, _):
         return "Server error (HTTP \(code)). Try again later."
       case .networkError:
         return "Network error. Check your internet connection."
+      case .encodingError:
+        return "Failed to prepare sync data. This may indicate a data issue."
       case .decodingError:
         return "Unexpected server response. The server may be running an incompatible version."
       }
