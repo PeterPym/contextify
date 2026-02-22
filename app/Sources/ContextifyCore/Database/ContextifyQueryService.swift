@@ -183,14 +183,23 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
-  public init(databaseURL: URL) throws {
+  /// Create a query service connected to the given database.
+  ///
+  /// - Parameters:
+  ///   - databaseURL: Path to the SQLite database file.
+  ///   - readOnly: When true (default), the connection refuses writes via
+  ///     `config.readonly` and `PRAGMA query_only = ON`. Set to false for
+  ///     operations that need to write (e.g., cloud sync pull/import).
+  public init(databaseURL: URL, readOnly: Bool = true) throws {
     var config = Configuration()
-    config.readonly = true
+    config.readonly = readOnly
     config.busyMode = .timeout(5.0)
     config.prepareDatabase { db in
-      // Defense-in-depth: ensure this connection never writes, even if misused.
-      do { try db.execute(sql: "PRAGMA query_only = ON") }
-      catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription)") }
+      if readOnly {
+        // Defense-in-depth: ensure this connection never writes, even if misused.
+        do { try db.execute(sql: "PRAGMA query_only = ON") }
+        catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription)") }
+      }
       // Defense-in-depth: avoid loading/using schema from untrusted sources.
       do { try db.execute(sql: "PRAGMA trusted_schema = OFF") }
       catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription)") }
@@ -1424,6 +1433,237 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Cloud Push Export
+
+  /// Export entries for cloud push. Returns projects, transcripts, and entries
+  /// ready for serialization into the cloud API push payload.
+  ///
+  /// Supports keyset pagination: pass `afterTimestamp` and `afterEntryId` from
+  /// the last entry of the previous batch to fetch the next page. Both must be
+  /// provided together for pagination to take effect.
+  ///
+  /// - Parameters:
+  ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
+  ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
+  ///   - limit: Maximum entries per batch (default 500).
+  public func exportForCloudPush(
+    afterTimestamp: Int? = nil,
+    afterEntryId: String? = nil,
+    limit: Int = 500
+  ) throws -> CloudPushExport {
+    try pool.read { db in
+      // Get entries (ordered by timestamp, id for stable keyset paging)
+      var sql = """
+        SELECT e.id, e.transcript_id, e.project_id, e.session_id,
+               e.provider, e.kind, e.timestamp, e.content, e.content_sha256,
+               e.display_in_timeline, e.git_branch, e.git_commit,
+               e.cwd, e.created_at, e.updated_at
+        FROM transcript_entries e
+        WHERE e.display_in_timeline = 1
+        """
+      var args: [DatabaseValueConvertible] = []
+      if (afterTimestamp == nil) != (afterEntryId == nil) {
+        log.warning("exportForCloudPush called with partial cursor; ignoring cursor")
+      }
+      if let afterTimestamp, let afterEntryId {
+        sql += """
+          AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))
+          """
+        args.append(afterTimestamp)
+        args.append(afterTimestamp)
+        args.append(afterEntryId)
+      }
+      sql += " ORDER BY e.timestamp ASC, e.id ASC LIMIT ?"
+      args.append(limit)
+
+      let entryRows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+
+      let entries: [CloudPushExport.Entry] = entryRows.map { row in
+        CloudPushExport.Entry(
+          id: row["id"], transcriptId: row["transcript_id"],
+          projectId: row["project_id"], sessionId: row["session_id"],
+          provider: row["provider"], kind: row["kind"],
+          timestamp: row["timestamp"], content: row["content"],
+          contentSha256: row["content_sha256"],
+          displayInTimeline: row["display_in_timeline"],
+          gitBranch: row["git_branch"], gitCommit: row["git_commit"],
+          cwd: row["cwd"],
+          createdAt: row["created_at"], updatedAt: row["updated_at"]
+        )
+      }
+
+      // Collect referenced project and transcript IDs
+      let projectIds = Array(Set(entries.map { $0.projectId }))
+      let transcriptIds = Array(Set(entries.map { $0.transcriptId }))
+
+      // Fetch projects
+      var projects: [CloudPushExport.Project] = []
+      if !projectIds.isEmpty {
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
+        let projRows = try Row.fetchAll(db,
+          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
+          arguments: StatementArguments(projectIds))
+        projects = projRows.map { row in
+          CloudPushExport.Project(
+            id: row["id"], name: row["name"], rootPath: row["root_path"])
+        }
+      }
+
+      // Fetch transcripts
+      var transcripts: [CloudPushExport.Transcript] = []
+      if !transcriptIds.isEmpty {
+        let placeholders = transcriptIds.map { _ in "?" }.joined(separator: ",")
+        let txRows = try Row.fetchAll(db,
+          sql: """
+            SELECT id, project_id, file_path, provider, provider_session_id,
+                   line_count, created_at, updated_at
+            FROM transcripts WHERE id IN (\(placeholders))
+            """,
+          arguments: StatementArguments(transcriptIds))
+        transcripts = txRows.map { row in
+          CloudPushExport.Transcript(
+            id: row["id"], projectId: row["project_id"],
+            filePath: row["file_path"], provider: row["provider"],
+            providerSessionId: row["provider_session_id"],
+            lineCount: row["line_count"] ?? 0,
+            createdAt: row["created_at"], updatedAt: row["updated_at"])
+        }
+      }
+
+      return CloudPushExport(
+        projects: projects, transcripts: transcripts, entries: entries)
+    }
+  }
+
+  // MARK: - Cloud Pull Import
+
+  /// Import data received from a cloud pull response into the local database.
+  /// Upserts projects, transcripts, and entries. Skips entries that already
+  /// exist (by id) to avoid duplicates. Returns counts of imported items.
+  public func importFromCloudPull(
+    projects: [[String: Any]],
+    transcripts: [[String: Any]],
+    entries: [[String: Any]],
+    summaries: [[String: Any]]
+  ) throws -> CloudPullImportResult {
+    try pool.write { db in
+      var projectsImported = 0
+      var transcriptsImported = 0
+      var entriesImported = 0
+      var skipped = 0
+
+      let now = Int(Date().timeIntervalSince1970)
+
+      // Upsert projects
+      for proj in projects {
+        guard let id = proj["id"] as? String,
+              let rootPath = proj["root_path"] as? String else { continue }
+        let name = proj["name"] as? String
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM projects WHERE id = ?", arguments: [id])
+        if exists == nil {
+          try db.execute(sql: """
+            INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
+              is_orphaned, created_at, updated_at)
+            VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
+            """, arguments: [id, name, rootPath, now, now])
+          projectsImported += 1
+        }
+      }
+
+      // Upsert transcripts
+      for tx in transcripts {
+        guard let id = tx["id"] as? String,
+              let projectId = tx["project_id"] as? String,
+              let filePath = tx["file_path"] as? String,
+              let provider = tx["provider"] as? String else { continue }
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
+        if exists == nil {
+          let lineCount = tx["line_count"] as? Int ?? 0
+          let createdAt = tx["created_at"] as? Int ?? now
+          let updatedAt = tx["updated_at"] as? Int ?? now
+          try db.execute(sql: """
+            INSERT INTO transcripts (id, project_id, file_path, provider,
+              provider_session_id, last_modified, line_count,
+              last_processed_line, parser_version, status, ingest_state,
+              created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
+            """, arguments: [
+              id, projectId, filePath, provider,
+              tx["provider_session_id"] as? String,
+              updatedAt, lineCount, createdAt, updatedAt,
+            ])
+          transcriptsImported += 1
+        }
+      }
+
+      // Insert entries (skip existing by id)
+      var summaryKindSkipped = 0
+      for entry in entries {
+        guard let id = entry["id"] as? String,
+              let transcriptId = entry["transcript_id"] as? String,
+              let projectId = entry["project_id"] as? String,
+              let provider = entry["provider"] as? String,
+              let kind = entry["kind"] as? String,
+              let timestamp = entry["timestamp"] as? Int,
+              let content = entry["content"] as? String,
+              let contentSha256 = entry["content_sha256"] as? String else { continue }
+
+        // Skip 'summary' kind entries entirely - local schema only supports
+        // user/assistant/system. Summaries are handled via the summaries table.
+        if kind == "summary" {
+          summaryKindSkipped += 1
+          continue
+        }
+
+        let exists = try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcript_entries WHERE id = ?", arguments: [id])
+        if exists != nil {
+          skipped += 1
+          continue
+        }
+
+        let createdAt = entry["created_at"] as? Int ?? now
+        let updatedAt = entry["updated_at"] as? Int ?? now
+        let displayInTimeline = entry["display_in_timeline"] as? Bool ?? true
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (id, transcript_id, project_id,
+            session_id, provider, kind, timestamp, content, content_sha256,
+            display_in_timeline, git_branch, git_commit, cwd,
+            created_at, updated_at, created_ts)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          """, arguments: [
+            id, transcriptId, projectId,
+            entry["session_id"] as? String,
+            provider, kind, timestamp, content, contentSha256,
+            displayInTimeline ? 1 : 0,
+            entry["git_branch"] as? String,
+            entry["git_commit"] as? String,
+            entry["cwd"] as? String,
+            createdAt, updatedAt,
+            Double(timestamp),
+          ])
+        entriesImported += 1
+      }
+
+      // Log ignored summaries (summary storage not yet implemented)
+      if !summaries.isEmpty || summaryKindSkipped > 0 {
+        #if canImport(OSLog)
+        let logger = Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+        logger.info("Cloud pull: ignored \(summaries.count, privacy: .public) summaries and \(summaryKindSkipped, privacy: .public) summary-kind entries (storage not implemented)")
+        #endif
+      }
+
+      return CloudPullImportResult(
+        projectsImported: projectsImported,
+        transcriptsImported: transcriptsImported,
+        entriesImported: entriesImported,
+        entriesSkipped: skipped
+      )
+    }
+  }
+
   /// Database version and feature availability.
   public func versionInfo() throws -> VersionInfo {
     try pool.read { db in
@@ -1436,6 +1676,92 @@ public struct ContextifyQueryService: Sendable {
         ftsEnabled: ftsEnabled,
         summariesEnabled: summariesEnabled
       )
+    }
+  }
+}
+
+// MARK: - Cloud Pull Import Result
+
+/// Result of importing cloud pull data into the local database.
+public struct CloudPullImportResult: Sendable {
+  public let projectsImported: Int
+  public let transcriptsImported: Int
+  public let entriesImported: Int
+  public let entriesSkipped: Int
+}
+
+// MARK: - Cloud Push Export Types
+
+/// Data exported from local SQLite for pushing to a cloud server.
+public struct CloudPushExport: Sendable {
+  public let projects: [Project]
+  public let transcripts: [Transcript]
+  public let entries: [Entry]
+
+  public struct Project: Sendable {
+    public let id: String
+    public let name: String?
+    public let rootPath: String
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = ["id": id, "root_path": rootPath]
+      if let n = name { d["name"] = n }
+      return d
+    }
+  }
+
+  public struct Transcript: Sendable {
+    public let id: String
+    public let projectId: String
+    public let filePath: String
+    public let provider: String
+    public let providerSessionId: String?
+    public let lineCount: Int
+    public let createdAt: Int
+    public let updatedAt: Int
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = [
+        "id": id, "project_id": projectId, "file_path": filePath,
+        "provider": provider, "line_count": lineCount,
+        "created_at": createdAt, "updated_at": updatedAt,
+      ]
+      if let sid = providerSessionId { d["provider_session_id"] = sid }
+      return d
+    }
+  }
+
+  public struct Entry: Sendable {
+    public let id: String
+    public let transcriptId: String
+    public let projectId: String
+    public let sessionId: String?
+    public let provider: String
+    public let kind: String
+    public let timestamp: Int
+    public let content: String
+    public let contentSha256: String
+    public let displayInTimeline: Bool
+    public let gitBranch: String?
+    public let gitCommit: String?
+    public let cwd: String?
+    public let createdAt: Int
+    public let updatedAt: Int
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = [
+        "id": id, "transcript_id": transcriptId,
+        "project_id": projectId, "provider": provider,
+        "kind": kind, "timestamp": timestamp,
+        "content": content, "content_sha256": contentSha256,
+        "display_in_timeline": displayInTimeline,
+        "created_at": createdAt, "updated_at": updatedAt,
+      ]
+      if let s = sessionId { d["session_id"] = s }
+      if let b = gitBranch { d["git_branch"] = b }
+      if let c = gitCommit { d["git_commit"] = c }
+      if let c = cwd { d["cwd"] = c }
+      return d
     }
   }
 }
