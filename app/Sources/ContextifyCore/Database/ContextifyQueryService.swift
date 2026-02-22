@@ -1462,6 +1462,9 @@ public struct ContextifyQueryService: Sendable {
         WHERE e.display_in_timeline = 1
         """
       var args: [DatabaseValueConvertible] = []
+      if (afterTimestamp == nil) != (afterEntryId == nil) {
+        log.warning("exportForCloudPush called with partial cursor; ignoring cursor")
+      }
       if let afterTimestamp, let afterEntryId {
         sql += """
           AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))

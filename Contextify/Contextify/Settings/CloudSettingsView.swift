@@ -38,6 +38,7 @@ struct CloudSettingsView: View {
     .onDisappear {
       oneShotSyncTask?.cancel()
       stopAutoSync()
+      autoSyncEnabled = false
     }
   }
 

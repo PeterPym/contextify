@@ -203,7 +203,14 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
     }
     guard shouldStart else {
-      log.info("Sync skipped: already syncing or disabled")
+      let reason = await MainActor.run { () -> String in
+        switch self.syncState {
+        case .disabled: return "disabled"
+        case .syncing: return "already_syncing"
+        default: return "unknown"
+        }
+      }
+      log.info("Sync skipped: \(reason, privacy: .public)")
       return
     }
     log.info("Starting full sync cycle")
