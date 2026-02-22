@@ -1424,6 +1424,81 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Cloud Push Export
+
+  /// Export entries for cloud push. Returns projects, transcripts, and entries
+  /// ready for serialization into the cloud API push payload.
+  public func exportForCloudPush(limit: Int = 500) throws -> CloudPushExport {
+    try pool.read { db in
+      // Get entries (ordered by timestamp for deterministic batching)
+      let entryRows = try Row.fetchAll(db, sql: """
+        SELECT e.id, e.transcript_id, e.project_id, e.session_id,
+               e.provider, e.kind, e.timestamp, e.content, e.content_sha256,
+               e.display_in_timeline, e.git_branch, e.git_commit,
+               e.cwd, e.created_at, e.updated_at
+        FROM transcript_entries e
+        WHERE e.display_in_timeline = 1
+        ORDER BY e.timestamp ASC
+        LIMIT ?
+        """, arguments: [limit])
+
+      let entries: [CloudPushExport.Entry] = entryRows.map { row in
+        CloudPushExport.Entry(
+          id: row["id"], transcriptId: row["transcript_id"],
+          projectId: row["project_id"], sessionId: row["session_id"],
+          provider: row["provider"], kind: row["kind"],
+          timestamp: row["timestamp"], content: row["content"],
+          contentSha256: row["content_sha256"],
+          displayInTimeline: row["display_in_timeline"],
+          gitBranch: row["git_branch"], gitCommit: row["git_commit"],
+          cwd: row["cwd"],
+          createdAt: row["created_at"], updatedAt: row["updated_at"]
+        )
+      }
+
+      // Collect referenced project and transcript IDs
+      let projectIds = Array(Set(entries.map { $0.projectId }))
+      let transcriptIds = Array(Set(entries.map { $0.transcriptId }))
+
+      // Fetch projects
+      var projects: [CloudPushExport.Project] = []
+      if !projectIds.isEmpty {
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
+        let projRows = try Row.fetchAll(db,
+          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
+          arguments: StatementArguments(projectIds))
+        projects = projRows.map { row in
+          CloudPushExport.Project(
+            id: row["id"], name: row["name"], rootPath: row["root_path"])
+        }
+      }
+
+      // Fetch transcripts
+      var transcripts: [CloudPushExport.Transcript] = []
+      if !transcriptIds.isEmpty {
+        let placeholders = transcriptIds.map { _ in "?" }.joined(separator: ",")
+        let txRows = try Row.fetchAll(db,
+          sql: """
+            SELECT id, project_id, file_path, provider, provider_session_id,
+                   line_count, created_at, updated_at
+            FROM transcripts WHERE id IN (\(placeholders))
+            """,
+          arguments: StatementArguments(transcriptIds))
+        transcripts = txRows.map { row in
+          CloudPushExport.Transcript(
+            id: row["id"], projectId: row["project_id"],
+            filePath: row["file_path"], provider: row["provider"],
+            providerSessionId: row["provider_session_id"],
+            lineCount: row["line_count"] ?? 0,
+            createdAt: row["created_at"], updatedAt: row["updated_at"])
+        }
+      }
+
+      return CloudPushExport(
+        projects: projects, transcripts: transcripts, entries: entries)
+    }
+  }
+
   /// Database version and feature availability.
   public func versionInfo() throws -> VersionInfo {
     try pool.read { db in
@@ -1436,6 +1511,82 @@ public struct ContextifyQueryService: Sendable {
         ftsEnabled: ftsEnabled,
         summariesEnabled: summariesEnabled
       )
+    }
+  }
+}
+
+// MARK: - Cloud Push Export Types
+
+/// Data exported from local SQLite for pushing to a cloud server.
+public struct CloudPushExport: Sendable {
+  public let projects: [Project]
+  public let transcripts: [Transcript]
+  public let entries: [Entry]
+
+  public struct Project: Sendable {
+    public let id: String
+    public let name: String?
+    public let rootPath: String
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = ["id": id, "root_path": rootPath]
+      if let n = name { d["name"] = n }
+      return d
+    }
+  }
+
+  public struct Transcript: Sendable {
+    public let id: String
+    public let projectId: String
+    public let filePath: String
+    public let provider: String
+    public let providerSessionId: String?
+    public let lineCount: Int
+    public let createdAt: Int
+    public let updatedAt: Int
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = [
+        "id": id, "project_id": projectId, "file_path": filePath,
+        "provider": provider, "line_count": lineCount,
+        "created_at": createdAt, "updated_at": updatedAt,
+      ]
+      if let sid = providerSessionId { d["provider_session_id"] = sid }
+      return d
+    }
+  }
+
+  public struct Entry: Sendable {
+    public let id: String
+    public let transcriptId: String
+    public let projectId: String
+    public let sessionId: String?
+    public let provider: String
+    public let kind: String
+    public let timestamp: Int
+    public let content: String
+    public let contentSha256: String
+    public let displayInTimeline: Bool
+    public let gitBranch: String?
+    public let gitCommit: String?
+    public let cwd: String?
+    public let createdAt: Int
+    public let updatedAt: Int
+
+    public var asDictionary: [String: Any] {
+      var d: [String: Any] = [
+        "id": id, "transcript_id": transcriptId,
+        "project_id": projectId, "provider": provider,
+        "kind": kind, "timestamp": timestamp,
+        "content": content, "content_sha256": contentSha256,
+        "display_in_timeline": displayInTimeline,
+        "created_at": createdAt, "updated_at": updatedAt,
+      ]
+      if let s = sessionId { d["session_id"] = s }
+      if let b = gitBranch { d["git_branch"] = b }
+      if let c = gitCommit { d["git_commit"] = c }
+      if let c = cwd { d["cwd"] = c }
+      return d
     }
   }
 }
