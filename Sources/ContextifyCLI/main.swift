@@ -137,6 +137,8 @@ struct Contextify: AsyncParsableCommand {
       UninstallSkillCommand.self,
       // Health check
       DoctorCommand.self,
+      // Cloud sync
+      CloudCommand.self,
     ],
     defaultSubcommand: nil
   )

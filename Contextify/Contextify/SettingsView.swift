@@ -41,6 +41,12 @@ struct SettingsView: View {
             Label("CLI", systemImage: "terminal")
           }
           .tag("cli")
+
+        CloudSettingsView()
+          .tabItem {
+            Label("Cloud", systemImage: "cloud")
+          }
+          .tag("cloud")
       }
       .onAppear {
         selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
@@ -66,6 +72,12 @@ struct SettingsView: View {
             Label("CLI", systemImage: "terminal")
           }
           .tag("cli")
+
+        CloudSettingsView()
+          .tabItem {
+            Label("Cloud", systemImage: "cloud")
+          }
+          .tag("cloud")
       }
       .onAppear {
         selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
@@ -76,7 +88,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 520, height: 330)
+      .frame(width: 520, height: 520)
     }
   }
 }
