@@ -165,6 +165,7 @@ struct CloudCommand: ParsableCommand {
         contextify cloud push                 Push local entries to cloud
         contextify cloud pull                 Pull entries from other devices
         contextify cloud sync                 Full sync (push + pull)
+        contextify cloud search "query"       Search cloud entries
 
       DOCUMENTATION: https://contextify.sh/docs/cloud/
       """,
@@ -174,6 +175,7 @@ struct CloudCommand: ParsableCommand {
       CloudPushCommand.self,
       CloudPullCommand.self,
       CloudSyncCommand.self,
+      CloudSearchCommand.self,
     ]
   )
 }
@@ -599,6 +601,179 @@ struct CloudSyncCommand: ParsableCommand {
     try pull.run()
 
     if !json { print("\nSync complete.") }
+  }
+}
+
+// MARK: - Search Command
+
+struct CloudSearchCommand: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "search",
+    abstract: "Search cloud entries",
+    discussion: """
+      Full-text search across all transcript entries synced to your cloud server.
+      Returns ranked results with highlighted snippet excerpts.
+
+      EXAMPLES:
+        contextify cloud search "memory leak"
+        contextify cloud search "refactor" --project contextify
+        contextify cloud search "database" --limit 10
+        contextify cloud search "config" --json
+        contextify cloud search "error" --offset 20
+      """
+  )
+
+  @Argument(help: "Search query text")
+  var query: String
+
+  @Option(name: .long, help: "Filter to specific project ID")
+  var project: String?
+
+  @Option(name: .long, help: "Maximum number of results (default: 20, max: 100)")
+  var limit: Int = 20
+
+  @Option(name: .long, help: "Offset for pagination (default: 0)")
+  var offset: Int = 0
+
+  @Flag(name: .long, help: "Output as JSON")
+  var json: Bool = false
+
+  func run() throws {
+    // Validate inputs
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else {
+      throw ValidationError("Search query cannot be empty")
+    }
+    guard limit >= 1 && limit <= 100 else {
+      throw ValidationError("--limit must be between 1 and 100")
+    }
+    guard offset >= 0 else {
+      throw ValidationError("--offset must be >= 0")
+    }
+
+    // Load cloud config
+    let config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print("Cloud not configured. Run 'contextify cloud setup' first.")
+      }
+      throw ExitCode(1)
+    }
+
+    // Build query parameters
+    var queryItems = [
+      URLQueryItem(name: "q", value: trimmedQuery),
+      URLQueryItem(name: "limit", value: String(limit)),
+      URLQueryItem(name: "offset", value: String(offset)),
+    ]
+    if let proj = project {
+      queryItems.append(URLQueryItem(name: "project_id", value: proj))
+    }
+
+    // Make the request
+    let (data, status) = try cloudRequest(
+      config: config, method: "GET", path: "/api/v1/search",
+      queryItems: queryItems)
+
+    // Handle error responses
+    if status == 401 || status == 403 {
+      if json {
+        print(#"{"error":"auth_error","message":"Authentication failed. Check your API key."}"#)
+      } else {
+        print("Authentication failed (HTTP \(status)). Check your API key or run 'contextify cloud setup'.")
+      }
+      throw ExitCode(1)
+    }
+
+    guard status == 200 else {
+      let body = String(data: data, encoding: .utf8) ?? "unknown"
+      throw CloudError.apiError(status, body)
+    }
+
+    // JSON mode: pass through the server response directly
+    if json {
+      print(String(data: data, encoding: .utf8) ?? "{}")
+      return
+    }
+
+    // Human-readable mode: parse and format
+    guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw CloudError.invalidResponse
+    }
+
+    let results = response["results"] as? [[String: Any]] ?? []
+    let totalCount = response["total_count"] as? Int ?? 0
+    let queryMs = response["query_ms"] as? Double ?? 0
+    let hasMore = response["has_more"] as? Bool ?? false
+
+    if results.isEmpty {
+      print("No results found for \"\(trimmedQuery)\".")
+      return
+    }
+
+    print("Found \(totalCount) result\(totalCount == 1 ? "" : "s") for \"\(trimmedQuery)\" (\(formatQueryMs(queryMs)))\n")
+
+    for (index, result) in results.enumerated() {
+      let kind = result["kind"] as? String ?? "unknown"
+      let timestamp = result["timestamp"] as? Int ?? 0
+      let projectId = result["project_id"] as? String ?? ""
+      let projectName = result["project_name"] as? String
+      let score = result["score"] as? Double ?? 0
+      let snippet = result["snippet"] as? String ?? ""
+
+      let displayProject = projectName ?? projectId
+      let dateStr = formatEntryTimestamp(timestamp)
+      let num = offset + index + 1
+
+      print("\(num). [\(kind)] \(dateStr)  (project: \(displayProject), score: \(String(format: "%.2f", score)))")
+      // Strip HTML bold tags and replace with terminal-friendly display
+      let cleanSnippet = stripHTMLBoldTags(snippet)
+      // Indent snippet lines
+      let lines = cleanSnippet.components(separatedBy: "\n")
+      for line in lines.prefix(4) {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+          print("   \(trimmed)")
+        }
+      }
+      print()
+    }
+
+    // Pagination hint
+    if hasMore {
+      let nextOffset = offset + limit
+      print("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results. Use --offset \(nextOffset) for next page.")
+    } else if totalCount > results.count {
+      print("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results.")
+    }
+  }
+
+  /// Format query duration for display
+  private func formatQueryMs(_ ms: Double) -> String {
+    if ms < 1 {
+      return "<1ms"
+    }
+    return "\(Int(ms.rounded()))ms"
+  }
+
+  /// Format epoch timestamp as human-readable date/time
+  private func formatEntryTimestamp(_ timestamp: Int) -> String {
+    guard timestamp > 0 else { return "unknown" }
+    let date = Date(timeIntervalSince1970: Double(timestamp))
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    return formatter.string(from: date)
+  }
+
+  /// Strip <b> and </b> HTML tags from snippet text for terminal display
+  private func stripHTMLBoldTags(_ text: String) -> String {
+    return text
+      .replacingOccurrences(of: "<b>", with: "")
+      .replacingOccurrences(of: "</b>", with: "")
   }
 }
 
