@@ -82,11 +82,11 @@ Determine the query type to set your strategy:
 
 | Intent | Signals | Strategy |
 |--------|---------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | Maximize recall. Expand all variants. Use `--limit 200` or higher. |
+| **Counting** | "how many", "count", "every time", "frequency" | Use `--count-only`. Add `--term-counts` for OR queries. No pagination needed. |
 | **Lookup** | "what did we decide", "find the discussion", "when did we" | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
 | **Exploratory** | "what have we talked about", "find anything about" | Start broad, refine iteratively. Use `--limit 20`. |
 
-**Counting note:** Counts refer to matched entries (messages) returned by Contextify search, not individual word occurrences within those entries. If scoped by time or project (e.g., "how many times in the last month"), apply `--days` and `--project` filters accordingly and still paginate to completion.
+**Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
 
 ### Step 2: Expand query terms
 
@@ -125,11 +125,11 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 
 ### Step 4: Adjust parameters to intent
 
-- **Counting queries:** `--limit 200` minimum. If `hasMore` is true, paginate with `--offset`.
+- **Counting queries:** Use `--count-only` (and `--term-counts` for OR queries). No `--limit` or pagination needed.
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
 
-**Quick recipe:** Classify intent, build expanded query, choose limit, search, paginate if `hasMore`, answer with citations.
+**Quick recipe:** Classify intent, build expanded query, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations.
 
 ## Canonical loop
 
@@ -172,13 +172,13 @@ Build your query following the "Query construction" section above, then search:
 contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
 ```
 
-Set `--limit` based on intent: 200+ for counting, 10 for lookup, 20 for exploratory.
+Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only` instead (no `--limit` needed).
 
 **Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching. Use parentheses when mixing AND/OR to control grouping; do not rely on default operator precedence.
 
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
-contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --limit 200 --json
+contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
 ```
 
 Example -- user asks "what did we decide about the database schema":
@@ -203,13 +203,50 @@ Returns:
       "provider": "claude.code"
     }
   ],
-  "metadata": { "hasMore": true, "limit": 10, "returned": 10 },
+  "metadata": {
+    "returned": 10,
+    "limit": 10,
+    "offset": 0,
+    "hasMore": true,
+    "totalCount": 847
+  },
   "schemaVersion": 1,
   "type": "search"
 }
 ```
 
 **Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+
+**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Optional fields appear conditionally:
+- `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
+- `worktreeExpansion`: worktree group details (when worktree expansion is active, see "Worktree expansion" below)
+- `sourceCounts`: per-project result counts (when worktreeExpansion is present)
+
+**Count-only example** (for counting queries):
+```bash
+contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
+```
+
+Returns:
+```json
+{
+  "data": [],
+  "metadata": {
+    "totalCount": 847,
+    "termCounts": {
+      "deploy": 312,
+      "deployed": 201,
+      "deploying": 98,
+      "deployment": 187,
+      "deploys": 49
+    }
+  },
+  "schemaVersion": 1,
+  "type": "search"
+}
+```
+
+With `--count-only`, `data` is always an empty array. Only `totalCount` (and optionally `termCounts`) appear in metadata. No pagination is needed.
 
 If `--project .` returns a `dbProjectNotFound` error, retry without `--project` (omit it entirely) to search all projects. If you need a specific project, run `contextify projects --json` which returns a `data` array of objects with `name` and `rootPath` fields, then pass `--project <name>`.
 
@@ -276,14 +313,15 @@ Returns:
 
 Before formatting your response, check:
 
-- **`hasMore` flag:** If `true`, you have not retrieved all matches. For counting queries, paginate with `--offset` until `hasMore` is `false`:
+- **`hasMore` flag:** If `true`, you have not retrieved all matches. For lookup/exploratory queries needing more results, paginate with `--offset`:
   ```bash
-  contextify search "<expanded-query>" --project . --days 365 --limit 200 --offset 200 --json
+  contextify search "<expanded-query>" --project . --limit 20 --offset 20 --json
   ```
-  Increment `--offset` by `--limit` each page (200, 400, 600...) until `hasMore` is `false`.
-- **(Counting intent only) Variant coverage:** Scan returned snippets for word forms you did not search for. If you searched `deploy*` and see "redeployment" in results, verify your query also captures that.
+  Increment `--offset` by `--limit` each page until `hasMore` is `false`.
+- **`totalCount` field:** Always present in search metadata. Use this to know the total number of matches without paginating. For counting queries, use `--count-only` instead of paginating.
+- **(Counting intent only) Variant coverage:** If `--term-counts` shows uneven distribution, consider whether you missed a variant. If you searched `deploy*` and a follow-up search for "redeployment" returns additional hits, your prefix did not capture it.
 - **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form? A synonym?
-- **For counting queries:** Report the total count, note whether `hasMore` was encountered, and list which search terms were used so the user can judge completeness.
+- **For counting queries:** Report `totalCount` from metadata (or per-term counts from `termCounts`), and list which search terms were used so the user can judge completeness.
 
 If results seem incomplete, run additional searches with expanded terms before answering.
 
@@ -301,8 +339,8 @@ If results seem incomplete, run additional searches with expanded terms before a
 
 For counting queries, also include:
 > **Search terms used:** [list the OR-expanded terms]
-> **Matched entries:** [count] entries across [N] conversations
-> **Complete:** [Yes/No -- based on whether hasMore was false on final page]
+> **Matched entries:** [totalCount from metadata] entries
+> **Per-term breakdown:** [if --term-counts was used, show each term's count]
 
 ## Working with the JSON output
 
@@ -333,7 +371,7 @@ Branch on `code`:
 
 | `code` | Response |
 |-------|----------|
-| `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" |
+| `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" If the user has a custom database location (Dropbox, iCloud Drive), use `--db-path <path>` or `--db-dir <dir>`. |
 | `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |
 | `featureUnavailable` | Explain limitation clearly, do not imply workarounds |
 | `entryNotFound` | Re-search for a new anchor |
@@ -353,12 +391,121 @@ If search returns 0 results:
 ### Partial or suspicious results
 
 If results are returned but may be incomplete:
-1. **Check `hasMore`:** If true, raise `--limit` or paginate with `--offset`
+1. **Check `totalCount` and `hasMore`:** `totalCount` tells you the full count. If you need more result bodies, raise `--limit` or paginate with `--offset`.
 2. **Check variant coverage:** Did you search all morphological forms? Add missing variants and re-search.
 3. **Cross-check with prefix query:** Run a `term*` prefix search and compare the count to your explicit-variant search. A large discrepancy suggests missed variants.
 4. **Widen time range:** Results clustered in recent days may indicate older matches outside `--days` window.
 
-For counting queries, always verify you have captured all results before reporting a number.
+For counting queries, use `--count-only` to get the authoritative `totalCount`. If counts seem low, verify your query covers all morphological variants.
+
+## Advanced flags
+
+These flags provide fine-grained control over search and output behavior.
+
+### Counting and aggregation
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--count-only` | search | Returns only `totalCount` in metadata with an empty `data` array. No result bodies fetched. Use for counting queries instead of paginating. |
+| `--term-counts` | search | Adds per-term match counts (`termCounts` object) for OR queries. Opt-in. Silently omitted if the query is not an OR query or has more than 10 unique terms. Works with or without `--count-only`. |
+
+### Filtering
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `system`. Comma-separated. Example: `--kinds user,assistant` |
+| `--since <ts\|iso>` | global | Time range start (inclusive). Accepts Unix timestamp, ISO 8601, or `YYYY-MM-DD`. Cannot combine with `--days`. |
+| `--until <ts\|iso>` | global | Time range end (inclusive). Same formats as `--since`. Cannot combine with `--days`. `--since` must be <= `--until`. |
+| `--include-hidden` | global | Include non-timeline entries (system messages, hidden entries). By default only `display_in_timeline=1` entries are returned. |
+| `--transcript-id <id>` | global | Scope queries to a specific transcript by ID. Narrows search/activity results to a single conversation. |
+
+### Content control
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--full-content` | activity, entry, context | Disable the default 2KB content truncation. Has no effect on search (search returns snippets). |
+| `--no-content` | activity, entry, context | Returns `null` for content (metadata only). No effect on search. |
+| `--snippet-tokens <n>` | search | Control search snippet length in tokens. Default 10, max 100. Longer snippets reduce the need to call `context` for each hit. |
+
+### Context window
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--before <n>` | context | Entries before anchor (default 10). |
+| `--after <n>` | context | Entries after anchor (default 20). |
+| `--max-window <n>` | context | Cap `--before` + `--after` total. Default 200, hard max 2000. Errors if exceeded. |
+
+### Scope and database
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--project-id <id>` | global | Scope queries to a project by UUID. Bypasses worktree expansion entirely. Use when you have a known project ID. |
+| `--db-path <path>` | global | Full path to `contextify.db`. Use when the database is in a custom location (Dropbox, iCloud Drive). |
+| `--db-dir <dir>` | global | Directory containing `contextify.db`. Appends the filename automatically. |
+
+### Worktree scope
+
+| Flag | Subcommand | Description |
+|------|-----------|-------------|
+| `--this-worktree` | search, activity | Suppress worktree group expansion. Search only the current worktree's project. |
+| `--exclude <csv>` | search, activity | Exclude specific worktrees from expansion by display name or directory name. Comma-separated. |
+
+## Worktree expansion
+
+When `--project .` is used inside a git worktree, Contextify auto-detects sibling worktrees and expands the search across all of them. This means a search in one worktree also returns results from conversations in sibling worktrees of the same repository.
+
+**How it works:**
+1. Contextify runs `git worktree list` to discover sibling worktrees
+2. Each worktree is looked up in the database by path
+3. The search runs across all matched project IDs
+4. Results include a `worktreeExpansion` metadata object explaining what happened
+
+**Example metadata with worktree expansion:**
+```json
+{
+  "metadata": {
+    "returned": 10,
+    "limit": 10,
+    "offset": 0,
+    "hasMore": true,
+    "totalCount": 234,
+    "worktreeExpansion": {
+      "enabled": true,
+      "worktrees": ["main", "wb1", "wb2"],
+      "excluded": [],
+      "unresolved": []
+    },
+    "sourceCounts": {
+      "AB12CD34-...": 150,
+      "EF56GH78-...": 84
+    }
+  }
+}
+```
+
+- `worktreeExpansion.worktrees`: display names of all included worktrees
+- `worktreeExpansion.excluded`: names that were excluded (via `--exclude`)
+- `worktreeExpansion.unresolved`: names not found in the database
+- `sourceCounts`: maps each project ID to its result count
+
+**Controlling expansion:**
+- `--this-worktree` suppresses expansion entirely (search only the current worktree)
+- `--exclude wb1,wb2` removes specific worktrees from expansion
+- Worktrees marked `archived: true` in `.worktrees.json` are excluded automatically
+- Using `--project-id` instead of `--project` bypasses expansion entirely
+
+## Additional subcommands
+
+Beyond `search`, `context`, `entry`, `status`, and `projects`, the CLI provides:
+
+| Subcommand | Description |
+|-----------|-------------|
+| `activity` | Recent timeline entries. Supports `--project`, `--days`, `--limit`, worktree expansion. |
+| `transcripts` | List transcripts for a project. Requires `--project` or `--project-id`. |
+| `stats` | Project statistics (transcript count, entry count, last activity). |
+| `summaries` | LLM-generated transcript summaries. Requires summaries capability (check `status`). |
+| `doctor` | Check CLI installation health. Exit codes: 0=healthy, 1=degraded, 2=broken. |
+| `feedback` | Record or manage CLI feedback items. Subcommands: `list`, `show`, `export`, `dismiss`, `archive`, `clear`. |
 
 ## Delegating to researcher agent
 
