@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Welcome to Contextify Pro</title>
   <meta name="description" content="Get started with Contextify Pro. Set up cloud sync in minutes.">
   <link rel="canonical" href="https://contextify.sh/welcome/">
@@ -561,9 +562,9 @@
       });
     }
 
-    // API key population placeholder
-    // After Stripe checkout, the redirect URL will include session parameters.
-    // A server-side endpoint or client-side Stripe.js call would populate this.
+    // API key display:
+    // Do NOT pass API keys in URL params (leaks via history/referrers/logs).
+    // User retrieves their key in-app (Settings > Cloud) or via account dashboard.
     (function() {
       var apiKeyEl = document.getElementById('api-key');
       apiKeyEl.textContent = 'Create or view your API key in the app (Settings > Cloud) or your account dashboard.';

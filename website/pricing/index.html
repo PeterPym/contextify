@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Pricing - Contextify</title>
   <meta name="description" content="Contextify pricing plans. Free local app, Pro cloud sync, Team collaboration, and Enterprise self-hosted options.">
   <link rel="canonical" href="https://contextify.sh/pricing/">
@@ -477,7 +478,7 @@
               <li>Priority email support</li>
               <li>Early access to new features</li>
             </ul>
-            <a href="#" class="pricing-cta pricing-cta-primary">Start Free Trial</a>
+            <a href="mailto:support@contextify.sh?subject=Contextify%20Pro%20Trial" class="pricing-cta pricing-cta-primary">Start Pro Trial</a>
           </div>
         </div>
 
@@ -497,7 +498,7 @@
               <li>Usage analytics</li>
               <li>Shared conversation bookmarks</li>
             </ul>
-            <a href="#" class="pricing-cta pricing-cta-outline">Start Free Trial</a>
+            <a href="mailto:support@contextify.sh?subject=Contextify%20Team%20Trial" class="pricing-cta pricing-cta-outline">Start Team Trial</a>
           </div>
         </div>
 
@@ -558,8 +559,8 @@
         <div class="all-plans-item">
           <div class="all-plans-icon">&#128274;</div>
           <div>
-            <h3>Privacy first</h3>
-            <p>Your transcripts stay on your machine. Always.</p>
+            <h3>Local-first privacy</h3>
+            <p>Local mode uploads nothing. Cloud Sync is opt-in for cross-device search.</p>
           </div>
         </div>
         <div class="all-plans-item">
@@ -588,51 +589,51 @@
           <h2 class="text-center">Frequently asked questions</h2>
 
           <div class="faq-item open">
-            <div class="faq-question" onclick="toggleFaq(this)">
+            <button type="button" class="faq-question" aria-expanded="true" onclick="toggleFaq(this)">
               Can I use Contextify without paying?
               <span class="faq-toggle">+</span>
-            </div>
-            <div class="faq-answer">
+            </button>
+            <div class="faq-answer" role="region">
               Yes. The Free plan gives you the full macOS app with local database, real-time timeline monitoring, full-text search, Apple Intelligence summaries, and the CLI tool. You can use Contextify indefinitely without paying. Paid plans add cloud sync, team collaboration, and enterprise features.
             </div>
           </div>
 
           <div class="faq-item">
-            <div class="faq-question" onclick="toggleFaq(this)">
+            <button type="button" class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">
               What does "cloud sync" mean for my privacy?
               <span class="faq-toggle">+</span>
-            </div>
-            <div class="faq-answer">
-              Cloud sync encrypts your transcript metadata before uploading it to our servers. The sync is opt-in and designed for developers who use multiple machines. Your raw transcripts remain on your local machines. You can disable cloud sync at any time and your data will be deleted from our servers.
+            </button>
+            <div class="faq-answer" role="region">
+              Cloud Sync uploads your conversation data to Contextify Cloud so you can search across devices. Sync is opt-in and designed for developers who use multiple machines. In local-only mode, nothing leaves your machine. You can disable Cloud Sync at any time, and your data will be deleted from our servers.
             </div>
           </div>
 
           <div class="faq-item">
-            <div class="faq-question" onclick="toggleFaq(this)">
+            <button type="button" class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">
               How does the free trial work?
               <span class="faq-toggle">+</span>
-            </div>
-            <div class="faq-answer">
+            </button>
+            <div class="faq-answer" role="region">
               Pro and Team plans come with a 14-day free trial. No credit card required to start. You get full access to all features during the trial period. If you decide not to continue, your account reverts to the Free plan and your local data is unaffected.
             </div>
           </div>
 
           <div class="faq-item">
-            <div class="faq-question" onclick="toggleFaq(this)">
+            <button type="button" class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">
               Can I switch plans later?
               <span class="faq-toggle">+</span>
-            </div>
-            <div class="faq-answer">
+            </button>
+            <div class="faq-answer" role="region">
               Yes. You can upgrade or downgrade at any time. When upgrading, you get immediate access to new features. When downgrading, you keep access until the end of your current billing period. Your local database is never affected by plan changes.
             </div>
           </div>
 
           <div class="faq-item">
-            <div class="faq-question" onclick="toggleFaq(this)">
+            <button type="button" class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">
               Do you offer annual billing?
               <span class="faq-toggle">+</span>
-            </div>
-            <div class="faq-answer">
+            </button>
+            <div class="faq-answer" role="region">
               Annual billing with a discount is coming soon. Contact us at <a href="mailto:support@contextify.sh">support@contextify.sh</a> if you are interested in annual pricing for your team.
             </div>
           </div>
@@ -677,10 +678,13 @@
       // Close all items
       document.querySelectorAll('.faq-item').forEach(function(el) {
         el.classList.remove('open');
+        var btn = el.querySelector('.faq-question');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
       });
       // Toggle the clicked item
       if (!wasOpen) {
         item.classList.add('open');
+        element.setAttribute('aria-expanded', 'true');
       }
     }
   </script>
