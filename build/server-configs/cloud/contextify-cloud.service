@@ -1,0 +1,24 @@
+# Contextify Cloud API service (Docker Compose)
+# Deploy to: /etc/systemd/system/contextify-cloud.service
+#
+# Usage:
+#   sudo systemctl enable contextify-cloud
+#   sudo systemctl start contextify-cloud
+#   sudo journalctl -u contextify-cloud -f
+
+[Unit]
+Description=Contextify Cloud API (FastAPI + PostgreSQL)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=/opt/contextify-cloud
+ExecStart=/usr/bin/docker compose up -d --wait
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --force-recreate --wait
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
