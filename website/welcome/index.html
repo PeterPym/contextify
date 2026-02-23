@@ -566,14 +566,7 @@
     // A server-side endpoint or client-side Stripe.js call would populate this.
     (function() {
       var apiKeyEl = document.getElementById('api-key');
-      // Check for API key in URL params (set by post-checkout redirect)
-      var params = new URLSearchParams(window.location.search);
-      var key = params.get('api_key');
-      if (key) {
-        apiKeyEl.textContent = key;
-      } else {
-        apiKeyEl.textContent = 'Your API key will appear here after checkout completes.';
-      }
+      apiKeyEl.textContent = 'Create or view your API key in the app (Settings > Cloud) or your account dashboard.';
     })();
   </script>
 </body>

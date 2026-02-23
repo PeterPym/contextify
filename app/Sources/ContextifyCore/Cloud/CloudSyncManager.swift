@@ -336,11 +336,12 @@ public final class CloudSyncManager: @unchecked Sendable {
       log.info("Pushing batch: \(payload.entries.count, privacy: .public) entries")
       let response = try await client.push(payload)
 
-      // Fail closed: do NOT advance cursor when server reports errors
+      // Fail closed: do NOT advance cursor when server reports errors.
+      // Throw so sync() transitions to .error state instead of appearing successful.
       if !response.errors.isEmpty {
         let sample = response.errors.prefix(3).joined(separator: "; ")
-        log.error("Push batch returned errors, stopping: \(sample, privacy: .public)")
-        break
+        log.error("Push batch returned errors: \(sample, privacy: .public)")
+        throw CloudSyncError.serverError(statusCode: 200, body: "Push partially failed: \(sample)")
       }
 
       totalAccepted += response.accepted

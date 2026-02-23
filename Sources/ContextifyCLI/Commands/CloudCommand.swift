@@ -323,8 +323,8 @@ struct CloudStatusCommand: ParsableCommand {
         obj["configured"] = true
         obj["cloud_url"] = config.serverURL
         obj["last_pull_sequence"] = config.lastPullSequence
-        obj["last_push_timestamp"] = config.lastPushTimestamp as Any
-        obj["last_push_entry_id"] = config.lastPushEntryId as Any
+        obj["last_push_timestamp"] = config.lastPushTimestamp ?? NSNull()
+        obj["last_push_entry_id"] = config.lastPushEntryId ?? NSNull()
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         print(String(data: out, encoding: .utf8)!)
       } else {
