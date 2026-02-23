@@ -347,6 +347,11 @@
     }
 
     .faq-question {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      width: 100%;
+      text-align: left;
       font-size: 1rem;
       font-weight: 600;
       color: var(--text-primary);
@@ -355,6 +360,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+    }
+    .faq-question:focus-visible {
+      outline: 2px solid var(--contextify-primary);
+      outline-offset: 4px;
+      border-radius: 8px;
     }
 
     [data-bs-theme="dark"] .faq-question {
@@ -614,7 +624,7 @@
               <span class="faq-toggle">+</span>
             </button>
             <div class="faq-answer" role="region">
-              Pro and Team plans come with a 14-day free trial. No credit card required to start. You get full access to all features during the trial period. If you decide not to continue, your account reverts to the Free plan and your local data is unaffected.
+              Pro and Team trials are available. Email us to get set up and we will confirm the details for your account. You get full access to all features during the trial period. If you decide not to continue, your account reverts to the Free plan and your local data is unaffected.
             </div>
           </div>
 
