@@ -22,6 +22,8 @@ struct CLICloudConfig: Codable {
   var deviceName: String = ""
   var enabled: Bool = true
   var lastPullSequence: Int = 0
+  var lastPushTimestamp: Int?
+  var lastPushEntryId: String?
 
   enum CodingKeys: String, CodingKey {
     case serverURL = "server_url"
@@ -30,6 +32,8 @@ struct CLICloudConfig: Codable {
     case deviceName = "device_name"
     case enabled
     case lastPullSequence = "last_pull_sequence"
+    case lastPushTimestamp = "last_push_timestamp"
+    case lastPushEntryId = "last_push_entry_id"
   }
 
   static var configDir: URL {
@@ -319,6 +323,8 @@ struct CloudStatusCommand: ParsableCommand {
         obj["configured"] = true
         obj["cloud_url"] = config.serverURL
         obj["last_pull_sequence"] = config.lastPullSequence
+        obj["last_push_timestamp"] = config.lastPushTimestamp as Any
+        obj["last_push_entry_id"] = config.lastPushEntryId as Any
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         print(String(data: out, encoding: .utf8)!)
       } else {
@@ -354,6 +360,11 @@ struct CloudStatusCommand: ParsableCommand {
       }
       print()
       print("Local pull cursor: \(config.lastPullSequence)")
+      if let ts = config.lastPushTimestamp {
+        print("Local push cursor: \(ts)" + (config.lastPushEntryId.map { " (\($0))" } ?? ""))
+      } else {
+        print("Local push cursor: none (full upload on next push)")
+      }
     }
   }
 }
@@ -385,7 +396,7 @@ struct CloudPushCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    let config = try CLICloudConfig.load()
+    var config = try CLICloudConfig.load()
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -404,9 +415,9 @@ struct CloudPushCommand: ParsableCommand {
     #endif
     let machineId = config.deviceId.isEmpty ? getStableMachineId() : config.deviceId
 
-    // Keyset pagination: loop batches until a short page is returned
-    var afterTimestamp: Int?
-    var afterEntryId: String?
+    // Keyset pagination: resume from saved cursor for incremental push
+    var afterTimestamp: Int? = config.lastPushTimestamp
+    var afterEntryId: String? = config.lastPushEntryId
     var totalAccepted = 0
     var totalDuplicates = 0
     var totalErrors: [String] = []
@@ -456,6 +467,10 @@ struct CloudPushCommand: ParsableCommand {
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
+        // Fail closed: don't advance cursor when server reports errors
+        if !batchErrors.isEmpty {
+          break
+        }
       }
 
       // Advance keyset cursor from last entry in this batch
@@ -468,6 +483,13 @@ struct CloudPushCommand: ParsableCommand {
       if exportData.entries.count < limit {
         break
       }
+    }
+
+    // Persist cursor only if the run was error-free
+    if totalErrors.isEmpty, let ts = afterTimestamp, let eid = afterEntryId {
+      config.lastPushTimestamp = ts
+      config.lastPushEntryId = eid
+      try config.save()
     }
 
     // Print final summary
@@ -489,6 +511,8 @@ struct CloudPushCommand: ParsableCommand {
         }
       }
     }
+
+    if !totalErrors.isEmpty { throw ExitCode(1) }
   }
 
   private func resolveDbPath() -> String {

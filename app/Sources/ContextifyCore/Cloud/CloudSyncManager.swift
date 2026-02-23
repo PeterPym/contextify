@@ -336,6 +336,13 @@ public final class CloudSyncManager: @unchecked Sendable {
       log.info("Pushing batch: \(payload.entries.count, privacy: .public) entries")
       let response = try await client.push(payload)
 
+      // Fail closed: do NOT advance cursor when server reports errors
+      if !response.errors.isEmpty {
+        let sample = response.errors.prefix(3).joined(separator: "; ")
+        log.error("Push batch returned errors, stopping: \(sample, privacy: .public)")
+        break
+      }
+
       totalAccepted += response.accepted
       totalDupes += response.duplicatesSkipped
       lastServerSequence = response.serverSequence
