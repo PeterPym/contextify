@@ -467,7 +467,7 @@ struct CloudPushCommand: ParsableCommand {
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
-        // Fail closed: don't advance cursor when server reports errors
+        // Fail closed: checkpoint cursor at last successful batch, then stop
         if !batchErrors.isEmpty {
           break
         }
@@ -479,17 +479,18 @@ struct CloudPushCommand: ParsableCommand {
         afterEntryId = last.id
       }
 
+      // Checkpoint cursor after each successful batch so retries
+      // resume from here instead of replaying all prior batches
+      if let ts = afterTimestamp, let eid = afterEntryId {
+        config.lastPushTimestamp = ts
+        config.lastPushEntryId = eid
+        try config.save()
+      }
+
       // Short page means we have exported everything
       if exportData.entries.count < limit {
         break
       }
-    }
-
-    // Persist cursor only if the run was error-free
-    if totalErrors.isEmpty, let ts = afterTimestamp, let eid = afterEntryId {
-      config.lastPushTimestamp = ts
-      config.lastPushEntryId = eid
-      try config.save()
     }
 
     // Print final summary

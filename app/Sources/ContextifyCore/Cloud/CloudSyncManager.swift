@@ -337,11 +337,23 @@ public final class CloudSyncManager: @unchecked Sendable {
       let response = try await client.push(payload)
 
       // Fail closed: do NOT advance cursor when server reports errors.
-      // Throw so sync() transitions to .error state instead of appearing successful.
+      // Save progress from prior successful batches, then throw.
       if !response.errors.isEmpty {
         let sample = response.errors.prefix(3).joined(separator: "; ")
         log.error("Push batch returned errors: \(sample, privacy: .public)")
-        throw CloudSyncError.serverError(statusCode: 200, body: "Push partially failed: \(sample)")
+        // Persist cursor at last successful batch boundary before throwing
+        if let ts = afterTimestamp, let eid = afterEntryId {
+          var checkpoint = config
+          checkpoint.lastPushTimestamp = ts
+          checkpoint.lastPushEntryId = eid
+          await MainActor.run { self.config = checkpoint }
+          saveConfig(checkpoint)
+          log.info("Push cursor checkpointed before error: timestamp=\(ts, privacy: .public)")
+        }
+        throw CloudSyncError.partialPushFailure(
+          accepted: totalAccepted,
+          errors: Array(response.errors.prefix(5))
+        )
       }
 
       totalAccepted += response.accepted
@@ -575,6 +587,8 @@ public final class CloudSyncManager: @unchecked Sendable {
         return "Failed to prepare sync data. This may indicate a data issue."
       case .decodingError:
         return "Unexpected server response. The server may be running an incompatible version."
+      case .partialPushFailure(let accepted, let errors):
+        return "Push partially failed: \(accepted) entries synced, \(errors.count) failed. Will retry on next sync."
       }
     }
     return error.localizedDescription

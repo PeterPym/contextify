@@ -26,6 +26,8 @@ public enum CloudSyncError: Error, Sendable {
   case encodingError(Error)
   /// The response body could not be decoded into the expected type.
   case decodingError(Error)
+  /// The server accepted some entries but reported errors on others (HTTP 200 with errors[]).
+  case partialPushFailure(accepted: Int, errors: [String])
 }
 
 extension CloudSyncError: LocalizedError {
@@ -43,6 +45,9 @@ extension CloudSyncError: LocalizedError {
       return "Encoding error: \(error.localizedDescription)"
     case .decodingError(let error):
       return "Decoding error: \(error.localizedDescription)"
+    case .partialPushFailure(let accepted, let errors):
+      let sample = errors.prefix(3).joined(separator: "; ")
+      return "Push partially failed (\(accepted) accepted, \(errors.count) errors): \(sample)"
     }
   }
 }
