@@ -214,6 +214,61 @@ sudo journalctl -u contextify-subscribe -f
 ssh web@banagale.com "cat /var/www/contextify-data/subscribers.txt"
 ```
 
+## Contextify Cloud API
+
+The cloud sync/dashboard backend runs as a Docker Compose service on the same droplet.
+
+**Components:**
+- **App directory:** `/opt/contextify-cloud/`
+- **Systemd service:** `contextify-cloud.service`
+- **Port:** 8443 (localhost only, proxied by Nginx)
+- **Database:** PostgreSQL 16 (Docker container)
+- **Config template:** `build/server-configs/cloud/contextify-cloud.service`
+
+**Nginx proxy routes:**
+
+| Path | Backend | Purpose |
+|------|---------|---------|
+| `/api/subscribe` | localhost:8080 | Newsletter (existing Python script) |
+| `/api/v1/*` | localhost:8443 | Cloud REST API |
+| `/api/docs` | localhost:8443 | API documentation |
+| `/cloud/*` | localhost:8443 | Web dashboard |
+
+**Deploy:**
+```bash
+cd ~/code/projects/contextify-cloud
+./scripts/deploy.sh              # Full deploy
+./scripts/deploy.sh --dry-run    # Preview changes
+```
+
+**Service management:**
+```bash
+sudo systemctl status contextify-cloud
+sudo systemctl restart contextify-cloud
+ssh web@banagale.com "cd /opt/contextify-cloud && docker compose logs -f api"
+```
+
+**First-time server setup:**
+```bash
+# On server:
+sudo apt install -y docker.io docker-compose-plugin
+sudo mkdir -p /opt/contextify-cloud
+sudo chown web:web /opt/contextify-cloud
+
+# Copy .env with production secrets:
+scp .env.production web@banagale.com:/opt/contextify-cloud/.env
+
+# Install systemd unit:
+sudo cp contextify-cloud.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable contextify-cloud
+
+# Deploy Nginx config and restart:
+sudo cp nginx-contextify.conf /etc/nginx/sites-available/contextify
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d contextify.sh -d www.contextify.sh --reinstall
+```
+
 ## DMG Naming Convention
 
 GitHub releases use stable filename `Contextify.dmg` (not versioned) to support the `/releases/latest/download/` URL pattern.

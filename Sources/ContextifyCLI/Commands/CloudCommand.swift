@@ -22,6 +22,8 @@ struct CLICloudConfig: Codable {
   var deviceName: String = ""
   var enabled: Bool = true
   var lastPullSequence: Int = 0
+  var lastPushTimestamp: Int?
+  var lastPushEntryId: String?
 
   enum CodingKeys: String, CodingKey {
     case serverURL = "server_url"
@@ -30,6 +32,8 @@ struct CLICloudConfig: Codable {
     case deviceName = "device_name"
     case enabled
     case lastPullSequence = "last_pull_sequence"
+    case lastPushTimestamp = "last_push_timestamp"
+    case lastPushEntryId = "last_push_entry_id"
   }
 
   static var configDir: URL {
@@ -319,6 +323,8 @@ struct CloudStatusCommand: ParsableCommand {
         obj["configured"] = true
         obj["cloud_url"] = config.serverURL
         obj["last_pull_sequence"] = config.lastPullSequence
+        obj["last_push_timestamp"] = config.lastPushTimestamp ?? NSNull()
+        obj["last_push_entry_id"] = config.lastPushEntryId ?? NSNull()
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         print(String(data: out, encoding: .utf8)!)
       } else {
@@ -354,6 +360,11 @@ struct CloudStatusCommand: ParsableCommand {
       }
       print()
       print("Local pull cursor: \(config.lastPullSequence)")
+      if let ts = config.lastPushTimestamp {
+        print("Local push cursor: \(ts)" + (config.lastPushEntryId.map { " (\($0))" } ?? ""))
+      } else {
+        print("Local push cursor: none (full upload on next push)")
+      }
     }
   }
 }
@@ -385,7 +396,7 @@ struct CloudPushCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    let config = try CLICloudConfig.load()
+    var config = try CLICloudConfig.load()
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -396,58 +407,113 @@ struct CloudPushCommand: ParsableCommand {
     let dbURL = URL(fileURLWithPath: dbPath)
     let service = try ContextifyQueryService(databaseURL: dbURL)
 
-    // Export entries for push using the query service
-    let exportData = try service.exportForCloudPush(limit: limit)
-
-    if exportData.entries.isEmpty {
-      if json {
-        print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
-      } else {
-        print("No entries to push.")
-      }
-      return
-    }
-
-    // Build push payload, using config device identity with runtime fallbacks
+    // Build device info once
     #if os(macOS)
     let osName = "macos"
     #else
     let osName = "linux"
     #endif
-
     let machineId = config.deviceId.isEmpty ? getStableMachineId() : config.deviceId
-    let payload = buildPushPayload(
-      exportData: exportData,
-      machineId: machineId,
-      machineName: config.deviceName.isEmpty ? nil : config.deviceName,
-      osName: osName
-    )
-    let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-    if !json {
-      print("Pushing \(exportData.entries.count) entries to \(config.serverURL)...")
-    }
+    // Keyset pagination: resume from saved cursor for incremental push
+    var afterTimestamp: Int? = config.lastPushTimestamp
+    var afterEntryId: String? = config.lastPushEntryId
+    var totalAccepted = 0
+    var totalDuplicates = 0
+    var totalErrors: [String] = []
+    var batchCount = 0
 
-    let (responseData, status) = try cloudRequest(
-      config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+    while true {
+      let exportData = try service.exportForCloudPush(
+        afterTimestamp: afterTimestamp,
+        afterEntryId: afterEntryId,
+        limit: limit
+      )
 
-    guard status == 200 else {
-      let body = String(data: responseData, encoding: .utf8) ?? "unknown"
-      throw CloudError.apiError(status, body)
-    }
+      if exportData.entries.isEmpty {
+        if batchCount == 0 {
+          if json {
+            print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
+          } else {
+            print("No entries to push.")
+          }
+        }
+        break
+      }
 
-    if json {
-      print(String(data: responseData, encoding: .utf8) ?? "{}")
-    } else if let result = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
-      let accepted = result["accepted"] as? Int ?? 0
-      let duplicates = result["duplicates_skipped"] as? Int ?? 0
-      let errors = result["errors"] as? [String] ?? []
-      print("Push complete: \(accepted) accepted, \(duplicates) duplicates")
-      if !errors.isEmpty {
-        print("Errors: \(errors.count)")
-        for e in errors.prefix(5) { print("  - \(e)") }
+      batchCount += 1
+      let payload = buildPushPayload(
+        exportData: exportData,
+        machineId: machineId,
+        machineName: config.deviceName.isEmpty ? nil : config.deviceName,
+        osName: osName
+      )
+      let bodyData = try JSONSerialization.data(withJSONObject: payload)
+
+      if !json {
+        print("Pushing batch \(batchCount): \(exportData.entries.count) entries to \(config.serverURL)...")
+      }
+
+      let (responseData, status) = try cloudRequest(
+        config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+
+      guard status == 200 else {
+        let body = String(data: responseData, encoding: .utf8) ?? "unknown"
+        throw CloudError.apiError(status, body)
+      }
+
+      if let result = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
+        totalAccepted += result["accepted"] as? Int ?? 0
+        totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
+        let batchErrors = result["errors"] as? [String] ?? []
+        totalErrors.append(contentsOf: batchErrors)
+        // Fail closed: checkpoint cursor at last successful batch, then stop
+        if !batchErrors.isEmpty {
+          break
+        }
+      }
+
+      // Advance keyset cursor from last entry in this batch
+      if let last = exportData.entries.last {
+        afterTimestamp = last.timestamp
+        afterEntryId = last.id
+      }
+
+      // Checkpoint cursor after each successful batch so retries
+      // resume from here instead of replaying all prior batches
+      if let ts = afterTimestamp, let eid = afterEntryId {
+        config.lastPushTimestamp = ts
+        config.lastPushEntryId = eid
+        try config.save()
+      }
+
+      // Short page means we have exported everything
+      if exportData.entries.count < limit {
+        break
       }
     }
+
+    // Print final summary
+    if batchCount > 0 {
+      if json {
+        let output: [String: Any] = [
+          "accepted": totalAccepted,
+          "duplicates_skipped": totalDuplicates,
+          "errors": Array(totalErrors.prefix(10)),
+          "batches": batchCount,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+        print(String(data: data, encoding: .utf8) ?? "{}")
+      } else {
+        print("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))")
+        if !totalErrors.isEmpty {
+          print("Errors: \(totalErrors.count)")
+          for e in totalErrors.prefix(5) { print("  - \(e)") }
+        }
+      }
+    }
+
+    if !totalErrors.isEmpty { throw ExitCode(1) }
   }
 
   private func resolveDbPath() -> String {
