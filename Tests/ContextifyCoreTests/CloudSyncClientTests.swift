@@ -226,6 +226,98 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(status.entriesSynced, 0)
     XCTAssertTrue(status.devices.isEmpty)
   }
+
+  // MARK: - CloudConfig Push Cursor Tests
+
+  func testCloudConfigEncodesNewPushCursorFields() throws {
+    let config = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_test",
+      lastPullSequence: 42,
+      lastPushTimestamp: 1700000000,
+      lastPushEntryId: "entry-abc-123"
+    )
+
+    let data = try makeEncoder().encode(config)
+    let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+    XCTAssertEqual(json["last_push_timestamp"] as? Int, 1700000000)
+    XCTAssertEqual(json["last_push_entry_id"] as? String, "entry-abc-123")
+    XCTAssertEqual(json["last_pull_sequence"] as? Int, 42)
+  }
+
+  func testCloudConfigDecodesWithPushCursorFields() throws {
+    let json = """
+    {
+      "server_url": "https://cloud.contextify.sh",
+      "api_key": "ctx_test",
+      "device_id": "",
+      "device_name": "",
+      "enabled": true,
+      "last_pull_sequence": 10,
+      "last_push_timestamp": 1700000000,
+      "last_push_entry_id": "entry-xyz-789"
+    }
+    """.data(using: .utf8)!
+
+    let config = try makeDecoder().decode(CloudConfig.self, from: json)
+
+    XCTAssertEqual(config.lastPushTimestamp, 1700000000)
+    XCTAssertEqual(config.lastPushEntryId, "entry-xyz-789")
+    XCTAssertEqual(config.lastPullSequence, 10)
+  }
+
+  func testCloudConfigDecodesWithoutPushCursorFields() throws {
+    // Backward compatibility: existing configs without the new fields
+    let json = """
+    {
+      "server_url": "https://cloud.contextify.sh",
+      "api_key": "ctx_test",
+      "device_id": "",
+      "device_name": "",
+      "enabled": true,
+      "last_pull_sequence": 5
+    }
+    """.data(using: .utf8)!
+
+    let config = try makeDecoder().decode(CloudConfig.self, from: json)
+
+    XCTAssertNil(config.lastPushTimestamp)
+    XCTAssertNil(config.lastPushEntryId)
+    XCTAssertEqual(config.lastPullSequence, 5)
+  }
+
+  func testCloudConfigPushCursorDefaultsToNil() throws {
+    let config = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_test"
+    )
+
+    XCTAssertNil(config.lastPushTimestamp)
+    XCTAssertNil(config.lastPushEntryId)
+  }
+
+  func testCloudConfigRoundTripWithPushCursor() throws {
+    let original = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_test_key",
+      deviceId: "device-1",
+      deviceName: "Test Mac",
+      enabled: true,
+      lastPullSequence: 99,
+      lastPushTimestamp: 1700500000,
+      lastPushEntryId: "e-final"
+    )
+
+    let data = try makeEncoder().encode(original)
+    let decoded = try makeDecoder().decode(CloudConfig.self, from: data)
+
+    XCTAssertEqual(decoded.serverURL, original.serverURL)
+    XCTAssertEqual(decoded.apiKey, original.apiKey)
+    XCTAssertEqual(decoded.lastPullSequence, original.lastPullSequence)
+    XCTAssertEqual(decoded.lastPushTimestamp, original.lastPushTimestamp)
+    XCTAssertEqual(decoded.lastPushEntryId, original.lastPushEntryId)
+  }
 }
 
 // MARK: - CloudSyncClient Tests

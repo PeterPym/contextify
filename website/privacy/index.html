@@ -40,86 +40,169 @@
       <div class="row justify-content-center">
         <div class="col-lg-10">
           <article class="page-content bg-white p-4 p-md-5 rounded-3 shadow-sm">
+
+            <div class="alert alert-warning mb-4" role="alert">
+              <strong>DRAFT</strong> - Subject to legal review. This document is not yet final.
+            </div>
+
             <h1 class="mb-2">Privacy Policy</h1>
-            <p class="text-body-secondary mb-4"><strong>Effective Date:</strong> November 11, 2025</p>
+            <p class="text-body-secondary mb-4"><strong>Last Updated:</strong> February 2026</p>
 
-            <h2>Introduction</h2>
-            <p>Contextify is a macOS application designed to help you monitor and manage your Claude Code and Codex CLI sessions. Your privacy is important to us. This Privacy Policy explains how Contextify handles your data.</p>
+            <p>This Privacy Policy explains how Contextify ("we", "us", "our") collects, uses, and protects your information when you use the Contextify application and optional Contextify Cloud service (together, the "Service").</p>
 
-            <h2>Data Collection</h2>
-            <p><strong>We do not collect any personal data.</strong></p>
-            <p>Contextify operates entirely locally on your Mac. All data processing happens on your device, and no information is transmitted to external servers.</p>
-
-            <h2>Local Data Storage</h2>
-            <p>Contextify stores the following data locally on your Mac:</p>
+            <h2>1. How Contextify Works</h2>
+            <p>Contextify operates in two modes:</p>
             <ul>
-              <li><strong>Transcript Data:</strong> Copies of your Claude Code and Codex CLI conversation transcripts</li>
-              <li><strong>Generated Summaries:</strong> LLM-generated summaries of conversation entries (when using macOS 26+)</li>
-              <li><strong>Project Metadata:</strong> Project names, file paths, and session timestamps</li>
-              <li><strong>Application Preferences:</strong> User settings and configurations</li>
+              <li><strong>Local mode (default):</strong> All data stays on your device. No account required. No data is transmitted anywhere. This is how the Free tier works.</li>
+              <li><strong>Cloud mode (optional, paid):</strong> If you subscribe to a paid plan and enable cloud sync, conversation data is transmitted to Contextify Cloud servers so you can search across devices.</li>
             </ul>
-            <p>All data is stored in:</p>
-            <ul>
-              <li><code>~/Library/Application Support/Contextify/</code> (default location)</li>
-              <li>Custom location (if configured by user)</li>
-            </ul>
+            <p>Cloud sync is always user-initiated. We never upload your data without your explicit action.</p>
 
-            <h2>Data Processing</h2>
-            <p>When using macOS 26 (Tahoe) or later, Contextify uses Apple's on-device LanguageModel APIs to generate conversation summaries. This processing:</p>
+            <h2>2. Data We Collect</h2>
+
+            <h3>2.1 Account Data</h3>
+            <p>When you create a Contextify Cloud account, we collect:</p>
             <ul>
-              <li>Happens entirely on your device</li>
-              <li>Does not send data to external servers</li>
-              <li>Uses Apple's private, on-device machine learning models</li>
-              <li>Is subject to Apple's privacy protections</li>
+              <li>Email address</li>
+              <li>Name (optional)</li>
+              <li>Organization name (Team and Enterprise plans)</li>
             </ul>
 
-            <h2>Third-Party Services</h2>
-            <p>Contextify does not use any third-party services, analytics, tracking, or cloud storage.</p>
-
-            <h2>Data Sharing</h2>
-            <p>We do not share, sell, or transmit any of your data. All data remains on your Mac under your control.</p>
-
-            <h2>Data Retention</h2>
-            <p>You control all data retention. Data remains on your Mac until you:</p>
+            <h3>2.2 Payment Data</h3>
+            <p>Payments are processed by <a href="https://stripe.com/privacy">Stripe</a>. We do not store credit card numbers, bank account details, or other payment credentials on our servers. We receive from Stripe:</p>
             <ul>
-              <li>Delete the database manually</li>
-              <li>Uninstall the application</li>
-              <li>Delete specific projects or sessions</li>
+              <li>Subscription status (active, cancelled, past due)</li>
+              <li>Billing period and plan type</li>
+              <li>Last four digits of the payment method (for display in your account)</li>
             </ul>
 
-            <h2>Your Rights</h2>
-            <p>Since all data is stored locally on your Mac, you have complete control:</p>
+            <h3>2.3 Conversation Data</h3>
+            <p>When you enable cloud sync, the following data is uploaded:</p>
             <ul>
-              <li><strong>Access:</strong> View all data through the application or directly in the database</li>
-              <li><strong>Deletion:</strong> Delete any or all data at any time</li>
-              <li><strong>Export:</strong> Access the SQLite database directly for export</li>
-              <li><strong>Portability:</strong> Move the database to another location or machine</li>
+              <li>AI conversation transcripts (messages between you and Claude Code or Codex CLI)</li>
+              <li>LLM-generated summaries of conversation entries</li>
+              <li>Project names and associated metadata</li>
+              <li>Session timestamps and durations</li>
+            </ul>
+            <p>This data is uploaded only when you initiate a sync. The local application never contacts our servers unless you have configured cloud sync.</p>
+
+            <h3>2.4 Usage Data</h3>
+            <p>For cloud subscribers, we collect limited operational data:</p>
+            <ul>
+              <li>Sync frequency and timestamps</li>
+              <li>Search queries executed against cloud data</li>
+              <li>Aggregate statistics (number of conversations, storage used)</li>
+            </ul>
+            <p>We do not collect usage analytics from the local-only application.</p>
+
+            <h3>2.5 Device Data</h3>
+            <p>When connecting to Contextify Cloud, the application transmits:</p>
+            <ul>
+              <li>A device identifier (generated locally, not your hardware serial number)</li>
+              <li>Operating system version</li>
+              <li>Application version</li>
+            </ul>
+            <p>This data helps us provide support and ensure compatibility.</p>
+
+            <h2>3. How We Use Your Data</h2>
+            <p>We use your data to:</p>
+            <ul>
+              <li><strong>Provide the Service:</strong> Store and index your conversations for cross-device search</li>
+              <li><strong>Process payments:</strong> Manage subscriptions and billing through Stripe</li>
+              <li><strong>Send service notifications:</strong> Account confirmations, billing alerts, security notices, and material changes to the Service</li>
+              <li><strong>Improve the Service:</strong> Understand aggregate usage patterns to prioritize features and fix issues</li>
+              <li><strong>Provide support:</strong> Respond to your questions and troubleshoot issues</li>
+            </ul>
+            <p>We commit to the following:</p>
+            <ul>
+              <li><strong>We never sell your data to third parties.</strong></li>
+              <li><strong>We never use your conversation data to train AI models.</strong></li>
+              <li><strong>We never share your data with advertisers.</strong></li>
+              <li><strong>We never read your conversation content</strong> except when required to provide technical support you have requested, or when legally compelled.</li>
             </ul>
 
-            <h2>Security</h2>
-            <p>Your data security is ensured through:</p>
+            <h2>4. Data Storage and Security</h2>
+
+            <h3>4.1 Local Data</h3>
+            <p>Local data is stored in <code>~/Library/Application Support/Contextify/</code> (or a custom location you configure). Security relies on macOS file system permissions and, for App Store builds, macOS application sandboxing.</p>
+
+            <h3>4.2 Cloud Data</h3>
+            <p>Cloud data is stored with the following protections:</p>
             <ul>
-              <li>Local-only storage (no network transmission)</li>
-              <li>macOS file system permissions</li>
-              <li>Optional custom database locations (e.g., encrypted volumes)</li>
-              <li>Standard macOS application sandboxing (when distributed via App Store)</li>
+              <li><strong>Tenant isolation:</strong> Each account's data is stored in a separate PostgreSQL schema. No data is shared or co-mingled between accounts.</li>
+              <li><strong>Encryption in transit:</strong> All communication between the application and our servers uses TLS 1.2 or higher.</li>
+              <li><strong>Access controls:</strong> API key authentication for all cloud operations. Keys can be revoked at any time.</li>
+              <li><strong>Infrastructure:</strong> Cloud servers are hosted on reputable infrastructure providers with industry-standard physical and network security.</li>
             </ul>
 
-            <h2>Children's Privacy</h2>
-            <p>Contextify is not directed to children under 13. We do not knowingly collect data from children, as we do not collect any data at all.</p>
+            <h3>4.3 Enterprise Self-Hosted</h3>
+            <p>Enterprise customers may deploy Contextify Cloud on their own infrastructure. In this case, we do not have access to your data. Your organization's security policies apply.</p>
 
-            <h2>Changes to This Policy</h2>
-            <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated effective date. Continued use of Contextify after changes indicates acceptance of the updated policy.</p>
-
-            <h2>Contact</h2>
-            <p>If you have questions about this Privacy Policy, please contact us:</p>
+            <h2>5. Data Retention</h2>
             <ul>
-              <li><strong>Email:</strong> <a href="mailto:support@contextify.sh">support@contextify.sh</a></li>
+              <li><strong>Active accounts:</strong> Your cloud data is retained for as long as your subscription is active.</li>
+              <li><strong>Cancelled accounts:</strong> After cancellation, your data is retained for 90 days to allow you to export it or resubscribe. After 90 days, all cloud data is permanently deleted.</li>
+              <li><strong>Backups:</strong> Encrypted backups are retained for 30 days after data deletion for disaster recovery purposes, then permanently destroyed.</li>
+              <li><strong>Account records:</strong> Basic account records (email, subscription history) may be retained for up to 12 months after deletion for legal and accounting purposes.</li>
+              <li><strong>Local data:</strong> Local data is never affected by subscription changes. It remains on your device under your control indefinitely.</li>
+            </ul>
+
+            <h2>6. Your Rights</h2>
+            <p>You have the following rights regarding your data:</p>
+            <ul>
+              <li><strong>Export:</strong> Download all of your cloud data at any time in JSON or SQLite format through the application or API.</li>
+              <li><strong>Delete:</strong> Request deletion of your account and all associated cloud data. Deletion is processed within 30 days.</li>
+              <li><strong>Opt out of cloud:</strong> Disable cloud sync at any time. The local application always works without cloud features. Local-only mode collects no data whatsoever.</li>
+              <li><strong>Access:</strong> View all data we hold about you through your account dashboard.</li>
+              <li><strong>Correction:</strong> Update your account information at any time through your account settings.</li>
+              <li><strong>Portability:</strong> Export your data in standard formats (JSON, SQLite) for use with other tools.</li>
+            </ul>
+
+            <h2>7. Third-Party Services</h2>
+            <p>We use the following third-party services:</p>
+            <ul>
+              <li><strong><a href="https://stripe.com/privacy">Stripe</a>:</strong> Payment processing. Stripe receives your payment information directly. See Stripe's privacy policy for details on how they handle your data.</li>
+            </ul>
+            <p>We do not currently use any analytics, advertising, or tracking services. If this changes, we will update this policy and notify you.</p>
+
+            <h2>8. Cookies and Tracking</h2>
+            <p>The Contextify application does not use cookies or web tracking. Our website (contextify.sh) does not use analytics cookies or third-party tracking scripts.</p>
+
+            <h2>9. Children's Privacy</h2>
+            <p>Contextify is not directed to children under 18. We do not knowingly collect data from minors. If we learn that we have collected data from a child under 18, we will delete it promptly.</p>
+
+            <h2>10. International Data Transfers</h2>
+            <p>If you are located outside the United States, your data may be transferred to and processed in the United States where our servers are located. By using Contextify Cloud, you consent to this transfer. We take appropriate safeguards to protect your data in accordance with this policy.</p>
+
+            <h2>11. GDPR (European Users)</h2>
+            <p>If you are in the European Economic Area (EEA), you have additional rights under the General Data Protection Regulation:</p>
+            <ul>
+              <li><strong>Legal basis:</strong> We process your data based on (a) your consent when enabling cloud sync, (b) contractual necessity to provide the Service, and (c) our legitimate interest in improving the Service.</li>
+              <li><strong>Right to object:</strong> You may object to processing based on legitimate interest by contacting us.</li>
+              <li><strong>Right to lodge a complaint:</strong> You may file a complaint with your local data protection authority.</li>
+              <li><strong>Data Protection Officer:</strong> Contact us at <a href="mailto:privacy@contextify.sh">privacy@contextify.sh</a> for GDPR-related inquiries.</li>
+            </ul>
+
+            <h2>12. CCPA (California Users)</h2>
+            <p>If you are a California resident, you have the following rights under the California Consumer Privacy Act:</p>
+            <ul>
+              <li><strong>Right to know:</strong> You may request details about the personal information we collect and how we use it.</li>
+              <li><strong>Right to delete:</strong> You may request deletion of your personal information.</li>
+              <li><strong>Right to opt out:</strong> We do not sell personal information. There is nothing to opt out of.</li>
+              <li><strong>Non-discrimination:</strong> We do not discriminate against you for exercising your CCPA rights.</li>
+            </ul>
+
+            <h2>13. Changes to This Policy</h2>
+            <p>We may update this Privacy Policy from time to time. We will notify you of material changes at least 30 days before they take effect, via the email address associated with your account. Changes are also posted on this page with an updated date.</p>
+            <p>For users without accounts (local-only mode), changes are effective when posted to this page.</p>
+
+            <h2>14. Contact</h2>
+            <p>If you have questions about this Privacy Policy or your data, please contact us:</p>
+            <ul>
+              <li><strong>General:</strong> <a href="mailto:support@contextify.sh">support@contextify.sh</a></li>
+              <li><strong>Privacy-specific:</strong> <a href="mailto:privacy@contextify.sh">privacy@contextify.sh</a></li>
               <li><strong>Website:</strong> <a href="https://contextify.sh">https://contextify.sh</a></li>
             </ul>
-
-            <h2>Consent</h2>
-            <p>By using Contextify, you consent to this Privacy Policy.</p>
           </article>
         </div>
       </div>

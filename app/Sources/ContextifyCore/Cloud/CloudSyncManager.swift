@@ -267,13 +267,18 @@ public final class CloudSyncManager: @unchecked Sendable {
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     )
 
-    // Keyset pagination: loop batches until a short page is returned
+    // Keyset pagination: loop batches until a short page is returned.
+    // Resume from saved cursor to avoid re-uploading the entire database.
     let batchSize = 500
-    var afterTimestamp: Int?
-    var afterEntryId: String?
+    var afterTimestamp: Int? = config.lastPushTimestamp
+    var afterEntryId: String? = config.lastPushEntryId
     var totalAccepted = 0
     var totalDupes = 0
     var lastServerSequence = 0
+
+    if let ts = afterTimestamp {
+      log.info("Push: resuming from saved cursor timestamp=\(ts, privacy: .public)")
+    }
 
     while true {
       let exportData = try queryService.exportForCloudPush(
@@ -331,6 +336,26 @@ public final class CloudSyncManager: @unchecked Sendable {
       log.info("Pushing batch: \(payload.entries.count, privacy: .public) entries")
       let response = try await client.push(payload)
 
+      // Fail closed: do NOT advance cursor when server reports errors.
+      // Save progress from prior successful batches, then throw.
+      if !response.errors.isEmpty {
+        let sample = response.errors.prefix(3).joined(separator: "; ")
+        log.error("Push batch returned errors: \(sample, privacy: .public)")
+        // Persist cursor at last successful batch boundary before throwing
+        if let ts = afterTimestamp, let eid = afterEntryId {
+          var checkpoint = config
+          checkpoint.lastPushTimestamp = ts
+          checkpoint.lastPushEntryId = eid
+          await MainActor.run { self.config = checkpoint }
+          saveConfig(checkpoint)
+          log.info("Push cursor checkpointed before error: timestamp=\(ts, privacy: .public)")
+        }
+        throw CloudSyncError.partialPushFailure(
+          accepted: totalAccepted,
+          errors: Array(response.errors.prefix(5))
+        )
+      }
+
       totalAccepted += response.accepted
       totalDupes += response.duplicatesSkipped
       lastServerSequence = response.serverSequence
@@ -345,6 +370,16 @@ public final class CloudSyncManager: @unchecked Sendable {
       if exportData.entries.count < batchSize {
         break
       }
+    }
+
+    // Persist the push cursor so next cycle is incremental
+    if let ts = afterTimestamp, let eid = afterEntryId {
+      var updatedConfig = config
+      updatedConfig.lastPushTimestamp = ts
+      updatedConfig.lastPushEntryId = eid
+      await MainActor.run { self.config = updatedConfig }
+      saveConfig(updatedConfig)
+      log.info("Push cursor saved: timestamp=\(ts, privacy: .public), entryId=\(eid, privacy: .public)")
     }
 
     log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public)")
@@ -552,6 +587,8 @@ public final class CloudSyncManager: @unchecked Sendable {
         return "Failed to prepare sync data. This may indicate a data issue."
       case .decodingError:
         return "Unexpected server response. The server may be running an incompatible version."
+      case .partialPushFailure(let accepted, let errors):
+        return "Push partially failed: \(accepted) entries synced, \(errors.count) failed. Will retry on next sync."
       }
     }
     return error.localizedDescription

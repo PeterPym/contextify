@@ -178,7 +178,7 @@ struct CLISkillsSettingsTab: View {
         .foregroundStyle(.secondary)
 
       HStack(spacing: 8) {
-        Text("contextify-query status")
+        Text("contextify status")
           .font(.system(.caption, design: .monospaced))
           .textSelection(.enabled)
           .padding(.vertical, 6)
@@ -187,7 +187,7 @@ struct CLISkillsSettingsTab: View {
           .cornerRadius(6)
 
         Button {
-          "contextify-query status".copyToClipboard()
+          "contextify status".copyToClipboard()
         } label: {
           Image(systemName: "doc.on.doc")
         }

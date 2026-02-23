@@ -37,13 +37,24 @@ public struct CloudConfig: Codable, Sendable {
   /// Used as the "since" parameter for incremental pull requests.
   public var lastPullSequence: Int
 
+  /// Timestamp of the newest entry pushed in the last successful push cycle.
+  /// Used as the keyset cursor to avoid re-uploading the entire database.
+  /// When nil, push starts from the beginning (full upload).
+  public var lastPushTimestamp: Int?
+
+  /// Entry ID tiebreaker for the last push cursor (same timestamp as lastPushTimestamp).
+  /// Required for correct keyset pagination when multiple entries share a timestamp.
+  public var lastPushEntryId: String?
+
   public init(
     serverURL: String,
     apiKey: String,
     deviceId: String = "",
     deviceName: String = "",
     enabled: Bool = true,
-    lastPullSequence: Int = 0
+    lastPullSequence: Int = 0,
+    lastPushTimestamp: Int? = nil,
+    lastPushEntryId: String? = nil
   ) {
     self.serverURL = serverURL
     self.apiKey = apiKey
@@ -51,6 +62,8 @@ public struct CloudConfig: Codable, Sendable {
     self.deviceName = deviceName
     self.enabled = enabled
     self.lastPullSequence = lastPullSequence
+    self.lastPushTimestamp = lastPushTimestamp
+    self.lastPushEntryId = lastPushEntryId
   }
 
   enum CodingKeys: String, CodingKey {
@@ -60,6 +73,8 @@ public struct CloudConfig: Codable, Sendable {
     case deviceName = "device_name"
     case enabled
     case lastPullSequence = "last_pull_sequence"
+    case lastPushTimestamp = "last_push_timestamp"
+    case lastPushEntryId = "last_push_entry_id"
   }
 
   // MARK: File Locations
