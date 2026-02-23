@@ -40,56 +40,124 @@
       <div class="row justify-content-center">
         <div class="col-lg-10">
           <article class="page-content bg-white p-4 p-md-5 rounded-3 shadow-sm">
+
+            <div class="alert alert-warning mb-4" role="alert">
+              <strong>DRAFT</strong> - Subject to legal review. This document is not yet final.
+            </div>
+
             <h1 class="mb-2">Terms of Service</h1>
-            <p class="text-body-secondary mb-4"><strong>Effective Date:</strong> December 2, 2025</p>
+            <p class="text-body-secondary mb-4"><strong>Last Updated:</strong> February 2026</p>
 
-            <h2>Agreement to Terms</h2>
-            <p>By downloading, installing, or using Contextify ("the App"), you agree to be bound by these Terms of Service. If you do not agree to these terms, do not use the App.</p>
+            <p>These Terms of Service ("Terms") govern your use of Contextify, including the macOS application, Linux CLI tool, and optional Contextify Cloud service (collectively, the "Service"). By using the Service, you agree to these Terms.</p>
 
-            <h2>Description of Service</h2>
-            <p>Contextify is a macOS application that monitors and displays your Claude Code and Codex CLI conversation sessions. The App operates entirely locally on your device.</p>
-
-            <h2>License</h2>
-            <p>Subject to these Terms, we grant you a limited, non-exclusive, non-transferable, revocable license to use the App for personal or commercial purposes on devices you own or control.</p>
-
-            <h2>Restrictions</h2>
-            <p>You may not:</p>
+            <h2>1. Description of Service</h2>
+            <p>Contextify is a developer productivity tool that monitors AI coding sessions (such as Claude Code and Codex CLI) and maintains a searchable history of conversations.</p>
+            <p>The Service consists of:</p>
             <ul>
-              <li>Reverse engineer, decompile, or disassemble the App</li>
-              <li>Modify, adapt, or create derivative works based on the App</li>
-              <li>Distribute, sublicense, lease, or rent the App to third parties</li>
-              <li>Remove or alter any proprietary notices or labels</li>
-              <li>Use the App for any unlawful purpose</li>
+              <li><strong>Local Application:</strong> A macOS app and Linux CLI tool that run entirely on your device. These operate without any network connection and store data locally.</li>
+              <li><strong>Contextify Cloud (optional):</strong> A cloud sync service that allows you to search your conversation history across devices. Cloud sync is user-initiated and requires a paid subscription.</li>
+            </ul>
+            <p>The local application is fully functional without Contextify Cloud. Cloud features are entirely optional.</p>
+
+            <h2>2. Plans and Pricing</h2>
+            <p>Contextify is available in the following tiers:</p>
+            <ul>
+              <li><strong>Free:</strong> Local-only. All app features, no cloud sync, no account required.</li>
+              <li><strong>Pro ($19/seat/month):</strong> Cloud sync for individual users. Cross-device search.</li>
+              <li><strong>Team ($49/seat/month):</strong> Multi-user cloud sync with shared team search.</li>
+              <li><strong>Enterprise ($99/seat/month):</strong> Self-hosted deployment, SSO integration, and audit logs.</li>
+            </ul>
+            <p>Prices are listed in USD. We reserve the right to change pricing with 30 days written notice to existing subscribers.</p>
+
+            <h2>3. Account Registration</h2>
+            <p>To use Contextify Cloud, you must create an account and provide a valid email address. You are responsible for maintaining the security of your account credentials and API keys. You must promptly notify us if you believe your account has been compromised.</p>
+            <p>You must be at least 18 years old to create an account.</p>
+
+            <h2>4. Subscription Billing</h2>
+            <ul>
+              <li>Subscriptions are billed monthly via Stripe.</li>
+              <li>Billing begins when you subscribe and renews automatically each month on the same date.</li>
+              <li>You authorize us to charge your payment method on file for recurring subscription fees.</li>
+              <li>Failed payments may result in suspension of cloud features. Your local data is never affected.</li>
             </ul>
 
-            <h2>Intellectual Property</h2>
-            <p>The App and its original content, features, and functionality are owned by Contextify and are protected by copyright, trademark, and other intellectual property laws.</p>
+            <h2>5. Cancellation and Refunds</h2>
+            <ul>
+              <li>You may cancel your subscription at any time through your account settings.</li>
+              <li>Upon cancellation, your cloud features remain active until the end of the current billing period.</li>
+              <li>We do not issue refunds for partial months.</li>
+              <li>If we change pricing or Terms in a way you disagree with, you may cancel before the next billing cycle with no further charges.</li>
+              <li>After cancellation, you have 90 days to export your cloud data before it is deleted. See our <a href="../privacy/">Privacy Policy</a> for details on data retention.</li>
+            </ul>
 
-            <h2>User Data</h2>
-            <p>All data processed by the App remains on your device. We do not collect, store, or transmit your data. You are responsible for backing up your data. See our <a href="../privacy/">Privacy Policy</a> for details.</p>
+            <h2>6. Acceptable Use</h2>
+            <p>Contextify is designed for developer productivity. You agree not to:</p>
+            <ul>
+              <li>Use the cloud service to store data unrelated to AI coding sessions</li>
+              <li>Attempt to circumvent usage limits or storage quotas</li>
+              <li>Use the Service to violate any applicable laws or regulations</li>
+              <li>Interfere with or disrupt the Service or its infrastructure</li>
+              <li>Share account credentials with unauthorized users</li>
+              <li>Reverse engineer, decompile, or disassemble the application</li>
+              <li>Distribute, sublicense, or rent the application to third parties</li>
+              <li>Use automated systems to abuse API endpoints</li>
+            </ul>
 
-            <h2>Third-Party Content</h2>
-            <p>The App processes transcripts from Claude Code (Anthropic) and Codex CLI (OpenAI). Your use of those services is governed by their respective terms of service. We are not affiliated with Anthropic or OpenAI.</p>
+            <h2>7. Data Ownership</h2>
+            <p>You own your data. Contextify acts as a data processor, not a data owner.</p>
+            <ul>
+              <li>Your AI conversation transcripts, summaries, and metadata belong to you.</li>
+              <li>We do not claim any intellectual property rights over your content.</li>
+              <li>We do not use your data to train AI models or for any purpose beyond providing the Service to you.</li>
+              <li>You may export all of your data at any time in JSON or SQLite format.</li>
+            </ul>
 
-            <h2>Disclaimer of Warranties</h2>
-            <p>THE APP IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+            <h2>8. Intellectual Property</h2>
+            <p>The Contextify application, website, branding, and associated documentation are owned by Contextify and protected by copyright and trademark law. These Terms grant you a limited, non-exclusive, non-transferable license to use the Service for its intended purpose.</p>
 
-            <h2>Limitation of Liability</h2>
-            <p>IN NO EVENT SHALL CONTEXTIFY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING WITHOUT LIMITATION LOSS OF DATA, PROFITS, OR GOODWILL, ARISING OUT OF OR IN CONNECTION WITH YOUR USE OF THE APP.</p>
+            <h2>9. Third-Party Content</h2>
+            <p>The Service processes transcripts from Claude Code (Anthropic) and Codex CLI (OpenAI). Your use of those tools is governed by their respective terms of service. We are not affiliated with Anthropic or OpenAI.</p>
 
-            <h2>Indemnification</h2>
-            <p>You agree to indemnify and hold harmless Contextify from any claims, damages, losses, or expenses arising from your use of the App or violation of these Terms.</p>
+            <h2>10. Service Availability</h2>
+            <ul>
+              <li><strong>Local application:</strong> Fully offline. No availability dependencies.</li>
+              <li><strong>Pro and Team plans:</strong> Cloud features are provided on a best-effort basis. We aim for high availability but do not guarantee a specific uptime percentage. We will notify users of planned maintenance when possible.</li>
+              <li><strong>Enterprise plan:</strong> Enterprise customers receive a separate Service Level Agreement (SLA) as part of their contract.</li>
+            </ul>
+            <p>Scheduled maintenance windows are communicated via email. In the event of extended unplanned downtime, we will provide status updates at <a href="https://contextify.sh">contextify.sh</a>.</p>
 
-            <h2>Changes to Terms</h2>
-            <p>We reserve the right to modify these Terms at any time. Changes will be posted on this page with an updated effective date. Continued use of the App after changes constitutes acceptance of the new Terms.</p>
+            <h2>11. Disclaimer of Warranties</h2>
+            <p>THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR COMPLETELY SECURE.</p>
 
-            <h2>Termination</h2>
-            <p>We may terminate or suspend your access to the App at any time, without prior notice, for conduct that we believe violates these Terms or is harmful to other users or us.</p>
+            <h2>12. Limitation of Liability</h2>
+            <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, CONTEXTIFY SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING WITHOUT LIMITATION LOSS OF DATA, PROFITS, OR GOODWILL, ARISING OUT OF OR IN CONNECTION WITH YOUR USE OF THE SERVICE.</p>
+            <p>OUR TOTAL LIABILITY FOR ANY CLAIM ARISING FROM THESE TERMS OR YOUR USE OF THE SERVICE SHALL NOT EXCEED THE AMOUNT YOU PAID TO US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM.</p>
 
-            <h2>Governing Law</h2>
-            <p>These Terms shall be governed by the laws of the jurisdiction in which Contextify operates, without regard to conflict of law provisions.</p>
+            <h2>13. Indemnification</h2>
+            <p>You agree to indemnify and hold harmless Contextify from any claims, damages, losses, or expenses (including reasonable legal fees) arising from your use of the Service, your violation of these Terms, or your violation of any third-party rights.</p>
 
-            <h2>Contact</h2>
+            <h2>14. Termination</h2>
+            <ul>
+              <li><strong>By you:</strong> You may stop using the Service at any time. Cancel your subscription through your account settings.</li>
+              <li><strong>By us:</strong> We may suspend or terminate your account if you violate these Terms, engage in abusive behavior, or fail to pay subscription fees after notice.</li>
+              <li><strong>Effect of termination:</strong> Upon termination, your access to cloud features ends. You have 30 days after termination to export your data. After 90 days, cloud data is permanently deleted.</li>
+              <li><strong>Local data:</strong> Termination of cloud services never affects your local data. The local application continues to function independently.</li>
+            </ul>
+
+            <h2>15. Changes to Terms</h2>
+            <p>We may update these Terms from time to time. We will notify you of material changes at least 30 days before they take effect, via the email address associated with your account. Changes are also posted on this page with an updated date.</p>
+            <p>If you disagree with the updated Terms, you may cancel your subscription before the changes take effect. Continued use of the Service after the effective date constitutes acceptance of the new Terms.</p>
+
+            <h2>16. Governing Law</h2>
+            <p>These Terms are governed by the laws of [State/Jurisdiction to be determined], without regard to conflict of law provisions. Any disputes arising from these Terms shall be resolved in the courts of [Jurisdiction to be determined].</p>
+
+            <h2>17. Severability</h2>
+            <p>If any provision of these Terms is found to be unenforceable, the remaining provisions continue in full force and effect.</p>
+
+            <h2>18. Entire Agreement</h2>
+            <p>These Terms, together with our <a href="../privacy/">Privacy Policy</a>, constitute the entire agreement between you and Contextify regarding the Service. Enterprise customers may have additional terms as specified in their separate agreement.</p>
+
+            <h2>19. Contact</h2>
             <p>If you have questions about these Terms, please contact us:</p>
             <ul>
               <li><strong>Email:</strong> <a href="mailto:support@contextify.sh">support@contextify.sh</a></li>
