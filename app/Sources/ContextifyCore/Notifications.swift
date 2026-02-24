@@ -28,6 +28,11 @@ extension Notification.Name {
   /// Posted when ProjectsViewModel completes a discovery pass (sorted by newest activity)
   /// Object: [DiscoveredProject] sorted array (newest activity first)
   public static let projectsDiscoverySnapshot = Notification.Name("contextify.projectsDiscoverySnapshot")
+
+  /// Posted when a transcript's content has been updated (after hoover completes)
+  /// userInfo contains: "projectId" (String)
+  /// SUBSCRIBERS: ChronicleService uses this to trigger narrative analysis
+  public static let transcriptUpdated = Notification.Name("TranscriptUpdated")
 }
 
 // MARK: - Notification UserInfo Keys
