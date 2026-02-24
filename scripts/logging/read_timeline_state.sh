@@ -1,6 +1,6 @@
 #!/bin/bash
 # Read timeline diagnostics from running Contextify app
-# Usage: ./scripts/read_timeline_state.sh [--request|--state|--report]
+# Usage: ./scripts/logging/read_timeline_state.sh [--request|--state|--report]
 
 set -euo pipefail
 
