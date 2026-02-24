@@ -14,19 +14,19 @@ Requirements: git, gh (logged-in), bash, python3
 
 Usage:
   Interactive mode (prompts for version):
-    python3 scripts/release.py
+    python3 scripts/release/release.py
 
   Non-interactive mode (fully automated):
-    python3 scripts/release.py --version 1.0.1 --yes
+    python3 scripts/release/release.py --version 1.0.1 --yes
 
   Dry run (preview what would happen):
-    python3 scripts/release.py --version 1.0.1 --dry-run
+    python3 scripts/release/release.py --version 1.0.1 --dry-run
 
   Skip notarization (faster testing):
-    python3 scripts/release.py --version 1.0.1 --yes --no-notarize
+    python3 scripts/release/release.py --version 1.0.1 --yes --no-notarize
 
   Allow uncommitted changes:
-    python3 scripts/release.py --allow-dirty
+    python3 scripts/release/release.py --allow-dirty
 """
 
 from __future__ import annotations

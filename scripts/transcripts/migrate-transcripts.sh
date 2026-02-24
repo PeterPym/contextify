@@ -2,10 +2,10 @@
 # Migrate AI assistant transcripts from old project path to new project path
 # Supports: Claude Code and Codex/AI CLI
 #
-# Usage: ./scripts/migrate-transcripts.sh <old-path> <new-path>
+# Usage: ./scripts/transcripts/migrate-transcripts.sh <old-path> <new-path>
 #
 # Example:
-#   ./scripts/migrate-transcripts.sh /Users/rob/code/contextify /Users/rob/code/projects/contextify
+#   ./scripts/transcripts/migrate-transcripts.sh /Users/rob/code/contextify /Users/rob/code/projects/contextify
 #
 # This script:
 # - Creates a timestamped backup of original transcripts

@@ -2,7 +2,7 @@
 # Install contextify-ingest CLI from GitHub releases
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/install-cli.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/build/install-cli.sh | bash
 #   curl -fsSL ... | bash -s -- 1.0.0    # Specific version
 #
 # Environment variables:

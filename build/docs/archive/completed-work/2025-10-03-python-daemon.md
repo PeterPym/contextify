@@ -98,7 +98,7 @@ TOTAL: 11–25ms per hotkey press (P95 <30ms)
 * **ADD** `Contextify/ITerm2DaemonClient.swift` (Swift client)
 * **ADD** `Contextify/LaunchAgentManager.swift` (LaunchAgent installer/manager)
 * **MOD** `TerminalContentReader.swift` (integrate daemon + fallback)
-* **ADD** `scripts/healthcheck.sh` (diagnostics)
+* **ADD** `scripts/logging/healthcheck.sh` (diagnostics)
 
 ### Phase 1 — Daemon core, IPC, security
 
@@ -781,7 +781,7 @@ private func readActiveTerminalContent() async -> String? {
 
 ### Phase 5 — Validation, diagnostics, and rollout
 
-**File: `scripts/healthcheck.sh`**
+**File: `scripts/logging/healthcheck.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -799,7 +799,7 @@ print("OK" if resp.get('success') else "BAD"); sys.exit(0 if resp.get('success')
 PY
 ```
 
-`chmod +x scripts/healthcheck.sh`
+`chmod +x scripts/logging/healthcheck.sh`
 
 ## Testing & Validation
 

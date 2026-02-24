@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Contextify and automatically capture logs for debugging
-# Usage: ./scripts/build-and-capture-logs.sh [duration_seconds]
+# Usage: ./scripts/logging/build-and-capture-logs.sh [duration_seconds]
 
 set -euo pipefail
 

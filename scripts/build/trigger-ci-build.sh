@@ -2,12 +2,12 @@
 # Trigger GitHub Actions workflow from any environment (including Linux without gh CLI)
 #
 # Usage:
-#   ./scripts/trigger-ci-build.sh [Debug|Release] [branch]
+#   ./scripts/build/trigger-ci-build.sh [Debug|Release] [branch]
 #
 # Examples:
-#   ./scripts/trigger-ci-build.sh Debug
-#   ./scripts/trigger-ci-build.sh Release main
-#   GITHUB_TOKEN=ghp_xxx ./scripts/trigger-ci-build.sh Debug
+#   ./scripts/build/trigger-ci-build.sh Debug
+#   ./scripts/build/trigger-ci-build.sh Release main
+#   GITHUB_TOKEN=ghp_xxx ./scripts/build/trigger-ci-build.sh Debug
 
 set -euo pipefail
 
@@ -63,7 +63,7 @@ if [[ -z "$GITHUB_TOKEN" ]]; then
   echo ""
   echo "1. Set GITHUB_TOKEN environment variable:"
   echo "   export GITHUB_TOKEN=ghp_your_token_here"
-  echo "   ./scripts/trigger-ci-build.sh"
+  echo "   ./scripts/build/trigger-ci-build.sh"
   echo ""
   echo "2. Create a Personal Access Token:"
   echo "   https://github.com/settings/tokens/new"

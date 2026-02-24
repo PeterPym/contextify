@@ -144,7 +144,7 @@ print("4. Record actual disposition and summary verb")
 print("5. Compare with expected values above")
 print("")
 print("OR run the Swift test file if you have access to the app context:")
-print("  swift scripts/run-timeline-validation.swift")
+print("  swift scripts/logging/validate-timeline-fix.swift")
 
 #else
 print("Error: FoundationModels not available (requires macOS 26.0+)")

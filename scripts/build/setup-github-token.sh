@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Setup GitHub Personal Access Token for CI automation
 #
-# Usage: ./scripts/setup-github-token.sh
+# Usage: ./scripts/build/setup-github-token.sh
 
 set -euo pipefail
 
@@ -79,7 +79,7 @@ echo "🔒 File permissions: 600 (owner read/write only)"
 echo ""
 echo "To use the token with trigger-ci-build.sh:"
 echo "  export GITHUB_TOKEN=\$(cat $TOKEN_FILE)"
-echo "  ./scripts/trigger-ci-build.sh Debug"
+echo "  ./scripts/build/trigger-ci-build.sh Debug"
 echo ""
 echo "Or add to your shell profile (~/.bashrc or ~/.zshrc):"
 echo "  export GITHUB_TOKEN=\$(cat $TOKEN_FILE)"

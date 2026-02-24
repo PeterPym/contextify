@@ -9,7 +9,7 @@
 #   the main app release process or standalone.
 #
 # Usage:
-#   ./scripts/sign_cli.sh [OPTIONS]
+#   ./scripts/release/sign_cli.sh [OPTIONS]
 #
 # Options:
 #   --arch ARCH      Target architecture (default: host arch via uname -m)

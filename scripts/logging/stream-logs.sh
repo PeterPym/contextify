@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stream Contextify logs to a file for debugging
-# Usage: ./scripts/stream-logs.sh [output-file]
+# Usage: ./scripts/logging/stream-logs.sh [output-file]
 
 set -e
 

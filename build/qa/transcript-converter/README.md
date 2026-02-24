@@ -44,14 +44,14 @@ Then manually copy to Codex sessions directory (see output for instructions).
 ### Run Conversion Test
 ```bash
 # Claude Code → Codex
-./scripts/transcripts/transcripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code \
   --to codex \
   build/qa/transcript-converter/fixtures/test-claude-*.jsonl \
   build/qa/transcript-converter/outputs/converted-to-codex.jsonl
 
 # Codex → Claude Code (tests UUID auto-correction)
-./scripts/transcripts/transcripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex \
   --to claude-code \
   build/qa/transcript-converter/fixtures/test-codex-*.jsonl \

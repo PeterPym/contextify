@@ -2,7 +2,7 @@
 # Canonical release build script - builds both DMG and App Store distributions
 # Counterpart to scripts/xc.sh (used during development)
 #
-# Usage: ./scripts/build-release.sh [--skip-dmg] [--skip-appstore] [--no-notarize]
+# Usage: ./scripts/release/build-release.sh [--skip-dmg] [--skip-appstore] [--no-notarize]
 #
 # This is the core build logic. For release workflow integration with
 # version tracking and release.json updates, use: ./scripts/release/build.sh
@@ -108,7 +108,7 @@ if [ "$SKIP_DMG" = false ]; then
     RELEASE_ARGS="$RELEASE_ARGS --no-notarize"
   fi
 
-  python3 scripts/release.py $RELEASE_ARGS
+  python3 scripts/release/release.py $RELEASE_ARGS
 
   DMG_PATH="dist/Contextify-${VERSION}.dmg"
   if [ -f "$DMG_PATH" ]; then

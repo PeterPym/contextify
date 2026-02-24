@@ -4,7 +4,7 @@
 # This script provides a structured way to validate the 15 test cases
 # Run this after building the DEBUG version of Contextify
 #
-# Usage: bash scripts/run-timeline-validation.sh
+# Usage: bash scripts/logging/run-timeline-validation.sh
 
 set -e
 

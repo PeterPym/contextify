@@ -1,6 +1,6 @@
 #!/bin/bash
 # Capture recent Contextify logs (last N minutes)
-# Usage: ./scripts/capture-recent-logs.sh [minutes] [output-file]
+# Usage: ./scripts/logging/capture-recent-logs.sh [minutes] [output-file]
 
 set -e
 

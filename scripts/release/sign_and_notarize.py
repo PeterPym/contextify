@@ -153,7 +153,7 @@ def sign_cli_for_homebrew(*, skip_notarize: bool) -> bool:
     """
     Build and sign the standalone CLI for Homebrew distribution.
 
-    Calls scripts/sign_cli.sh which handles:
+    Calls scripts/release/sign_cli.sh which handles:
     - Change detection (only rebuilds if CLI sources changed)
     - Swift build
     - Developer ID signing

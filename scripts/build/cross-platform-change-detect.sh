@@ -10,12 +10,12 @@
 #   2 = Error
 #
 # Usage:
-#   ./scripts/cross-platform-change-detect.sh [BASE_REF] [HEAD_REF]
+#   ./scripts/build/cross-platform-change-detect.sh [BASE_REF] [HEAD_REF]
 #
 # Examples:
-#   ./scripts/cross-platform-change-detect.sh          # Compare HEAD to main
-#   ./scripts/cross-platform-change-detect.sh v1.0.0   # Compare HEAD to tag
-#   ./scripts/cross-platform-change-detect.sh abc123 def456  # Compare commits
+#   ./scripts/build/cross-platform-change-detect.sh          # Compare HEAD to main
+#   ./scripts/build/cross-platform-change-detect.sh v1.0.0   # Compare HEAD to tag
+#   ./scripts/build/cross-platform-change-detect.sh abc123 def456  # Compare commits
 
 set -e
 

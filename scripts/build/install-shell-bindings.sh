@@ -71,7 +71,7 @@ case "${SHELL##*/}" in
     install_bash
     ;;
   *)
-    echo "Shell $(basename "$SHELL") is not supported yet. Edit scripts/install-shell-bindings.sh to add support." >&2
+    echo "Shell $(basename "$SHELL") is not supported yet. Edit scripts/build/install-shell-bindings.sh to add support." >&2
     exit 1
     ;;
 esac

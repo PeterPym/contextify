@@ -2,7 +2,7 @@
 # CI Signing Test Script
 # Tests the GitHub Actions workflows to verify code signing works correctly
 #
-# Usage: ./scripts/test-ci-signing.sh
+# Usage: ./scripts/release/test-ci-signing.sh
 
 set -euo pipefail
 
