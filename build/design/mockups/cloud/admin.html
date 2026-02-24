@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - Contextify Cloud</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="dashboard.css" rel="stylesheet">
+  <script>
+  (function(){
+    var t = localStorage.getItem('ctxf-theme') || (window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+    document.documentElement.setAttribute('data-bs-theme', t);
+  })();
+  </script>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="ctxf-navbar navbar navbar-expand sticky-top">
+    <div class="container-fluid">
+      <a class="ctxf-brand navbar-brand" href="index.html"><i class="bi bi-cloud me-2"></i>Contextify</a>
+      <ul class="navbar-nav ms-auto align-items-center">
+        <li class="nav-item"><button id="themeToggle" class="nav-link" title="Toggle theme"><i class="bi bi-moon"></i></button></li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Sarah Chen</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="settings.html">Settings</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="login.html">Sign out</a></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main layout -->
+  <div class="row g-0">
+    <div class="col-md-3 col-lg-2 d-none d-md-block ctxf-sidebar">
+      <nav class="nav flex-column">
+        <a class="nav-link" href="index.html"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
+        <a class="nav-link" href="projects.html"><i class="bi bi-folder me-2"></i>Projects</a>
+        <a class="nav-link" href="search.html"><i class="bi bi-search me-2"></i>Search</a>
+        <a class="nav-link" href="settings.html"><i class="bi bi-gear me-2"></i>Settings</a>
+        <a class="nav-link" href="team.html"><i class="bi bi-people me-2"></i>Team</a>
+        <a class="nav-link" href="billing.html"><i class="bi bi-credit-card me-2"></i>Billing</a>
+        <a class="nav-link" href="analytics.html"><i class="bi bi-graph-up me-2"></i>Analytics</a>
+        <a class="nav-link active" href="admin.html"><i class="bi bi-shield-lock me-2"></i>Admin</a>
+      </nav>
+    </div>
+    <div class="col-md-9 col-lg-10 ctxf-content">
+
+      <!-- Page header -->
+      <div class="ctxf-page-header">
+        <h1>Admin</h1>
+        <p class="text-secondary">Tenant administration and audit log.</p>
+      </div>
+
+      <!-- Data Retention -->
+      <div class="ctxf-card p-4 mb-4">
+        <h5 class="mb-3">Data Retention</h5>
+        <form class="d-flex align-items-end gap-3">
+          <div>
+            <label for="retentionDays" class="form-label">Retention period (days)</label>
+            <input type="number" class="form-control" id="retentionDays" value="90" style="width: 140px;">
+          </div>
+          <div>
+            <button type="submit" class="btn ctxf-btn-primary btn-sm">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Project Allow-list -->
+      <div class="ctxf-card p-4 mb-4">
+        <h5 class="mb-3">Project Allow-list</h5>
+        <p class="text-secondary" style="font-size: 0.875rem;">Only these projects will be accepted during sync. Leave empty to allow all.</p>
+        <form>
+          <div class="mb-3">
+            <textarea class="form-control" rows="5">contextify
+api-gateway
+mobile-app
+infra-tools
+docs-site</textarea>
+          </div>
+          <button type="submit" class="btn ctxf-btn-primary btn-sm">Save</button>
+        </form>
+      </div>
+
+      <!-- Audit Log -->
+      <div class="ctxf-card p-4">
+        <h5 class="mb-3">Audit Log</h5>
+
+        <!-- Filters -->
+        <div class="d-flex gap-3 mb-3">
+          <select class="form-select" style="width: auto;">
+            <option selected>All actions</option>
+            <option>login</option>
+            <option>create_key</option>
+            <option>revoke_key</option>
+            <option>change_role</option>
+            <option>remove_member</option>
+            <option>invite_member</option>
+            <option>update_retention</option>
+            <option>update_allowlist</option>
+          </select>
+          <select class="form-select" style="width: auto;">
+            <option selected>All users</option>
+            <option>Sarah Chen</option>
+            <option>Marcus Johnson</option>
+            <option>Priya Patel</option>
+            <option>Alex Rivera</option>
+            <option>Jordan Kim</option>
+          </select>
+          <button class="btn ctxf-btn-primary btn-sm">Filter</button>
+        </div>
+
+        <!-- Audit table -->
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Resource</th>
+                <th>Detail</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="align-middle">2026-02-23 14:32</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-primary">login</span></td>
+                <td class="align-middle">session</td>
+                <td class="align-middle">via API key</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-23 11:15</td>
+                <td class="align-middle">Marcus Johnson</td>
+                <td class="align-middle"><span class="badge bg-success">create_key</span></td>
+                <td class="align-middle">api_key abc12...</td>
+                <td class="align-middle">name: "Laptop"</td>
+                <td class="align-middle">10.0.0.15</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-22 16:45</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-warning text-dark">change_role</span></td>
+                <td class="align-middle">user jordan...</td>
+                <td class="align-middle">viewer -&gt; viewer</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-22 09:30</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-info">invite_member</span></td>
+                <td class="align-middle">invitation taylor...</td>
+                <td class="align-middle">role: member</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-21 14:22</td>
+                <td class="align-middle">Marcus Johnson</td>
+                <td class="align-middle"><span class="badge bg-primary">login</span></td>
+                <td class="align-middle">session</td>
+                <td class="align-middle">via API key</td>
+                <td class="align-middle">10.0.0.15</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-21 10:05</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-danger">revoke_key</span></td>
+                <td class="align-middle">api_key e5f6...</td>
+                <td class="align-middle">name: "CI pipeline"</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-20 15:30</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-info">invite_member</span></td>
+                <td class="align-middle">invitation casey...</td>
+                <td class="align-middle">role: viewer</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-20 11:45</td>
+                <td class="align-middle">Priya Patel</td>
+                <td class="align-middle"><span class="badge bg-primary">login</span></td>
+                <td class="align-middle">session</td>
+                <td class="align-middle">via API key</td>
+                <td class="align-middle">172.16.0.8</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-19 09:15</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-secondary">update_allowlist</span></td>
+                <td class="align-middle">tenant</td>
+                <td class="align-middle">5 projects</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+              <tr>
+                <td class="align-middle">2026-02-18 16:00</td>
+                <td class="align-middle">Sarah Chen</td>
+                <td class="align-middle"><span class="badge bg-secondary">update_retention</span></td>
+                <td class="align-middle">tenant</td>
+                <td class="align-middle">90 days</td>
+                <td class="align-middle">192.168.1.42</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <span class="text-secondary" style="font-size: 0.875rem;">Showing 1-10 of 47 entries</span>
+          <nav>
+            <ul class="pagination pagination-sm mb-0">
+              <li class="page-item disabled"><a class="page-link" href="#">Previous</a></li>
+              <li class="page-item active"><a class="page-link" href="#">1</a></li>
+              <li class="page-item"><a class="page-link" href="#">2</a></li>
+              <li class="page-item"><a class="page-link" href="#">3</a></li>
+              <li class="page-item"><a class="page-link" href="#">4</a></li>
+              <li class="page-item"><a class="page-link" href="#">5</a></li>
+              <li class="page-item"><a class="page-link" href="#">Next</a></li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="ctxf-footer">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4"><div class="ctxf-footer-brand">Contextify</div><p class="ctxf-footer-tagline">AI conversation history for developers.</p></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Product</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/download/">Download</a></li><li><a href="https://contextify.sh/pricing/">Pricing</a></li><li><a href="https://contextify.sh/blog/">Blog</a></li></ul></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Legal</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/privacy/">Privacy</a></li><li><a href="https://contextify.sh/terms/">Terms</a></li><li><a href="https://contextify.sh/support/">Support</a></li></ul></div>
+      </div>
+      <hr class="ctxf-footer-divider">
+      <p class="ctxf-footer-copyright text-center">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  document.getElementById('themeToggle').addEventListener('click', function(){
+    var html = document.documentElement;
+    var current = html.getAttribute('data-bs-theme');
+    var next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', next);
+    localStorage.setItem('ctxf-theme', next);
+    this.innerHTML = next === 'dark' ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon"></i>';
+  });
+  </script>
+</body>
+</html>

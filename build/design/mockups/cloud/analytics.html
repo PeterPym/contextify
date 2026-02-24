@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analytics - Contextify Cloud</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="dashboard.css" rel="stylesheet">
+  <script>
+  (function(){
+    var t = localStorage.getItem('ctxf-theme') || (window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+    document.documentElement.setAttribute('data-bs-theme', t);
+  })();
+  </script>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="ctxf-navbar navbar navbar-expand sticky-top">
+    <div class="container-fluid">
+      <a class="ctxf-brand navbar-brand" href="index.html"><i class="bi bi-cloud me-2"></i>Contextify</a>
+      <ul class="navbar-nav ms-auto align-items-center">
+        <li class="nav-item"><button id="themeToggle" class="nav-link" title="Toggle theme"><i class="bi bi-moon"></i></button></li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Sarah Chen</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="settings.html">Settings</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="login.html">Sign out</a></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main layout -->
+  <div class="row g-0">
+    <div class="col-md-3 col-lg-2 d-none d-md-block ctxf-sidebar">
+      <nav class="nav flex-column">
+        <a class="nav-link" href="index.html"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
+        <a class="nav-link" href="projects.html"><i class="bi bi-folder me-2"></i>Projects</a>
+        <a class="nav-link" href="search.html"><i class="bi bi-search me-2"></i>Search</a>
+        <a class="nav-link" href="settings.html"><i class="bi bi-gear me-2"></i>Settings</a>
+        <a class="nav-link" href="team.html"><i class="bi bi-people me-2"></i>Team</a>
+        <a class="nav-link" href="billing.html"><i class="bi bi-credit-card me-2"></i>Billing</a>
+        <a class="nav-link active" href="analytics.html"><i class="bi bi-graph-up me-2"></i>Analytics</a>
+        <a class="nav-link" href="admin.html"><i class="bi bi-shield-lock me-2"></i>Admin</a>
+      </nav>
+    </div>
+    <div class="col-md-9 col-lg-10 ctxf-content">
+
+      <!-- Page header -->
+      <div class="ctxf-page-header">
+        <h1>Usage Analytics</h1>
+        <p class="text-secondary">Team-wide usage statistics.</p>
+      </div>
+
+      <!-- Summary stats -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <div class="ctxf-card ctxf-analytics-card p-3 text-center">
+            <i class="bi bi-chat-text ctxf-analytics-icon"></i>
+            <div class="ctxf-stat-value">12,483</div>
+            <div class="ctxf-stat-label">Total Entries</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="ctxf-card ctxf-analytics-card p-3 text-center">
+            <i class="bi bi-folder ctxf-analytics-icon"></i>
+            <div class="ctxf-stat-value">5</div>
+            <div class="ctxf-stat-label">Projects</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="ctxf-card ctxf-analytics-card p-3 text-center">
+            <i class="bi bi-file-text ctxf-analytics-icon"></i>
+            <div class="ctxf-stat-value">1,847</div>
+            <div class="ctxf-stat-label">Transcripts</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="ctxf-card ctxf-analytics-card p-3 text-center">
+            <i class="bi bi-people ctxf-analytics-icon"></i>
+            <div class="ctxf-stat-value">4</div>
+            <div class="ctxf-stat-label">Active Users (30d)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily Volume chart -->
+      <div class="ctxf-card p-4 mt-4">
+        <h5 class="mb-3">Daily Volume (Last 30 Days)</h5>
+        <div class="ctxf-chart-container">
+          <div class="ctxf-bar-chart">
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 57%" title="Jan 25: 142 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">25</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 38%" title="Jan 26: 95 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">26</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 72%" title="Jan 27: 180 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">27</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 84%" title="Jan 28: 210 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">28</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 64%" title="Jan 29: 160 entries"></div>
+              <div class="ctxf-bar-label">29</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 28%" title="Jan 30: 70 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">30</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 20%" title="Jan 31: 50 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">31</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 76%" title="Feb 1: 190 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">1</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 88%" title="Feb 2: 220 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">2</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 100%" title="Feb 3: 250 entries"></div>
+              <div class="ctxf-bar-label">3</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 68%" title="Feb 4: 170 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">4</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 52%" title="Feb 5: 130 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">5</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 60%" title="Feb 6: 150 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">6</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 44%" title="Feb 7: 110 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">7</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 92%" title="Feb 8: 230 entries"></div>
+              <div class="ctxf-bar-label">8</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 80%" title="Feb 9: 200 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">9</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 56%" title="Feb 10: 140 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">10</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 36%" title="Feb 11: 90 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">11</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 72%" title="Feb 12: 180 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">12</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 96%" title="Feb 13: 240 entries"></div>
+              <div class="ctxf-bar-label">13</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 48%" title="Feb 14: 120 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">14</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 24%" title="Feb 15: 60 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">15</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 32%" title="Feb 16: 80 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">16</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 68%" title="Feb 17: 170 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">17</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 84%" title="Feb 18: 210 entries"></div>
+              <div class="ctxf-bar-label">18</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 76%" title="Feb 19: 190 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">19</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 64%" title="Feb 20: 160 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">20</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 52%" title="Feb 21: 130 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">21</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 88%" title="Feb 22: 220 entries"></div>
+              <div class="ctxf-bar-label" style="visibility:hidden">22</div>
+            </div>
+            <div class="ctxf-bar-wrapper">
+              <div class="ctxf-bar" style="height: 72%" title="Feb 23: 180 entries"></div>
+              <div class="ctxf-bar-label">23</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-User Breakdown -->
+      <div class="ctxf-card p-4 mt-4">
+        <h5 class="mb-3">Per-User Breakdown</h5>
+        <div class="table-responsive">
+          <table class="table ctxf-analytics-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th class="text-end">Entries</th>
+                <th class="text-end">Last Activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Sarah Chen (sarah@acme-eng.com)</td>
+                <td class="text-end">4,521</td>
+                <td class="text-end">2 hours ago</td>
+              </tr>
+              <tr>
+                <td>Marcus Johnson (marcus@acme-eng.com)</td>
+                <td class="text-end">3,892</td>
+                <td class="text-end">5 hours ago</td>
+              </tr>
+              <tr>
+                <td>Priya Patel (priya@acme-eng.com)</td>
+                <td class="text-end">2,847</td>
+                <td class="text-end">yesterday</td>
+              </tr>
+              <tr>
+                <td>Alex Rivera (alex@acme-eng.com)</td>
+                <td class="text-end">1,223</td>
+                <td class="text-end">3 days ago</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Per-Project Breakdown -->
+      <div class="ctxf-card p-4 mt-4">
+        <h5 class="mb-3">Per-Project Breakdown</h5>
+        <div class="table-responsive">
+          <table class="table ctxf-analytics-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th class="text-end">Entries</th>
+                <th class="text-end">Transcripts</th>
+                <th class="text-end">Last Activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="project-detail.html">contextify</a></td>
+                <td class="text-end">2,847</td>
+                <td class="text-end">312</td>
+                <td class="text-end">2 hours ago</td>
+              </tr>
+              <tr>
+                <td>api-gateway</td>
+                <td class="text-end">1,523</td>
+                <td class="text-end">198</td>
+                <td class="text-end">5 hours ago</td>
+              </tr>
+              <tr>
+                <td>mobile-app</td>
+                <td class="text-end">891</td>
+                <td class="text-end">87</td>
+                <td class="text-end">yesterday</td>
+              </tr>
+              <tr>
+                <td>infra-tools</td>
+                <td class="text-end">445</td>
+                <td class="text-end">52</td>
+                <td class="text-end">3 days ago</td>
+              </tr>
+              <tr>
+                <td>docs-site</td>
+                <td class="text-end">127</td>
+                <td class="text-end">15</td>
+                <td class="text-end">1 week ago</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="ctxf-footer">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4"><div class="ctxf-footer-brand">Contextify</div><p class="ctxf-footer-tagline">AI conversation history for developers.</p></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Product</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/download/">Download</a></li><li><a href="https://contextify.sh/pricing/">Pricing</a></li><li><a href="https://contextify.sh/blog/">Blog</a></li></ul></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Legal</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/privacy/">Privacy</a></li><li><a href="https://contextify.sh/terms/">Terms</a></li><li><a href="https://contextify.sh/support/">Support</a></li></ul></div>
+      </div>
+      <hr class="ctxf-footer-divider">
+      <p class="ctxf-footer-copyright text-center">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  document.getElementById('themeToggle').addEventListener('click', function(){
+    var html = document.documentElement;
+    var current = html.getAttribute('data-bs-theme');
+    var next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', next);
+    localStorage.setItem('ctxf-theme', next);
+    this.innerHTML = next === 'dark' ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon"></i>';
+  });
+  </script>
+</body>
+</html>

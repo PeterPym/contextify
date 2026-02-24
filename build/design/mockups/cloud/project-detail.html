@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>contextify - Contextify Cloud</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="dashboard.css" rel="stylesheet">
+  <script>
+  (function(){
+    var t = localStorage.getItem('ctxf-theme') || (window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+    document.documentElement.setAttribute('data-bs-theme', t);
+  })();
+  </script>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="ctxf-navbar navbar navbar-expand sticky-top">
+    <div class="container-fluid">
+      <a class="ctxf-brand navbar-brand" href="index.html"><i class="bi bi-cloud me-2"></i>Contextify</a>
+      <ul class="navbar-nav ms-auto align-items-center">
+        <li class="nav-item"><button id="themeToggle" class="nav-link" title="Toggle theme"><i class="bi bi-moon"></i></button></li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Sarah Chen</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="settings.html">Settings</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="login.html">Sign out</a></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main layout -->
+  <div class="row g-0">
+    <div class="col-md-3 col-lg-2 d-none d-md-block ctxf-sidebar">
+      <nav class="nav flex-column">
+        <a class="nav-link" href="index.html"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
+        <a class="nav-link active" href="projects.html"><i class="bi bi-folder me-2"></i>Projects</a>
+        <a class="nav-link" href="search.html"><i class="bi bi-search me-2"></i>Search</a>
+        <a class="nav-link" href="settings.html"><i class="bi bi-gear me-2"></i>Settings</a>
+        <a class="nav-link" href="team.html"><i class="bi bi-people me-2"></i>Team</a>
+        <a class="nav-link" href="billing.html"><i class="bi bi-credit-card me-2"></i>Billing</a>
+        <a class="nav-link" href="analytics.html"><i class="bi bi-graph-up me-2"></i>Analytics</a>
+        <a class="nav-link" href="admin.html"><i class="bi bi-shield-lock me-2"></i>Admin</a>
+      </nav>
+    </div>
+    <div class="col-md-9 col-lg-10 ctxf-content">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="projects.html">Projects</a></li>
+          <li class="breadcrumb-item active" aria-current="page">contextify</li>
+        </ol>
+      </nav>
+
+      <!-- Page header -->
+      <div class="ctxf-page-header">
+        <h1>contextify</h1>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="row mb-3">
+        <div class="col-md-4 mb-3">
+          <div class="ctxf-card p-3 text-center">
+            <div class="ctxf-stat-value">2,847</div>
+            <div class="ctxf-stat-label">Entries</div>
+          </div>
+        </div>
+        <div class="col-md-4 mb-3">
+          <div class="ctxf-card p-3 text-center">
+            <div class="ctxf-stat-value">312</div>
+            <div class="ctxf-stat-label">Transcripts</div>
+          </div>
+        </div>
+        <div class="col-md-4 mb-3">
+          <div class="ctxf-card p-3 text-center">
+            <div class="ctxf-stat-value">4</div>
+            <div class="ctxf-stat-label">Contributors</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contributors -->
+      <div class="ctxf-card p-3 mt-3">
+        <h5 class="fw-semibold mb-3">Contributors</h5>
+        <div class="list-group list-group-flush">
+
+          <div class="list-group-item ctxf-contributor-item d-flex align-items-center">
+            <i class="bi bi-person-circle ctxf-contributor-avatar me-3"></i>
+            <div class="flex-grow-1">
+              <div class="fw-semibold text-sm">Sarah Chen</div>
+              <div class="text-secondary" style="font-size:0.75rem">sarah.chen@example.com</div>
+            </div>
+            <div class="text-end">
+              <div class="text-sm">1,204 entries</div>
+              <div class="text-secondary" style="font-size:0.75rem">2 hours ago</div>
+            </div>
+          </div>
+
+          <div class="list-group-item ctxf-contributor-item d-flex align-items-center">
+            <i class="bi bi-person-circle ctxf-contributor-avatar me-3"></i>
+            <div class="flex-grow-1">
+              <div class="fw-semibold text-sm">Marcus Johnson</div>
+              <div class="text-secondary" style="font-size:0.75rem">marcus.johnson@example.com</div>
+            </div>
+            <div class="text-end">
+              <div class="text-sm">892 entries</div>
+              <div class="text-secondary" style="font-size:0.75rem">5 hours ago</div>
+            </div>
+          </div>
+
+          <div class="list-group-item ctxf-contributor-item d-flex align-items-center">
+            <i class="bi bi-person-circle ctxf-contributor-avatar me-3"></i>
+            <div class="flex-grow-1">
+              <div class="fw-semibold text-sm">Priya Patel</div>
+              <div class="text-secondary" style="font-size:0.75rem">priya.patel@example.com</div>
+            </div>
+            <div class="text-end">
+              <div class="text-sm">534 entries</div>
+              <div class="text-secondary" style="font-size:0.75rem">yesterday</div>
+            </div>
+          </div>
+
+          <div class="list-group-item ctxf-contributor-item d-flex align-items-center">
+            <i class="bi bi-person-circle ctxf-contributor-avatar me-3"></i>
+            <div class="flex-grow-1">
+              <div class="fw-semibold text-sm">Alex Rivera</div>
+              <div class="text-secondary" style="font-size:0.75rem">alex.rivera@example.com</div>
+            </div>
+            <div class="text-end">
+              <div class="text-sm">217 entries</div>
+              <div class="text-secondary" style="font-size:0.75rem">3 days ago</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="ctxf-card p-3 mt-3">
+        <h5 class="fw-semibold mb-3">Recent Activity</h5>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Sarah Chen</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-primary">user</span>
+          </div>
+          <div class="ctxf-activity-content">Can you refactor the authentication middleware to use JWT tokens instead of session cookies?</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">2 hours ago</div>
+        </div>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Sarah Chen</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-success">assistant</span>
+          </div>
+          <div class="ctxf-activity-content">I'll refactor the auth middleware. Here's my plan:
+1. Replace session-based auth with JWT
+2. Add token refresh endpoint
+3. Update all protected routes</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">2 hours ago</div>
+        </div>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Alex Rivera</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-primary">user</span>
+          </div>
+          <div class="ctxf-activity-content">Add a database migration to create the team_invitations table with columns for email, role, invited_by, and expires_at.</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">3 hours ago</div>
+        </div>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Alex Rivera</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-success">assistant</span>
+          </div>
+          <div class="ctxf-activity-content">I've created migration v34 with the team_invitations table. The schema includes a unique constraint on (team_id, email) to prevent duplicate invitations, and a CHECK constraint ensuring expires_at is always in the future relative to created_at.</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">3 hours ago</div>
+        </div>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Marcus Johnson</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-info">summary</span>
+          </div>
+          <div class="ctxf-activity-content">Implemented real-time WebSocket connection for live activity feed updates. Added reconnection logic with exponential backoff, message deduplication, and offline queue that replays when connection is restored.</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">yesterday</div>
+        </div>
+
+        <div class="ctxf-activity-item">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold text-sm">Priya Patel</span>
+            <span class="text-secondary text-sm">in</span>
+            <span class="fw-medium text-sm">contextify</span>
+            <span class="badge ctxf-kind-badge text-bg-warning">system</span>
+          </div>
+          <div class="ctxf-activity-content">CI pipeline completed. 847 tests passing, code coverage at 78.3%. No new warnings introduced.</div>
+          <div class="text-secondary mt-1" style="font-size:0.75rem;">2 days ago</div>
+        </div>
+
+        <!-- Load more -->
+        <div class="text-center mt-3">
+          <button class="btn btn-outline-secondary">Load more</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="ctxf-footer">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4"><div class="ctxf-footer-brand">Contextify</div><p class="ctxf-footer-tagline">AI conversation history for developers.</p></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Product</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/download/">Download</a></li><li><a href="https://contextify.sh/pricing/">Pricing</a></li><li><a href="https://contextify.sh/blog/">Blog</a></li></ul></div>
+        <div class="col-md-4"><h6 class="ctxf-footer-heading">Legal</h6><ul class="list-unstyled ctxf-footer-links"><li><a href="https://contextify.sh/privacy/">Privacy</a></li><li><a href="https://contextify.sh/terms/">Terms</a></li><li><a href="https://contextify.sh/support/">Support</a></li></ul></div>
+      </div>
+      <hr class="ctxf-footer-divider">
+      <p class="ctxf-footer-copyright text-center">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  document.getElementById('themeToggle').addEventListener('click', function(){
+    var html = document.documentElement;
+    var current = html.getAttribute('data-bs-theme');
+    var next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', next);
+    localStorage.setItem('ctxf-theme', next);
+    this.innerHTML = next === 'dark' ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon"></i>';
+  });
+  </script>
+</body>
+</html>
