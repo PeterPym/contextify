@@ -446,7 +446,14 @@ final class ChronicleService {
     // Save signposts (currentArc is guaranteed non-nil if there are signposts)
     if let arc = currentArc {
       for signpostResult in analysis.signposts {
-        let kind = SignpostKind(rawValue: signpostResult.kind.rawValue) ?? .discovery
+        let raw = signpostResult.kind.rawValue
+        let kind: SignpostKind
+        if let mapped = SignpostKind(rawValue: raw) {
+          kind = mapped
+        } else {
+          log.warning("[CHRONICLE] Unknown signpost kind '\(raw, privacy: .public)' -> defaulting to .discovery")
+          kind = .discovery
+        }
         let signpost = ChronicleSignpost(
           arcId: arc.id,
           entryId: exchange.assistantEntryId ?? exchange.userEntryId,

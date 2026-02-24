@@ -181,27 +181,47 @@ public final class ChronicleRepositoryImpl: ChronicleRepositoryProtocol, @unchec
       var arguments: StatementArguments
 
       if let entryId {
-        // Fetch entries after the checkpoint entry's timestamp, scoped to project.
-        // CTE handles NULL (missing/deleted checkpoint): falls back to "latest N ASC".
-        sql = """
-          WITH checkpoint AS (
-            SELECT timestamp AS ts
+        // Look up checkpoint timestamp scoped to project. If missing/deleted, fall back
+        // to "latest N ASC" (same as the no-checkpoint path) to avoid processing stale history.
+        let checkpointTs = try Int.fetchOne(
+          db,
+          sql: """
+            SELECT timestamp
             FROM transcript_entries
             WHERE id = ? AND project_id = ?
-          )
-          SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
-          FROM transcript_entries e
-          WHERE e.project_id = ?
-            AND e.display_in_timeline = 1
-            AND e.is_sidechain = 0
-            AND (
-              (SELECT ts FROM checkpoint) IS NULL
-              OR e.timestamp > (SELECT ts FROM checkpoint)
+          """,
+          arguments: [entryId, projectId]
+        )
+
+        if let ts = checkpointTs {
+          sql = """
+            SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
+            FROM transcript_entries e
+            WHERE e.project_id = ?
+              AND e.display_in_timeline = 1
+              AND e.is_sidechain = 0
+              AND e.timestamp > ?
+            ORDER BY e.timestamp ASC
+            LIMIT ?
+          """
+          arguments = [projectId, ts, limit]
+        } else {
+          // Checkpoint entry is missing (deleted/pruned): fall back to latest N ASC.
+          sql = """
+            SELECT id, kind, content, timestamp, transcript_id
+            FROM (
+              SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
+              FROM transcript_entries e
+              WHERE e.project_id = ?
+                AND e.display_in_timeline = 1
+                AND e.is_sidechain = 0
+              ORDER BY e.timestamp DESC
+              LIMIT ?
             )
-          ORDER BY e.timestamp ASC
-          LIMIT ?
-        """
-        arguments = [entryId, projectId, projectId, limit]
+            ORDER BY timestamp ASC
+          """
+          arguments = [projectId, limit]
+        }
       } else {
         // No checkpoint: take latest N entries but return them ASC for exchange pairing.
         sql = """

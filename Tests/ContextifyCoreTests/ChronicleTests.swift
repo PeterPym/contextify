@@ -492,6 +492,71 @@ final class ChronicleRepositoryTests: XCTestCase {
     XCTAssertEqual(fetched[0].detectedAt, now)
   }
 
+  // MARK: - fetchRecentEntries Tests
+
+  /// Seeds transcript_entries and returns their IDs in insertion order.
+  private func seedEntries(count: Int, baseTimestamp: Int) throws -> [String] {
+    let now = Int(Date().timeIntervalSince1970)
+    let ids = (0..<count).map { _ in UUID().uuidString }
+    for (i, eid) in ids.enumerated() {
+      try db.write { db in
+        try db.execute(
+          sql: """
+            INSERT INTO transcript_entries
+            (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+             display_in_timeline, is_sidechain, created_at, updated_at)
+            VALUES (?, ?, ?, 'claude.code', 'user', ?, ?, ?, 1, 0, ?, ?)
+          """,
+          arguments: [
+            eid, testTranscriptId, testProjectId,
+            baseTimestamp + i * 100,
+            "Content \(i) for \(eid)",
+            "sha-\(eid.prefix(8))",
+            now, now
+          ]
+        )
+      }
+    }
+    return ids
+  }
+
+  func testFetchRecentEntriesNoCheckpointReturnsLatestNInASC() throws {
+    let base = Int(Date().timeIntervalSince1970) - 1000
+    let ids = try seedEntries(count: 6, baseTimestamp: base)
+
+    // Fetch with no checkpoint, limit 4 (should return the 4 newest entries in ASC order)
+    let entries = try repo.fetchRecentEntries(for: testProjectId, after: nil, limit: 4)
+
+    XCTAssertEqual(entries.count, 4)
+    // Verify ascending timestamp order
+    for i in 0..<(entries.count - 1) {
+      XCTAssertLessThan(entries[i].timestamp, entries[i + 1].timestamp)
+    }
+    // Last entry should be the newest (index 5 of 0-5)
+    XCTAssertEqual(entries.last?.id, ids[5])
+    // First entry in result should be entry index 2 (6 total, take 4 latest starting from index 2)
+    XCTAssertEqual(entries.first?.id, ids[2])
+  }
+
+  func testFetchRecentEntriesMissingCheckpointFallsBackToLatestN() throws {
+    let base = Int(Date().timeIntervalSince1970) - 1000
+    let ids = try seedEntries(count: 6, baseTimestamp: base)
+
+    // Call with a non-existent entry ID (simulating a deleted checkpoint)
+    let entries = try repo.fetchRecentEntries(for: testProjectId, after: "non-existent-checkpoint-id", limit: 3)
+
+    // Should fall back to latest 3 entries, NOT the oldest 3
+    XCTAssertEqual(entries.count, 3)
+    // Verify ascending order
+    for i in 0..<(entries.count - 1) {
+      XCTAssertLessThan(entries[i].timestamp, entries[i + 1].timestamp)
+    }
+    // Should be entries 3, 4, 5 (the latest 3), not 0, 1, 2 (the oldest 3)
+    XCTAssertEqual(entries[0].id, ids[3])
+    XCTAssertEqual(entries[1].id, ids[4])
+    XCTAssertEqual(entries[2].id, ids[5])
+  }
+
   // MARK: - Cascade Delete Tests
 
   func testCascadeDeleteArc() throws {
