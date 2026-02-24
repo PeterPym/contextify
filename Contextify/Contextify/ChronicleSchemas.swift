@@ -41,10 +41,21 @@ enum ArcStatusValue: String, Sendable {
 }
 
 @available(macOS 26.0, *)
+@Generable(description: "Signpost kind classification")
+enum SignpostKindValue: String, Sendable {
+  case decision
+  case discovery
+  case pivot
+  case milestone
+  case blocker
+  case resolution
+}
+
+@available(macOS 26.0, *)
 @Generable(description: "A significant moment detected in the narrative")
 struct SignpostResult: Sendable {
-  @Guide(description: "Type: decision, discovery, pivot, milestone, blocker, or resolution")
-  var kind: String
+  @Guide(description: "Type of signpost")
+  var kind: SignpostKindValue
 
   @Guide(description: "One sentence (120 chars max) describing what happened")
   var summary: String

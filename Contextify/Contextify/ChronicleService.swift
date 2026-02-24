@@ -28,6 +28,9 @@ final class ChronicleService {
   /// Whether the service is actively processing
   private(set) var isProcessing = false
 
+  /// Reference count for concurrent processProject tasks
+  private var activeProcessCount = 0
+
   /// Last error encountered during analysis
   private(set) var lastError: String?
 
@@ -163,8 +166,12 @@ final class ChronicleService {
       return
     }
 
-    isProcessing = true
-    defer { isProcessing = false }
+    activeProcessCount += 1
+    isProcessing = activeProcessCount > 0
+    defer {
+      activeProcessCount = max(0, activeProcessCount - 1)
+      isProcessing = activeProcessCount > 0
+    }
 
     do {
       // Fetch current narrative state for this project
@@ -418,20 +425,40 @@ final class ChronicleService {
       }
     }
 
-    // Save signposts
-    for signpostResult in analysis.signposts {
-      guard let kind = SignpostKind(rawValue: signpostResult.kind) else { continue }
-      let signpost = ChronicleSignpost(
-        arcId: currentArc?.id ?? "",
-        entryId: exchange.assistantEntryId ?? exchange.userEntryId,
-        kind: kind,
-        summary: signpostResult.summary,
-        detail: signpostResult.detail,
-        reasoning: nil,
-        revisitConditions: nil,
-        timestamp: exchange.timestamp
+    // Ensure we have a valid arc before saving signposts (guards against FK failure).
+    // Can be nil if analysis signals completing/resuming on first pass with no prior arc.
+    if currentArc == nil, !analysis.signposts.isEmpty {
+      let fallbackArc = ChronicleArc(
+        projectId: projectId,
+        intent: analysis.exchangeSummary,
+        status: .active,
+        startedAt: now,
+        lastActivityAt: now,
+        transcriptIdsJson: ChronicleArc.encodeTranscriptIds([exchange.transcriptId])
       )
-      try repository.saveSignpost(signpost)
+      try repository.saveArc(fallbackArc)
+      currentArc = fallbackArc
+      state.currentArcId = fallbackArc.id
+      newArcCreated = true
+      log.info("[CHRONICLE] Created fallback arc for orphaned signposts")
+    }
+
+    // Save signposts (currentArc is guaranteed non-nil if there are signposts)
+    if let arc = currentArc {
+      for signpostResult in analysis.signposts {
+        let kind = SignpostKind(rawValue: signpostResult.kind.rawValue) ?? .discovery
+        let signpost = ChronicleSignpost(
+          arcId: arc.id,
+          entryId: exchange.assistantEntryId ?? exchange.userEntryId,
+          kind: kind,
+          summary: signpostResult.summary,
+          detail: signpostResult.detail,
+          reasoning: nil,
+          revisitConditions: nil,
+          timestamp: exchange.timestamp
+        )
+        try repository.saveSignpost(signpost)
+      }
     }
 
     // Update rolling window

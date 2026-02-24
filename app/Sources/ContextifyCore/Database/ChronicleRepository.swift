@@ -181,30 +181,41 @@ public final class ChronicleRepositoryImpl: ChronicleRepositoryProtocol, @unchec
       var arguments: StatementArguments
 
       if let entryId {
-        // Fetch entries after the given entry's timestamp
+        // Fetch entries after the checkpoint entry's timestamp, scoped to project.
+        // CTE handles NULL (missing/deleted checkpoint): falls back to "latest N ASC".
         sql = """
+          WITH checkpoint AS (
+            SELECT timestamp AS ts
+            FROM transcript_entries
+            WHERE id = ? AND project_id = ?
+          )
           SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
           FROM transcript_entries e
           WHERE e.project_id = ?
             AND e.display_in_timeline = 1
             AND e.is_sidechain = 0
-            AND e.timestamp > (
-              SELECT timestamp FROM transcript_entries WHERE id = ?
+            AND (
+              (SELECT ts FROM checkpoint) IS NULL
+              OR e.timestamp > (SELECT ts FROM checkpoint)
             )
           ORDER BY e.timestamp ASC
           LIMIT ?
         """
-        arguments = [projectId, entryId, limit]
+        arguments = [entryId, projectId, projectId, limit]
       } else {
-        // No checkpoint, fetch most recent entries
+        // No checkpoint: take latest N entries but return them ASC for exchange pairing.
         sql = """
-          SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
-          FROM transcript_entries e
-          WHERE e.project_id = ?
-            AND e.display_in_timeline = 1
-            AND e.is_sidechain = 0
-          ORDER BY e.timestamp DESC
-          LIMIT ?
+          SELECT id, kind, content, timestamp, transcript_id
+          FROM (
+            SELECT e.id, e.kind, e.content, e.timestamp, e.transcript_id
+            FROM transcript_entries e
+            WHERE e.project_id = ?
+              AND e.display_in_timeline = 1
+              AND e.is_sidechain = 0
+            ORDER BY e.timestamp DESC
+            LIMIT ?
+          )
+          ORDER BY timestamp ASC
         """
         arguments = [projectId, limit]
       }
