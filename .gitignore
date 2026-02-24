@@ -52,6 +52,10 @@ appstore-metadata/fastlane/metadata/
 .idea/
 .vscode/
 
+# Python
+__pycache__/
+*.pyc
+
 # Logs & temp
 *.log
 *.swp
