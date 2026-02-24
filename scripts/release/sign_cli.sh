@@ -67,7 +67,7 @@ CLI_SOURCES=(
   "Package.swift"
 )
 
-# Notarization profile (must match scripts/SIGNING-SETUP.md)
+# Notarization profile (must match build/docs/operations/signing-setup.md)
 NOTARY_PROFILE="NotaryProfile"
 
 # Parse arguments
@@ -146,7 +146,7 @@ check_prerequisites() {
   CERT_ID=$(security find-identity -p codesigning -v 2>/dev/null | awk '/Developer ID Application/ {print $2; exit}')
   if [ -z "$CERT_ID" ]; then
     log_error "Developer ID Application certificate not found"
-    log_error "See scripts/SIGNING-SETUP.md for setup instructions"
+    log_error "See build/docs/operations/signing-setup.md for setup instructions"
     exit 5
   fi
   log_success "Developer ID certificate: ${CERT_ID:0:8}..."
@@ -155,7 +155,7 @@ check_prerequisites() {
   if [ "$SKIP_NOTARIZE" = false ]; then
     if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
       log_error "Notarization profile '$NOTARY_PROFILE' not configured"
-      log_error "See scripts/SIGNING-SETUP.md for setup instructions"
+      log_error "See build/docs/operations/signing-setup.md for setup instructions"
       exit 5
     fi
     log_success "Notarization profile: $NOTARY_PROFILE"

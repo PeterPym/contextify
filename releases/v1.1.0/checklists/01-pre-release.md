@@ -76,7 +76,7 @@ This release targets Linux. Linux requires Total Recall to be useful.
 
 ```bash
 # Linux build test (Docker)
-bash scripts/docker-linux-build.sh --e2e
+bash scripts/build/docker-linux-build.sh --e2e
 
 # Doctor command test
 contextify-query doctor

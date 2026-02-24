@@ -161,7 +161,7 @@ def build_release() -> None:
 def sign_and_notarize(skip_notarize: bool = False) -> None:
     """Sign and notarize the app."""
     print("🔏 Signing and creating DMG...")
-    cmd = ["python3", "scripts/sign_and_notarize.py"]
+    cmd = ["python3", "scripts/release/sign_and_notarize.py"]
     if skip_notarize:
         cmd.append("--no-notarize")
     run(cmd, cwd=ROOT, capture=False)

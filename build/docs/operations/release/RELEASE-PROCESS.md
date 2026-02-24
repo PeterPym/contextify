@@ -57,7 +57,7 @@ Perfect for CI/CD or when you know the exact version:
 
 ```bash
 # Fully automated - no prompts
-python3 scripts/release.py --version 1.0.1 --yes
+python3 scripts/release/release.py --version 1.0.1 --yes
 
 # Or via make
 make release
@@ -74,16 +74,16 @@ make release
 
 ```bash
 # Preview release of version 1.0.1
-python3 scripts/release.py --version 1.0.1 --dry-run
+python3 scripts/release/release.py --version 1.0.1 --dry-run
 
 # Fully automated release (for CI/CD)
-python3 scripts/release.py --version 1.0.1 --yes
+python3 scripts/release/release.py --version 1.0.1 --yes
 
 # Fast testing without notarization
-python3 scripts/release.py --version 1.0.1 --yes --no-notarize
+python3 scripts/release/release.py --version 1.0.1 --yes --no-notarize
 
 # Release with uncommitted changes (not recommended)
-python3 scripts/release.py --version 1.0.1 --yes --allow-dirty
+python3 scripts/release/release.py --version 1.0.1 --yes --allow-dirty
 ```
 
 ### Preview Only (Dry Run)
@@ -93,7 +93,7 @@ python3 scripts/release.py --version 1.0.1 --yes --allow-dirty
 make release-dry-run
 
 # Or directly with specific version
-python3 scripts/release.py --version 1.0.1 --dry-run
+python3 scripts/release/release.py --version 1.0.1 --dry-run
 ```
 
 Shows what would happen without making any changes.
@@ -126,9 +126,9 @@ make sign-dmg
 make sign-dmg-no-notarize
 
 # Or directly:
-python3 scripts/sign_and_notarize.py              # Full signing + notarization
-python3 scripts/sign_and_notarize.py --no-notarize # Skip notarization
-python3 scripts/sign_and_notarize.py --no-sign     # Skip signing (layout preview)
+python3 scripts/release/sign_and_notarize.py              # Full signing + notarization
+python3 scripts/release/sign_and_notarize.py --no-notarize # Skip notarization
+python3 scripts/release/sign_and_notarize.py --no-sign     # Skip signing (layout preview)
 ```
 
 **Output:** `dist/Contextify.dmg`
@@ -198,7 +198,7 @@ xcodebuild -project Contextify/Contextify.xcodeproj \
 **Automated (Recommended):**
 ```bash
 # Release script prompts for new version and updates automatically
-python3 scripts/release.py
+python3 scripts/release/release.py
 ```
 
 **Manual:**
@@ -292,11 +292,11 @@ Common issues:
 
 **Location:** `build/assets/dmg/background.png`
 **Dimensions:** 700×400 pixels
-**Generator:** `scripts/generate_dmg_background.swift`
+**Generator:** `scripts/release/generate_dmg_background.swift`
 
 To regenerate:
 ```bash
-swift scripts/generate_dmg_background.swift
+swift scripts/release/generate_dmg_background.swift
 ```
 
 ## Release Checklist
@@ -376,8 +376,8 @@ Contextify's release infrastructure is adapted from FileKitty but differs:
 
 | File | Purpose |
 |------|---------|
-| `scripts/release.py` | End-to-end release automation |
-| `scripts/sign_and_notarize.py` | DMG signing and notarization |
+| `scripts/release/release.py` | End-to-end release automation |
+| `scripts/release/sign_and_notarize.py` | DMG signing and notarization |
 | `scripts/xc.sh` | Xcode build wrapper |
 | `build/assets/dmg/settings.json` | DMG layout config |
 | `build/assets/dmg/background.png` | DMG background image |
@@ -388,7 +388,7 @@ Contextify's release infrastructure is adapted from FileKitty but differs:
 
 - Release readiness: `build/docs/operations/release/release-readiness.md`
 - Distribution strategy: `build/docs/operations/marketing/distribution-strategy.md`
-- Build scripts: `scripts/QUICK-REFERENCE.md`
+- Build scripts: `build/docs/guides/log-quick-reference.md`
 
 ## Advanced Usage
 
@@ -396,14 +396,14 @@ Contextify's release infrastructure is adapted from FileKitty but differs:
 
 ```bash
 # Build + sign, but skip GitHub release
-python3 scripts/release.py --dry-run  # See what would happen
+python3 scripts/release/release.py --dry-run  # See what would happen
 # Then manually upload DMG
 
 # Sign existing build without rebuilding
-python3 scripts/sign_and_notarize.py
+python3 scripts/release/sign_and_notarize.py
 
 # Create DMG layout preview without signing
-python3 scripts/sign_and_notarize.py --no-sign
+python3 scripts/release/sign_and_notarize.py --no-sign
 ```
 
 ### Custom Version

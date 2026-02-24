@@ -6,7 +6,7 @@
 If you just reproduced an issue:
 
 ```bash
-./scripts/capture-recent-logs.sh 5 /tmp/contextify-issue.log
+./scripts/logging/capture-recent-logs.sh 5 /tmp/contextify-issue.log
 ```
 
 Then tell me:
@@ -22,7 +22,7 @@ After I make a fix:
 rm -f ~/Library/Application\ Support/Contextify/transcripts.db*
 
 # Build and capture logs for 30 seconds
-./scripts/build-and-capture-logs.sh 30
+./scripts/logging/build-and-capture-logs.sh 30
 ```
 
 The log file path will be printed at the end. Share it with me:
@@ -34,7 +34,7 @@ have a look at build/logs/runtime/contextify-20251011-193045.log
 If you want to watch logs in real-time while testing:
 
 ```bash
-./scripts/stream-logs.sh /tmp/contextify-live.log
+./scripts/logging/stream-logs.sh /tmp/contextify-live.log
 ```
 
 Press Ctrl+C when done, then share the file.
@@ -54,14 +54,14 @@ Once you share a log file, I can:
 ```bash
 # You make a change or hit an issue
 # Capture the last 5 minutes
-./scripts/capture-recent-logs.sh 5
+./scripts/logging/capture-recent-logs.sh 5
 
 # Tell me about it
 "I'm seeing X issue, have a look at /tmp/contextify-recent.log"
 
 # I analyze it and make a fix
 # You test the fix with auto-capture
-./scripts/build-and-capture-logs.sh 30
+./scripts/logging/build-and-capture-logs.sh 30
 
 # Share the new logs
 "have a look at build/logs/runtime/contextify-20251011-193045.log"
@@ -72,9 +72,9 @@ Once you share a log file, I can:
 For clarity, name your logs descriptively when sharing:
 
 ```bash
-./scripts/capture-recent-logs.sh 5 /tmp/fk-constraint-error.log
-./scripts/capture-recent-logs.sh 5 /tmp/no-summaries-showing.log
-./scripts/capture-recent-logs.sh 5 /tmp/after-fix-test.log
+./scripts/logging/capture-recent-logs.sh 5 /tmp/fk-constraint-error.log
+./scripts/logging/capture-recent-logs.sh 5 /tmp/no-summaries-showing.log
+./scripts/logging/capture-recent-logs.sh 5 /tmp/after-fix-test.log
 ```
 
 ## Filtering Before Sharing (Optional)
@@ -82,7 +82,7 @@ For clarity, name your logs descriptively when sharing:
 If logs are huge, you can pre-filter to just errors:
 
 ```bash
-./scripts/capture-recent-logs.sh 10 /tmp/full-log.log
+./scripts/logging/capture-recent-logs.sh 10 /tmp/full-log.log
 grep -i error /tmp/full-log.log > /tmp/errors-only.log
 ```
 

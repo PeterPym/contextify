@@ -76,10 +76,10 @@ The easiest way to build from Claude Code Web or Linux:
 
 ```bash
 # Trigger build on your current branch and wait for results
-./scripts/trigger-ci-build.sh Debug
+./scripts/build/trigger-ci-build.sh Debug
 
 # Or explicitly specify a branch
-./scripts/trigger-ci-build.sh Debug feature/my-branch
+./scripts/build/trigger-ci-build.sh Debug feature/my-branch
 ```
 
 **What it does:**
@@ -91,7 +91,7 @@ The easiest way to build from Claude Code Web or Linux:
 
 **Setup (one-time):**
 - Ensure `GITHUB_TOKEN` is set in your environment (Claude Code Web: add in environment settings)
-- See `scripts/CLAUDE-CODE-WEB-CI-GUIDE.md` for detailed setup
+- See `build/docs/guides/linux-ci-builds.md` for detailed setup
 
 ### Alternative: Using gh CLI
 
@@ -238,7 +238,7 @@ Commands:
 - Stream live: `make logs-live` → `/tmp/contextify-live.log`
 - Build + capture: `make debug` → `build/logs/runtime/contextify-YYYYMMDD-HHMMSS.log`
 
-**For detailed debugging workflows:** See `scripts/logging/README.md` (primary debugging toolkit) and `scripts/QUICK-REFERENCE.md`
+**For detailed debugging workflows:** See `scripts/logging/README.md` (primary debugging toolkit) and `build/docs/guides/log-quick-reference.md`
 
 ### macOS 15 (Lite Mode) Testing
 
@@ -329,7 +329,7 @@ Quick-discovery runs at app launch to identify the project with newest transcrip
 
 ⚠️  **IMPORTANT:** Default `make build` uses **Debug** configuration. Always use `make build-release` for distribution!
 
-**Detailed guide:** See `scripts/RELEASE.md` for complete release documentation
+**Detailed guide:** See `build/docs/operations/release/RELEASE-PROCESS.md` for complete release documentation
 
 ## Build Output
 

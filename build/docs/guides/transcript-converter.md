@@ -6,11 +6,11 @@ Bidirectional converter for Claude Code ↔ Codex CLI transcript formats.
 
 ```bash
 # Make executable (if not already)
-chmod +x scripts/convert_transcript.py
+chmod +x scripts/transcripts/convert_transcript.py
 
 # Claude Code → Codex CLI
 # IMPORTANT: Codex expects sessions in ~/.codex/sessions/YYYY/MM/DD/
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code \
   --to codex \
   ~/.claude/projects/-Users-rob-code-project/session-uuid.jsonl \
@@ -37,7 +37,7 @@ chmod +x scripts/convert_transcript.py
 # ============================================================
 
 # Codex CLI → Claude Code
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex \
   --to claude-code \
   ~/codex-sessions/session.jsonl \

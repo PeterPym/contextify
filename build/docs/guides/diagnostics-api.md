@@ -15,13 +15,13 @@ The Diagnostics API provides two access methods:
 
 ```bash
 # Quick check (cached state, instant)
-./scripts/read_timeline_state.sh --state | jq '.hooverState'
+./scripts/logging/read_timeline_state.sh --state | jq '.hooverState'
 
 # Fresh snapshot (waits for app, ~100ms)
-./scripts/read_timeline_state.sh --request | jq '.issues'
+./scripts/logging/read_timeline_state.sh --request | jq '.issues'
 
 # Human-readable report
-./scripts/read_timeline_state.sh --report
+./scripts/logging/read_timeline_state.sh --report
 ```
 
 ### From Claude Code (Automated)
@@ -69,10 +69,10 @@ fi
 
 ```bash
 # Request fresh diagnostics
-./scripts/read_timeline_state.sh --report
+./scripts/logging/read_timeline_state.sh --report
 
 # Check specific issues
-./scripts/read_timeline_state.sh --request | jq '.issues[] | select(.severity == "critical")'
+./scripts/logging/read_timeline_state.sh --request | jq '.issues[] | select(.severity == "critical")'
 ```
 
 ### 3. Monitor During Development
@@ -94,7 +94,7 @@ done
 
 ```bash
 # In test script
-./scripts/read_timeline_state.sh --request > /tmp/test-state.json
+./scripts/logging/read_timeline_state.sh --request > /tmp/test-state.json
 
 CRITICAL=$(jq -r '.issues[] | select(.severity == "critical") | .message' /tmp/test-state.json)
 if [ -n "$CRITICAL" ]; then
@@ -224,7 +224,7 @@ ps aux | grep Contextify  # Check process details
 stat -f %Sm -t "%Y-%m-%d %H:%M:%S" /tmp/contextify-state.json
 
 # Request fresh snapshot (will timeout if app dead)
-./scripts/read_timeline_state.sh --request
+./scripts/logging/read_timeline_state.sh --request
 ```
 
 ### Request times out
@@ -254,7 +254,7 @@ Add to your shell profile:
 ```bash
 ctx_diag() {
   local MODE="${1:---state}"
-  /Users/rob/code/projects/contextify/scripts/read_timeline_state.sh "$MODE"
+  /Users/rob/code/projects/contextify/scripts/logging/read_timeline_state.sh "$MODE"
 }
 
 ctx_issues() {

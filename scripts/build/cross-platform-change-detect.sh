@@ -61,7 +61,7 @@ LINUX_RELEVANT_PATHS=(
   ".github/workflows/linux-build.yml"
 
   # Docker build scripts
-  "scripts/docker-linux-build.sh"
+  "scripts/build/docker-linux-build.sh"
 )
 
 # Get list of changed files

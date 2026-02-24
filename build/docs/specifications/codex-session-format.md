@@ -95,7 +95,7 @@ Otherwise, `codex resume` **will not find it** in the picker.
 
 **Wrong (will not appear in picker):**
 ```bash
-./convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex \
   input.jsonl \
   ~/codex-output/session.jsonl  # ❌ Wrong location
@@ -103,7 +103,7 @@ Otherwise, `codex resume` **will not find it** in the picker.
 
 **Right (will appear in picker):**
 ```bash
-./convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex \
   input.jsonl \
   ~/.codex/sessions/2025/10/19/converted-2025-10-19T14-00-00-abc123.jsonl  # ✅ Correct
@@ -120,7 +120,7 @@ The updated converter now:
 ## Example Output
 
 ```bash
-$ ./convert_transcript.py --from claude-code --to codex input.jsonl /tmp/output.jsonl
+$ ./scripts/transcripts/convert_transcript.py --from claude-code --to codex input.jsonl /tmp/output.jsonl
 
 ⚠️  WARNING: Codex expects sessions in ~/.codex/sessions/YYYY/MM/DD/
    For Codex to find this session, copy it to:

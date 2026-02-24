@@ -3,9 +3,9 @@
 # Uses separate .build-linux directory to avoid conflicts with macOS build
 #
 # Usage:
-#   bash scripts/docker-linux-build.sh             # Basic build only
-#   bash scripts/docker-linux-build.sh --e2e       # Build + E2E transcript ingestion test
-#   bash scripts/docker-linux-build.sh --install-test  # Build + user install flow validation
+#   bash scripts/build/docker-linux-build.sh             # Basic build only
+#   bash scripts/build/docker-linux-build.sh --e2e       # Build + E2E transcript ingestion test
+#   bash scripts/build/docker-linux-build.sh --install-test  # Build + user install flow validation
 #
 # Prerequisites:
 #   - Docker running (macOS: brew install colima && colima start)

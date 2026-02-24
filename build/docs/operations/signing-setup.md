@@ -95,7 +95,7 @@ Should show recent notarization history (or "No submissions found" if first time
 make build-release
 
 # Test signing (without notarization for speed)
-python3 scripts/sign_and_notarize.py --no-notarize
+python3 scripts/release/sign_and_notarize.py --no-notarize
 ```
 
 **Expected output:**
@@ -115,7 +115,7 @@ python3 scripts/sign_and_notarize.py --no-notarize
 
 ```bash
 # Preview what a release would do
-python3 scripts/release.py --version 1.0.0 --dry-run --yes
+python3 scripts/release/release.py --version 1.0.0 --dry-run --yes
 ```
 
 Should complete without errors and show:
@@ -150,7 +150,7 @@ which create-dmg
 # ✅ Should show path like /opt/homebrew/bin/create-dmg
 
 # 5. Test release script can read version
-python3 scripts/release.py --version 1.0.0 --dry-run --yes
+python3 scripts/release/release.py --version 1.0.0 --dry-run --yes
 # ✅ Should complete without errors
 ```
 
@@ -242,7 +242,7 @@ Once setup is complete:
 
 3. **Create first release:**
    ```bash
-   python3 scripts/release.py --version 1.0.0 --yes
+   python3 scripts/release/release.py --version 1.0.0 --yes
    ```
 
 ---

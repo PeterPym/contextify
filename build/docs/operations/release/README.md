@@ -47,7 +47,7 @@ This means DMG users get updates first. Versions stay in sync - App Store just l
 
 ```bash
 # Full automated release (DMG + GitHub)
-python3 scripts/release.py --version X.Y.Z --yes
+python3 scripts/release/release.py --version X.Y.Z --yes
 
 # App Store submission
 bash scripts/xc.sh --dist=appstore Release archive
@@ -94,8 +94,8 @@ See `releases/WORKFLOW.md` for the complete managed workflow.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/release.py` | End-to-end release automation |
-| `scripts/sign_and_notarize.py` | DMG signing + Apple notarization |
+| `scripts/release/release.py` | End-to-end release automation |
+| `scripts/release/sign_and_notarize.py` | DMG signing + Apple notarization |
 | `scripts/sparkle/keygen.sh` | Sparkle EdDSA key management |
 | `scripts/sparkle/sign.sh` | Sign DMG for Sparkle updates |
 | `scripts/xc.sh` | Build wrapper (DMG vs App Store) |
@@ -110,7 +110,7 @@ git status  # Should be clean
 swift test  # Should pass
 
 # 2. Run release script
-python3 scripts/release.py --version 1.0.1 --yes
+python3 scripts/release/release.py --version 1.0.1 --yes
 # This: bumps version, tags, builds, signs, notarizes, uploads to GitHub
 
 # 3. Sign for Sparkle
@@ -135,7 +135,7 @@ git status  # clean
 swift test  # passing
 
 # 2. Build and release DMG (ships now)
-python3 scripts/release.py --version X.Y.Z --yes
+python3 scripts/release/release.py --version X.Y.Z --yes
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
 # Update appcast.xml, deploy to website
 

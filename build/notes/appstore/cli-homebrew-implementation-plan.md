@@ -358,7 +358,7 @@ Contextify/Contextify/Settings/CLISkillsSettingsTab.swift
    - README with full setup instructions
 
 5. **CLI signing integration**
-   - `scripts/sign_cli.sh` - Standalone CLI build/sign/notarize script
+   - `scripts/release/sign_cli.sh` - Standalone CLI build/sign/notarize script
    - Integrated with `sign_and_notarize.py` - CLI signed alongside DMG releases
    - Change detection to avoid unnecessary rebuilds
 

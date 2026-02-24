@@ -58,7 +58,7 @@ open Contextify/Contextify.xcodeproj
 ### First-Time Setup
 
 1. **Command Line Tools**: Xcode → Settings → Locations → Set to Xcode 16
-2. **Terminal Integration**: `bash scripts/install-shell-bindings.sh`
+2. **Terminal Integration**: `bash scripts/build/install-shell-bindings.sh`
 3. **Accessibility Permissions**: System Settings > Privacy & Security > Accessibility > Enable Contextify
 4. **Pre-commit Hooks** (optional): `make hooks-setup` to enable build guards
 
@@ -81,13 +81,13 @@ Resume AI coding conversations across different assistants. The transcript conve
 
 ```bash
 # Convert Claude Code → Codex CLI
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex \
   ~/.claude/projects/<encoded-path>/session.jsonl \
   ~/.codex/sessions/2025/10/24/rollout-*.jsonl
 
 # Convert Codex CLI → Claude Code
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex --to claude-code \
   ~/.codex/sessions/2025/10/24/rollout-*.jsonl \
   ~/.claude/projects/<encoded-path>/imported.jsonl
@@ -96,7 +96,7 @@ Resume AI coding conversations across different assistants. The transcript conve
 **What's preserved:** User/assistant messages, timestamps, session context (git branch, working directory)
 **Current limitations:** Tool calls, threading, and file snapshots not yet converted (Phase 2+)
 
-**Documentation:** `scripts/TRANSCRIPT_CONVERTER_README.md` | `build/docs/specifications/transcript-formats.md`
+**Documentation:** `build/docs/guides/transcript-converter.md` | `build/docs/specifications/transcript-formats.md`
 
 ## Architecture Overview
 
@@ -141,7 +141,7 @@ Contextify uses a SQL backend (GRDB.swift) with real-time transcript monitoring 
 - Database Management: `build/docs/operations/DATABASE-LOCATIONS.md`
 - Database Migration: `build/docs/operations/database-migration-runbook.md` (step-by-step procedures)
 - Security-Scoped Bookmarks: `build/docs/guides/security-scoped-bookmarks.md` (sandbox patterns)
-- Release Process: `scripts/RELEASE.md`
+- Release Process: `build/docs/operations/release/RELEASE-PROCESS.md`
 
 ## Troubleshooting
 

@@ -21,7 +21,7 @@ while true; do
 
             # Run server setup
             cd /Users/rob/code/projects/contextify
-            ./scripts/setup-server.sh
+            ./scripts/build/setup-server.sh
 
             # Deploy website
             ./scripts/deploy-website.sh

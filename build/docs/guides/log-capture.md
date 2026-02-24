@@ -8,9 +8,9 @@ These scripts help capture and analyze Contextify runtime logs for debugging.
 Stream logs as the app runs (useful when watching behavior):
 
 ```bash
-./scripts/stream-logs.sh
+./scripts/logging/stream-logs.sh
 # or save to specific file:
-./scripts/stream-logs.sh /tmp/my-debug-session.log
+./scripts/logging/stream-logs.sh /tmp/my-debug-session.log
 ```
 
 ### For Post-Mortem Analysis
@@ -18,23 +18,23 @@ Capture the last N minutes of logs after reproducing an issue:
 
 ```bash
 # Capture last 5 minutes (default)
-./scripts/capture-recent-logs.sh
+./scripts/logging/capture-recent-logs.sh
 
 # Capture last 10 minutes
-./scripts/capture-recent-logs.sh 10
+./scripts/logging/capture-recent-logs.sh 10
 
 # Save to specific file
-./scripts/capture-recent-logs.sh 5 build/logs/runtime/issue-123.log
+./scripts/logging/capture-recent-logs.sh 5 build/logs/runtime/issue-123.log
 ```
 
 ### For Automated Testing
 Build and automatically capture logs for 30 seconds:
 
 ```bash
-./scripts/build-and-capture-logs.sh
+./scripts/logging/build-and-capture-logs.sh
 
 # Capture for different duration (in seconds)
-./scripts/build-and-capture-logs.sh 60
+./scripts/logging/build-and-capture-logs.sh 60
 ```
 
 ## Log Locations
@@ -76,7 +76,7 @@ When debugging with Claude Code, you can:
 
 1. **Use the automated script** to capture logs:
    ```bash
-   ./scripts/build-and-capture-logs.sh 30
+   ./scripts/logging/build-and-capture-logs.sh 30
    ```
 
 2. **Share the log file** location so Claude can read it directly:

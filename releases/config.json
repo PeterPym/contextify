@@ -12,7 +12,7 @@
     "dmg": {
       "target": "Contextify",
       "scheme": "Contextify",
-      "build_command": "python3 scripts/release.py --version {version} --yes",
+      "build_command": "python3 scripts/release/release.py --version {version} --yes",
       "artifact_pattern": "dist/Contextify-{version}.dmg",
       "signing": {
         "sparkle_key": ".secrets/sparkle_private_key"
@@ -32,7 +32,7 @@
       "product": "contextify-ingest",
       "architectures": ["x86_64", "arm64"],
       "build_command": "gh workflow run linux-release.yml -f version={version}",
-      "local_build_command": "bash scripts/docker-linux-build.sh",
+      "local_build_command": "bash scripts/build/docker-linux-build.sh",
       "artifact_pattern": "contextify-linux-{arch}.tar.gz",
       "archive_path": "build/archives/v{version}/linux",
       "github_release": true

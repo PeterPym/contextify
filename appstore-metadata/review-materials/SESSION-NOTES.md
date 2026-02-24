@@ -170,6 +170,6 @@ rm -rf /tmp/taskflow /tmp/weatherly /tmp/recipebox
 ## Documentation Updates Needed
 
 After successful transcript generation:
-1. Update `scripts/RELEASE.md` - Add App Review materials section
+1. Update `build/docs/operations/release/RELEASE-PROCESS.md` - Add App Review materials section
 2. Update `build/docs/guides/APP-STORE-SUBMISSION.md` - Add demo video/sample data requirements
 3. Update `appstore-metadata/README.md` - Add to submission checklist

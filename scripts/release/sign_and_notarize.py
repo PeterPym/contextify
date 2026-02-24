@@ -5,10 +5,10 @@ Build, sign, harden, notarize, and package Contextify for distribution.
 Adapted from FileKitty's sign_and_notarize.py for Contextify.
 
 Usage:
-    python3 scripts/sign_and_notarize.py              # Full signing + notarization
-    python3 scripts/sign_and_notarize.py --no-sign     # Skip signing (DMG layout preview)
-    python3 scripts/sign_and_notarize.py --no-notarize # Sign but don't notarize (faster testing)
-    python3 scripts/sign_and_notarize.py --skip-cli    # Skip CLI signing (app only)
+    python3 scripts/release/sign_and_notarize.py              # Full signing + notarization
+    python3 scripts/release/sign_and_notarize.py --no-sign     # Skip signing (DMG layout preview)
+    python3 scripts/release/sign_and_notarize.py --no-notarize # Sign but don't notarize (faster testing)
+    python3 scripts/release/sign_and_notarize.py --skip-cli    # Skip CLI signing (app only)
 
 The script automatically checks if CLI sources have changed and rebuilds/signs
 the standalone CLI for Homebrew distribution when needed.
@@ -45,7 +45,7 @@ ENTITLEMENTS = ROOT / "Contextify/Contextify.entitlements"
 NOTARY_PROFILE = "NotaryProfile"
 
 # CLI signing script
-CLI_SIGN_SCRIPT = ROOT / "scripts/sign_cli.sh"
+CLI_SIGN_SCRIPT = ROOT / "scripts/release/sign_cli.sh"
 
 
 # --------------------------------------------------------------------------- #

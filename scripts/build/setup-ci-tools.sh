@@ -47,14 +47,14 @@ else
 fi
 
 # Make CI trigger scripts executable
-chmod +x "$CLAUDE_PROJECT_DIR"/scripts/trigger-ci-build.sh 2>/dev/null || true
-chmod +x "$CLAUDE_PROJECT_DIR"/scripts/setup-github-token.sh 2>/dev/null || true
+chmod +x "$CLAUDE_PROJECT_DIR"/scripts/build/trigger-ci-build.sh 2>/dev/null || true
+chmod +x "$CLAUDE_PROJECT_DIR"/scripts/build/setup-github-token.sh 2>/dev/null || true
 
 echo "✅ CI tools setup complete"
 echo ""
 echo "💡 To trigger a CI build from this remote session:"
-echo "   ./scripts/trigger-ci-build.sh Debug"
-echo "   ./scripts/trigger-ci-build.sh Release main"
+echo "   ./scripts/build/trigger-ci-build.sh Debug"
+echo "   ./scripts/build/trigger-ci-build.sh Release main"
 echo ""
 
 exit 0

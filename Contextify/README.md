@@ -42,7 +42,7 @@ This folder contains the macOS SwiftUI app for Contextify - a HUD that monitors 
 - "Compose → iTerm2" button opens monospaced editor with newline toggle
 - On first send, macOS prompts to allow Contextify to control iTerm2; choose **Allow**
 - Delivery failures fall back to copying payload to clipboard
-- Shell bindings: `bash scripts/install-shell-bindings.sh`
+- Shell bindings: `bash scripts/build/install-shell-bindings.sh`
 
 
 ## Architecture

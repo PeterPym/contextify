@@ -1195,7 +1195,7 @@ scripts/logging/
 - **Logging best practices:** `build/docs/guides/logging-best-practices.md`
 - **Log analysis methodology:** `build/docs/guides/log-analysis-methodology.md`
 - **Log analysis quick reference:** `build/docs/guides/log-analysis-quick-reference.md`
-- **Log capture guide:** `scripts/LOG-CAPTURE-README.md`
+- **Log capture guide:** `build/docs/guides/log-capture.md`
 - **Debugging case study:** `build/notes/research/debugging-setup-2025-11-08.md`
 
 ---

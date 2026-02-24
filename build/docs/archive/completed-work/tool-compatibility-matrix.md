@@ -464,7 +464,7 @@ Source transcripts may have varying timestamp precision (ms, μs). Converter nor
 ## Next Steps (Phase 2)
 
 1. ✅ Phase 1 Discovery complete
-2. 🔄 Implement Tier 1 (Bash ↔ shell) conversion in `scripts/convert_transcript.py`
+2. 🔄 Implement Tier 1 (Bash ↔ shell) conversion in `scripts/transcripts/convert_transcript.py`
 3. 🔄 Add unit tests for Tier 1
 4. 🔄 Implement Tier 2 (Edit, Read, Grep, Write, Glob) summarization
 5. 🔄 Add integration tests with real transcripts

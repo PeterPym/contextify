@@ -104,13 +104,13 @@ codex --session test-converted-from-claude
 
 ## Files Generated
 
-1. **Converter:** `scripts/convert_transcript.py` (executable)
+1. **Converter:** `scripts/transcripts/convert_transcript.py` (executable)
 2. **Claude Code test:** `~/.claude/projects/-tmp-test-project/test-session-12345.jsonl`
 3. **Codex test:** `~/codex-sessions/test-converted-from-claude.jsonl`
 4. **Documentation:**
    - `todos.md` (feature spec)
-   - `scripts/TRANSCRIPT_CONVERTER_README.md` (usage guide)
-   - `scripts/TEST_TRANSCRIPT_LOCATIONS.md` (this file)
+   - `build/docs/guides/transcript-converter.md` (usage guide)
+   - `build/docs/testing/test-transcript-locations.md` (this file)
 5. **Analysis:** `/tmp/conversion-analysis.md`, `/tmp/CONVERTER_TEST_RESULTS.md`
 
 ---

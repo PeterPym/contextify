@@ -63,7 +63,7 @@ xcrun notarytool store-credentials "NotaryProfile" \
 After storing credentials, run the full signing and notarization workflow:
 
 ```bash
-python3 scripts/sign_and_notarize.py
+python3 scripts/release/sign_and_notarize.py
 ```
 
 **Expected output:**
@@ -193,10 +193,10 @@ gh release create v1.0.0 dist/Contextify.dmg \
 **Commands:**
 ```bash
 # Sign only (no notarization)
-python3 scripts/sign_and_notarize.py --no-notarize
+python3 scripts/release/sign_and_notarize.py --no-notarize
 
 # Full workflow (sign + notarize)
-python3 scripts/sign_and_notarize.py
+python3 scripts/release/sign_and_notarize.py
 
 # Check credentials
 security find-generic-password -s "NotaryProfile" -w

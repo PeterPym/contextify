@@ -6,7 +6,7 @@ Analyzes user messages with "infer from message" placeholders
 and generates specific code improvements for classifyUserIntent().
 
 Usage:
-  python3 scripts/generate_intent_improvements.py <csv_file>
+  python3 scripts/logging/generate_intent_improvements.py <csv_file>
 
 Input: CSV from analyze_intent_classification.sh
 Output: Suggested pattern additions and code changes
@@ -251,7 +251,7 @@ def main():
         print(f"Usage: {sys.argv[0]} <csv_file>", file=sys.stderr)
         print("", file=sys.stderr)
         print("Generate this CSV by running:", file=sys.stderr)
-        print("  scripts/analyze_intent_classification.sh", file=sys.stderr)
+        print("  scripts/logging/analyze_intent_classification.sh", file=sys.stderr)
         sys.exit(1)
 
     csv_path = sys.argv[1]

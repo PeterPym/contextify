@@ -6,12 +6,12 @@ Created automated log capture infrastructure so Claude Code can directly read an
 
 ## Files Created
 
-1. **`scripts/stream-logs.sh`** - Real-time log streaming to file
-2. **`scripts/capture-recent-logs.sh`** - Capture last N minutes retroactively
-3. **`scripts/build-and-capture-logs.sh`** - Build and auto-capture for 30 seconds
-4. **`scripts/LOG-CAPTURE-README.md`** - Detailed documentation
-5. **`scripts/QUICK-REFERENCE.md`** - Quick debugging workflow guide
-6. **`scripts/LOG-SETUP-SUMMARY.md`** - This file
+1. **`scripts/logging/stream-logs.sh`** - Real-time log streaming to file
+2. **`scripts/logging/capture-recent-logs.sh`** - Capture last N minutes retroactively
+3. **`scripts/logging/build-and-capture-logs.sh`** - Build and auto-capture for 30 seconds
+4. **`build/docs/guides/log-capture.md`** - Detailed documentation
+5. **`build/docs/guides/log-quick-reference.md`** - Quick debugging workflow guide
+6. **`build/docs/guides/log-setup-summary.md`** - This file
 
 ## Makefile Targets Added
 
@@ -122,7 +122,7 @@ grep '❌' /tmp/contextify-recent.log  # Errors
 
 1. **Name your logs descriptively** when sharing:
    ```bash
-   ./scripts/capture-recent-logs.sh 5 /tmp/fk-constraint-issue.log
+   ./scripts/logging/capture-recent-logs.sh 5 /tmp/fk-constraint-issue.log
    ```
 
 2. **Clean database** before testing fixes for fresh state:
@@ -145,7 +145,7 @@ grep '❌' /tmp/contextify-recent.log  # Errors
 ## Next Steps
 
 - Scripts are ready to use immediately
-- Documentation is in `scripts/QUICK-REFERENCE.md`
+- Documentation is in `build/docs/guides/log-quick-reference.md`
 - Makefile targets work out of the box
 - Log directory `build/logs/runtime/` will be created automatically
 
