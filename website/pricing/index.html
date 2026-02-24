@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Pricing - Contextify</title>
-  <meta name="description" content="Contextify pricing plans. Free local app, Pro cloud sync, Team collaboration, and Enterprise self-hosted options.">
+  <meta name="description" content="Contextify pricing plans. Free local app, self-hosted Community, Pro Cloud sync, Team collaboration, and Enterprise options.">
   <link rel="canonical" href="https://contextify.sh/pricing/">
 
   <!-- Favicon -->
@@ -16,7 +16,7 @@
   <meta property="og:url" content="https://contextify.sh/pricing/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Pricing - Contextify">
-  <meta property="og:description" content="Contextify pricing plans. From free local use to enterprise self-hosted deployments.">
+  <meta property="og:description" content="Contextify pricing plans for individuals and teams. From free local use to enterprise deployments.">
   <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
 
   <!-- Bootstrap 5.3 CSS -->
@@ -399,6 +399,34 @@
       display: block;
     }
 
+    /* Section Headers */
+    .pricing-section-header {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.5rem;
+    }
+
+    [data-bs-theme="dark"] .pricing-section-header {
+      color: var(--slate-50);
+    }
+
+    .pricing-section-subtitle {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      margin-top: -1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    [data-bs-theme="dark"] .pricing-section-subtitle {
+      color: var(--slate-400);
+    }
+
+    .pricing-section + .pricing-section {
+      margin-top: 3rem;
+    }
+
     /* Responsive */
     @media (max-width: 991.98px) {
       .pricing-hero h1 {
@@ -442,98 +470,151 @@
   <section class="pricing-hero text-center">
     <div class="container py-4">
       <h1>Simple, transparent pricing</h1>
-      <p class="lead mt-3">Start free. Upgrade when you need cloud sync or team features.</p>
+      <p class="lead mt-3">Start free. Add cloud sync for yourself, or collaboration tools for your team.</p>
     </div>
   </section>
 
   <!-- Pricing Grid -->
   <section class="pricing-grid">
     <div class="container">
-      <div class="row g-4 justify-content-center">
 
-        <!-- Free Tier -->
-        <div class="col-lg-3 col-md-6">
-          <div class="pricing-card">
-            <div class="pricing-tier-name">Free</div>
-            <div class="pricing-price"><span class="currency">$</span>0</div>
-            <div class="pricing-interval">Free forever</div>
-            <p class="pricing-description">Everything you need for local transcript history on a single machine.</p>
-            <ul class="pricing-features">
-              <li>Full macOS app</li>
-              <li>SQLite database (local)</li>
-              <li>Unlimited conversations</li>
-              <li>Full-text search</li>
-              <li>Real-time timeline monitoring</li>
-              <li>Apple Intelligence summaries</li>
-              <li>CLI tool (contextify)</li>
-              <li>Dropbox/iCloud database sync</li>
-            </ul>
-            <a href="../download/" class="pricing-cta pricing-cta-outline">Download</a>
+      <!-- For Individuals -->
+      <div class="pricing-section">
+        <h2 class="pricing-section-header text-center">For Individuals</h2>
+        <p class="pricing-section-subtitle text-center">Single-user plans for personal use</p>
+        <div class="row g-4 justify-content-center">
+
+          <!-- Free Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card">
+              <div class="pricing-tier-name">Free</div>
+              <div class="pricing-price"><span class="currency">$</span>0</div>
+              <div class="pricing-interval">Free forever</div>
+              <p class="pricing-description">Everything you need for local transcript history on a single machine.</p>
+              <ul class="pricing-features">
+                <li>Full macOS app</li>
+                <li>SQLite database (local)</li>
+                <li>Unlimited conversations</li>
+                <li>Full-text search</li>
+                <li>Real-time timeline monitoring</li>
+                <li>Apple Intelligence summaries</li>
+                <li>CLI tool (contextify)</li>
+                <li>Dropbox/iCloud database sync</li>
+              </ul>
+              <a href="../download/" class="pricing-cta pricing-cta-outline">Download</a>
+            </div>
           </div>
-        </div>
 
-        <!-- Pro Tier -->
-        <div class="col-lg-3 col-md-6">
-          <div class="pricing-card popular">
-            <span class="popular-badge">Most Popular</span>
-            <div class="pricing-tier-name">Pro</div>
-            <div class="pricing-price"><span class="currency">$</span>19</div>
-            <div class="pricing-interval">per seat / month</div>
-            <p class="pricing-description">Cloud sync for developers who work across multiple machines.</p>
-            <ul class="pricing-features">
-              <li>Everything in Free</li>
-              <li>Cloud sync (multi-machine)</li>
-              <li>Encrypted cloud backup</li>
-              <li>Cross-machine search</li>
-              <li>Priority email support</li>
-              <li>Early access to new features</li>
-            </ul>
-            <a href="mailto:support@contextify.sh?subject=Contextify%20Pro%20Trial" class="pricing-cta pricing-cta-primary">Start Pro Trial</a>
+          <!-- Community Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card">
+              <div class="pricing-tier-name">Community</div>
+              <div class="pricing-price"><span class="currency">$</span>0</div>
+              <div class="pricing-interval">Self-hosted, single user</div>
+              <p class="pricing-description">Run your own server for free. Sync across your machines with full privacy.</p>
+              <ul class="pricing-features">
+                <li>Everything in Free</li>
+                <li>Self-hosted cloud server</li>
+                <li>Sync across your machines</li>
+                <li>Your data stays on your hardware</li>
+                <li>Personal, education, and OSS use</li>
+                <li>Community support</li>
+              </ul>
+              <a href="mailto:support@contextify.sh?subject=Community%20Self-Hosted%20Setup" class="pricing-cta pricing-cta-outline">Get Started</a>
+            </div>
           </div>
-        </div>
 
-        <!-- Team Tier -->
-        <div class="col-lg-3 col-md-6">
-          <div class="pricing-card">
-            <div class="pricing-tier-name">Team</div>
-            <div class="pricing-price"><span class="currency">$</span>49</div>
-            <div class="pricing-interval">per seat / month</div>
-            <p class="pricing-description">Collaboration tools for engineering teams using AI coding assistants.</p>
-            <ul class="pricing-features">
-              <li>Everything in Pro</li>
-              <li>Multi-user workspace</li>
-              <li>Team activity dashboards</li>
-              <li>Cross-user search</li>
-              <li>Admin controls and permissions</li>
-              <li>Usage analytics</li>
-              <li>Shared conversation bookmarks</li>
-            </ul>
-            <a href="mailto:support@contextify.sh?subject=Contextify%20Team%20Trial" class="pricing-cta pricing-cta-outline">Start Team Trial</a>
+          <!-- Pro Cloud Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card popular">
+              <span class="popular-badge">Most Popular</span>
+              <div class="pricing-tier-name">Pro Cloud</div>
+              <div class="pricing-price"><span class="currency">$</span>8</div>
+              <div class="pricing-interval">per month, single user</div>
+              <p class="pricing-description">We host it. Cloud sync for developers who work across multiple machines.</p>
+              <ul class="pricing-features">
+                <li>Everything in Free</li>
+                <li>Cloud sync (multi-machine)</li>
+                <li>Encrypted cloud backup</li>
+                <li>Cross-machine search</li>
+                <li>Priority email support</li>
+                <li>Early access to new features</li>
+              </ul>
+              <a href="mailto:support@contextify.sh?subject=Contextify%20Pro%20Cloud%20Trial" class="pricing-cta pricing-cta-primary">Start Pro Trial</a>
+            </div>
           </div>
-        </div>
 
-        <!-- Enterprise Tier -->
-        <div class="col-lg-3 col-md-6">
-          <div class="pricing-card">
-            <div class="pricing-tier-name">Enterprise</div>
-            <div class="pricing-price"><span class="currency">$</span>99</div>
-            <div class="pricing-interval">per seat / month</div>
-            <p class="pricing-description">Self-hosted deployments with enterprise security and compliance.</p>
-            <ul class="pricing-features">
-              <li>Everything in Team</li>
-              <li>Self-hosted option</li>
-              <li>SSO / SAML authentication</li>
-              <li>Audit logs</li>
-              <li>SLA with uptime guarantee</li>
-              <li>Dedicated support engineer</li>
-              <li>Custom integrations</li>
-              <li>Volume discounts</li>
-            </ul>
-            <a href="mailto:enterprise@contextify.sh" class="pricing-cta pricing-cta-outline">Contact Us</a>
-          </div>
         </div>
-
       </div>
+
+      <!-- For Teams -->
+      <div class="pricing-section">
+        <h2 class="pricing-section-header text-center">For Teams</h2>
+        <p class="pricing-section-subtitle text-center">Multi-user plans for collaboration</p>
+        <div class="row g-4 justify-content-center">
+
+          <!-- Business Self-Hosted Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card">
+              <div class="pricing-tier-name">Business Self-Hosted</div>
+              <div class="pricing-price">~<span class="currency">$</span>9</div>
+              <div class="pricing-interval">per seat / month, multi-user</div>
+              <p class="pricing-description">Team collaboration on your own infrastructure. You host it, you control it.</p>
+              <ul class="pricing-features">
+                <li>Multi-user workspace</li>
+                <li>Team activity dashboards</li>
+                <li>Cross-user search</li>
+                <li>Admin controls and permissions</li>
+                <li>Usage analytics</li>
+                <li>Self-hosted on your infrastructure</li>
+              </ul>
+              <a href="mailto:support@contextify.sh?subject=Business%20Self-Hosted%20Inquiry" class="pricing-cta pricing-cta-outline">Contact Us</a>
+            </div>
+          </div>
+
+          <!-- Team Cloud Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card popular">
+              <span class="popular-badge">Most Popular</span>
+              <div class="pricing-tier-name">Team Cloud</div>
+              <div class="pricing-price"><span class="currency">$</span>19</div>
+              <div class="pricing-interval">per seat / month, multi-user</div>
+              <p class="pricing-description">We host it. Collaboration tools for engineering teams using AI coding assistants.</p>
+              <ul class="pricing-features">
+                <li>Everything in Business Self-Hosted</li>
+                <li>Hosted by Contextify (zero ops)</li>
+                <li>Priority support</li>
+                <li>Shared conversation bookmarks</li>
+                <li>Early access to new features</li>
+              </ul>
+              <a href="mailto:support@contextify.sh?subject=Contextify%20Team%20Cloud%20Trial" class="pricing-cta pricing-cta-primary">Start Team Trial</a>
+            </div>
+          </div>
+
+          <!-- Enterprise Tier -->
+          <div class="col-lg-4 col-md-6">
+            <div class="pricing-card">
+              <div class="pricing-tier-name">Enterprise</div>
+              <div class="pricing-price"><span class="currency">$</span>49</div>
+              <div class="pricing-interval">per seat / month, multi-user</div>
+              <p class="pricing-description">Self-hosted or cloud with enterprise security, compliance, and dedicated support.</p>
+              <ul class="pricing-features">
+                <li>Everything in Team Cloud</li>
+                <li>Self-hosted or cloud deployment</li>
+                <li>SSO / SAML authentication</li>
+                <li>Audit logs</li>
+                <li>SLA with uptime guarantee</li>
+                <li>Dedicated support engineer</li>
+                <li>Custom integrations</li>
+                <li>Volume discounts</li>
+              </ul>
+              <a href="mailto:enterprise@contextify.sh" class="pricing-cta pricing-cta-outline">Contact Us</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -604,7 +685,17 @@
               <span class="faq-toggle">+</span>
             </button>
             <div class="faq-answer" role="region">
-              Yes. The Free plan gives you the full macOS app with local database, real-time timeline monitoring, full-text search, Apple Intelligence summaries, and the CLI tool. You can use Contextify indefinitely without paying. Paid plans add cloud sync, team collaboration, and enterprise features.
+              Yes. The Free plan gives you the full macOS app with local database, real-time timeline monitoring, full-text search, Apple Intelligence summaries, and the CLI tool. The Community plan also lets you self-host your own server for free, giving you cross-machine sync at no cost. Paid plans add hosted cloud sync, team collaboration, and enterprise features.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button type="button" class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">
+              What's the difference between Community and Pro Cloud?
+              <span class="faq-toggle">+</span>
+            </button>
+            <div class="faq-answer" role="region">
+              Both give you cloud sync across multiple machines. With Community, you run the server yourself on your own hardware, so it's free. With Pro Cloud, we host and manage the server for you at $8/month. The feature set is the same; the difference is who runs the infrastructure.
             </div>
           </div>
 
@@ -614,7 +705,7 @@
               <span class="faq-toggle">+</span>
             </button>
             <div class="faq-answer" role="region">
-              Cloud Sync uploads your conversation data to Contextify Cloud so you can search across devices. Sync is opt-in and designed for developers who use multiple machines. In local-only mode, nothing leaves your machine. You can disable Cloud Sync at any time, and your data will be deleted from our servers.
+              It depends on your plan. With Community or Business Self-Hosted, your data stays on your own hardware. With Pro Cloud, Team Cloud, or Enterprise cloud deployments, your data is uploaded to Contextify Cloud so you can search across devices. Sync is always opt-in. In local-only mode, nothing leaves your machine. You can disable Cloud Sync at any time, and your data will be deleted from our servers.
             </div>
           </div>
 
@@ -624,7 +715,7 @@
               <span class="faq-toggle">+</span>
             </button>
             <div class="faq-answer" role="region">
-              Pro and Team trials are available. Email us to get set up and we will confirm the details for your account. You get full access to all features during the trial period. If you decide not to continue, your account reverts to the Free plan and your local data is unaffected.
+              Pro Cloud and Team Cloud trials are available. Email us to get set up and we will confirm the details for your account. You get full access to all features during the trial period. If you decide not to continue, your account reverts to the Free plan and your local data is unaffected.
             </div>
           </div>
 
