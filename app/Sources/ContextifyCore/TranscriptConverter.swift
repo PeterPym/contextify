@@ -3,7 +3,7 @@
 //  ContextifyCore
 //
 //  Swift implementation of bidirectional transcript conversion
-//  Reference: scripts/convert_transcript.py
+//  Reference: scripts/transcripts/convert_transcript.py
 //
 
 import Foundation

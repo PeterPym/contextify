@@ -3,7 +3,7 @@
 **Date:** 2025-10-24
 **Status:** Planning
 **Prerequisites:** Read `tool-call-conversion-context.md` first
-**Related:** `scripts/convert_transcript.py`, `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+**Related:** `scripts/transcripts/convert_transcript.py`, `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
 
 ---
 

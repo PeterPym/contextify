@@ -37,8 +37,8 @@
 
 4. **Reference Implementation**
    - FileKitty project has complete release infrastructure:
-     - `scripts/release.py` (FileKitty reference) - End-to-end release automation
-     - `scripts/sign_and_notarize.py` - Signing, DMG creation, notarization
+     - `scripts/release/release.py` (FileKitty reference) - End-to-end release automation
+     - `scripts/release/sign_and_notarize.py` - Signing, DMG creation, notarization
      - `build/assets/dmg/settings.json` - DMG layout configuration
      - GitHub release upload via `gh` CLI
 
@@ -144,7 +144,7 @@
 
 #### 2.1 Create Signing & Notarization Script
 **Status:** ✅ COMPLETED
-**File:** `scripts/sign_and_notarize.py`
+**File:** `scripts/release/sign_and_notarize.py`
 
 **What Was Created:**
 - ✅ Complete signing script adapted from FileKitty
@@ -172,7 +172,7 @@
 **Files Created:**
 - ✅ `build/assets/dmg/background.png` - Gradient background (700x400px)
 - ✅ `build/assets/dmg/settings.json` - Layout configuration
-- ✅ `scripts/generate_dmg_background.swift` - Background generator script
+- ✅ `scripts/release/generate_dmg_background.swift` - Background generator script
 
 **DMG Configuration:**
 - Window size: 700x400
@@ -228,7 +228,7 @@ origin=Developer ID Application: Perch Innovations, Inc. (J8P5B23FK7)
 #### 3.1 Create Release Script
 **Adapt from:** `FileKitty/tools/release.py`
 
-**New file:** `scripts/release.py`
+**New file:** `scripts/release/release.py`
 
 **Tasks:**
 - [ ] Adapt FileKitty release script for Contextify
@@ -256,7 +256,7 @@ Two options:
 1. Read `MARKETING_VERSION` from Xcode build settings
 2. Confirm version with user
 3. Build: `bash scripts/xc.sh clean && bash scripts/xc.sh build`
-4. Sign & notarize: `python3 scripts/sign_and_notarize.py`
+4. Sign & notarize: `python3 scripts/release/sign_and_notarize.py`
 5. Create git tag: `git tag v{version}`
 6. Push tag: `git push origin v{version}`
 7. Create GitHub release:
@@ -286,7 +286,7 @@ Two options:
 - [ ] CHANGELOG.md updated
 - [ ] Release notes written
 - [ ] Build via `bash scripts/xc.sh build`
-- [ ] Sign and notarize via `python3 scripts/sign_and_notarize.py`
+- [ ] Sign and notarize via `python3 scripts/release/sign_and_notarize.py`
 - [ ] Test DMG on fresh Mac (or clean VM)
 - [ ] Verify app launches and daemon works
 - [ ] Verify hotkey works
@@ -410,8 +410,8 @@ Two options:
 ### GitHub DMG Release
 
 **Scripts to Create:**
-1. `scripts/sign_and_notarize.py` (~200-300 lines, adapt from FileKitty)
-2. `scripts/release.py` (~150-200 lines, adapt from FileKitty)
+1. `scripts/release/sign_and_notarize.py` (~200-300 lines, adapt from FileKitty)
+2. `scripts/release/release.py` (~150-200 lines, adapt from FileKitty)
 3. `build/assets/dmg/settings.json` (~25 lines)
 
 **Assets to Create:**
@@ -530,13 +530,13 @@ Two options:
 
 ### Key Files to Adapt
 
-1. **`scripts/sign_and_notarize.py`** (lines 1-229)
+1. **`scripts/release/sign_and_notarize.py`** (lines 1-229)
    - Core signing and DMG creation logic
    - Well-structured, easy to adapt
    - Handles hardened runtime, timestamp, entitlements
    - Uses `create-dmg` tool (already installed)
 
-2. **`scripts/release.py`** (lines 1-217)
+2. **`scripts/release/release.py`** (lines 1-217)
    - End-to-end release automation
    - Version bumping (adapt for Xcode instead of pyproject.toml)
    - Git tagging and pushing
@@ -548,7 +548,7 @@ Two options:
    - Easy to customize for Contextify
 
 4. **`Contextify/Contextify.entitlements`**
-   - Contextify's entitlements file used by `scripts/sign_and_notarize.py`
+   - Contextify's entitlements file used by `scripts/release/sign_and_notarize.py`
 
 ### Notable Differences
 

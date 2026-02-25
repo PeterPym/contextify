@@ -123,5 +123,5 @@ This directory contains operational documentation for:
 ## Release Workflow Reference
 
 For detailed release procedures, see:
-- `scripts/RELEASE.md` - Complete release automation documentation
+- `build/docs/operations/release/RELEASE-PROCESS.md` - Complete release automation documentation
 - `Makefile` - Release targets (`make release`, `make sign-dmg`, etc.)

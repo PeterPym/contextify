@@ -412,7 +412,7 @@ Build commands:
 ```bash
 # Build both distributions (recommended)
 ./scripts/release/build.sh X.Y.Z
-# Or standalone: ./scripts/build-release.sh
+# Or standalone: ./scripts/release/build-release.sh
 
 # Upload to App Store Connect
 bash scripts/xc.sh upload

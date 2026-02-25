@@ -455,13 +455,13 @@ Local Linux testing validates that the CLI tools build and function correctly on
 
 ```bash
 # Basic build - validates compilation on Linux
-bash scripts/docker-linux-build.sh
+bash scripts/build/docker-linux-build.sh
 
 # Build + E2E test - validates binary works and can ingest transcripts
-bash scripts/docker-linux-build.sh --e2e
+bash scripts/build/docker-linux-build.sh --e2e
 
 # Build + install test - validates tarball extraction, PATH install, skill installation
-bash scripts/docker-linux-build.sh --install-test
+bash scripts/build/docker-linux-build.sh --install-test
 ```
 
 ### What Each Test Validates

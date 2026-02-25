@@ -73,7 +73,7 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider
 ```
 
 ### 4. Migration Script ✅ (Claude Code only)
-**Location:** `scripts/migrate-transcripts.sh`
+**Location:** `scripts/transcripts/migrate-transcripts.sh`
 
 **What it does:**
 - Takes old path + new path as arguments
@@ -85,7 +85,7 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider
 
 **Example:**
 ```bash
-./scripts/migrate-transcripts.sh \
+./scripts/transcripts/migrate-transcripts.sh \
   /Users/rob/code/contextify \
   /Users/rob/code/projects/contextify
 ```
@@ -239,7 +239,7 @@ private let conversationResolver = ActiveConversationResolver(providers: [
 
 ### Task 3: Extend Migration Script for Codex
 
-**Location:** `scripts/migrate-transcripts.sh`
+**Location:** `scripts/transcripts/migrate-transcripts.sh`
 
 **Changes needed:**
 
@@ -314,7 +314,7 @@ enum Provider: String, Sendable {
 **Implementation files:**
 - `Contextify/Contextify/ConversationSources.swift` - Add CodexTranscriptProvider
 - `Contextify/Contextify/ConversationMonitor.swift` - Register provider (line 13)
-- `scripts/migrate-transcripts.sh` - Add Codex support
+- `scripts/transcripts/migrate-transcripts.sh` - Add Codex support
 - `TODOS.md` - Update after completion
 
 **Documentation:**
@@ -414,7 +414,7 @@ Please read:
 Tasks:
 1. Find where Codex stores transcripts on this machine
 2. Implement CodexTranscriptProvider following the existing ClaudeTranscriptProvider pattern
-3. Extend scripts/migrate-transcripts.sh to handle Codex sessions
+3. Extend scripts/transcripts/migrate-transcripts.sh to handle Codex sessions
 4. Test with real data
 
 The codebase compiles cleanly with Swift 6 strict concurrency. Follow existing

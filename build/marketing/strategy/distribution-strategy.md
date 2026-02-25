@@ -230,7 +230,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build and sign
-        run: ./scripts/build-release.sh
+        run: ./scripts/release/build-release.sh
       - name: Notarize
         run: ./scripts/notarize.sh
       - name: Create Release

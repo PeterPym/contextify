@@ -141,7 +141,7 @@ This is **acceptable** because:
 
 ```bash
 # Test CC → Codex (Tier 1)
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex \
   build/qa/transcript-converter/fixtures/tool-conversion/cc-with-bash-tools.jsonl \
   /tmp/test-cc-to-codex.jsonl
@@ -151,7 +151,7 @@ grep -c '"type":"function_call"' /tmp/test-cc-to-codex.jsonl
 # Expected: 7
 
 # Test Codex → CC (Tier 1)
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex --to claude-code \
   build/qa/transcript-converter/fixtures/tool-conversion/codex-with-shell-tools.jsonl \
   /tmp/test-codex-to-cc.jsonl
@@ -161,7 +161,7 @@ grep -c '"name":"Bash"' /tmp/test-codex-to-cc.jsonl
 # Expected: 4 (but count using jq for accuracy)
 
 # Test Tier 2
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex -v \
   <transcript-with-edit-read-write>.jsonl \
   /tmp/test-tier2.jsonl

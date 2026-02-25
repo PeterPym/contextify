@@ -235,7 +235,7 @@ Extracted health checking logic from `CLICoordinator` to a shared module in Cont
 ### 10.2 Local Build Test
 ```bash
 # Docker-based Linux build
-bash scripts/docker-linux-build.sh
+bash scripts/build/docker-linux-build.sh
 
 # Verify binary exists
 ls .build-linux/debug/contextify-query
@@ -389,5 +389,5 @@ Verified via Docker build.
 - **Validation Script:** `scripts/qa/codex-support/validate-install.sh`
 - **Unit Tests:** `Tests/ContextifyCoreTests/PluginManifestDecodingTests.swift`
 - **Homebrew Formula:** `~/code/projects/homebrew-contextify/Formula/contextify-query.rb`
-- **Docker Build:** `scripts/docker-linux-build.sh`
+- **Docker Build:** `scripts/build/docker-linux-build.sh`
 - **Linux CI:** `.github/workflows/linux-build.yml`

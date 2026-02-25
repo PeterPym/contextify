@@ -79,7 +79,7 @@
 
 ### 2.6 Shell Integration
 
-- **`scripts/install-shell-bindings.sh`** installs **Ctrl-X Ctrl-K**:
+- **`scripts/build/install-shell-bindings.sh`** installs **Ctrl-X Ctrl-K**:
   - `zsh`: sends region if selected; else `$BUFFER`.
   - `bash`: sends the last command line (readline limitation).
   - The payload is **base64 + URL-percent-encoded** to keep `+` and `=` intact.

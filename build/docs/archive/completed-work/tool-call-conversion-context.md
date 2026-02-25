@@ -2,7 +2,7 @@
 
 **Date:** 2025-10-24
 **Status:** Planning phase
-**Related Work:** Transcript converter (`scripts/convert_transcript.py`)
+**Related Work:** Transcript converter (`scripts/transcripts/convert_transcript.py`)
 
 ---
 
@@ -108,7 +108,7 @@ Converted to Codex:
 
 ## Current Converter Behavior
 
-**Location:** `scripts/convert_transcript.py`
+**Location:** `scripts/transcripts/convert_transcript.py`
 
 **Claude Code → Codex:**
 - Skips all `tool_use` content blocks

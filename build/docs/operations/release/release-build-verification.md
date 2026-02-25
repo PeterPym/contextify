@@ -135,7 +135,7 @@ file .derived-dmg/Build/Products/Release/Contextify.app/Contents/MacOS/Contextif
 1. ✅ **Keep current setup** - No changes needed to Xcode project
 2. ✅ **Documentation added** - RELEASE.md warns about Debug vs Release
 3. ✅ **Makefile targets added** - `make build-release` makes it explicit
-4. ✅ **Release automation** - `scripts/release.py` handles full workflow
+4. ✅ **Release automation** - `scripts/release/release.py` handles full workflow
 
 ## Conclusion
 

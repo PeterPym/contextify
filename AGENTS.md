@@ -124,7 +124,7 @@ Common commands:
 **Xcode GUI:** Open `Contextify/Contextify.xcodeproj`, scheme `Contextify`, Run on "My Mac"
 
 **For detailed commands:** See `build/docs/guides/DEVELOPMENT.md`
-- Linux/CI builds via GitHub Actions (`scripts/trigger-ci-build.sh`)
+- Linux/CI builds via GitHub Actions (`scripts/build/trigger-ci-build.sh`)
 - Database operations (`scripts/db_manager.sh`)
 - Release workflows (`make release`)
 - E2E test suite (`scripts/qa/README.md`)
@@ -206,7 +206,7 @@ Skipping architecture docs leads to incomplete implementations and repeated mist
 **Build/CI/Release:**
 - `build/docs/guides/DEVELOPMENT.md` - Complete build commands
 - `build/docs/guides/linux-ci-builds.md` - GitHub Actions workflow
-- `scripts/RELEASE.md` - Release process
+- `build/docs/operations/release/RELEASE-PROCESS.md` - Release process
 
 **Debugging:**
 - `scripts/logging/README.md` - **MUST READ FIRST** (automated toolkit)

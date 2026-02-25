@@ -2,7 +2,7 @@
 
 **Generated:** 2025-10-24
 **Generator Script:** `build/qa/transcript-converter/generate_test_transcript.py` (commit `1fb2f14`)
-**Converter Script:** `scripts/convert_transcript.py` (commit `21719e5`)
+**Converter Script:** `scripts/transcripts/convert_transcript.py` (commit `21719e5`)
 
 ## Fixtures
 
@@ -91,7 +91,7 @@ cd /Users/rob/code/projects/contextify && codex resume ${SESSION_ID}
 
 **Conversion command:**
 ```bash
-python3 scripts/convert_transcript.py \
+python3 scripts/transcripts/convert_transcript.py \
   --from claude-code \
   --to codex \
   build/qa/transcript-converter/fixtures/01-generated-claude-code.jsonl \
