@@ -1393,7 +1393,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
         DispatchQueue.main.async {
           NotificationCenter.default.post(
-            name: Notification.Name("TranscriptUpdated"),
+            name: .transcriptUpdated,
             object: nil,
             userInfo: ["projectId": transcript.projectId]
           )
@@ -1420,7 +1420,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
         DispatchQueue.main.async {
           NotificationCenter.default.post(
-            name: Notification.Name("TranscriptUpdated"),
+            name: .transcriptUpdated,
             object: nil,
             userInfo: ["projectId": transcript.projectId]
           )
@@ -1446,7 +1446,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
       DispatchQueue.main.async {
         NotificationCenter.default.post(
-          name: Notification.Name("TranscriptUpdated"),
+          name: .transcriptUpdated,
           object: nil,
           userInfo: ["projectId": transcript.projectId]
         )

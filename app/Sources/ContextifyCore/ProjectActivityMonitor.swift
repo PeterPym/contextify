@@ -837,7 +837,7 @@ public actor ProjectActivityMonitor {
             self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
             await MainActor.run {
               NotificationCenter.default.post(
-                name: Notification.Name("TranscriptUpdated"),
+                name: .transcriptUpdated,
                 object: nil,
                 userInfo: ["projectId": result.projectId]
               )
