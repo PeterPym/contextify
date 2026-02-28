@@ -328,7 +328,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
         // Notify observers on main thread
         DispatchQueue.main.async {
           NotificationCenter.default.post(
-            name: .transcriptUpdated,
+            name: NSNotification.Name("TranscriptUpdated"),
             object: transcriptId,
             userInfo: ["projectId": transcript.projectId]
           )
