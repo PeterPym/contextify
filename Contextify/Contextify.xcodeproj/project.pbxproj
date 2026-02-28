@@ -1055,6 +1055,7 @@
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					ENABLE_HARDENED_RUNTIME = YES;
 					INFOPLIST_FILE = ContextifyBackgroundService/Info.plist;
 					MACOSX_DEPLOYMENT_TARGET = 15.0;
 					PRODUCT_BUNDLE_IDENTIFIER = sh.contextify.ContextifyBackgroundService;
@@ -1073,6 +1074,7 @@
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					ENABLE_HARDENED_RUNTIME = YES;
 					INFOPLIST_FILE = ContextifyBackgroundService/Info.plist;
 					MACOSX_DEPLOYMENT_TARGET = 15.0;
 					PRODUCT_BUNDLE_IDENTIFIER = sh.contextify.ContextifyBackgroundService;
