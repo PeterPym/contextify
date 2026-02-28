@@ -67,9 +67,99 @@ Contextify is a macOS-only SwiftUI application requiring Xcode to build. Claude 
 - Troubleshooting common issues
 - Technical details (runner specs, costs)
 
-## Usage Examples
+## Triggering Builds with trigger-ci-build.sh (Recommended)
 
-### From Linux with gh CLI
+The easiest way to trigger builds from any environment (no gh CLI required):
+
+```bash
+# Trigger Debug build on current branch (default)
+./scripts/build/trigger-ci-build.sh Debug
+
+# Trigger Release build on current branch
+./scripts/build/trigger-ci-build.sh Release
+
+# Trigger on a specific branch
+./scripts/build/trigger-ci-build.sh Debug feature/my-branch
+```
+
+The script automatically detects your current git branch. It uses the GitHub REST API with a Personal Access Token, so no `gh` CLI is needed.
+
+### One-Time Token Setup
+
+1. **Create a GitHub Personal Access Token** at https://github.com/settings/tokens/new
+   - Scopes: `repo` (full repository access), `workflow` (trigger workflows)
+   - Recommended expiration: 30-90 days
+
+2. **Store the token** (one of these methods):
+   ```bash
+   # Option A: Run the setup script
+   ./scripts/build/setup-github-token.sh
+
+   # Option B: Set environment variable
+   export GITHUB_TOKEN=ghp_your_token_here
+   ```
+
+Token is stored at `~/.config/contextify/github-token` with permissions `600` (owner read/write only).
+
+**Authentication priority:** Token file > `GITHUB_TOKEN` env var > gh CLI > macOS Keychain
+
+### Claude Code Web Setup
+
+In Claude Code web sessions, the `SessionStart` hook (`scripts/build/setup-ci-tools.sh`) automatically detects the remote environment and verifies token availability.
+
+1. Click environment selector in Claude Code
+2. Click settings next to environment name
+3. Add environment variable: `GITHUB_TOKEN=ghp_your_token_here`
+4. Start a new session (existing sessions will not pick up the change)
+
+**Hook configuration** (`.claude/settings.json`):
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "startup",
+      "hooks": [{
+        "type": "command",
+        "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/build/setup-ci-tools.sh"
+      }]
+    }]
+  }
+}
+```
+
+### Watching Build Progress
+
+After triggering, you can:
+
+```bash
+# Open URL from script output in browser
+open https://github.com/banagale/contextify/actions/runs/XXXXX
+
+# Use gh CLI (if available)
+gh run watch XXXXX
+
+# Check status via API
+curl -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/banagale/contextify/actions/runs/XXXXX \
+  | grep '"status"\|"conclusion"'
+```
+
+### Downloading Build Logs
+
+```bash
+RUN_ID=XXXXX
+curl -L \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -o build-logs-${RUN_ID}.zip \
+  https://api.github.com/repos/banagale/contextify/actions/runs/${RUN_ID}/logs
+
+unzip build-logs-${RUN_ID}.zip
+grep -h "error:" *.txt | grep -i "\.swift"
+```
+
+## Alternative: Using gh CLI
 
 ```bash
 # Trigger Debug build
@@ -81,18 +171,9 @@ gh workflow run on-demand-build.yml -f configuration=Release
 # Trigger and watch
 gh workflow run on-demand-build.yml -f configuration=Debug && gh run watch
 
-# Via build script (interactive)
+# Via build script (interactive, auto-detects Linux)
 bash scripts/xc.sh build
 ```
-
-### From Claude Code Web
-
-When a web-based Claude Code agent attempts to build:
-
-1. Runs `bash scripts/xc.sh build`
-2. Receives friendly error message with instructions
-3. Can use `gh workflow run` if repository access configured
-4. Can instruct user to trigger via web UI
 
 ### Viewing Results
 
@@ -109,6 +190,32 @@ gh run download
 # View in browser
 gh workflow view on-demand-build.yml --web
 ```
+
+## Token Security Best Practices
+
+- Use short-lived tokens (30-90 days)
+- Keep token file permissions restrictive (`chmod 600`)
+- Revoke tokens you are no longer using
+- Do not commit tokens to git or share them
+- Rotate tokens regularly: revoke old token, run `./scripts/build/setup-github-token.sh`, test with `./scripts/build/trigger-ci-build.sh Debug`
+
+## Troubleshooting
+
+### "No GitHub token found"
+
+Run `./scripts/build/setup-github-token.sh` or set `export GITHUB_TOKEN=ghp_...`
+
+### "401 Authentication failed"
+
+Token expired, missing required scopes, or revoked. Create a new token with `repo` and `workflow` scopes.
+
+### "404 Workflow not found"
+
+Branch does not exist or workflow file is not on that branch. Check `git branch -r` and try a different branch.
+
+### "422 Invalid request"
+
+Invalid branch name or configuration. Use exact capitalization (`Debug`, not `debug`).
 
 ## Design Decisions
 
@@ -229,6 +336,8 @@ gh run view --log
 
 ---
 
-**Last Updated**: 2025-11-04
+**Last Updated**: 2026-02-24
 **Workflow Version**: 1.0
 **Maintained by**: Contextify maintainers
+
+**Note**: This document consolidates content previously in `scripts/CI-TRIGGER-README.md` and `scripts/CLAUDE-CODE-WEB-CI-GUIDE.md`.

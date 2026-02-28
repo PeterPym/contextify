@@ -22,7 +22,7 @@
 
 ## What Problem Are We Solving?
 
-**Current State:** Contextify's transcript converter (`scripts/convert_transcript.py`) converts **messages** between Claude Code and Codex formats, but **skips all tool calls** entirely.
+**Current State:** Contextify's transcript converter (`scripts/transcripts/convert_transcript.py`) converts **messages** between Claude Code and Codex formats, but **skips all tool calls** entirely.
 
 **Impact:** When converting a transcript with tool usage (shell commands, file edits, searches), all execution history is lost. The resumed conversation has no context about:
 - What commands were tried (and whether they worked)
@@ -260,7 +260,7 @@ Source transcripts may have varying timestamp precision (ms, μs). Converter nor
 - `README.md` - This file
 
 ### Related Code
-- `scripts/convert_transcript.py` - Current converter implementation (message-only)
+- `scripts/transcripts/convert_transcript.py` - Current converter implementation (message-only)
 - `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - JSONL parsers for both formats
 
 ---

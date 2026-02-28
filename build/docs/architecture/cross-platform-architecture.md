@@ -250,10 +250,10 @@ The CLI reuses the same ingestion engine (`HooverEngine`) as the macOS app.
 swift build --product contextify-ingest
 
 # Build for Linux via Docker
-bash scripts/docker-linux-build.sh
+bash scripts/build/docker-linux-build.sh
 
 # Build for Linux with E2E test
-bash scripts/docker-linux-build.sh --e2e
+bash scripts/build/docker-linux-build.sh --e2e
 ```
 
 ### GitHub Actions

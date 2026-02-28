@@ -139,4 +139,4 @@ When adding new review materials:
 
 - `../README.md` - Main App Store metadata guide
 - `../app-previews/APP-PREVIEW-SPECIFICATIONS.md` - Marketing video specs (different from review demo)
-- `../../scripts/RELEASE.md` - Release process including App Store submission
+- `../../build/docs/operations/release/RELEASE-PROCESS.md` - Release process including App Store submission

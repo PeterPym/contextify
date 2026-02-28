@@ -1,7 +1,7 @@
 # Transcript Converter QA Test Plan
 
 **Feature:** Cross-CLI Transcript Converter (Claude Code ↔ Codex CLI)
-**Script:** `scripts/convert_transcript.py`
+**Script:** `scripts/transcripts/convert_transcript.py`
 **QA Directory:** `build/qa/transcript-converter/`
 **Status:** Phase 1 - User/Assistant Message Conversion
 
@@ -119,7 +119,7 @@ build/qa/transcript-converter/
 1. Generate Claude Code test transcript (saved to fixtures)
 2. Convert to Codex:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from claude-code \
      --to codex \
      build/qa/transcript-converter/fixtures/test-claude-YYYYMMDD-HHMMSS.jsonl \
@@ -141,7 +141,7 @@ build/qa/transcript-converter/
 1. Pick a real Claude Code session from `~/.claude/projects/-Users-rob-code-projects-contextify/`
 2. Convert to Codex:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from claude-code \
      --to codex \
      ~/.claude/projects/-Users-rob-code-projects-contextify/<session-id>.jsonl \
@@ -168,7 +168,7 @@ build/qa/transcript-converter/
 1. Generate Codex test transcript (saved to fixtures)
 2. Convert to Claude Code with arbitrary filename:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from codex \
      --to claude-code \
      build/qa/transcript-converter/fixtures/test-codex-YYYYMMDD-HHMMSS.jsonl \
@@ -195,7 +195,7 @@ build/qa/transcript-converter/
 1. Pick a real Codex session from `~/.codex/sessions/YYYY/MM/DD/`
 2. Convert to Claude Code:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from codex \
      --to claude-code \
      ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl \
@@ -222,14 +222,14 @@ build/qa/transcript-converter/
 1. Start with fresh Claude Code test transcript
 2. Convert to Codex:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from claude-code --to codex \
      build/qa/transcript-converter/fixtures/test-claude-ORIGINAL.jsonl \
      build/qa/transcript-converter/outputs/roundtrip-codex.jsonl
    ```
 3. Convert back to Claude Code:
    ```bash
-   ./scripts/convert_transcript.py \
+   ./scripts/transcripts/convert_transcript.py \
      --from codex --to claude-code \
      build/qa/transcript-converter/outputs/roundtrip-codex.jsonl \
      build/qa/transcript-converter/outputs/roundtrip-claude-final.jsonl
@@ -266,7 +266,7 @@ build/qa/transcript-converter/
 #### Test 6.1: Empty Files
 **Steps:**
 1. Create empty file: `touch build/qa/transcript-converter/fixtures/empty.jsonl`
-2. Try converting: `./scripts/convert_transcript.py --from claude-code --to codex fixtures/empty.jsonl outputs/empty-out.jsonl`
+2. Try converting: `./scripts/transcripts/convert_transcript.py --from claude-code --to codex fixtures/empty.jsonl outputs/empty-out.jsonl`
 
 **Expected:** ✅ Completes with 0 converted, 0 errors
 
@@ -359,7 +359,7 @@ Before claiming QA complete, verify:
 
 After testing, update:
 1. **`RESULTS.md`** - Test execution results with pass/fail for each test
-2. **`scripts/TRANSCRIPT_CONVERTER_README.md`** - Update with any findings
+2. **`build/docs/guides/transcript-converter.md`** - Update with any findings
 3. **`build/docs/guides/transcript-resumption.md`** - Clarify any resume issues discovered
 4. **Commit all findings to feature branch**
 

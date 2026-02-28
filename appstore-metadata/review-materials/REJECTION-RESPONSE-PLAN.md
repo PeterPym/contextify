@@ -115,7 +115,7 @@ FEATURES TO TEST:
 
 ## Documentation Updates
 
-### 1. Update `scripts/RELEASE.md`
+### 1. Update `build/docs/operations/release/RELEASE-PROCESS.md`
 
 Add to "App Store Releases" section:
 

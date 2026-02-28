@@ -27,7 +27,7 @@ scp dist/Contextify-X.Y.Z.dmg web@banagale.com:/var/www/contextify.sh/releases/
 | Script | Purpose | Use When |
 |--------|---------|----------|
 | `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
-| `scripts/build-release.sh` | Standalone release build | Building without tracking |
+| `scripts/release/build-release.sh` | Standalone release build | Building without tracking |
 | `scripts/release/build.sh` | Release workflow build | Building with version tracking |
 
 <details>
@@ -35,7 +35,7 @@ scp dist/Contextify-X.Y.Z.dmg web@banagale.com:/var/www/contextify.sh/releases/
 
 ```bash
 # DMG
-python3 scripts/release.py --version X.Y.Z --yes
+python3 scripts/release/release.py --version X.Y.Z --yes
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
 
 # App Store
@@ -68,7 +68,7 @@ bash scripts/xc.sh upload
 
 ```bash
 # Automated: bumps version, tags, builds, signs, notarizes, uploads to GitHub
-python3 scripts/release.py --version X.Y.Z --yes
+python3 scripts/release/release.py --version X.Y.Z --yes
 ```
 
 Output: `dist/Contextify-X.Y.Z.dmg` (signed, notarized)
@@ -491,10 +491,10 @@ If repeatedly rejected:
 4. **Build both distributions:**
    ```bash
    # DMG
-   python3 scripts/release.py --version 1.0.0 --yes
+   python3 scripts/release/release.py --version 1.0.0 --yes
    # Or if version already set:
    bash scripts/xc.sh Release build
-   python3 scripts/sign_and_notarize.py
+   python3 scripts/release/sign_and_notarize.py
 
    # App Store
    bash scripts/xc.sh --dist=appstore Release archive
@@ -580,8 +580,8 @@ Options are limited once approved:
 
 | File | Purpose |
 |------|---------|
-| `scripts/release.py` | DMG release automation |
-| `scripts/sign_and_notarize.py` | Code signing + notarization |
+| `scripts/release/release.py` | DMG release automation |
+| `scripts/release/sign_and_notarize.py` | Code signing + notarization |
 | `scripts/sparkle/sign.sh` | Sparkle EdDSA signing |
 | `scripts/xc.sh` | Build wrapper (--dist flag) |
 | `website/appcast.xml` | Sparkle update feed |

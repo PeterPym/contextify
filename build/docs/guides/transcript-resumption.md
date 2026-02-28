@@ -4,7 +4,7 @@ Quick reference for resuming/continuing conversations in Codex CLI and Claude Co
 
 **Related Documentation:**
 - **Transcript Formats:** `claude-code-transcript-format.md` - Detailed format specifications
-- **Converter Script:** `../../scripts/TRANSCRIPT_CONVERTER_README.md` - Conversion tool usage
+- **Converter Script:** `build/docs/guides/transcript-converter.md` - Conversion tool usage
 - **This Guide:** How to resume converted sessions in each CLI
 
 ## Codex CLI

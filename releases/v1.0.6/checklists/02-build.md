@@ -36,7 +36,7 @@ This script:
 | Script | Purpose |
 |--------|---------|
 | `scripts/xc.sh` | Development builds, Xcode operations |
-| `scripts/build-release.sh` | Standalone release build (no tracking) |
+| `scripts/release/build-release.sh` | Standalone release build (no tracking) |
 | `scripts/release/build.sh` | Release workflow build (with tracking) |
 
 ---

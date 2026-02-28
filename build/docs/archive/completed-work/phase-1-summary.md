@@ -231,7 +231,7 @@ Should we truncate head+tail or just head for large outputs?
 **Immediate (Phase 2a):**
 1. Review deliverables with user
 2. Validate conversion strategy
-3. Begin Tier 1 (Bash ↔ shell) implementation in `scripts/convert_transcript.py`
+3. Begin Tier 1 (Bash ↔ shell) implementation in `scripts/transcripts/convert_transcript.py`
 
 **User Decision Points:**
 - Approve tiered conversion strategy?
@@ -246,4 +246,4 @@ Should we truncate head+tail or just head for large outputs?
 - Implementation Plan: `/tmp/tool-call-conversion-implementation-plan.md`
 - Context Doc: `/tmp/tool-call-conversion-context.md`
 - Transcript Format: `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
-- Current Converter: `scripts/convert_transcript.py`
+- Current Converter: `scripts/transcripts/convert_transcript.py`

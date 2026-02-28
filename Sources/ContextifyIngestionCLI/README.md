@@ -8,10 +8,10 @@ Cross-platform CLI for ingesting Claude Code and Codex transcripts into a SQLite
 
 ```bash
 # One-liner install (latest version)
-curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/install-cli.sh | bash
+curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/build/install-cli.sh | bash
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/install-cli.sh | bash -s -- 1.0.0
+curl -fsSL https://raw.githubusercontent.com/banagale/contextify/main/scripts/build/install-cli.sh | bash -s -- 1.0.0
 
 # Manual download
 curl -fsSL https://github.com/banagale/contextify/releases/download/cli-v1.0.0/contextify-linux-x86_64.tar.gz | tar xz

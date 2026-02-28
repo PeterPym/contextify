@@ -371,9 +371,9 @@ Sample transcript with:
 
 ## Files Modified
 
-1. ✅ `scripts/convert_transcript.py` - Added helper functions (lines 55-231)
-2. 🔄 `scripts/convert_transcript.py` - Integrate into claude_to_codex (pending)
-3. 🔄 `scripts/convert_transcript.py` - Integrate into codex_to_claude (pending)
+1. ✅ `scripts/transcripts/convert_transcript.py` - Added helper functions (lines 55-231)
+2. 🔄 `scripts/transcripts/convert_transcript.py` - Integrate into claude_to_codex (pending)
+3. 🔄 `scripts/transcripts/convert_transcript.py` - Integrate into codex_to_claude (pending)
 4. 🔄 `tests/test_tool_conversion.py` - Create unit tests (pending)
 5. 🔄 `tests/fixtures/` - Create test transcripts (pending)
 

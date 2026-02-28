@@ -748,7 +748,7 @@ actor ITerm2DaemonClient {
 
 ---
 
-### `scripts/healthcheck.sh` — response validation + documented exit codes
+### `scripts/logging/healthcheck.sh` — response validation + documented exit codes
 
 ```bash
 #!/usr/bin/env bash

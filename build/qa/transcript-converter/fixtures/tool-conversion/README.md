@@ -96,7 +96,7 @@
 
 **Claude Code → Codex:**
 ```bash
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code \
   --to codex \
   -v \
@@ -113,7 +113,7 @@ grep '"type":"function_call"' /tmp/test-cc-to-codex.jsonl | head -1 | jq .
 
 **Codex → Claude Code:**
 ```bash
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex \
   --to claude-code \
   -v \
@@ -133,13 +133,13 @@ jq 'select(.message.content[]?.name == "Bash") | .message.content[] | select(.na
 **Claude Code → Codex → Claude Code:**
 ```bash
 # First conversion
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code --to codex \
   build/qa/transcript-converter/fixtures/tool-conversion/cc-with-bash-tools.jsonl \
   /tmp/intermediate.jsonl
 
 # Second conversion
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from codex --to claude-code \
   /tmp/intermediate.jsonl \
   /tmp/roundtrip.jsonl

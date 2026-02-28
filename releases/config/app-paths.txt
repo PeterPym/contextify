@@ -13,5 +13,5 @@ Tests/
 
 # Build/release scripts that affect the app
 scripts/xc.sh
-scripts/build-release.sh
-scripts/release.py
+scripts/release/build-release.sh
+scripts/release/release.py

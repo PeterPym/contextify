@@ -269,7 +269,7 @@ across sessions.
 - **Anthropic Announcement:** https://www.anthropic.com/news/enabling-claude-code-to-work-more-autonomously
 - **Transcript Format:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
 - **Tool Compatibility Matrix:** `build/notes/research/rag/tool-compatibility-matrix.md`
-- **Converter Implementation:** `scripts/convert_transcript.py`
+- **Converter Implementation:** `scripts/transcripts/convert_transcript.py`
 
 ---
 

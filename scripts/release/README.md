@@ -31,5 +31,5 @@ Start with `releases/WORKFLOW.md` for the full process.
 
 ## References
 
-- `scripts/RELEASE.md`
+- `build/docs/operations/release/RELEASE-PROCESS.md`
 - `releases/WORKFLOW.md`

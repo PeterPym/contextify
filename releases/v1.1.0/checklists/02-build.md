@@ -63,7 +63,7 @@ This script:
 | Script | Purpose |
 |--------|---------|
 | `scripts/xc.sh` | Development builds, Xcode operations |
-| `scripts/build-release.sh` | Standalone release build (no tracking) |
+| `scripts/release/build-release.sh` | Standalone release build (no tracking) |
 | `scripts/release/build.sh` | Release workflow build (with tracking) |
 
 ---
@@ -76,7 +76,7 @@ This script:
 ### DMG Build
 
 ```bash
-python3 scripts/release.py --version 1.1.0 --yes
+python3 scripts/release/release.py --version 1.1.0 --yes
 ./scripts/sparkle/sign.sh dist/Contextify-1.1.0.dmg
 ```
 

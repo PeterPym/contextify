@@ -62,7 +62,7 @@ zJ8lX0grlNGHwS0tFGbGs5Jv+roMWZv/mjlzXQXHO1M=
 
 ```bash
 # Use existing release script
-python3 scripts/release.py --version X.Y.Z --yes
+python3 scripts/release/release.py --version X.Y.Z --yes
 ```
 
 This creates `dist/Contextify-X.Y.Z.dmg` (signed + notarized).
@@ -283,7 +283,7 @@ Re-sign DMG with correct private key, update appcast.
 
 ## Future: Automation
 
-`scripts/release.py` should be extended to:
+`scripts/release/release.py` should be extended to:
 1. Auto-sign DMG with Sparkle EdDSA
 2. Auto-update appcast.xml
 3. Auto-deploy to contextify.sh

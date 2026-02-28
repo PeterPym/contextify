@@ -36,7 +36,7 @@
 #   ./scripts/release/build.sh 1.0.0 --skip-dmg
 #   ./scripts/release/build.sh 1.0.0 --dry-run
 #
-# For standalone builds without tracking: scripts/build-release.sh
+# For standalone builds without tracking: scripts/release/build-release.sh
 # ============================================================================
 
 set -e
@@ -89,7 +89,7 @@ for arg in "$@"; do
       echo "  --dry-run        Show what would be done without executing"
       echo "  --no-notarize    Skip notarization (faster for testing)"
       echo ""
-      echo "This script wraps scripts/build-release.sh and adds:"
+      echo "This script wraps scripts/release/build-release.sh and adds:"
       echo "  - Release directory validation"
       echo "  - Artifact archiving to build/archives/v{VERSION}/"
       echo "  - release.json updates"
@@ -246,9 +246,9 @@ fi
 echo -e "${BLUE}==>${NC} Running build-release.sh..."
 if [ "$DRY_RUN" = false ]; then
   cd "$ROOT_DIR"
-  bash scripts/build-release.sh $BUILD_ARGS
+  bash scripts/release/build-release.sh $BUILD_ARGS
 else
-  echo -e "${YELLOW}[dry-run]${NC} bash scripts/build-release.sh $BUILD_ARGS"
+  echo -e "${YELLOW}[dry-run]${NC} bash scripts/release/build-release.sh $BUILD_ARGS"
 fi
 
 # Archive artifacts

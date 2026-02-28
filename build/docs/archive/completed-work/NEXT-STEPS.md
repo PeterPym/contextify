@@ -19,7 +19,7 @@
    - `tool_use_id_to_call_id()` / `call_id_to_tool_use_id()`
    - `bash_to_shell()` with command wrapping & exit code mapping
    - `shell_to_bash()` with command unwrapping
-   - Committed in: `scripts/convert_transcript.py` lines 55-231
+   - Committed in: `scripts/transcripts/convert_transcript.py` lines 55-231
 
 ---
 
@@ -107,7 +107,7 @@ for block in content:
 **Step 3: Test with real transcript**
 ```bash
 # Test Claude Code → Codex
-./scripts/convert_transcript.py \
+./scripts/transcripts/convert_transcript.py \
   --from claude-code \
   --to codex \
   -v \
@@ -125,8 +125,8 @@ Similar approach, but converting function_call → tool_use
 **Step 5: Test round-trip**
 ```bash
 # Claude Code → Codex → Claude Code
-./scripts/convert_transcript.py --from claude-code --to codex input.jsonl temp.jsonl
-./scripts/convert_transcript.py --from codex --to claude-code temp.jsonl output.jsonl
+./scripts/transcripts/convert_transcript.py --from claude-code --to codex input.jsonl temp.jsonl
+./scripts/transcripts/convert_transcript.py --from codex --to claude-code temp.jsonl output.jsonl
 
 # Verify Bash tool calls preserved
 diff <(grep '"name":"Bash"' input.jsonl | wc -l) \
@@ -202,7 +202,7 @@ build/qa/transcript-converter/fixtures/
 git checkout feature/tool-call-conversion
 
 # Verify helper functions are there
-grep -A5 "def bash_to_shell" scripts/convert_transcript.py
+grep -A5 "def bash_to_shell" scripts/transcripts/convert_transcript.py
 
 # Copy test transcript to working location
 cp ~/.claude/projects/-Users-rob-code-projects-contextify/c118da1a-84e7-49b6-b631-967f48bae4bc.jsonl \
