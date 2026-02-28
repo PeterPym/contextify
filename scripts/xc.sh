@@ -254,6 +254,109 @@ quit_running_app() {
   pkill -x Contextify >/dev/null 2>&1 || true
 }
 
+# Launch the app and watch for early crash (first 8 seconds).
+# If the app dies, finds the newest crash report and summarizes it.
+launch_and_watch() {
+  local app="$1"
+  local watch_secs="${2:-8}"
+  local crash_dir="$HOME/Library/Logs/DiagnosticReports"
+
+  # Timestamp reference file: anything newer = post-launch crash
+  local ref_file
+  ref_file="$(mktemp /tmp/xc-launch-ref.XXXXXX)"
+
+  echo "🚀 Launching $app"
+  open "$app"
+
+  # Give the process a moment to start
+  sleep 1
+
+  local pid
+  pid="$(pgrep -x Contextify 2>/dev/null | head -1 || true)"
+
+  if [[ -z "$pid" ]]; then
+    echo "⚠️  Contextify process not found after launch"
+    _show_crash_if_any "$crash_dir" "$ref_file"
+    rm -f "$ref_file"
+    return 1
+  fi
+
+  echo "   PID $pid — watching ${watch_secs}s for early exit..."
+
+  local elapsed=0
+  while (( elapsed < watch_secs )); do
+    sleep 1
+    (( elapsed++ )) || true
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo ""
+      echo "💥 App exited after ~${elapsed}s"
+      sleep 1  # Let crash reporter finish writing
+      _show_crash_if_any "$crash_dir" "$ref_file"
+      rm -f "$ref_file"
+      return 1
+    fi
+  done
+
+  echo "   ✅ Running (PID $pid)"
+  rm -f "$ref_file"
+}
+
+_show_crash_if_any() {
+  local crash_dir="$1"
+  local ref_file="$2"
+
+  local report
+  report="$(find "$crash_dir" -name "Contextify-*.ips" -newer "$ref_file" 2>/dev/null \
+    | sort | tail -1)"
+
+  if [[ -z "$report" ]]; then
+    echo "   No crash report found yet — may still be writing."
+    echo "   Check: ls -lt $crash_dir | grep Contextify"
+    return
+  fi
+
+  echo ""
+  echo "📋 Crash report: $(basename "$report")"
+  echo ""
+
+  python3 - "$report" << 'PYEOF'
+import json, sys
+
+with open(sys.argv[1]) as f:
+    raw = f.read()
+
+# .ips files: first line is a JSON header, second line is the full report JSON
+parts = raw.split('\n', 1)
+try:
+    data = json.loads(parts[1]) if len(parts) > 1 else json.loads(parts[0])
+except Exception:
+    print("  (Could not parse report)")
+    sys.exit(0)
+
+exc = data.get('exception', {})
+print(f"  Exception : {exc.get('type', '?')} / {exc.get('signal', '?')}")
+
+images = data.get('usedImages', [])
+img_names = {i: img.get('name', '???') for i, img in enumerate(images)}
+
+threads = data.get('threads', [])
+for t in threads:
+    if t.get('triggered'):
+        q = t.get('queue', '')
+        if q:
+            print(f"  Queue     : {q}")
+        print("  Frames    :")
+        for frame in t.get('frames', [])[:10]:
+            sym = frame.get('symbol', '???')
+            img = img_names.get(frame.get('imageIndex', -1), '???')
+            print(f"    {img}: {sym}")
+        break
+PYEOF
+
+  echo ""
+  echo "  Full report: $report"
+}
+
 # Helper: Extract bundle ID from built app
 bundle_id_for_app() {
   local app="$1"
@@ -553,7 +656,7 @@ if [[ "$action" == "cleanrun" ]]; then
   reset_tcc_for_bid "$bundle_id"
 
   echo "🚀 Launching first-run..."
-  open "$app_path"
+  launch_and_watch "$app_path"
   exit 0
 fi
 
@@ -739,8 +842,7 @@ case "$action" in
         # Ensure developer mode is disabled by default
         defaults write dev.contextify.Contextify DeveloperModeEnabled -bool false
       fi
-      echo "Launching $app_path"
-      open "$app_path"
+      launch_and_watch "$app_path"
     fi
     ;;
   test)

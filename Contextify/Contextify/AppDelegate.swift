@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Log LLM availability status at startup
     LLMAvailability.logStatus()
 
+    // XPC bookmark PoC - test security-scoped bookmark access from XPC service
+    XPCBookmarkPoC.run()
+
     // In lite mode, skip LLM health check - the app works without Apple Intelligence
     guard !isLiteModeActive() else {
       log.info("Lite mode active - skipping LLM health check")

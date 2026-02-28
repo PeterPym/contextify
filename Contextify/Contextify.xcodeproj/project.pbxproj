@@ -23,6 +23,7 @@
 				D4C0C0112E77AAAA00747100 /* contextify-query-shim in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0C0052E77AAAA00747100 /* contextify-query-shim */; };
 				D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 				D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
+			DE83A8B1F367456492AEFBC4 /* ContextifyBackgroundService.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = FD655D91DC4D48BBAF2F0E4A /* ContextifyBackgroundService.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 	/* Begin PBXContainerItemProxy section */
@@ -68,6 +69,13 @@
 					remoteGlobalIDString = D4C0C0062E77AAAA00747100;
 					remoteInfo = "contextify-query-shim";
 				};
+			9551E9AC2EDC4905A7BA3A43 /* PBXContainerItemProxy */ = {
+				isa = PBXContainerItemProxy;
+				containerPortal = D4A773952E76936700747100 /* Project object */;
+				proxyType = 1;
+				remoteGlobalIDString = A326D5677B6C45B794AFEC14;
+				remoteInfo = ContextifyBackgroundService;
+			};
 	/* End PBXContainerItemProxy section */
 
 	/* Begin PBXCopyFilesBuildPhase section */
@@ -139,6 +147,17 @@
 					name = "Copy contextify-query shim";
 					runOnlyForDeploymentPostprocessing = 0;
 				};
+			327927A3DBCF49E6B22FBF49 /* Embed XPC Services */ = {
+				isa = PBXCopyFilesBuildPhase;
+				buildActionMask = 2147483647;
+				dstPath = "Contents/XPCServices";
+				dstSubfolderSpec = 1;
+				files = (
+					DE83A8B1F367456492AEFBC4 /* ContextifyBackgroundService.xpc in Embed XPC Services */,
+				);
+				name = "Embed XPC Services";
+				runOnlyForDeploymentPostprocessing = 0;
+			};
 		/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -155,6 +174,7 @@
 			D4A773B42E76936800747100 /* ContextifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 			D4APPSTORE00000000000003 /* Contextify AppStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Contextify AppStore.app"; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 			D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "icon-composer-project.icon"; sourceTree = "<group>"; };
+			FD655D91DC4D48BBAF2F0E4A /* ContextifyBackgroundService.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = ContextifyBackgroundService.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -171,6 +191,11 @@
 		D4A773B72E76936800747100 /* ContextifyUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ContextifyUITests;
+			sourceTree = "<group>";
+		};
+		EFC8365273C74C07AE4CA8E2 /* ContextifyBackgroundService */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ContextifyBackgroundService;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -223,6 +248,13 @@
 					);
 					runOnlyForDeploymentPostprocessing = 0;
 				};
+			3F711594C20C42849A7987BF /* Frameworks */ = {
+				isa = PBXFrameworksBuildPhase;
+				buildActionMask = 2147483647;
+				files = (
+				);
+				runOnlyForDeploymentPostprocessing = 0;
+			};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -231,6 +263,7 @@
 			children = (
 				DA49BDDF3640459D92526CE7730A5719 /* App Infrastructure */,
 				D4A7739F2E76936700747100 /* Contextify */,
+				EFC8365273C74C07AE4CA8E2 /* ContextifyBackgroundService */,
 				D4A773AD2E76936800747100 /* ContextifyTests */,
 				D4A773B72E76936800747100 /* ContextifyUITests */,
 				D4A7739E2E76936700747100 /* Products */,
@@ -247,6 +280,7 @@
 						D4APPSTORE00000000000003 /* Contextify AppStore.app */,
 						D4C0B0072E77AAAA00747100 /* contextify-query */,
 						D4C0C0052E77AAAA00747100 /* contextify-query-shim */,
+						FD655D91DC4D48BBAF2F0E4A /* ContextifyBackgroundService.xpc */,
 					);
 				name = Products;
 				sourceTree = "<group>";
@@ -347,10 +381,12 @@
 					D4APPSTORE00000000000006 /* Sources */,
 					D4APPSTORE00000000000004 /* Frameworks */,
 					D4APPSTORE00000000000007 /* Resources */,
+					327927A3DBCF49E6B22FBF49 /* Embed XPC Services */,
 				);
 				buildRules = (
 				);
 					dependencies = (
+						9EA496DC336B464EA70594D1 /* PBXTargetDependency */,
 					);
 				fileSystemSynchronizedGroups = (
 					D4A7739F2E76936700747100 /* Contextify */,
@@ -399,6 +435,25 @@
 					productReference = D4C0C0052E77AAAA00747100 /* contextify-query-shim */;
 					productType = "com.apple.product-type.tool";
 				};
+			A326D5677B6C45B794AFEC14 /* ContextifyBackgroundService */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 15D28D8111994C9CAB51E437 /* Build configuration list for PBXNativeTarget "ContextifyBackgroundService" */;
+				buildPhases = (
+					7F452168229340F6B52BC434 /* Sources */,
+					3F711594C20C42849A7987BF /* Frameworks */,
+				);
+				buildRules = (
+				);
+				dependencies = (
+				);
+				fileSystemSynchronizedGroups = (
+					EFC8365273C74C07AE4CA8E2 /* ContextifyBackgroundService */,
+				);
+				name = ContextifyBackgroundService;
+				productName = ContextifyBackgroundService;
+				productReference = FD655D91DC4D48BBAF2F0E4A /* ContextifyBackgroundService.xpc */;
+				productType = "com.apple.product-type.xpc-service";
+			};
 	/* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -429,6 +484,9 @@
 							D4C0C0062E77AAAA00747100 = {
 								CreatedOnToolsVersion = 26.0;
 							};
+							A326D5677B6C45B794AFEC14 = {
+								CreatedOnToolsVersion = 26.0;
+							};
 						};
 					};
 			buildConfigurationList = D4A773982E76936700747100 /* Build configuration list for PBXProject "Contextify" */;
@@ -456,6 +514,7 @@
 						D4A773B32E76936800747100 /* ContextifyUITests */,
 						D4C0B00A2E77AAAA00747100 /* contextify-query */,
 						D4C0C0062E77AAAA00747100 /* contextify-query-shim */,
+						A326D5677B6C45B794AFEC14 /* ContextifyBackgroundService */,
 					);
 				};
 /* End PBXProject section */
@@ -538,6 +597,13 @@
 					);
 					runOnlyForDeploymentPostprocessing = 0;
 				};
+			7F452168229340F6B52BC434 /* Sources */ = {
+				isa = PBXSourcesBuildPhase;
+				buildActionMask = 2147483647;
+				files = (
+				);
+				runOnlyForDeploymentPostprocessing = 0;
+			};
 /* End PBXSourcesBuildPhase section */
 
 	/* Begin PBXTargetDependency section */
@@ -571,6 +637,11 @@
 					target = D4C0C0062E77AAAA00747100 /* contextify-query-shim */;
 					targetProxy = D4C0C0152E77AAAA00747100 /* PBXContainerItemProxy */;
 				};
+			9EA496DC336B464EA70594D1 /* PBXTargetDependency */ = {
+				isa = PBXTargetDependency;
+				target = A326D5677B6C45B794AFEC14 /* ContextifyBackgroundService */;
+				targetProxy = 9551E9AC2EDC4905A7BA3A43 /* PBXContainerItemProxy */;
+			};
 	/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -977,6 +1048,42 @@
 					};
 					name = Release;
 				};
+			0D6F7D3580834D54ABB8AA36 /* Debug */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					CODE_SIGN_ENTITLEMENTS = ContextifyBackgroundService/ContextifyBackgroundService.entitlements;
+					CODE_SIGN_STYLE = Automatic;
+					COMBINE_HIDPI_IMAGES = YES;
+					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					INFOPLIST_FILE = ContextifyBackgroundService/Info.plist;
+					MACOSX_DEPLOYMENT_TARGET = 15.0;
+					PRODUCT_BUNDLE_IDENTIFIER = sh.contextify.ContextifyBackgroundService;
+					PRODUCT_NAME = "$(TARGET_NAME)";
+					SKIP_INSTALL = YES;
+					SUPPORTED_PLATFORMS = macosx;
+					SWIFT_APPROACHABLE_CONCURRENCY = YES;
+					SWIFT_VERSION = 6.0;
+				};
+				name = Debug;
+			};
+			DCF06D8CCF3E4458A016EBD8 /* Release */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					CODE_SIGN_ENTITLEMENTS = ContextifyBackgroundService/ContextifyBackgroundService.entitlements;
+					CODE_SIGN_STYLE = Automatic;
+					COMBINE_HIDPI_IMAGES = YES;
+					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					INFOPLIST_FILE = ContextifyBackgroundService/Info.plist;
+					MACOSX_DEPLOYMENT_TARGET = 15.0;
+					PRODUCT_BUNDLE_IDENTIFIER = sh.contextify.ContextifyBackgroundService;
+					PRODUCT_NAME = "$(TARGET_NAME)";
+					SKIP_INSTALL = YES;
+					SUPPORTED_PLATFORMS = macosx;
+					SWIFT_APPROACHABLE_CONCURRENCY = YES;
+					SWIFT_VERSION = 6.0;
+				};
+				name = Release;
+			};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1043,6 +1150,15 @@
 					defaultConfigurationIsVisible = 0;
 					defaultConfigurationName = Release;
 				};
+			15D28D8111994C9CAB51E437 /* Build configuration list for PBXNativeTarget "ContextifyBackgroundService" */ = {
+				isa = XCConfigurationList;
+				buildConfigurations = (
+					0D6F7D3580834D54ABB8AA36 /* Debug */,
+					DCF06D8CCF3E4458A016EBD8 /* Release */,
+				);
+				defaultConfigurationIsVisible = 0;
+				defaultConfigurationName = Release;
+			};
 	/* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
