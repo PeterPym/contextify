@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v36 (v35: P5 cleanup, v36: chronicle tables for Project Chronicle)
+/// Current version: v34 (v33: ingestion_runs for CLI debugging, v34: tab grouping)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 36
+  public static let version = 34
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -1035,106 +1035,6 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v35] P5 cleanup complete")
     }
 
-    // MARK: - v36: Chronicle tables for Project Chronicle feature
-    // Stores narrative arcs, signposts, per-project narrative state, and transcript continuity.
-    // Phase 1: background LLM analysis of transcript entries into development narrative.
-    migrator.registerMigration("v36_chronicle_tables") { db in
-      logger.info("[MIGRATION-v36] Creating chronicle tables for Project Chronicle")
-
-      // Chronicle arcs: threads of work toward a goal
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS chronicle_arcs (
-          id TEXT PRIMARY KEY,
-          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          intent TEXT NOT NULL,
-          strategic_context TEXT,
-          status TEXT NOT NULL DEFAULT 'active'
-            CHECK(status IN ('active', 'completing', 'completed', 'blocked', 'abandoned')),
-          parent_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-          discovered_from_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-          started_at INTEGER NOT NULL,
-          completed_at INTEGER,
-          last_activity_at INTEGER NOT NULL,
-          transcript_ids_json TEXT NOT NULL DEFAULT '[]'
-        )
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_project_status
-        ON chronicle_arcs(project_id, status)
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_parent
-        ON chronicle_arcs(parent_arc_id)
-        WHERE parent_arc_id IS NOT NULL
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_last_activity
-        ON chronicle_arcs(project_id, last_activity_at DESC)
-      """)
-
-      // Chronicle signposts: significant moments in the narrative
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS chronicle_signposts (
-          id TEXT PRIMARY KEY,
-          arc_id TEXT NOT NULL REFERENCES chronicle_arcs(id) ON DELETE CASCADE,
-          entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-          kind TEXT NOT NULL
-            CHECK(kind IN ('decision', 'discovery', 'pivot', 'milestone', 'blocker', 'resolution')),
-          summary TEXT NOT NULL,
-          detail TEXT,
-          reasoning TEXT,
-          revisit_conditions TEXT,
-          consequence_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-          timestamp INTEGER NOT NULL
-        )
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_chronicle_signposts_arc
-        ON chronicle_signposts(arc_id, timestamp)
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_chronicle_signposts_kind
-        ON chronicle_signposts(kind, timestamp DESC)
-      """)
-
-      // Narrative state: per-project rolling analysis state
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS chronicle_narrative_state (
-          project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-          current_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-          arc_stack_json TEXT NOT NULL DEFAULT '[]',
-          rolling_window_json TEXT NOT NULL DEFAULT '[]',
-          last_processed_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-          updated_at INTEGER NOT NULL
-        )
-      """)
-
-      // Transcript continuity: links between related transcripts
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS transcript_continuity (
-          from_transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
-          to_transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
-          continuity_signal TEXT NOT NULL
-            CHECK(continuity_signal IN ('clearCommand', 'compaction', 'timeProximity', 'explicitReference')),
-          confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
-          detected_at INTEGER NOT NULL,
-          PRIMARY KEY (from_transcript_id, to_transcript_id)
-        )
-      """)
-
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_continuity_to
-        ON transcript_continuity(to_transcript_id)
-      """)
-
-      logger.info("[MIGRATION-v36] Chronicle tables created successfully")
-    }
-
     return migrator
   }
 
@@ -1596,88 +1496,6 @@ public enum DatabaseSchema {
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_ingestion_runs_started_at
       ON ingestion_runs(started_at DESC)
-    """)
-
-    // v36: Chronicle tables for Project Chronicle
-    try db.execute(sql: """
-      CREATE TABLE IF NOT EXISTS chronicle_arcs (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        intent TEXT NOT NULL,
-        strategic_context TEXT,
-        status TEXT NOT NULL DEFAULT 'active'
-          CHECK(status IN ('active', 'completing', 'completed', 'blocked', 'abandoned')),
-        parent_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-        discovered_from_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-        started_at INTEGER NOT NULL,
-        completed_at INTEGER,
-        last_activity_at INTEGER NOT NULL,
-        transcript_ids_json TEXT NOT NULL DEFAULT '[]'
-      )
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_project_status
-      ON chronicle_arcs(project_id, status)
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_parent
-      ON chronicle_arcs(parent_arc_id)
-      WHERE parent_arc_id IS NOT NULL
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_chronicle_arcs_last_activity
-      ON chronicle_arcs(project_id, last_activity_at DESC)
-    """)
-
-    try db.execute(sql: """
-      CREATE TABLE IF NOT EXISTS chronicle_signposts (
-        id TEXT PRIMARY KEY,
-        arc_id TEXT NOT NULL REFERENCES chronicle_arcs(id) ON DELETE CASCADE,
-        entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-        kind TEXT NOT NULL
-          CHECK(kind IN ('decision', 'discovery', 'pivot', 'milestone', 'blocker', 'resolution')),
-        summary TEXT NOT NULL,
-        detail TEXT,
-        reasoning TEXT,
-        revisit_conditions TEXT,
-        consequence_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-        timestamp INTEGER NOT NULL
-      )
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_chronicle_signposts_arc
-      ON chronicle_signposts(arc_id, timestamp)
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_chronicle_signposts_kind
-      ON chronicle_signposts(kind, timestamp DESC)
-    """)
-
-    try db.execute(sql: """
-      CREATE TABLE IF NOT EXISTS chronicle_narrative_state (
-        project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-        current_arc_id TEXT REFERENCES chronicle_arcs(id) ON DELETE SET NULL,
-        arc_stack_json TEXT NOT NULL DEFAULT '[]',
-        rolling_window_json TEXT NOT NULL DEFAULT '[]',
-        last_processed_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
-        updated_at INTEGER NOT NULL
-      )
-    """)
-
-    try db.execute(sql: """
-      CREATE TABLE IF NOT EXISTS transcript_continuity (
-        from_transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
-        to_transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
-        continuity_signal TEXT NOT NULL
-          CHECK(continuity_signal IN ('clearCommand', 'compaction', 'timeProximity', 'explicitReference')),
-        confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
-        detected_at INTEGER NOT NULL,
-        PRIMARY KEY (from_transcript_id, to_transcript_id)
-      )
-    """)
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_continuity_to
-      ON transcript_continuity(to_transcript_id)
     """)
 
     // Run ANALYZE to update statistics

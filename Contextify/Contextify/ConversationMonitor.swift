@@ -810,7 +810,9 @@ final class ConversationMonitor {
     /// Multi-project mode: branch on projectId (not filter)
     private func watchForDebouncedTranscriptUpdates() async {
         let center = NotificationCenter.default
-        for await note in center.notifications(named: .transcriptUpdated) {
+        let name = NSNotification.Name("TranscriptUpdated")
+
+        for await note in center.notifications(named: name) {
             if Task.isCancelled { break }
             let pid = note.userInfo?["projectId"] as? String
 

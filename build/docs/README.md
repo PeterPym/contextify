@@ -11,6 +11,7 @@
 |----------|---------|---------------|
 | **Architecture** | System design & data flow | [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Startup Coordinator](architecture/startup-coordinator.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
+| **Cloud** | Cloud sync backend & platform vision | [Platform Vision](cloud/platform-vision.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-transcript-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
 | **Testing** | QA & testing workflows | [First-Run QA Guide](testing/first-run-qa-guide.md) |
@@ -123,6 +124,12 @@ Release management, app store submission, marketing materials.
 - `app-store/` - Sandbox requirements, submission checklist
 - `marketing/` - Show HN draft, distribution strategy
 - `release/` - Notarization, build verification, release readiness
+
+### cloud/
+Cloud sync backend and long-range platform vision.
+
+**Key docs:**
+- [Platform Vision](cloud/platform-vision.md) - The vision for contextify-cloud as a proven foundation for a generalizable AI CLI backend platform, design principles to preserve, and the generalization path
 
 ### archive/
 Historical context. Completed investigations, original feature specs (design rationale).
