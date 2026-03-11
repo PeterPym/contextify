@@ -349,10 +349,6 @@ struct ContextifyApp: App {
       await StartupCoordinator.shared.start()
       startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
 
-      // PHASE 2.5: Start Project Chronicle background analysis
-      ChronicleService.shared.start()
-      startupLog.info("✅ Chronicle service started")
-
       // PHASE 3: Check for CLI upgrades (background, non-blocking)
       await CLICoordinator.shared.checkAndUpgrade()
     }
@@ -391,7 +387,6 @@ struct ContextifyApp: App {
 
                 await AppStateOrchestrator.shared.startup()
                 await StartupCoordinator.shared.start()
-                ChronicleService.shared.start()
 
                 // Pass the already-built provider to avoid reconstruction
                 await initializeProjectsSystem(existingProvider: provider)
@@ -848,7 +843,6 @@ struct ContextifyApp: App {
             log.info("[INIT] Running deferred startup sequence (App Store subsequent launch)")
             await AppStateOrchestrator.shared.startup()
             await StartupCoordinator.shared.start()
-            ChronicleService.shared.start()
           }
           #endif
         }
