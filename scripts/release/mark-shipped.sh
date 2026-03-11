@@ -314,14 +314,28 @@ if [ "$CHANNEL" = "linux" ] && [ "$STATUS" = "shipped" ] && [ "$DRY_RUN" = false
   X86_ARTIFACT="$ARCHIVE_DIR/contextify-linux-x86_64.tar.gz"
   ARM64_ARTIFACT="$ARCHIVE_DIR/contextify-linux-arm64.tar.gz"
 
+  # Generate .sha256 sidecar files for installer verification
+  echo "  Generating checksums..."
+  for artifact in "$X86_ARTIFACT" "$ARM64_ARTIFACT"; do
+    if [ -f "$artifact" ]; then
+      basename=$(basename "$artifact")
+      sha256=$(shasum -a 256 "$artifact" | cut -d' ' -f1)
+      echo "$sha256  $basename" > "${artifact}.sha256"
+      echo "  SHA256($basename) = $sha256"
+    fi
+  done
+
+  X86_SHA="${X86_ARTIFACT}.sha256"
+  ARM64_SHA="${ARM64_ARTIFACT}.sha256"
+
   # Check if release already exists
   if gh release view "v${VERSION}" &>/dev/null; then
     echo "  GitHub Release v${VERSION} already exists, uploading Linux artifacts..."
-    # Upload artifacts to existing release
-    gh release upload "v${VERSION}" "$X86_ARTIFACT" "$ARM64_ARTIFACT" --clobber
+    # Upload artifacts to existing release (tarballs + checksums)
+    gh release upload "v${VERSION}" "$X86_ARTIFACT" "$ARM64_ARTIFACT" "$X86_SHA" "$ARM64_SHA" --clobber
   else
     echo "  Creating new GitHub Release v${VERSION}..."
-    # Create release with Linux artifacts
+    # Create release with Linux artifacts + checksums
     gh release create "v${VERSION}" \
       --title "v${VERSION}" \
       --notes "## Contextify v${VERSION}
@@ -349,7 +363,7 @@ contextify-ingest ingest --db ~/contextify.db
 contextify-ingest verify --db ~/contextify.db
 \`\`\`
 " \
-      "$X86_ARTIFACT" "$ARM64_ARTIFACT"
+      "$X86_ARTIFACT" "$ARM64_ARTIFACT" "$X86_SHA" "$ARM64_SHA"
   fi
 
   # Update release.json with GitHub Release URL
