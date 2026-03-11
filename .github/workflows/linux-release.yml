@@ -107,13 +107,16 @@ jobs:
               cp -R contextify-query/user-skill dist/
               cd dist
               tar -czvf contextify-linux-x86_64.tar.gz contextify contextify-ingest contextify-query user-skill
+              sha256sum contextify-linux-x86_64.tar.gz > contextify-linux-x86_64.tar.gz.sha256
             '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: contextify-linux-x86_64
-          path: dist/contextify-linux-x86_64.tar.gz
+          path: |
+            dist/contextify-linux-x86_64.tar.gz
+            dist/contextify-linux-x86_64.tar.gz.sha256
           retention-days: 7
 
   build-linux-arm64:
@@ -199,13 +202,16 @@ jobs:
               cp -R contextify-query/user-skill dist/
               cd dist
               tar -czvf contextify-linux-arm64.tar.gz contextify contextify-ingest contextify-query user-skill
+              sha256sum contextify-linux-arm64.tar.gz > contextify-linux-arm64.tar.gz.sha256
             '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: contextify-linux-arm64
-          path: dist/contextify-linux-arm64.tar.gz
+          path: |
+            dist/contextify-linux-arm64.tar.gz
+            dist/contextify-linux-arm64.tar.gz.sha256
           retention-days: 7
 
   # Validate binary compatibility before release (both architectures)
