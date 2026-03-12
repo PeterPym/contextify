@@ -46,6 +46,12 @@ public struct CloudConfig: Codable, Sendable {
   /// Required for correct keyset pagination when multiple entries share a timestamp.
   public var lastPushEntryId: String?
 
+  /// Active push sync session ID (UUID string) for deterministic batch resume.
+  public var lastPushSessionId: String?
+
+  /// Last completed push batch sequence for the active session.
+  public var lastPushBatchSeq: Int?
+
   public init(
     serverURL: String,
     apiKey: String,
@@ -54,7 +60,9 @@ public struct CloudConfig: Codable, Sendable {
     enabled: Bool = true,
     lastPullSequence: Int = 0,
     lastPushTimestamp: Int? = nil,
-    lastPushEntryId: String? = nil
+    lastPushEntryId: String? = nil,
+    lastPushSessionId: String? = nil,
+    lastPushBatchSeq: Int? = nil
   ) {
     self.serverURL = serverURL
     self.apiKey = apiKey
@@ -64,6 +72,8 @@ public struct CloudConfig: Codable, Sendable {
     self.lastPullSequence = lastPullSequence
     self.lastPushTimestamp = lastPushTimestamp
     self.lastPushEntryId = lastPushEntryId
+    self.lastPushSessionId = lastPushSessionId
+    self.lastPushBatchSeq = lastPushBatchSeq
   }
 
   enum CodingKeys: String, CodingKey {
@@ -75,6 +85,8 @@ public struct CloudConfig: Codable, Sendable {
     case lastPullSequence = "last_pull_sequence"
     case lastPushTimestamp = "last_push_timestamp"
     case lastPushEntryId = "last_push_entry_id"
+    case lastPushSessionId = "last_push_session_id"
+    case lastPushBatchSeq = "last_push_batch_seq"
   }
 
   // MARK: File Locations
@@ -504,6 +516,10 @@ public struct CloudPushPayload: Codable, Sendable {
   public let idempotencyKey: String?
   /// Sequence number within a multi-batch sync session.
   public let batchSeq: Int?
+  /// Session UUID for deterministic multi-batch upload identity.
+  public let syncSessionId: String?
+  /// Optional client-declared entries count for sanity checks.
+  public let entriesSent: Int?
   /// Device identity for this push.
   public let device: CloudDeviceInfo
   /// Projects referenced by the entries being pushed.
@@ -524,6 +540,8 @@ public struct CloudPushPayload: Codable, Sendable {
   public init(
     idempotencyKey: String? = nil,
     batchSeq: Int? = nil,
+    syncSessionId: String? = nil,
+    entriesSent: Int? = nil,
     device: CloudDeviceInfo,
     projects: [CloudPushProject] = [],
     transcripts: [CloudPushTranscript] = [],
@@ -535,6 +553,8 @@ public struct CloudPushPayload: Codable, Sendable {
   ) {
     self.idempotencyKey = idempotencyKey
     self.batchSeq = batchSeq
+    self.syncSessionId = syncSessionId
+    self.entriesSent = entriesSent
     self.device = device
     self.projects = projects
     self.transcripts = transcripts
@@ -548,6 +568,8 @@ public struct CloudPushPayload: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case idempotencyKey = "idempotency_key"
     case batchSeq = "batch_seq"
+    case syncSessionId = "sync_session_id"
+    case entriesSent = "entries_sent"
     case device
     case projects
     case transcripts
@@ -572,6 +594,32 @@ public struct CloudPushResponse: Codable, Sendable {
   public let syncToken: String?
   /// Echoed back for client correlation with the request.
   public let idempotencyKey: String?
+  /// Session UUID returned by the server for multi-batch resume.
+  public let syncSessionId: String?
+  /// Echoed batch sequence.
+  public let batchSeq: Int?
+  /// Entries declared in this batch.
+  public let entriesSent: Int?
+  /// Entries newly accepted from this batch.
+  public let entriesAccepted: Int?
+  /// Entries resolved as duplicates.
+  public let entriesDuplicates: Int?
+  /// Entries rejected due to content conflicts.
+  public let entriesConflicted: Int?
+  /// Entries blocked by policy/filtering.
+  public let entriesBlockedPolicy: Int?
+  /// Entries that failed with retriable errors.
+  public let entriesRetriableFailed: Int?
+  /// Entries resolved for checkpoint decisions.
+  public let entriesResolved: Int?
+  /// Whether cursor advancement is safe for this batch.
+  public let checkpointSafe: Bool?
+  /// Batch/session outcome state from server.
+  public let completionState: String?
+  /// Count requiring user attention.
+  public let needsAttentionCount: Int?
+  /// Stable error classification codes.
+  public let errorCodes: [String]?
   /// Server-side high-water mark sequence number after this push.
   public let serverSequence: Int
 
@@ -581,6 +629,19 @@ public struct CloudPushResponse: Codable, Sendable {
     errors: [String] = [],
     syncToken: String? = nil,
     idempotencyKey: String? = nil,
+    syncSessionId: String? = nil,
+    batchSeq: Int? = nil,
+    entriesSent: Int? = nil,
+    entriesAccepted: Int? = nil,
+    entriesDuplicates: Int? = nil,
+    entriesConflicted: Int? = nil,
+    entriesBlockedPolicy: Int? = nil,
+    entriesRetriableFailed: Int? = nil,
+    entriesResolved: Int? = nil,
+    checkpointSafe: Bool? = nil,
+    completionState: String? = nil,
+    needsAttentionCount: Int? = nil,
+    errorCodes: [String]? = nil,
     serverSequence: Int = 0
   ) {
     self.accepted = accepted
@@ -588,6 +649,19 @@ public struct CloudPushResponse: Codable, Sendable {
     self.errors = errors
     self.syncToken = syncToken
     self.idempotencyKey = idempotencyKey
+    self.syncSessionId = syncSessionId
+    self.batchSeq = batchSeq
+    self.entriesSent = entriesSent
+    self.entriesAccepted = entriesAccepted
+    self.entriesDuplicates = entriesDuplicates
+    self.entriesConflicted = entriesConflicted
+    self.entriesBlockedPolicy = entriesBlockedPolicy
+    self.entriesRetriableFailed = entriesRetriableFailed
+    self.entriesResolved = entriesResolved
+    self.checkpointSafe = checkpointSafe
+    self.completionState = completionState
+    self.needsAttentionCount = needsAttentionCount
+    self.errorCodes = errorCodes
     self.serverSequence = serverSequence
   }
 
@@ -597,6 +671,19 @@ public struct CloudPushResponse: Codable, Sendable {
     case errors
     case syncToken = "sync_token"
     case idempotencyKey = "idempotency_key"
+    case syncSessionId = "sync_session_id"
+    case batchSeq = "batch_seq"
+    case entriesSent = "entries_sent"
+    case entriesAccepted = "entries_accepted"
+    case entriesDuplicates = "entries_duplicates"
+    case entriesConflicted = "entries_conflicted"
+    case entriesBlockedPolicy = "entries_blocked_policy"
+    case entriesRetriableFailed = "entries_retriable_failed"
+    case entriesResolved = "entries_resolved"
+    case checkpointSafe = "checkpoint_safe"
+    case completionState = "completion_state"
+    case needsAttentionCount = "needs_attention_count"
+    case errorCodes = "error_codes"
     case serverSequence = "server_sequence"
   }
 }
@@ -820,6 +907,34 @@ public struct CloudPullResponse: Codable, Sendable {
 
 /// Response from GET /api/v1/sync/status.
 /// Maps to the server's `SyncStatusResponse` Pydantic model.
+public struct CloudActivePushSessionStatus: Codable, Sendable {
+  public let syncSessionId: String
+  public let phase: String
+  public let entriesResolved: Int?
+  public let entriesTotal: Int?
+  public let progressPercent: Double?
+  public let throughputEntriesPerMin: Double?
+  public let etaSeconds: Int?
+  public let checkpointSafe: Bool?
+  public let completionState: String?
+  public let needsAttentionCount: Int?
+  public let lastBatchAt: String?
+
+  enum CodingKeys: String, CodingKey {
+    case syncSessionId = "sync_session_id"
+    case phase
+    case entriesResolved = "entries_resolved"
+    case entriesTotal = "entries_total"
+    case progressPercent = "progress_percent"
+    case throughputEntriesPerMin = "throughput_entries_per_min"
+    case etaSeconds = "eta_seconds"
+    case checkpointSafe = "checkpoint_safe"
+    case completionState = "completion_state"
+    case needsAttentionCount = "needs_attention_count"
+    case lastBatchAt = "last_batch_at"
+  }
+}
+
 public struct CloudSyncStatus: Codable, Sendable {
   /// ISO 8601 timestamp of the last sync, or nil if never synced.
   public let lastSync: String?
@@ -829,17 +944,25 @@ public struct CloudSyncStatus: Codable, Sendable {
   public let devices: [CloudDeviceInfo]
   /// Current server-side high-water mark sequence number.
   public let serverSequence: Int
+  /// Number of active in-progress sessions (legacy field).
+  public let pendingBatches: Int?
+  /// Rich active push session projection for UI progress.
+  public let activePushSession: CloudActivePushSessionStatus?
 
   public init(
     lastSync: String? = nil,
     entriesSynced: Int = 0,
     devices: [CloudDeviceInfo] = [],
-    serverSequence: Int = 0
+    serverSequence: Int = 0,
+    pendingBatches: Int? = nil,
+    activePushSession: CloudActivePushSessionStatus? = nil
   ) {
     self.lastSync = lastSync
     self.entriesSynced = entriesSynced
     self.devices = devices
     self.serverSequence = serverSequence
+    self.pendingBatches = pendingBatches
+    self.activePushSession = activePushSession
   }
 
   enum CodingKeys: String, CodingKey {
@@ -847,5 +970,7 @@ public struct CloudSyncStatus: Codable, Sendable {
     case entriesSynced = "entries_synced"
     case devices
     case serverSequence = "server_sequence"
+    case pendingBatches = "pending_batches"
+    case activePushSession = "active_push_session"
   }
 }

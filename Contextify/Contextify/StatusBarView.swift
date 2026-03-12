@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Combine
 import OSLog
 import ContextifyCore
 
@@ -29,6 +30,13 @@ struct StatusBarView: View {
     @State private var lastErrorCount = 0
     @State private var errorBounceAnimation = false
 
+    // Cloud sync status
+    @State private var cloudSyncManager = CloudSyncManager.shared
+    @State private var showCloudSyncInfo = false
+    @State private var showCloudSyncDetail = false
+    @State private var cloudStatusNow: Date = .now
+    private let cloudStatusTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
     var body: some View {
         HStack(spacing: 16) {
             // Permission warning (App Store builds without CLI access)
@@ -49,6 +57,13 @@ struct StatusBarView: View {
 
                 // Queue status
                 queueStatusView
+            }
+
+            if shouldShowCloudSync {
+                Divider()
+                    .frame(height: 12)
+
+                cloudSyncStatusView
             }
 
             if let ingestMessage = viewModel?.backgroundIngestMessage {
@@ -95,6 +110,7 @@ struct StatusBarView: View {
         .onAppear {
             updateViewModel()
             checkCLIPermissions()
+            Task { await cloudSyncManager.refreshStatusFromServer() }
         }
         .onDisappear {
             viewModel?.stop()
@@ -106,6 +122,10 @@ struct StatusBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .permissionAuthorizationDidChange)) { _ in
             // Re-check permissions when user grants access
             checkCLIPermissions()
+        }
+        .onReceive(cloudStatusTimer) { tick in
+            cloudStatusNow = tick
+            Task { await cloudSyncManager.refreshStatusFromServer() }
         }
         .onChange(of: viewModel?.recentErrorCount) { _, newCount in
             // Trigger bounce animation on new errors
@@ -597,3 +617,358 @@ struct StatusBarView: View {
 
 // MARK: - Previews
 // Note: Previews disabled as StatusBarView now requires ConversationMonitor environment
+
+private extension StatusBarView {
+    enum CloudSyncDisplayState {
+        case upToDate
+        case syncing
+        case stalled
+        case offline
+        case needsAttention
+        case error
+        case disabled
+    }
+
+    var shouldShowCloudSync: Bool {
+        cloudSyncManager.syncState != .disabled
+            || cloudSyncManager.cloudStatus != nil
+            || cloudSyncManager.cloudStatusError != nil
+    }
+
+    var cloudActiveSession: CloudActivePushSessionStatus? {
+        cloudSyncManager.cloudStatus?.activePushSession
+    }
+
+    var cloudDisplayState: CloudSyncDisplayState {
+        if cloudSyncManager.syncState == .disabled { return .disabled }
+        if cloudSyncManager.cloudOffline { return .offline }
+
+        if let session = cloudActiveSession {
+            let phase = session.phase.lowercased()
+            let completion = session.completionState?.lowercased()
+            let attention = session.needsAttentionCount ?? 0
+
+            if phase == "stalled" { return .stalled }
+            if completion == "blocked" || completion == "completed_with_issues" || attention > 0 {
+                return .needsAttention
+            }
+            if cloudSyncManager.syncState == .syncing || completion == "in_progress" {
+                return .syncing
+            }
+        }
+
+        if cloudSyncManager.syncState == .syncing { return .syncing }
+        if case .error = cloudSyncManager.syncState { return .error }
+        return .upToDate
+    }
+
+    @ViewBuilder
+    var cloudSyncStatusView: some View {
+        Button {
+            showCloudSyncInfo = true
+        } label: {
+            HStack(spacing: 6) {
+                if cloudDisplayState == .syncing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: cloudChipIconName)
+                        .foregroundStyle(cloudChipColor)
+                        .font(.caption)
+                }
+
+                Text(cloudChipText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(cloudChipTooltip)
+        .accessibilityLabel(cloudChipText)
+        .popover(isPresented: $showCloudSyncInfo) {
+            cloudSyncPopoverContent
+        }
+        .sheet(isPresented: $showCloudSyncDetail) {
+            CloudSyncDetailSheet(syncManager: cloudSyncManager, now: cloudStatusNow)
+        }
+    }
+
+    @ViewBuilder
+    var cloudSyncPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Cloud Sync")
+                .font(.headline)
+
+            Text(cloudChipText)
+                .font(.subheadline)
+
+            if let session = cloudActiveSession,
+               let total = session.entriesTotal, total > 0 {
+                let resolved = min(max(session.entriesResolved ?? 0, 0), total)
+                ProgressView(value: Double(resolved), total: Double(total))
+                    .progressViewStyle(.linear)
+
+                Text("\(formatCount(resolved)) / \(formatCount(total)) entries")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                let displayEta = cloudSyncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
+                let displayThroughput = cloudSyncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+
+                if let eta = displayEta, eta > 0 {
+                    Text("ETA: (etaLabel(seconds: eta))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let throughput = displayThroughput, throughput > 0 {
+                    Text("Throughput: (formatCount(Int(throughput.rounded()))) entries/min")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let attention = session.needsAttentionCount, attention > 0 {
+                    Text("Needs attention: \(formatCount(attention))")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            if let error = cloudSyncManager.cloudStatusError, !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Button(cloudPrimaryActionLabel) {
+                    cloudSyncManager.triggerSync()
+                    Task { await cloudSyncManager.refreshStatusFromServer() }
+                }
+                .buttonStyle(.bordered)
+
+                Button("Open Cloud Settings") {
+                    openCloudSettings()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Button("View Details") {
+                showCloudSyncDetail = true
+            }
+            .buttonStyle(.bordered)
+
+            if let refreshed = cloudSyncManager.cloudStatusUpdatedAt {
+                Text("Status refreshed \(RelativeDateTimeFormatter().localizedString(for: refreshed, relativeTo: cloudStatusNow))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .frame(width: 340)
+    }
+
+    var cloudChipIconName: String {
+        switch cloudDisplayState {
+        case .upToDate:
+            return "checkmark.circle.fill"
+        case .stalled:
+            return "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90"
+        case .offline:
+            return "wifi.slash"
+        case .needsAttention:
+            return "exclamationmark.circle.fill"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        case .disabled:
+            return "cloud.slash"
+        case .syncing:
+            return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    var cloudChipColor: Color {
+        switch cloudDisplayState {
+        case .upToDate:
+            return Color(red: 0.318, green: 0.659, blue: 0.420)
+        case .syncing:
+            return .secondary
+        case .stalled, .offline, .needsAttention:
+            return Color(red: 0.831, green: 0.659, blue: 0.306)
+        case .error:
+            return Color(red: 0.780, green: 0.306, blue: 0.306)
+        case .disabled:
+            return .secondary
+        }
+    }
+
+    var cloudChipText: String {
+        switch cloudDisplayState {
+        case .upToDate:
+            return "Cloud up to date"
+        case .syncing:
+            if let session = cloudActiveSession,
+               let total = session.entriesTotal,
+               let resolved = session.entriesResolved,
+               total > 0 {
+                let percent = Int((Double(min(max(resolved, 0), total)) / Double(total) * 100).rounded())
+                return "Syncing \(percent)%"
+            }
+            return "Syncing"
+        case .stalled:
+            return "Sync stalled"
+        case .offline:
+            return "Cloud offline"
+        case .needsAttention:
+            return "Sync needs attention"
+        case .error:
+            return "Cloud sync error"
+        case .disabled:
+            return "Cloud disabled"
+        }
+    }
+
+    var cloudChipTooltip: String {
+        switch cloudDisplayState {
+        case .upToDate:
+            return "Cloud sync is up to date"
+        case .syncing:
+            return "Cloud sync in progress"
+        case .stalled:
+            return "Cloud sync appears stalled"
+        case .offline:
+            return "Offline: changes are saved locally and queued for upload"
+        case .needsAttention:
+            return "Cloud sync completed with issues that need attention"
+        case .error:
+            return "Cloud sync error"
+        case .disabled:
+            return "Cloud sync is disabled"
+        }
+    }
+
+    var cloudPrimaryActionLabel: String {
+        switch cloudDisplayState {
+        case .offline, .stalled, .error, .needsAttention:
+            return "Retry now"
+        default:
+            return "Sync now"
+        }
+    }
+
+    func etaLabel(seconds: Int) -> String {
+        if seconds < 60 { return "under a minute" }
+        let minutes = Int(round(Double(seconds) / 60.0))
+        if minutes < 60 { return "~\(minutes) min" }
+        let hours = minutes / 60
+        let rem = minutes % 60
+        return rem == 0 ? "~\(hours) hr" : "~\(hours) hr \(rem) min"
+    }
+
+    func formatCount(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    func openCloudSettings() {
+        ContextifyDefaults.shared.set("cloud", forKey: "Contextify.Settings.SelectedTabOverride")
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            ContextifyDefaults.shared.removeObject(forKey: "Contextify.Settings.SelectedTabOverride")
+        }
+    }
+}
+
+private struct CloudSyncDetailSheet: View {
+    let syncManager: CloudSyncManager
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cloud Sync Activity")
+                .font(.headline)
+
+            if let session = syncManager.cloudStatus?.activePushSession,
+               let total = session.entriesTotal, total > 0 {
+                let resolved = min(max(session.entriesResolved ?? 0, 0), total)
+                ProgressView(value: Double(resolved), total: Double(total))
+                    .progressViewStyle(.linear)
+
+                Text("\(resolved) / \(total) entries")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("Phase: \(session.phase)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let completion = session.completionState {
+                    Text("Outcome: \(completion)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let attention = session.needsAttentionCount, attention > 0 {
+                    Text("Needs attention: \(attention)")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+                let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
+
+                if let throughput = displayThroughput, throughput > 0 {
+                    Text("Throughput: (Int(throughput.rounded())) entries/min")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let eta = displayEta, eta > 0 {
+                    Text("ETA: (etaLabel(seconds: eta))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("No active upload session")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            if let push = syncManager.lastPushResult {
+                Text("Last upload: \(push.entriesPushed) uploaded, \(push.duplicatesSkipped) already synced")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let pull = syncManager.lastPullResult {
+                Text("Last download: \(pull.entriesImported) imported, \(pull.entriesSkipped) already present")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let refreshed = syncManager.cloudStatusUpdatedAt {
+                Text("Status refreshed \(RelativeDateTimeFormatter().localizedString(for: refreshed, relativeTo: now))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .frame(minWidth: 420, minHeight: 320)
+    }
+
+    private func etaLabel(seconds: Int) -> String {
+        if seconds < 60 { return "under a minute" }
+        let minutes = Int(round(Double(seconds) / 60.0))
+        if minutes < 60 { return "~\(minutes) min" }
+        let hours = minutes / 60
+        let rem = minutes % 60
+        return rem == 0 ? "~\(hours) hr" : "~\(hours) hr \(rem) min"
+    }
+}
