@@ -1466,9 +1466,7 @@ public struct ContextifyQueryService: Sendable {
         log.warning("exportForCloudPush called with partial cursor; ignoring cursor")
       }
       if let afterTimestamp, let afterEntryId {
-        sql += """
-          AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))
-          """
+        sql += " AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))"
         args.append(afterTimestamp)
         args.append(afterTimestamp)
         args.append(afterEntryId)
