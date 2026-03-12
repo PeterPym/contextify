@@ -302,9 +302,15 @@ Use the hybrid model (optimistic for user-visible changes, database-driven for b
 - **ALWAYS use** `scripts/db_manager.sh` for operations (NEVER manual `rm`)
 - Multi-machine conflict detection warns of concurrent access
 
-**Website:** contextify.sh (static HTML, Nginx, Let's Encrypt SSL)
-- Deploy: `./scripts/deploy-website.sh`
-- Server: web@banagale.com (DigitalOcean)
+**Infrastructure:** See `build/docs/operations/INFRASTRUCTURE.md` for all servers and deploy procedures.
+
+| Server | Host | SSH | Deploy |
+|--------|------|-----|--------|
+| Website | contextify.sh | `ssh web@banagale.com` | `./scripts/deploy-website.sh` |
+| Cloud API | cloud.contextify.sh | `ssh deploy@174.138.94.110` | git pull + docker compose (see docs) |
+
+- Website details: `build/docs/operations/WEBSITE.md`
+- Cloud API details: `build/docs/operations/CLOUD-SERVER.md`
 
 **Design System:** `build/design/` - colors, brand assets, website specimens
 - `build/design/README.md` - Start here for design work
