@@ -281,6 +281,9 @@ struct CloudSettingsView: View {
 
     syncManager.saveConfig(finalConfig)
     syncManager.configure(config: finalConfig)
+    if finalConfig.enabled {
+      syncManager.startAppLevelAutoSync()
+    }
     isConfigured = true
     saveMessage = "Saved"
     log.info("[CLOUD-SETTINGS] Configuration saved")
@@ -297,7 +300,7 @@ struct CloudSettingsView: View {
   }
 
   private func disconnect() {
-    syncManager.stopAppLevelAutoSync()
+    syncManager.resetForDisconnect()
 
     // Remove the config file
     let configFile = CloudConfig.configFile

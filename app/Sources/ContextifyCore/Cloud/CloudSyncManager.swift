@@ -644,21 +644,37 @@ public final class CloudSyncManager: @unchecked Sendable {
     log.info("Stopped app-level auto-sync")
   }
 
+  /// Full reset for disconnect: stop sync, clear all in-memory state.
+  /// Call this when the user disconnects from cloud sync in Settings.
+  @MainActor
+  public func resetForDisconnect() {
+    stopAppLevelAutoSync()
+    client = nil
+    config = nil
+    lastSyncDate = nil
+    lastPushResult = nil
+    lastPullResult = nil
+    syncState = .disabled
+    log.info("Reset cloud sync manager after disconnect")
+  }
+
   /// Toggle auto-sync on/off. For use by Settings UI.
   /// Persists the `enabled` preference to cloud.json so it survives app restart.
+  /// Persist BEFORE start so startAppLevelAutoSync() sees enabled=true in config.
   @MainActor
   public func setAutoSync(enabled: Bool) {
+    // Persist first so startAppLevelAutoSync() reads enabled=true from disk
+    if var config = loadConfig() {
+      config.enabled = enabled
+      self.config = config
+      saveConfig(config)
+      log.info("Persisted auto-sync enabled=\(enabled, privacy: .public) to cloud.json")
+    }
+
     if enabled {
       startAppLevelAutoSync()
     } else {
       stopAppLevelAutoSync()
-    }
-
-    // Persist the enabled preference to disk
-    if var config = loadConfig() {
-      config.enabled = enabled
-      saveConfig(config)
-      log.info("Persisted auto-sync enabled=\(enabled, privacy: .public) to cloud.json")
     }
   }
 
