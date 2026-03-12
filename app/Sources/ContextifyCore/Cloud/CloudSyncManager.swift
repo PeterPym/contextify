@@ -669,6 +669,8 @@ public final class CloudSyncManager: @unchecked Sendable {
       self.config = config
       saveConfig(config)
       log.info("Persisted auto-sync enabled=\(enabled, privacy: .public) to cloud.json")
+    } else {
+      log.warning("setAutoSync called but no cloud config on disk; preference not persisted")
     }
 
     if enabled {
