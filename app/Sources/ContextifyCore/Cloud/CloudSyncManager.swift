@@ -117,6 +117,16 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   // MARK: - Initialization
 
+  /// Shared app-level instance. Lives for the entire app lifecycle so sync
+  /// survives Settings window open/close.
+  @MainActor public static let shared = CloudSyncManager()
+
+  /// Whether auto-sync is currently running.
+  @MainActor public private(set) var autoSyncEnabled: Bool = false
+
+  /// Task handle for the auto-sync loop.
+  @MainActor private var autoSyncTask: Task<Void, Never>?
+
   public init() {}
 
   // MARK: - Configuration
@@ -592,5 +602,78 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
     }
     return error.localizedDescription
+  }
+
+  // MARK: - App-Level Auto-Sync
+
+  /// Start the app-level auto-sync loop if cloud is configured.
+  /// Called once at app launch. Loads config from disk and begins
+  /// syncing every 5 minutes. Safe to call multiple times (no-ops if running).
+  @MainActor
+  public func startAppLevelAutoSync() {
+    guard autoSyncTask == nil else { return }
+    guard let config = loadConfig(), config.enabled else {
+      log.debug("Auto-sync skipped: no config or disabled")
+      return
+    }
+    configure(config: config)
+    autoSyncEnabled = true
+    log.info("Starting app-level auto-sync")
+
+    autoSyncTask = Task.detached(priority: .background) { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        do {
+          let dbURL = try DatabaseManager.shared.databasePath()
+          let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+          await self.sync(using: queryService)
+        } catch {
+          await self.setErrorForUI("Auto-sync failed to open local database.")
+        }
+        try? await Task.sleep(for: .seconds(300))
+      }
+    }
+  }
+
+  /// Stop the auto-sync loop.
+  @MainActor
+  public func stopAppLevelAutoSync() {
+    autoSyncTask?.cancel()
+    autoSyncTask = nil
+    autoSyncEnabled = false
+    log.info("Stopped app-level auto-sync")
+  }
+
+  /// Toggle auto-sync on/off. For use by Settings UI.
+  /// Persists the `enabled` preference to cloud.json so it survives app restart.
+  @MainActor
+  public func setAutoSync(enabled: Bool) {
+    if enabled {
+      startAppLevelAutoSync()
+    } else {
+      stopAppLevelAutoSync()
+    }
+
+    // Persist the enabled preference to disk
+    if var config = loadConfig() {
+      config.enabled = enabled
+      saveConfig(config)
+      log.info("Persisted auto-sync enabled=\(enabled, privacy: .public) to cloud.json")
+    }
+  }
+
+  /// Trigger a one-shot sync. Returns immediately; sync runs in background.
+  @MainActor
+  public func triggerSync() {
+    Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self else { return }
+      do {
+        let dbURL = try DatabaseManager.shared.databasePath()
+        let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+        await self.sync(using: queryService)
+      } catch {
+        await self.setErrorForUI("Failed to open local database for sync.")
+      }
+    }
   }
 }
