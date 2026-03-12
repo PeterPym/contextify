@@ -1,12 +1,12 @@
 import SwiftUI
+import Combine
 import ContextifyCore
 import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSettings")
 
 struct CloudSettingsView: View {
-  // Use the app-level shared instance so sync survives window close
-  private var syncManager: CloudSyncManager { CloudSyncManager.shared }
+  @State private var syncManager = CloudSyncManager.shared
 
   // MARK: - Form Fields
 
@@ -18,7 +18,14 @@ struct CloudSettingsView: View {
 
   @State private var isConfigured: Bool = false
   @State private var showDisconnectConfirmation: Bool = false
+  @State private var showActivitySheet: Bool = false
   @State private var saveMessage: String?
+  @State@State private var now: Date = .now
+  @State private var wasOffline: Bool = false
+  @State private var showReconnectBanner: Bool = false
+  @State private var reconnectBannerTask: Task<Void, Never>?
+
+  private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
     Form {
@@ -32,6 +39,25 @@ struct CloudSettingsView: View {
     .padding()
     .onAppear {
       loadConfiguration()
+      wasOffline = syncManager.cloudOffline
+      Task { await syncManager.refreshStatusFromServer() }
+    }
+    .onReceive(clockTimer) { tick in
+      now = tick
+
+      let isOfflineNow = syncManager.cloudOffline
+      if wasOffline && !isOfflineNow {
+        reconnectBannerTask?.cancel()
+        showReconnectBanner = true
+        reconnectBannerTask = Task {
+          try? await Task.sleep(for: .seconds(8))
+          await MainActor.run { showReconnectBanner = false }
+        }
+      }
+      wasOffline = isOfflineNow
+    }
+    .sheet(isPresented: $showActivitySheet) {
+      CloudSyncActivitySheet(syncManager: syncManager, now: now)
     }
     // No .onDisappear cleanup - sync lives at app level
   }
@@ -99,15 +125,33 @@ struct CloudSettingsView: View {
           .font(.headline)
 
         VStack(alignment: .leading, spacing: 8) {
-          // Current state
           HStack(spacing: 8) {
             stateIndicator
             Text(stateDescription)
               .font(.body)
           }
 
-          // Error message
-          if case .error(let message) = syncManager.syncState {
+          if showReconnectBanner {
+            Text(reconnectBannerText)
+              .font(.caption)
+              .foregroundStyle(.green)
+              .padding(6)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .background(Color.green.opacity(0.1))
+              .cornerRadius(4)
+          }
+
+          if let summary = connectionSummaryText {
+            Text(summary)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
+          if let session = activePushSession {
+            activeSessionProgressCard(session: session)
+          }
+
+          if let message = statusErrorMessage {
             Text(message)
               .font(.caption)
               .foregroundStyle(.red)
@@ -117,7 +161,6 @@ struct CloudSettingsView: View {
               .cornerRadius(4)
           }
 
-          // Last sync time
           if let lastSync = syncManager.lastSyncDate {
             HStack(spacing: 4) {
               Text("Last sync:")
@@ -129,13 +172,23 @@ struct CloudSettingsView: View {
             }
           }
 
-          // Entries synced
-          if let pushResult = syncManager.lastPushResult {
+          if let lastStatusAt = syncManager.cloudStatusUpdatedAt {
             HStack(spacing: 4) {
-              Text("Last push:")
+              Text("Status refreshed:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              Text("\(pushResult.entriesPushed) pushed, \(pushResult.duplicatesSkipped) skipped")
+              Text(relativeTimeString(from: lastStatusAt))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+
+          if let pushResult = syncManager.lastPushResult {
+            HStack(spacing: 4) {
+              Text("Last upload:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("\(formatCount(pushResult.entriesPushed)) entries uploaded, \(formatCount(pushResult.duplicatesSkipped)) already synced on server")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -143,10 +196,10 @@ struct CloudSettingsView: View {
 
           if let pullResult = syncManager.lastPullResult {
             HStack(spacing: 4) {
-              Text("Last pull:")
+              Text("Last download:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              Text("\(pullResult.entriesImported) imported, \(pullResult.entriesSkipped) skipped")
+              Text("\(formatCount(pullResult.entriesImported)) new entries imported, \(formatCount(pullResult.entriesSkipped)) already on this Mac")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -154,6 +207,57 @@ struct CloudSettingsView: View {
         }
       }
     }
+  }
+
+  @ViewBuilder
+  private func activeSessionProgressCard(session: CloudActivePushSessionStatus) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(session.phase.lowercased() == "initial_upload" ? "Uploading timeline-visible history" : "Sync in progress")
+        .font(.subheadline.weight(.medium))
+
+      if let total = session.entriesTotal, total > 0 {
+        let resolved = min(max(session.entriesResolved ?? 0, 0), total)
+        ProgressView(value: Double(resolved), total: Double(total))
+          .progressViewStyle(.linear)
+
+        Text("\(formatCount(resolved)) / \(formatCount(total)) entries (\(formatPercent(resolved: resolved, total: total)))")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
+      let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+
+      HStack(spacing: 12) {
+        if let eta = displayEta, eta > 0 {
+          Text("About (etaString(seconds: eta)) remaining")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        if let throughput = displayThroughput, throughput > 0 {
+          Text("(formatCount(Int(throughput.rounded()))) entries/min")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if let pending = pendingEntriesCount(session: session), pending > 0 {
+        Text("\(formatCount(pending)) entries queued for upload")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      if let attention = session.needsAttentionCount, attention > 0 {
+        Text("\(formatCount(attention)) entries need attention before this upload is fully healthy")
+          .font(.caption)
+          .foregroundStyle(.orange)
+      }
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.secondary.opacity(0.08))
+    .cornerRadius(6)
   }
 
   // MARK: - Controls Section
@@ -168,8 +272,9 @@ struct CloudSettingsView: View {
           .font(.headline)
 
         HStack(spacing: 12) {
-          Button("Sync Now") {
+          Button(primaryActionLabel) {
             syncManager.triggerSync()
+            Task { await syncManager.refreshStatusFromServer() }
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
@@ -178,6 +283,11 @@ struct CloudSettingsView: View {
             ProgressView()
               .controlSize(.small)
           }
+
+          Button("View Activity") {
+            showActivitySheet = true
+          }
+          .buttonStyle(.bordered)
         }
 
         Toggle("Auto-sync every 5 minutes", isOn: Binding(
@@ -202,17 +312,63 @@ struct CloudSettingsView: View {
     }
   }
 
-  // MARK: - State Indicator
+  // MARK: - Status Mapping
+
+  private enum SyncDisplayState {
+    case upToDate
+    case syncing
+    case stalled
+    case offline
+    case needsAttention
+    case error
+    case disabled
+  }
+
+  private var activePushSession: CloudActivePushSessionStatus? {
+    syncManager.cloudStatus?.activePushSession
+  }
+
+  private var displayState: SyncDisplayState {
+    if syncManager.syncState == .disabled { return .disabled }
+    if syncManager.cloudOffline { return .offline }
+
+    if let session = activePushSession {
+      let phase = session.phase.lowercased()
+      let completion = session.completionState?.lowercased()
+      let attention = session.needsAttentionCount ?? 0
+
+      if phase == "stalled" { return .stalled }
+      if completion == "blocked" || completion == "completed_with_issues" || attention > 0 {
+        return .needsAttention
+      }
+      if syncManager.syncState == .syncing || completion == "in_progress" {
+        return .syncing
+      }
+    }
+
+    if syncManager.syncState == .syncing { return .syncing }
+    if case .error = syncManager.syncState { return .error }
+    return .upToDate
+  }
 
   @ViewBuilder
   private var stateIndicator: some View {
-    switch syncManager.syncState {
-    case .idle:
+    switch displayState {
+    case .upToDate:
       Image(systemName: "checkmark.circle.fill")
         .foregroundStyle(.green)
     case .syncing:
       ProgressView()
         .controlSize(.small)
+    case .stalled:
+      Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+        .foregroundStyle(.orange)
+    case .offline:
+      Image(systemName: "wifi.slash")
+        .foregroundStyle(.orange)
+    case .needsAttention:
+      Image(systemName: "exclamationmark.circle.fill")
+        .foregroundStyle(.orange)
     case .error:
       Image(systemName: "exclamationmark.triangle.fill")
         .foregroundStyle(.red)
@@ -223,16 +379,70 @@ struct CloudSettingsView: View {
   }
 
   private var stateDescription: String {
-    switch syncManager.syncState {
-    case .idle:
-      return "Connected"
+    switch displayState {
+    case .upToDate:
+      return "Synced to cloud"
     case .syncing:
-      return "Syncing..."
+      if let session = activePushSession,
+         let total = session.entriesTotal,
+         let resolved = session.entriesResolved,
+         total > 0 {
+        return "Syncing \(formatPercent(resolved: min(max(resolved, 0), total), total: total))"
+      }
+      return "Syncing"
+    case .stalled:
+      return "Sync stalled"
+    case .offline:
+      return "Offline (saved locally)"
+    case .needsAttention:
+      return "Sync needs attention"
     case .error:
-      return "Error"
+      return "Sync error"
     case .disabled:
       return "Disabled"
     }
+  }
+
+  private var connectionSummaryText: String? {
+    switch displayState {
+    case .offline:
+      return "Changes are saved locally and queued for upload. Upload resumes automatically when connection returns."
+    case .stalled:
+      return "No progress checkpoint recently. Use Retry Now to continue from the last safe checkpoint."
+    case .needsAttention:
+      return "Upload progress is safe, but some entries need review before the session is fully healthy."
+    default:
+      return nil
+    }
+  }
+
+  private var statusErrorMessage: String? {
+    if case .error(let message) = syncManager.syncState {
+      return message
+    }
+    return syncManager.cloudStatusError
+  }
+
+  private var primaryActionLabel: String {
+    switch displayState {
+    case .offline, .stalled, .error, .needsAttention:
+      return "Retry Now"
+    default:
+      return "Sync Now"
+    }
+  }
+
+  private var reconnectBannerText: String {
+    if let session = activePushSession, let pending = pendingEntriesCount(session: session), pending > 0 {
+      return "Back online. Uploading (formatCount(pending)) pending entries..."
+    }
+    return "Back online. Resuming cloud upload..."
+  }
+
+  private func pendingEntriesCount(session: CloudActivePushSessionStatus) -> Int? {
+    guard let total = session.entriesTotal else { return nil }
+    let resolved = session.entriesResolved ?? 0
+    return max(0, total - resolved)
   }
 
   // MARK: - Actions
@@ -243,13 +453,11 @@ struct CloudSettingsView: View {
       apiKey = config.apiKey
       deviceName = config.deviceName
       isConfigured = true
-      // Configure if not already (app-level startup may have done this)
       if syncManager.syncState == .idle || syncManager.syncState == .disabled {
         syncManager.configure(config: config)
       }
       log.info("[CLOUD-SETTINGS] Configuration loaded from disk")
     } else {
-      // Pre-fill device name with hostname
       deviceName = Host.current().localizedName ?? ""
       isConfigured = false
       log.debug("[CLOUD-SETTINGS] No configuration found")
@@ -263,10 +471,13 @@ struct CloudSettingsView: View {
       deviceId: MachineID.current(),
       deviceName: deviceName,
       enabled: true,
-      lastPullSequence: 0
+      lastPullSequence: 0,
+      lastPushTimestamp: nil,
+      lastPushEntryId: nil,
+      lastPushSessionId: nil,
+      lastPushBatchSeq: nil
     )
 
-    // Preserve lastPullSequence if updating an existing config
     var finalConfig = config
     if let existing = syncManager.loadConfig() {
       finalConfig = CloudConfig(
@@ -275,7 +486,11 @@ struct CloudSettingsView: View {
         deviceId: MachineID.current(),
         deviceName: deviceName,
         enabled: true,
-        lastPullSequence: existing.lastPullSequence
+        lastPullSequence: existing.lastPullSequence,
+        lastPushTimestamp: existing.lastPushTimestamp,
+        lastPushEntryId: existing.lastPushEntryId,
+        lastPushSessionId: existing.lastPushSessionId,
+        lastPushBatchSeq: existing.lastPushBatchSeq
       )
     }
 
@@ -283,12 +498,13 @@ struct CloudSettingsView: View {
     syncManager.configure(config: finalConfig)
     if finalConfig.enabled {
       syncManager.startAppLevelAutoSync()
+      syncManager.triggerSync()
+      Task { await syncManager.refreshStatusFromServer() }
     }
     isConfigured = true
     saveMessage = "Saved"
     log.info("[CLOUD-SETTINGS] Configuration saved")
 
-    // Clear the save message after a brief delay
     Task {
       try? await Task.sleep(for: .seconds(2))
       await MainActor.run {
@@ -302,7 +518,6 @@ struct CloudSettingsView: View {
   private func disconnect() {
     syncManager.resetForDisconnect()
 
-    // Remove the config file
     let configFile = CloudConfig.configFile
     do {
       if FileManager.default.fileExists(atPath: configFile.path) {
@@ -312,7 +527,6 @@ struct CloudSettingsView: View {
       log.error("[CLOUD-SETTINGS] Failed to remove config file: \(error.localizedDescription, privacy: .public)")
     }
 
-    // Reset UI state
     serverURL = ""
     apiKey = ""
     deviceName = Host.current().localizedName ?? ""
@@ -331,7 +545,111 @@ struct CloudSettingsView: View {
   }()
 
   private func relativeTimeString(from date: Date) -> String {
-    Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date())
+    Self.relativeDateFormatter.localizedString(for: date, relativeTo: now)
+  }
+
+  private func etaString(seconds: Int) -> String {
+    if seconds < 60 { return "under a minute" }
+    let minutes = Int(round(Double(seconds) / 60.0))
+    if minutes < 60 { return "~\(minutes) min" }
+    let hours = minutes / 60
+    let rem = minutes % 60
+    if rem == 0 { return "~\(hours) hr" }
+    return "~\(hours) hr \(rem) min"
+  }
+
+  private func formatCount(_ value: Int) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    return formatter.string(from: NSNumber(value: value)) ?? String(value)
+  }
+
+  private func formatPercent(resolved: Int, total: Int) -> String {
+    guard total > 0 else { return "0%" }
+    let fraction = Double(resolved) / Double(total)
+    return "\(Int((fraction * 100.0).rounded()))%"
+  }
+}
+
+private struct CloudSyncActivitySheet: View {
+  let syncManager: CloudSyncManager
+  let now: Date
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Cloud Sync Activity")
+        .font(.headline)
+
+      if let session = syncManager.cloudStatus?.activePushSession {
+        if let total = session.entriesTotal, total > 0 {
+          let resolved = min(max(session.entriesResolved ?? 0, 0), total)
+          ProgressView(value: Double(resolved), total: Double(total))
+            .progressViewStyle(.linear)
+          Text("\(resolved) / \(total) entries")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        Text("Phase: \(session.phase)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        if let completion = session.completionState {
+          Text("Outcome: \(completion)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        if let attention = session.needsAttentionCount, attention > 0 {
+          Text("Needs attention: \(attention)")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+
+        let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
+        let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+
+        if let eta = displayEta, eta > 0 {
+          Text("ETA: ~(Int(round(Double(eta) / 60.0))) min")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        if let throughput = displayThroughput, throughput > 0 {
+          Text("Throughput: (Int(throughput.rounded())) entries/min")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        Text("No active upload session")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Divider()
+
+      if let push = syncManager.lastPushResult {
+        Text("Last upload: \(push.entriesPushed) uploaded, \(push.duplicatesSkipped) already synced")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      if let pull = syncManager.lastPullResult {
+        Text("Last download: \(pull.entriesImported) imported, \(pull.entriesSkipped) already present")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      if let updatedAt = syncManager.cloudStatusUpdatedAt {
+        Text("Status refreshed: \(RelativeDateTimeFormatter().localizedString(for: updatedAt, relativeTo: now))")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer()
+    }
+    .padding()
+    .frame(minWidth: 420, minHeight: 320)
   }
 }
 
