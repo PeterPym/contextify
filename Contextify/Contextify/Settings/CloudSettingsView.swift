@@ -5,7 +5,8 @@ import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSettings")
 
 struct CloudSettingsView: View {
-  @State private var syncManager = CloudSyncManager()
+  // Use the app-level shared instance so sync survives window close
+  private var syncManager: CloudSyncManager { CloudSyncManager.shared }
 
   // MARK: - Form Fields
 
@@ -16,9 +17,6 @@ struct CloudSettingsView: View {
   // MARK: - UI State
 
   @State private var isConfigured: Bool = false
-  @State private var autoSyncEnabled: Bool = false
-  @State private var oneShotSyncTask: Task<Void, Never>?
-  @State private var autoSyncTask: Task<Void, Never>?
   @State private var showDisconnectConfirmation: Bool = false
   @State private var saveMessage: String?
 
@@ -35,11 +33,7 @@ struct CloudSettingsView: View {
     .onAppear {
       loadConfiguration()
     }
-    .onDisappear {
-      oneShotSyncTask?.cancel()
-      stopAutoSync()
-      autoSyncEnabled = false
-    }
+    // No .onDisappear cleanup - sync lives at app level
   }
 
   // MARK: - Server Configuration Section
@@ -175,7 +169,7 @@ struct CloudSettingsView: View {
 
         HStack(spacing: 12) {
           Button("Sync Now") {
-            startOneShotSync()
+            syncManager.triggerSync()
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
@@ -186,14 +180,10 @@ struct CloudSettingsView: View {
           }
         }
 
-        Toggle("Auto-sync every 5 minutes", isOn: $autoSyncEnabled)
-          .onChange(of: autoSyncEnabled) { _, newValue in
-            if newValue {
-              startAutoSync()
-            } else {
-              stopAutoSync()
-            }
-          }
+        Toggle("Auto-sync every 5 minutes", isOn: Binding(
+          get: { syncManager.autoSyncEnabled },
+          set: { syncManager.setAutoSync(enabled: $0) }
+        ))
 
         Button("Disconnect") {
           showDisconnectConfirmation = true
@@ -253,7 +243,10 @@ struct CloudSettingsView: View {
       apiKey = config.apiKey
       deviceName = config.deviceName
       isConfigured = true
-      syncManager.configure(config: config)
+      // Configure if not already (app-level startup may have done this)
+      if syncManager.syncState == .idle || syncManager.syncState == .disabled {
+        syncManager.configure(config: config)
+      }
       log.info("[CLOUD-SETTINGS] Configuration loaded from disk")
     } else {
       // Pre-fill device name with hostname
@@ -303,48 +296,8 @@ struct CloudSettingsView: View {
     }
   }
 
-  private func startOneShotSync() {
-    guard isConfigured else { return }
-
-    let manager = syncManager
-    oneShotSyncTask = Task.detached(priority: .userInitiated) {
-      do {
-        let dbURL = try DatabaseManager.shared.databasePath()
-        let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
-        await manager.sync(using: queryService)
-      } catch {
-        await manager.setErrorForUI("Failed to open local database for sync.")
-      }
-    }
-  }
-
-  private func startAutoSync() {
-    stopAutoSync()
-    log.info("[CLOUD-SETTINGS] Starting auto-sync (every 5 minutes)")
-
-    let manager = syncManager
-    autoSyncTask = Task.detached(priority: .background) {
-      while !Task.isCancelled {
-        do {
-          let dbURL = try DatabaseManager.shared.databasePath()
-          let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
-          await manager.sync(using: queryService)
-        } catch {
-          await manager.setErrorForUI("Auto-sync failed to open local database.")
-        }
-        try? await Task.sleep(for: .seconds(300))
-      }
-    }
-  }
-
-  private func stopAutoSync() {
-    autoSyncTask?.cancel()
-    autoSyncTask = nil
-  }
-
   private func disconnect() {
-    oneShotSyncTask?.cancel()
-    stopAutoSync()
+    syncManager.stopAppLevelAutoSync()
 
     // Remove the config file
     let configFile = CloudConfig.configFile
@@ -361,11 +314,7 @@ struct CloudSettingsView: View {
     apiKey = ""
     deviceName = Host.current().localizedName ?? ""
     isConfigured = false
-    autoSyncEnabled = false
     saveMessage = nil
-
-    // Reset manager state
-    syncManager = CloudSyncManager()
 
     log.info("[CLOUD-SETTINGS] Disconnected from cloud sync")
   }
