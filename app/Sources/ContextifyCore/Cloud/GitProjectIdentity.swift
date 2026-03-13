@@ -214,11 +214,11 @@ public struct GitProjectIdentity: Sendable, Equatable {
     while path.hasPrefix("/") {
       path.removeFirst()
     }
-    if path.hasSuffix(".git") {
-      path.removeLast(4)
-    }
     while path.hasSuffix("/") {
       path.removeLast()
+    }
+    if path.hasSuffix(".git") {
+      path.removeLast(4)
     }
     return path.isEmpty ? nil : path
   }

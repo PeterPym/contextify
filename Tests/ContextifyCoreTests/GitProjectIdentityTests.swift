@@ -46,6 +46,10 @@ final class GitProjectIdentityTests: XCTestCase {
       GitProjectIdentity.normalizeOriginURL("ssh://git@gitlab.com/group/repo"),
       "gitlab.com/group/repo"
     )
+    XCTAssertEqual(
+      GitProjectIdentity.normalizeOriginURL("https://GitHub.com/owner/repo.git/"),
+      "github.com/owner/repo"
+    )
   }
 
   func testResolveReturnsNilForNonGitDirectory() throws {
