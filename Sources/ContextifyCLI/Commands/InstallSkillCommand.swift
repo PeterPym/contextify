@@ -22,6 +22,9 @@ struct InstallSkillCommand: ParsableCommand {
 
       After installation, restart your CLI tool and use /total-recall to
       search your past conversations.
+
+      Linux installs the skill directly because the macOS plugin cache/manifest
+      flow does not exist on the unified CLI.
       """
   )
 

@@ -69,6 +69,8 @@ private func handleArgv0Dispatch() -> [String]? {
     if let first = args.first {
       switch first {
       case "install-plugin":
+        // Linux has no Claude plugin cache/manifest flow, so the unified CLI exposes
+        // direct skill installation instead and keeps install-plugin as a compatibility alias.
         args[0] = "install-skill"
       case "uninstall-plugin":
         args[0] = "uninstall-skill"

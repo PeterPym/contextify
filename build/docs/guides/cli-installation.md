@@ -30,7 +30,7 @@ contextify status
 
 2. Install the Total Recall skill:
    ```bash
-   contextify install-skill
+   contextify install-plugin
    ```
 
 3. Restart Claude Code or Codex CLI
@@ -68,11 +68,13 @@ contextify context <uuid>
 
 ```bash
 # Install/update Total Recall skill for Claude Code and Codex CLI
-contextify install-skill
+contextify install-plugin
 
 # Remove Total Recall skill from Claude Code and Codex CLI
-contextify uninstall-skill
+contextify uninstall-plugin
 ```
+
+On macOS, `install-plugin` is the canonical command because it also repairs the plugin/manifest install surface used by the app integration. The Linux unified CLI uses `install-skill` for the same end state because it installs the skill directly without the macOS plugin cache flow.
 
 ### Health Check Commands
 
@@ -90,6 +92,22 @@ Local development via Claude Code:
 claude plugin marketplace add /Users/rob/code/projects/contextify
 claude plugin install query@contextify
 ```
+
+## Local Development Skill Testing
+
+When you run `contextify install-plugin` from the repository root, the installer prefers the repo-local skill source at `contextify-query/user-skill/total-recall/SKILL.md`.
+
+Use this flow to test local skill edits deliberately:
+
+```bash
+# From the repository root
+swift run contextify-query install-plugin
+contextify doctor
+```
+
+`contextify doctor` reports the installed skill provenance, including whether it came from a repo-local source, app bundle, or Homebrew Cellar payload, and whether the installed copy is stale or modified.
+
+To return to the shipped skill, re-run `install-plugin` from the installed CLI context instead of the repository root.
 
 ### Other Commands
 
@@ -188,7 +206,7 @@ The CLI cannot find the Contextify database.
 
 ### Plugin not appearing in Claude Code
 
-1. Run `contextify install-skill`
+1. Run `contextify install-plugin`
 2. Completely quit and restart Claude Code (not just close window)
 3. Verify plugin registration:
    ```bash
@@ -198,7 +216,7 @@ The CLI cannot find the Contextify database.
 ### CLI health check reports degraded
 
 1. Run `contextify doctor` to see missing components
-2. Run `contextify install-skill`
+2. Run `contextify install-plugin`
 3. Re-run `contextify doctor` to confirm healthy status
 
 ### CLI not found after Homebrew install
@@ -220,7 +238,7 @@ export PATH="/opt/homebrew/bin:$PATH"
 **Homebrew:**
 ```bash
 brew upgrade contextify-query
-contextify install-skill  # Re-run to update skill
+contextify install-plugin  # Re-run to update skill
 ```
 
 ## Architecture
@@ -241,7 +259,7 @@ contextify install-skill  # Re-run to update skill
 │                    App Store Build                           │
 ├─────────────────────────────────────────────────────────────┤
 │ CLI: Installed via Homebrew to /opt/homebrew/bin/           │
-│ Plugin: User runs `contextify install-skill`                │
+│ Plugin: User runs `contextify install-plugin`               │
 │ Permissions: Requires security-scoped bookmark grants       │
 │   - Status bar shows "No CLI Access" if none granted        │
 │ Database: ~/Library/Application Support/Contextify/         │
