@@ -18,6 +18,9 @@ import Foundation
 /// The CLI's CloudConfig in CloudCommand.swift is a simpler version of this;
 /// this type is the canonical representation for ContextifyCore consumers.
 public struct CloudConfig: Codable, Sendable {
+  /// Managed service URL. Make configurable once self-hosted option is generally available.
+  public static let defaultServerURL = "https://cloud.contextify.sh"
+
   /// Base URL of the contextify-cloud server (e.g. "https://cloud.contextify.sh").
   public var serverURL: String
 
