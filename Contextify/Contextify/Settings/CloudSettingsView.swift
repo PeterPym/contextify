@@ -9,8 +9,9 @@ struct CloudSettingsView: View {
   @State private var syncManager = CloudSyncManager.shared
 
   // MARK: - Form Fields
+  // TODO(self-hosted): Add @State private var serverURL: String = "" when self-hosted is available.
+  // The Cloud URL field, save/load, and disconnect will need to use it instead of the constant.
 
-  @State private var serverURL: String = ""
   @State private var apiKey: String = ""
   @State private var deviceName: String = ""
 
@@ -71,12 +72,14 @@ struct CloudSettingsView: View {
         Text("Server Configuration")
           .font(.headline)
 
+        // TODO: Make Cloud URL editable once self-hosted option is generally available.
         VStack(alignment: .leading, spacing: 8) {
           Text("Cloud URL")
             .font(.subheadline)
-          TextField("https://cloud.contextify.sh", text: $serverURL)
+          TextField("", text: .constant(CloudConfig.defaultServerURL))
             .textFieldStyle(.roundedBorder)
             .font(.system(.body, design: .monospaced))
+            .disabled(true)
         }
 
         VStack(alignment: .leading, spacing: 8) {
@@ -100,7 +103,7 @@ struct CloudSettingsView: View {
           }
           .buttonStyle(.borderedProminent)
           .tint(Color.accentColor)
-          .disabled(serverURL.isEmpty || apiKey.isEmpty)
+          .disabled(apiKey.isEmpty)
 
           if let message = saveMessage {
             Text(message)
@@ -149,6 +152,8 @@ struct CloudSettingsView: View {
 
           if let session = activePushSession {
             activeSessionProgressCard(session: session)
+          } else if syncManager.pushEstimatedTotalBatches > 0 {
+            clientSideProgressCard
           }
 
           if let message = statusErrorMessage {
@@ -174,7 +179,7 @@ struct CloudSettingsView: View {
 
           if let lastStatusAt = syncManager.cloudStatusUpdatedAt {
             HStack(spacing: 4) {
-              Text("Status refreshed:")
+              Text("Last checked:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
               Text(relativeTimeString(from: lastStatusAt))
@@ -212,10 +217,23 @@ struct CloudSettingsView: View {
   @ViewBuilder
   private func activeSessionProgressCard(session: CloudActivePushSessionStatus) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(session.phase.lowercased() == "initial_upload" ? "Uploading timeline-visible history" : "Sync in progress")
+      Text("Syncing entries to cloud")
         .font(.subheadline.weight(.medium))
 
-      if let total = session.entriesTotal, total > 0 {
+      // Prefer client-side progress (always available during push) over server-side
+      let totalBatches = syncManager.pushEstimatedTotalBatches
+      let batchesDone = syncManager.pushBatchesCompleted
+      if totalBatches > 0 {
+        ProgressView(value: Double(batchesDone), total: Double(totalBatches))
+          .progressViewStyle(.linear)
+
+        let totalEntries = syncManager.pushTotalEntries
+        let entriesDone = batchesDone * 500  // approximate
+        Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else if let total = session.entriesTotal, total > 0 {
+        // Fallback to server-side session data
         let resolved = min(max(session.entriesResolved ?? 0, 0), total)
         ProgressView(value: Double(resolved), total: Double(total))
           .progressViewStyle(.linear)
@@ -225,33 +243,51 @@ struct CloudSettingsView: View {
           .foregroundStyle(.secondary)
       }
 
-      let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
-      let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+      // ETA: prefer client-side, then smoothed server-side, then raw server-side
+      let clientEta = syncManager.pushEstimatedSecondsRemaining
+      let displayEta = clientEta ?? syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
 
-      HStack(spacing: 12) {
-        if let eta = displayEta, eta > 0 {
-          Text("About (etaString(seconds: eta)) remaining")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let throughput = displayThroughput, throughput > 0 {
-          Text("(formatCount(Int(throughput.rounded()))) entries/min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-
-      if let pending = pendingEntriesCount(session: session), pending > 0 {
-        Text("\(formatCount(pending)) entries queued for upload")
+      if let eta = displayEta, eta > 0 {
+        Text("About \(etaString(seconds: eta)) remaining")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
 
       if let attention = session.needsAttentionCount, attention > 0 {
-        Text("\(formatCount(attention)) entries need attention before this upload is fully healthy")
+        Text("\(formatCount(attention)) entries need attention")
           .font(.caption)
           .foregroundStyle(.orange)
+      }
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.secondary.opacity(0.08))
+    .cornerRadius(6)
+  }
+
+  /// Progress card shown when client is actively pushing but server session data isn't available yet.
+  @ViewBuilder
+  private var clientSideProgressCard: some View {
+    let totalBatches = syncManager.pushEstimatedTotalBatches
+    let batchesDone = syncManager.pushBatchesCompleted
+    let totalEntries = syncManager.pushTotalEntries
+
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Syncing entries to cloud")
+        .font(.subheadline.weight(.medium))
+
+      ProgressView(value: Double(batchesDone), total: Double(totalBatches))
+        .progressViewStyle(.linear)
+
+      let entriesDone = batchesDone * 500
+      Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      if let eta = syncManager.pushEstimatedSecondsRemaining, eta > 0 {
+        Text("About \(etaString(seconds: eta)) remaining")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
     .padding(8)
@@ -449,7 +485,6 @@ struct CloudSettingsView: View {
 
   private func loadConfiguration() {
     if let config = syncManager.loadConfig() {
-      serverURL = config.serverURL
       apiKey = config.apiKey
       deviceName = config.deviceName
       isConfigured = true
@@ -465,8 +500,9 @@ struct CloudSettingsView: View {
   }
 
   private func saveConfiguration() {
+    // TODO(self-hosted): Replace CloudConfig.defaultServerURL with serverURL state var.
     let config = CloudConfig(
-      serverURL: serverURL,
+      serverURL: CloudConfig.defaultServerURL,
       apiKey: apiKey,
       deviceId: MachineID.current(),
       deviceName: deviceName,
@@ -481,7 +517,7 @@ struct CloudSettingsView: View {
     var finalConfig = config
     if let existing = syncManager.loadConfig() {
       finalConfig = CloudConfig(
-        serverURL: serverURL,
+        serverURL: CloudConfig.defaultServerURL,
         apiKey: apiKey,
         deviceId: MachineID.current(),
         deviceName: deviceName,
@@ -527,7 +563,6 @@ struct CloudSettingsView: View {
       log.error("[CLOUD-SETTINGS] Failed to remove config file: \(error.localizedDescription, privacy: .public)")
     }
 
-    serverURL = ""
     apiKey = ""
     deviceName = Host.current().localizedName ?? ""
     isConfigured = false

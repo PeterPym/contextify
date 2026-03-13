@@ -1445,6 +1445,36 @@ public struct ContextifyQueryService: Sendable {
 
   // MARK: - Cloud Push Export
 
+  /// Count entries remaining for cloud push from the given cursor position.
+  ///
+  /// Uses the same keyset pagination WHERE clause as `exportForCloudPush()`
+  /// so the count accurately reflects entries that will be pushed. Runs a
+  /// single COUNT(*) query, which is fast even on large tables.
+  ///
+  /// - Parameters:
+  ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
+  ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
+  /// - Returns: Number of entries remaining to push.
+  public func countEntriesForCloudPush(
+    afterTimestamp: Int? = nil,
+    afterEntryId: String? = nil
+  ) throws -> Int {
+    try pool.read { db in
+      var sql = """
+        SELECT COUNT(*) FROM transcript_entries e
+        WHERE e.display_in_timeline = 1
+        """
+      var args: [DatabaseValueConvertible] = []
+      if let afterTimestamp, let afterEntryId {
+        sql += " AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))"
+        args.append(afterTimestamp)
+        args.append(afterTimestamp)
+        args.append(afterEntryId)
+      }
+      return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(args)) ?? 0
+    }
+  }
+
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
   ///

@@ -18,6 +18,9 @@ import Foundation
 /// The CLI's CloudConfig in CloudCommand.swift is a simpler version of this;
 /// this type is the canonical representation for ContextifyCore consumers.
 public struct CloudConfig: Codable, Sendable {
+  /// Managed service URL. Make configurable once self-hosted option is generally available.
+  public static let defaultServerURL = "https://cloud.contextify.sh"
+
   /// Base URL of the contextify-cloud server (e.g. "https://cloud.contextify.sh").
   public var serverURL: String
 
@@ -556,6 +559,9 @@ public struct CloudPushPayload: Codable, Sendable {
   public let syncSessionId: String?
   /// Optional client-declared entries count for sanity checks.
   public let entriesSent: Int?
+  /// Client-estimated total batches for the entire push session.
+  /// Sent on the first batch so the server can populate sync_sessions.total_batches.
+  public let totalBatches: Int?
   /// Device identity for this push.
   public let device: CloudDeviceInfo
   /// Projects referenced by the entries being pushed.
@@ -578,6 +584,7 @@ public struct CloudPushPayload: Codable, Sendable {
     batchSeq: Int? = nil,
     syncSessionId: String? = nil,
     entriesSent: Int? = nil,
+    totalBatches: Int? = nil,
     device: CloudDeviceInfo,
     projects: [CloudPushProject] = [],
     transcripts: [CloudPushTranscript] = [],
@@ -591,6 +598,7 @@ public struct CloudPushPayload: Codable, Sendable {
     self.batchSeq = batchSeq
     self.syncSessionId = syncSessionId
     self.entriesSent = entriesSent
+    self.totalBatches = totalBatches
     self.device = device
     self.projects = projects
     self.transcripts = transcripts
@@ -606,6 +614,7 @@ public struct CloudPushPayload: Codable, Sendable {
     case batchSeq = "batch_seq"
     case syncSessionId = "sync_session_id"
     case entriesSent = "entries_sent"
+    case totalBatches = "total_batches"
     case device
     case projects
     case transcripts
