@@ -89,8 +89,8 @@ final class ContextifyQueryServiceTests: XCTestCase {
       displayInTimeline: 1,
       parentId: nil,
       gitBranch: nil,
-      gitCommit: nil,
-      cwd: nil,
+      gitCommit: "abc123def456",
+      cwd: "/test",
       prev1Id: nil,
       prev2Id: nil,
       windowSha256: nil,
@@ -141,6 +141,8 @@ final class ContextifyQueryServiceTests: XCTestCase {
 
     let search = try service.ftsSearch(query: "unread count", projectId: "p1", limit: 10)
     XCTAssertEqual(search.first?.id, "e2")
+    XCTAssertEqual(search.first?.gitCommit, "abc123def456")
+    XCTAssertEqual(search.first?.cwd, "/test")
 
     let summaries = try service.summaries(projectId: "p1", limit: 10)
     XCTAssertEqual(summaries.first?.transcriptId, "t1")

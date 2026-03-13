@@ -369,7 +369,19 @@ public final class CloudSyncManager: @unchecked Sendable {
         entriesSent: entriesInBatch,
         device: device,
         projects: exportData.projects.map { proj in
-          CloudPushProject(id: proj.id, name: proj.name, rootPath: proj.rootPath)
+          CloudPushProject(
+            id: proj.id,
+            name: proj.name,
+            rootPath: proj.rootPath,
+            repoIdentity: proj.repoIdentity,
+            repoOriginNormalized: proj.repoOriginNormalized,
+            gitCommonDir: proj.gitCommonDir,
+            isWorktree: proj.isWorktree,
+            defaultBranch: proj.defaultBranch,
+            vcsProvider: proj.vcsProvider,
+            worktreeName: proj.worktreeName,
+            repoName: proj.repoName
+          )
         },
         transcripts: exportData.transcripts.map { tx in
           CloudPushTranscript(
@@ -406,7 +418,35 @@ public final class CloudSyncManager: @unchecked Sendable {
 
       log.info(
         "Pushing batch seq=\(batchSeq, privacy: .public): \(payload.entries.count, privacy: .public) entries session=\(syncSessionId, privacy: .public)")
-      let response = try await client.push(payload)
+      let response: CloudPushResponse
+      do {
+        response = try await client.push(payload)
+      } catch CloudSyncError.serverError(statusCode: 409, _) {
+        // Idempotency conflict: stale key from a previous failed attempt.
+        // Generate a fresh session ID and retry this batch once.
+        let newSessionId = UUID().uuidString
+        log.warning(
+          "Push 409 conflict: rotating session \(syncSessionId, privacy: .public) -> \(newSessionId, privacy: .public) and retrying batch \(batchSeq, privacy: .public)")
+        syncSessionId = newSessionId
+        batchSeq = 1
+        let retryPayload = CloudPushPayload(
+          idempotencyKey: "\(syncSessionId):\(batchSeq)",
+          batchSeq: batchSeq,
+          syncSessionId: syncSessionId,
+          entriesSent: payload.entriesSent,
+          device: payload.device,
+          projects: payload.projects,
+          transcripts: payload.transcripts,
+          entries: payload.entries
+        )
+        response = try await client.push(retryPayload)
+      } catch CloudSyncError.serverError(statusCode: 429, let body) {
+        // Rate limited: back off and retry this batch.
+        log.warning(
+          "Push 429 rate limited on batch \(batchSeq, privacy: .public): \(body, privacy: .public). Waiting 30s.")
+        try await Task.sleep(for: .seconds(30))
+        response = try await client.push(payload)
+      }
 
       if let returnedSession = response.syncSessionId, !returnedSession.isEmpty {
         syncSessionId = returnedSession

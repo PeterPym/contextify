@@ -82,6 +82,12 @@ worktrees:
     meta:
       color: "#4A7BA7"  # Contextify Primary (darker blue)
 
+  - name: wb4
+    path: ~/code/projects/contextify-wb4
+    landing_branch: main-wb4
+    meta:
+      color: "#9C88C8"  # Contextify Accent (lighter purple)
+
   - name: liquid-glass
     path: ~/code/projects/contextify-liquid-glass
     landing_branch: feat/liquid-glass-implementation
