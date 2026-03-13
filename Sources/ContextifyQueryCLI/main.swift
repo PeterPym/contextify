@@ -1918,15 +1918,15 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
 
   // 1. Install user skill to ~/.claude/skills/total-recall/
   if let userSkillSource = sources.userSkill {
-    let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
-    try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
-
     let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
-    let skillDest = skillsDir.appendingPathComponent("SKILL.md")
-    if FileManager.default.fileExists(atPath: skillDest.path) {
-      try FileManager.default.removeItem(at: skillDest)
-    }
-    try FileManager.default.copyItem(at: skillFile, to: skillDest)
+    let sourceKind = sources.userSkillSourceKind ?? .unknown
+    let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
+    _ = try installSkillFile(
+      from: skillFile,
+      to: skillsDir,
+      target: "claude",
+      sourceKind: sourceKind
+    )
 
     if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
       fputs("Warning: CODEX_HOME is set to \(codexHome)\n", stderr)
@@ -1936,19 +1936,12 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
     // Install Codex skill using copy-by-content to guarantee a real file (not symlink)
     let codexSkillsDir = home.appendingPathComponent(".codex/skills/total-recall")
     do {
-      try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
-      let codexSkillDest = codexSkillsDir.appendingPathComponent("SKILL.md")
-
-      // Read source content (dereferences symlinks)
-      let skillData = try Data(contentsOf: skillFile)
-
-      // Remove existing file if present
-      if FileManager.default.fileExists(atPath: codexSkillDest.path) {
-        try FileManager.default.removeItem(at: codexSkillDest)
-      }
-
-      // Write atomically to ensure complete file
-      try skillData.write(to: codexSkillDest, options: .atomic)
+      let codexSkillDest = try installSkillFile(
+        from: skillFile,
+        to: codexSkillsDir,
+        target: "codex",
+        sourceKind: sourceKind
+      )
 
       // Verify destination is not a symlink
       let resourceValues = try codexSkillDest.resourceValues(forKeys: [.isSymbolicLinkKey])
@@ -1999,11 +1992,20 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
     action: "installed",
     identifier: pluginIdentifier,
     version: pluginVersion,
-    path: cacheDir.path
+    path: cacheDir.path,
+    skillSourceKind: sources.userSkillSourceKind?.rawValue,
+    skillSourcePath: sources.userSkill?.appendingPathComponent("SKILL.md").resolvingSymlinksInPath().path
   )
 
   try ContextifyQueryCLI.printResponse(type: "pluginInstalled", data: payload, json: options.jsonOutput) {
     print("Contextify Total Recall installed!")
+    if let skillSource = sources.userSkill {
+      print("  Skill source: \(describeSkillSource(sources.userSkillSourceKind))")
+      print("    \(skillSource.appendingPathComponent("SKILL.md").resolvingSymlinksInPath().path)")
+      if sources.userSkillSourceKind == .repo {
+        print("  Warning: repo-local skill source is active (developer install)")
+      }
+    }
     print("  Claude Code: \(home.appendingPathComponent(".claude/skills/total-recall").path)")
     if codexInstalled {
       print("  Codex CLI:   \(home.appendingPathComponent(".codex/skills/total-recall").path)")
@@ -2055,7 +2057,9 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
     action: "uninstalled",
     identifier: pluginIdentifier,
     version: pluginVersion,
-    path: cacheDir.path
+    path: cacheDir.path,
+    skillSourceKind: nil,
+    skillSourcePath: nil
   )
 
   try ContextifyQueryCLI.printResponse(type: "pluginUninstalled", data: payload, json: options.jsonOutput) {
@@ -2068,6 +2072,65 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
 private struct PluginSources {
   let plugin: URL
   let userSkill: URL?
+  let userSkillSourceKind: CLIHealthChecker.SkillInstallSourceKind?
+}
+
+private func writeSkillInstallMetadata(
+  _ metadata: CLIHealthChecker.SkillInstallMetadata,
+  forSkillFile skillFile: URL
+) throws {
+  let metadataURL = CLIHealthChecker.skillMetadataURL(forSkillFile: skillFile)
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+  let data = try encoder.encode(metadata)
+  try data.write(to: metadataURL, options: .atomic)
+}
+
+private func installSkillFile(
+  from sourceSkillFile: URL,
+  to destinationDirectory: URL,
+  target: String,
+  sourceKind: CLIHealthChecker.SkillInstallSourceKind
+) throws -> URL {
+  try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+  let destinationSkillFile = destinationDirectory.appendingPathComponent("SKILL.md")
+  let skillData = try Data(contentsOf: sourceSkillFile)
+  let installedHash = CrossPlatformCrypto.sha256(skillData)
+
+  if FileManager.default.fileExists(atPath: destinationSkillFile.path) {
+    try FileManager.default.removeItem(at: destinationSkillFile)
+  }
+
+  try skillData.write(to: destinationSkillFile, options: .atomic)
+
+  let metadata = CLIHealthChecker.SkillInstallMetadata(
+    installedAt: ISO8601DateFormatter().string(from: Date()),
+    installerVersion: pluginVersion,
+    target: target,
+    installSourceKind: sourceKind,
+    installSourcePath: sourceSkillFile.resolvingSymlinksInPath().path,
+    sourceSkillSHA256: installedHash,
+    installedSkillSHA256: installedHash
+  )
+  try writeSkillInstallMetadata(metadata, forSkillFile: destinationSkillFile)
+
+  return destinationSkillFile
+}
+
+private func describeSkillSource(_ sourceKind: CLIHealthChecker.SkillInstallSourceKind?) -> String {
+  switch sourceKind ?? .unknown {
+  case .repo:
+    return "repo-local source"
+  case .bundle:
+    return "app bundle source"
+  case .sibling:
+    return "CLI-adjacent source"
+  case .cellar:
+    return "Homebrew Cellar source"
+  case .unknown:
+    return "unknown source"
+  }
 }
 
 private func findPluginSources() throws -> PluginSources {
@@ -2078,7 +2141,8 @@ private func findPluginSources() throws -> PluginSources {
     let repoUserSkill = cwdURL.appendingPathComponent("contextify-query/user-skill/total-recall")
     return PluginSources(
       plugin: repoPlugin,
-      userSkill: FileManager.default.fileExists(atPath: repoUserSkill.path) ? repoUserSkill : nil
+      userSkill: FileManager.default.fileExists(atPath: repoUserSkill.path) ? repoUserSkill : nil,
+      userSkillSourceKind: .repo
     )
   }
 
@@ -2089,7 +2153,8 @@ private func findPluginSources() throws -> PluginSources {
       let bundledUserSkill = bundleURL.appendingPathComponent("contextify-query/user-skill/total-recall")
       return PluginSources(
         plugin: bundledPlugin,
-        userSkill: FileManager.default.fileExists(atPath: bundledUserSkill.path) ? bundledUserSkill : nil
+        userSkill: FileManager.default.fileExists(atPath: bundledUserSkill.path) ? bundledUserSkill : nil,
+        userSkillSourceKind: .bundle
       )
     }
   }
@@ -2128,7 +2193,8 @@ private func findPluginSources() throws -> PluginSources {
     let siblingUserSkill = execDir.appendingPathComponent("user-skill/total-recall")
     return PluginSources(
       plugin: siblingPlugin,
-      userSkill: FileManager.default.fileExists(atPath: siblingUserSkill.path) ? siblingUserSkill : nil
+      userSkill: FileManager.default.fileExists(atPath: siblingUserSkill.path) ? siblingUserSkill : nil,
+      userSkillSourceKind: .sibling
     )
   }
 
@@ -2144,7 +2210,8 @@ private func findPluginSources() throws -> PluginSources {
     let cellarUserSkill = cellarRoot.appendingPathComponent("share/user-skill/total-recall")
     return PluginSources(
       plugin: cellarShare,
-      userSkill: FileManager.default.fileExists(atPath: cellarUserSkill.path) ? cellarUserSkill : nil
+      userSkill: FileManager.default.fileExists(atPath: cellarUserSkill.path) ? cellarUserSkill : nil,
+      userSkillSourceKind: .cellar
     )
   }
 
@@ -2234,6 +2301,8 @@ private struct PluginInstallPayload: Encodable {
   let identifier: String
   let version: String
   let path: String
+  let skillSourceKind: String?
+  let skillSourcePath: String?
 }
 #endif  // os(macOS)
 
@@ -2243,14 +2312,13 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   let userSkillSource = try findUserSkillSource()
 
   let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
-  try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
-
-  let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
-  let skillDest = skillsDir.appendingPathComponent("SKILL.md")
-  if FileManager.default.fileExists(atPath: skillDest.path) {
-    try FileManager.default.removeItem(at: skillDest)
-  }
-  try FileManager.default.copyItem(at: skillFile, to: skillDest)
+  let skillFile = userSkillSource.directory.appendingPathComponent("SKILL.md")
+  _ = try installSkillFile(
+    from: skillFile,
+    to: skillsDir,
+    target: "claude",
+    sourceKind: userSkillSource.sourceKind
+  )
 
   if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
     let warning = "Warning: CODEX_HOME is set to \(codexHome)\nSkill installed to default ~/.codex/skills/ - you may need to copy manually.\n"
@@ -2258,25 +2326,27 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   }
 
   let codexSkillsDir = home.appendingPathComponent(".codex/skills/total-recall")
-  try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
-  let codexSkillDest = codexSkillsDir.appendingPathComponent("SKILL.md")
-
-  let skillData = try Data(contentsOf: skillFile)
-  if FileManager.default.fileExists(atPath: codexSkillDest.path) {
-    try FileManager.default.removeItem(at: codexSkillDest)
-  }
-  try skillData.write(to: codexSkillDest, options: .atomic)
+  _ = try installSkillFile(
+    from: skillFile,
+    to: codexSkillsDir,
+    target: "codex",
+    sourceKind: userSkillSource.sourceKind
+  )
 
   struct SkillInstallPayload: Encodable {
     let action: String
     let claudeSkillPath: String
     let codexSkillPath: String
+    let skillSourceKind: String
+    let skillSourcePath: String
   }
 
   let payload = SkillInstallPayload(
     action: "installed",
     claudeSkillPath: skillsDir.path,
-    codexSkillPath: codexSkillsDir.path
+    codexSkillPath: codexSkillsDir.path,
+    skillSourceKind: userSkillSource.sourceKind.rawValue,
+    skillSourcePath: skillFile.resolvingSymlinksInPath().path
   )
 
   if options.jsonOutput {
@@ -2288,6 +2358,11 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
     FileHandle.standardOutput.write(Data("\n".utf8))
   } else {
     print("Contextify Total Recall installed!")
+    print("  Skill source: \(describeSkillSource(userSkillSource.sourceKind))")
+    print("    \(skillFile.resolvingSymlinksInPath().path)")
+    if userSkillSource.sourceKind == .repo {
+      print("  Warning: repo-local skill source is active (developer install)")
+    }
     print("  Claude Code: \(skillsDir.path)")
     print("  Codex CLI:   \(codexSkillsDir.path)")
     print("")
@@ -2331,11 +2406,16 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
   }
 }
 
-private func findUserSkillSource() throws -> URL {
+private struct ResolvedUserSkillSource {
+  let directory: URL
+  let sourceKind: CLIHealthChecker.SkillInstallSourceKind
+}
+
+private func findUserSkillSource() throws -> ResolvedUserSkillSource {
   let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
   let repoUserSkill = cwdURL.appendingPathComponent("contextify-query/user-skill/total-recall")
   if FileManager.default.fileExists(atPath: repoUserSkill.path) {
-    return repoUserSkill
+    return ResolvedUserSkillSource(directory: repoUserSkill, sourceKind: .repo)
   }
 
   var executablePath = CommandLine.arguments[0]
@@ -2364,7 +2444,7 @@ private func findUserSkillSource() throws -> URL {
   let execDir = executableURL.deletingLastPathComponent()
   let siblingUserSkill = execDir.appendingPathComponent("user-skill/total-recall")
   if FileManager.default.fileExists(atPath: siblingUserSkill.path) {
-    return siblingUserSkill
+    return ResolvedUserSkillSource(directory: siblingUserSkill, sourceKind: .sibling)
   }
 
   let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
@@ -2372,7 +2452,7 @@ private func findUserSkillSource() throws -> URL {
   let cellarRoot = cellarBin.deletingLastPathComponent()
   let cellarUserSkill = cellarRoot.appendingPathComponent("share/user-skill/total-recall")
   if FileManager.default.fileExists(atPath: cellarUserSkill.path) {
-    return cellarUserSkill
+    return ResolvedUserSkillSource(directory: cellarUserSkill, sourceKind: .cellar)
   }
 
   throw CLIError(
@@ -2381,7 +2461,7 @@ private func findUserSkillSource() throws -> URL {
       Skill files not found.
 
       If using the Linux release tarball:
-        Extract the archive and run install-plugin from that directory.
+        Extract the archive and run install-skill from that directory.
       """,
     exitCode: .unknown
   )
@@ -2473,10 +2553,12 @@ private func printDoctorReport(_ report: CLIHealthChecker.HealthReport) {
   if let path = report.components.skills.claudeSkillPath {
     print("      Path: \(path)")
   }
+  printSkillDetails(report.components.skills.claudeSkillDetails)
   print("    Codex CLI: \(report.components.skills.codexSkillPresent ? "installed" : "missing")")
   if let path = report.components.skills.codexSkillPath {
     print("      Path: \(path)")
   }
+  printSkillDetails(report.components.skills.codexSkillDetails)
 
   // Issues section
   if !report.issues.isEmpty {
@@ -2492,4 +2574,41 @@ private func printDoctorReport(_ report: CLIHealthChecker.HealthReport) {
   }
 
   print("")
+}
+
+private func printSkillDetails(_ details: CLIHealthChecker.InstalledSkillStatus) {
+  if let status = details.provenanceStatus {
+    print("      Provenance: \(describeProvenanceStatus(status))")
+  }
+  if let sourceKind = details.installSourceKind {
+    print("      Source: \(describeSkillSource(sourceKind))")
+  }
+  if let sourcePath = details.installSourcePath {
+    print("        \(sourcePath)")
+  }
+  if let installedAt = details.installedAt {
+    print("      Installed at: \(installedAt)")
+  }
+  if let installerVersion = details.installerVersion {
+    print("      Installed by CLI: \(installerVersion)")
+  }
+}
+
+private func describeProvenanceStatus(_ status: CLIHealthChecker.SkillProvenanceStatus) -> String {
+  switch status {
+  case .current:
+    return "current"
+  case .metadataMissing:
+    return "metadata missing"
+  case .metadataUnreadable:
+    return "metadata unreadable"
+  case .skillUnreadable:
+    return "skill unreadable"
+  case .modified:
+    return "installed file modified"
+  case .sourceChanged:
+    return "source changed since install"
+  case .sourceMissing:
+    return "recorded source missing"
+  }
 }
