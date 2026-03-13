@@ -60,6 +60,8 @@ public struct ContextifyQueryService: Sendable {
     public let score: Double
     public let contentSnippet: String
     public let contentTruncated: Bool
+    public let gitCommit: String?
+    public let cwd: String?
   }
 
   public struct EntryPayload: Codable, Sendable {
@@ -589,6 +591,8 @@ public struct ContextifyQueryService: Sendable {
           e.provider AS provider,
           e.kind AS kind,
           e.timestamp AS timestamp,
+          e.git_commit AS git_commit,
+          e.cwd AS cwd,
           bm25(transcript_entries_fts) AS score,
           COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '') AS snippet,
           CASE
@@ -622,6 +626,8 @@ public struct ContextifyQueryService: Sendable {
         let provider: String
         let kind: String
         let timestamp: Int
+        let gitCommit: String?
+        let cwd: String?
         let score: Double
         let contentSnippet: String
         let contentTruncated: Bool
@@ -635,6 +641,8 @@ public struct ContextifyQueryService: Sendable {
           case provider
           case kind
           case timestamp
+          case gitCommit = "git_commit"
+          case cwd
           case score
           case contentSnippet = "snippet"
           case contentTruncated = "content_truncated"
@@ -654,7 +662,9 @@ public struct ContextifyQueryService: Sendable {
           timestamp: $0.timestamp,
           score: $0.score,
           contentSnippet: $0.contentSnippet,
-          contentTruncated: $0.contentTruncated
+          contentTruncated: $0.contentTruncated,
+          gitCommit: $0.gitCommit,
+          cwd: $0.cwd
         )
       }
     }

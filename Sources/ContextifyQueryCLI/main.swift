@@ -158,6 +158,7 @@ struct ContextifyQueryCLI {
     // Search options
     var countOnly: Bool = false
     var termCounts: Bool = false
+    var anchorGit: Bool = false
 
     // Worktree options
     var thisWorktreeOnly: Bool = false
@@ -339,6 +340,8 @@ struct ContextifyQueryCLI {
           options.countOnly = true
         case "--term-counts":
           options.termCounts = true
+        case "--anchor-git":
+          options.anchorGit = true
         case "--this-worktree":
           options.thisWorktreeOnly = true
         case "--exclude":
@@ -479,11 +482,29 @@ struct ContextifyQueryCLI {
           // Normal mode: fetch results with metadata
           let requestedLimit = options.limit
           let requestedOffset = options.offset
+          let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
+          let anchorPlan = anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options)
+
+          if options.anchorGit {
+            if let anchorPlan {
+              let fileLabels = anchorPlan.fileLabels
+              if !fileLabels.isEmpty {
+                fputs("Using git anchors from: \(fileLabels.joined(separator: ", "))\n", stderr)
+              } else {
+                fputs("Using git anchors from query cues: \(anchorPlan.triggerKinds.joined(separator: ", "))\n", stderr)
+              }
+              fputs("Found \(anchorPlan.commits.count) relevant commits, narrowing search to nearby conversations\n", stderr)
+            } else if !anchorCues.isEmpty {
+              fputs("Git anchor path found no strong commit signal, continuing with broad text search\n", stderr)
+            }
+          }
+
+          let fetchLimit = anchorPlan == nil ? requestedLimit + 1 : min(max(requestedLimit * 3, 25), 100)
           let results = try service.search(
             query: query,
             projectIds: projectIds,
             transcriptId: options.transcriptId,
-            limit: requestedLimit + 1,
+            limit: fetchLimit,
             offset: requestedOffset,
             includeHidden: options.includeHidden,
             timeRange: timeRange,
@@ -491,12 +512,12 @@ struct ContextifyQueryCLI {
             snippetTokens: options.snippetTokens ?? 10,
             treatAsFTS: true
           )
-          var trimmedResults = results
-          var hasMore = false
-          if results.count > requestedLimit {
-            trimmedResults = Array(results.prefix(requestedLimit))
-            hasMore = true
+          let anchorResult = anchorPlan.map {
+            GitAnchorSearch.rerank(hits: results, using: $0, requestedLimit: requestedLimit)
           }
+          let displayResults = anchorResult?.hits ?? Array(results.prefix(requestedLimit))
+          let trimmedResults = Array(displayResults.prefix(requestedLimit))
+          let hasMore = results.count > requestedLimit
 
           // Compute source counts by grouping results by projectId
           let sourceCounts = Dictionary(grouping: trimmedResults, by: { $0.projectId })
@@ -507,7 +528,7 @@ struct ContextifyQueryCLI {
             }
 
           let totalCount: Int
-          if hasMore {
+          if hasMore || anchorResult != nil {
             totalCount = try service.searchCount(
               query: query,
               projectIds: projectIds,
@@ -544,6 +565,20 @@ struct ContextifyQueryCLI {
                   dict[pair.key] = .number(Double(pair.value))
                 }
               )
+            }
+          }
+
+          if let anchorPlan {
+            metadataDict["gitAnchor"] = .object([
+              "enabled": .bool(true),
+              "triggerKinds": .array(anchorPlan.triggerKinds.map(JSONValue.string)),
+              "files": .array(anchorPlan.fileLabels.map(JSONValue.string)),
+              "commitCount": .number(Double(anchorPlan.commits.count)),
+              "topResultsChanged": .bool(anchorResult?.topResultsChanged ?? false)
+            ])
+
+            if anchorResult?.topResultsChanged == true {
+              fputs("Git anchors changed the top result ordering\n", stderr)
             }
           }
 
@@ -982,6 +1017,7 @@ struct ContextifyQueryCLI {
         --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
+        --anchor-git         Search: use local git history as an additive ranking signal
         --json               Emit JSON output
 
       Commands:
@@ -1182,6 +1218,151 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
   }
 
   return ConversationSearchService.buildSafeFTSQuery(trimmed)
+}
+
+private func resolveAnchorBasePath(options: ContextifyQueryCLI.Options) -> String {
+  if let project = options.project {
+    return (project == "." || project == "current")
+      ? FileManager.default.currentDirectoryPath
+      : project
+  }
+  return FileManager.default.currentDirectoryPath
+}
+
+private func resolveGitAnchorPlan(
+  cues: [GitAnchorCue],
+  options: ContextifyQueryCLI.Options
+) -> GitAnchorPlan? {
+  guard !cues.isEmpty else { return nil }
+
+  let basePath = resolveAnchorBasePath(options: options)
+  guard
+    let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+    !repoRoot.isEmpty
+  else {
+    return nil
+  }
+
+  let trackedFiles = trackedGitFiles(repoRoot: repoRoot)
+  let files = resolveGitAnchorFiles(cues: cues, trackedFiles: trackedFiles, repoRoot: repoRoot)
+  guard !files.isEmpty else { return nil }
+
+  let commits = resolveGitAnchorCommits(files: files, repoRoot: repoRoot)
+  guard !commits.isEmpty else { return nil }
+
+  return GitAnchorPlan(cues: cues, files: files, commits: commits)
+}
+
+private func trackedGitFiles(repoRoot: String) -> [String] {
+  guard let output = runProcess("/usr/bin/env", arguments: ["git", "-C", repoRoot, "ls-files"]) else {
+    return []
+  }
+  return output
+    .split(separator: "\n")
+    .map(String.init)
+}
+
+private func resolveGitAnchorFiles(
+  cues: [GitAnchorCue],
+  trackedFiles: [String],
+  repoRoot: String
+) -> [String] {
+  guard !trackedFiles.isEmpty else { return [] }
+
+  var matched: [String] = []
+  var seen = Set<String>()
+
+  func add(_ relativePath: String) {
+    guard seen.insert(relativePath).inserted else { return }
+    matched.append(relativePath)
+  }
+
+  for cue in cues {
+    let needle = cue.normalized.lowercased()
+    switch cue.kind {
+    case .file:
+      for path in trackedFiles {
+        let lowercasedPath = path.lowercased()
+        let basename = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+        if lowercasedPath == needle || lowercasedPath.hasSuffix("/\(needle)") || basename == needle {
+          add(path)
+        }
+      }
+    case .command, .symbol:
+      for path in trackedFiles {
+        let lowercasedPath = path.lowercased()
+        let basename = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent.lowercased()
+        if basename == needle || lowercasedPath.contains("/\(needle)") || lowercasedPath.contains(needle) {
+          add(path)
+        }
+      }
+    }
+
+    if matched.count >= 8 {
+      break
+    }
+  }
+
+  return Array(matched.prefix(8)).map { relativePath in
+    URL(fileURLWithPath: repoRoot).appendingPathComponent(relativePath).path
+  }
+}
+
+private func resolveGitAnchorCommits(files: [String], repoRoot: String) -> [GitAnchorCommit] {
+  var commitsByHash: [String: GitAnchorCommit] = [:]
+
+  for file in files.prefix(6) {
+    guard let output = runProcess(
+      "/usr/bin/env",
+      arguments: ["git", "-C", repoRoot, "log", "--format=%H %ct", "-n", "4", "--", file]
+    ) else {
+      continue
+    }
+
+    for line in output.split(separator: "\n") {
+      let parts = line.split(separator: " ")
+      guard parts.count == 2, let timestamp = Int(parts[1]) else { continue }
+      let hash = String(parts[0])
+      let commit = GitAnchorCommit(hash: hash, timestamp: timestamp)
+      if let existing = commitsByHash[hash] {
+        if commit.timestamp > existing.timestamp {
+          commitsByHash[hash] = commit
+        }
+      } else {
+        commitsByHash[hash] = commit
+      }
+    }
+  }
+
+  return commitsByHash.values
+    .sorted { lhs, rhs in
+      if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
+      return lhs.hash < rhs.hash
+    }
+    .prefix(8)
+    .map { $0 }
+}
+
+private func runProcess(_ executable: String, arguments: [String]) -> String? {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: executable)
+  process.arguments = arguments
+  let stdout = Pipe()
+  let stderrPipe = Pipe()
+  process.standardOutput = stdout
+  process.standardError = stderrPipe
+
+  do {
+    try process.run()
+    process.waitUntilExit()
+  } catch {
+    return nil
+  }
+
+  guard process.terminationStatus == 0 else { return nil }
+  let data = stdout.fileHandleForReading.readDataToEndOfFile()
+  return String(data: data, encoding: .utf8)
 }
 
 private func runFeedback(
