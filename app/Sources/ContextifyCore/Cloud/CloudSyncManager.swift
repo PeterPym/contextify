@@ -41,6 +41,10 @@ public struct PushResult: Sendable {
   public let duplicatesSkipped: Int
   /// Server sequence after the push.
   public let serverSequence: Int
+  /// Total wall-clock duration of the push operation in seconds.
+  public let durationSeconds: Double
+  /// Number of batches completed during this push.
+  public let batchesCompleted: Int
 }
 
 /// Result of a pull operation.
@@ -102,7 +106,7 @@ public final class CloudSyncManager: @unchecked Sendable {
   @MainActor public private(set) var lastSyncDate: Date?
 
   /// Current sync state for UI display.
-  @MainActor public private(set) var syncState: SyncState = .idle
+  @MainActor public private(set) var syncState: SyncState = .disabled
 
   /// Result from the most recent push operation.
   @MainActor public private(set) var lastPushResult: PushResult?
@@ -110,12 +114,59 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Result from the most recent pull operation.
   @MainActor public private(set) var lastPullResult: PullResult?
 
+  /// Most recently fetched server-side sync status projection.
+  @MainActor public private(set) var cloudStatus: CloudSyncStatus?
+
+  /// Last error encountered while fetching status (separate from sync run errors).
+  @MainActor public private(set) var cloudStatusError: String?
+
+  /// True when latest status fetch failed due to connectivity.
+  @MainActor public private(set) var cloudOffline: Bool = false
+
+  /// Timestamp of the latest status refresh attempt.
+  @MainActor public private(set) var cloudStatusUpdatedAt: Date?
+
+  // Smoothed metrics for stable UX ETA/throughput display.
+   public private(set) var cloudSmoothedThroughputEntriesPerMin: Double?
+   public private(set) var cloudSmoothedEtaSeconds: Int?
+
+  // MARK: - Push Progress Tracking (MainActor-isolated for SwiftUI)
+
+  /// Total entries counted at push start for progress estimation.
+  @MainActor public private(set) var pushTotalEntries: Int = 0
+
+  /// Estimated total batches for the current push (ceil(totalEntries / batchSize)).
+  @MainActor public private(set) var pushEstimatedTotalBatches: Int = 0
+
+  /// Number of batches completed so far in the current push.
+  @MainActor public private(set) var pushBatchesCompleted: Int = 0
+
+  /// Client-side estimated seconds remaining for the push to complete.
+  /// Computed from elapsed time and batch completion rate.
+  @MainActor public private(set) var pushEstimatedSecondsRemaining: Int?
+
+  /// Timestamp when the current push operation started.
+  @MainActor public private(set) var pushStartTime: Date?
+
   // MARK: - Private State (MainActor-isolated, snapshotted by sync methods)
 
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
 
   // MARK: - Initialization
+
+  /// Shared app-level instance. Lives for the entire app lifecycle so sync
+  /// survives Settings window open/close.
+  @MainActor public static let shared = CloudSyncManager()
+
+  /// Whether auto-sync is currently running.
+  @MainActor public private(set) var autoSyncEnabled: Bool = false
+
+  /// Task handle for the auto-sync loop.
+  @MainActor private var autoSyncTask: Task<Void, Never>?
+
+  /// Task handle for lightweight cloud status polling used by UI surfaces.
+  @MainActor private var statusPollTask: Task<Void, Never>?
 
   public init() {}
 
@@ -140,8 +191,13 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     if config.enabled {
       syncState = .idle
+      startStatusPollingIfNeeded()
+      Task.detached(priority: .utility) { [weak self] in
+        await self?.refreshStatusFromServer()
+      }
     } else {
       syncState = .disabled
+      stopStatusPolling()
     }
 
     log.info("Configured cloud sync with server: \(config.serverURL, privacy: .public)")
@@ -213,6 +269,7 @@ public final class CloudSyncManager: @unchecked Sendable {
       log.info("Sync skipped: \(reason, privacy: .public)")
       return
     }
+    await refreshStatusFromServer()
     log.info("Starting full sync cycle")
 
     do {
@@ -225,6 +282,7 @@ public final class CloudSyncManager: @unchecked Sendable {
         self.lastSyncDate = Date()
         self.syncState = .idle
       }
+      await refreshStatusFromServer()
 
       let pushed = pushResult.entriesPushed
       let pulled = pullResult.entriesImported
@@ -232,7 +290,35 @@ public final class CloudSyncManager: @unchecked Sendable {
     } catch {
       let message = userFriendlyMessage(for: error)
       await MainActor.run { self.syncState = .error(message) }
+      await refreshStatusFromServer()
       log.error("Sync failed: \(message, privacy: .public)")
+    }
+  }
+
+  /// Fetches cloud status snapshot for UI state projection.
+  public func refreshStatusFromServer() async {
+    // Snapshot MainActor-isolated state to avoid data races
+    let client = await MainActor.run { self.client }
+    guard let client else { return }
+
+    do {
+      let status = try await client.status()
+      await MainActor.run {
+        self.cloudStatus = status
+        self.cloudStatusUpdatedAt = Date()
+        self.cloudStatusError = nil
+        self.cloudOffline = false
+        self.updateSmoothedProgressMetrics(from: status)
+      }
+    } catch {
+      let message = userFriendlyMessage(for: error)
+      let offline = isConnectivityError(error)
+      await MainActor.run {
+        self.cloudStatusUpdatedAt = Date()
+        self.cloudStatusError = message
+        self.cloudOffline = offline
+      }
+      log.warning("Status refresh failed: \(message, privacy: .public)")
     }
   }
 
@@ -246,10 +332,11 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// - Throws: `CloudSyncError` on failure.
   public func push(using queryService: ContextifyQueryService) async throws -> PushResult {
     // Snapshot MainActor-isolated state to avoid data races
-    let (client, config) = await MainActor.run { (self.client, self.config) }
-    guard let client, let config else {
+    let (client, loadedConfig) = await MainActor.run { (self.client, self.config) }
+    guard let client, let loadedConfig else {
       throw CloudSyncError.notConfigured
     }
+    var config = loadedConfig
 
     log.info("Starting push")
 
@@ -272,9 +359,32 @@ public final class CloudSyncManager: @unchecked Sendable {
     let batchSize = 500
     var afterTimestamp: Int? = config.lastPushTimestamp
     var afterEntryId: String? = config.lastPushEntryId
+    var syncSessionId = config.lastPushSessionId ?? UUID().uuidString
+    var batchSeq = (config.lastPushBatchSeq ?? 0) + 1
     var totalAccepted = 0
     var totalDupes = 0
     var lastServerSequence = 0
+
+    // Count total entries remaining ONCE at push start for progress estimation.
+    let totalEntriesToPush = try queryService.countEntriesForCloudPush(
+      afterTimestamp: afterTimestamp,
+      afterEntryId: afterEntryId
+    )
+    let estimatedTotalBatches = totalEntriesToPush > 0
+      ? Int((Double(totalEntriesToPush) / Double(batchSize)).rounded(.up))
+      : 0
+    let pushStartTime = Date()
+    var batchesCompletedLocal = 0
+
+    await MainActor.run {
+      self.pushTotalEntries = totalEntriesToPush
+      self.pushEstimatedTotalBatches = estimatedTotalBatches
+      self.pushBatchesCompleted = 0
+      self.pushEstimatedSecondsRemaining = nil
+      self.pushStartTime = pushStartTime
+    }
+
+    log.info("Push: \(totalEntriesToPush, privacy: .public) entries remaining, ~\(estimatedTotalBatches, privacy: .public) batches estimated")
 
     if let ts = afterTimestamp {
       log.info("Push: resuming from saved cursor timestamp=\(ts, privacy: .public)")
@@ -294,11 +404,28 @@ public final class CloudSyncManager: @unchecked Sendable {
         break
       }
 
+      let entriesInBatch = exportData.entries.count
       let payload = CloudPushPayload(
-        idempotencyKey: UUID().uuidString,
+        idempotencyKey: "\(syncSessionId):\(batchSeq)",
+        batchSeq: batchSeq,
+        syncSessionId: syncSessionId,
+        entriesSent: entriesInBatch,
+        totalBatches: estimatedTotalBatches > 0 ? estimatedTotalBatches : nil,
         device: device,
         projects: exportData.projects.map { proj in
-          CloudPushProject(id: proj.id, name: proj.name, rootPath: proj.rootPath)
+          CloudPushProject(
+            id: proj.id,
+            name: proj.name,
+            rootPath: proj.rootPath,
+            repoIdentity: proj.repoIdentity,
+            repoOriginNormalized: proj.repoOriginNormalized,
+            gitCommonDir: proj.gitCommonDir,
+            isWorktree: proj.isWorktree,
+            defaultBranch: proj.defaultBranch,
+            vcsProvider: proj.vcsProvider,
+            worktreeName: proj.worktreeName,
+            repoName: proj.repoName
+          )
         },
         transcripts: exportData.transcripts.map { tx in
           CloudPushTranscript(
@@ -333,31 +460,67 @@ public final class CloudSyncManager: @unchecked Sendable {
         }
       )
 
-      log.info("Pushing batch: \(payload.entries.count, privacy: .public) entries")
-      let response = try await client.push(payload)
+      log.info(
+        "Pushing batch seq=\(batchSeq, privacy: .public): \(payload.entries.count, privacy: .public) entries session=\(syncSessionId, privacy: .public)")
+      let response: CloudPushResponse
+      do {
+        response = try await client.push(payload)
+      } catch CloudSyncError.serverError(statusCode: 409, _) {
+        // Idempotency conflict: stale key from a previous failed attempt.
+        // Generate a fresh session ID and retry this batch once.
+        let newSessionId = UUID().uuidString
+        log.warning(
+          "Push 409 conflict: rotating session \(syncSessionId, privacy: .public) -> \(newSessionId, privacy: .public) and retrying batch \(batchSeq, privacy: .public)")
+        syncSessionId = newSessionId
+        batchSeq = 1
+        let retryPayload = CloudPushPayload(
+          idempotencyKey: "\(syncSessionId):\(batchSeq)",
+          batchSeq: batchSeq,
+          syncSessionId: syncSessionId,
+          entriesSent: payload.entriesSent,
+          device: payload.device,
+          projects: payload.projects,
+          transcripts: payload.transcripts,
+          entries: payload.entries
+        )
+        response = try await client.push(retryPayload)
+      } catch CloudSyncError.serverError(statusCode: 429, let body) {
+        // Rate limited: back off and retry this batch.
+        log.warning(
+          "Push 429 rate limited on batch \(batchSeq, privacy: .public): \(body, privacy: .public). Waiting 30s.")
+        try await Task.sleep(for: .seconds(30))
+        response = try await client.push(payload)
+      }
 
-      // Fail closed: do NOT advance cursor when server reports errors.
-      // Save progress from prior successful batches, then throw.
-      if !response.errors.isEmpty {
-        let sample = response.errors.prefix(3).joined(separator: "; ")
-        log.error("Push batch returned errors: \(sample, privacy: .public)")
-        // Persist cursor at last successful batch boundary before throwing
-        if let ts = afterTimestamp, let eid = afterEntryId {
-          var checkpoint = config
-          checkpoint.lastPushTimestamp = ts
-          checkpoint.lastPushEntryId = eid
-          await MainActor.run { self.config = checkpoint }
-          saveConfig(checkpoint)
-          log.info("Push cursor checkpointed before error: timestamp=\(ts, privacy: .public)")
-        }
+      if let returnedSession = response.syncSessionId, !returnedSession.isEmpty {
+        syncSessionId = returnedSession
+      }
+
+      let resolvedCount = response.entriesResolved ?? 0
+      let sentCount = response.entriesSent ?? entriesInBatch
+      let serverDeclaredSafe = response.checkpointSafe ?? response.errors.isEmpty
+      let checkpointSafe = serverDeclaredSafe && resolvedCount == sentCount
+
+      // Fail closed: never advance cursor if server says batch is unsafe.
+      if !checkpointSafe {
+        let sampleErrors = response.errors.prefix(3).joined(separator: "; ")
+        let sampleCodes = (response.errorCodes ?? []).prefix(3).joined(separator: ", ")
+        let detail = !sampleCodes.isEmpty ? sampleCodes : sampleErrors
+        log.error(
+          "Push batch unsafe: seq=\(batchSeq, privacy: .public) resolved=\(resolvedCount, privacy: .public)/\(sentCount, privacy: .public) detail=\(detail, privacy: .public)"
+        )
+        // Persist session id so retries reuse deterministic identity for this batch.
+        config.lastPushSessionId = syncSessionId
+        await MainActor.run { self.config = config }
+        saveConfig(config)
         throw CloudSyncError.partialPushFailure(
           accepted: totalAccepted,
-          errors: Array(response.errors.prefix(5))
+          errors: Array(response.errors.prefix(5)) + Array((response.errorCodes ?? []).prefix(5))
         )
       }
 
-      totalAccepted += response.accepted
-      totalDupes += response.duplicatesSkipped
+      totalAccepted += response.entriesAccepted ?? response.accepted
+      totalDupes += response.entriesDuplicates ?? response.duplicatesSkipped
       lastServerSequence = response.serverSequence
 
       // Advance keyset cursor from last entry in this batch
@@ -366,28 +529,58 @@ public final class CloudSyncManager: @unchecked Sendable {
         afterEntryId = last.id
       }
 
+      // Persist checkpoint after every checkpoint-safe batch (durable resume).
+      config.lastPushTimestamp = afterTimestamp
+      config.lastPushEntryId = afterEntryId
+      config.lastPushSessionId = syncSessionId
+      config.lastPushBatchSeq = batchSeq
+      await MainActor.run { self.config = config }
+      saveConfig(config)
+      if let ts = afterTimestamp, let eid = afterEntryId {
+        log.info(
+          "Push checkpoint saved: seq=\(batchSeq, privacy: .public), timestamp=\(ts, privacy: .public), entryId=\(eid, privacy: .public)")
+      }
+
+      // Update progress tracking after each successful batch.
+      batchesCompletedLocal += 1
+      let elapsed = Date().timeIntervalSince(pushStartTime)
+      let etaSeconds: Int? = {
+        guard elapsed > 0, batchesCompletedLocal > 0 else { return nil }
+        let batchesPerSecond = Double(batchesCompletedLocal) / elapsed
+        guard batchesPerSecond > 0 else { return nil }
+        let remaining = Double(estimatedTotalBatches - batchesCompletedLocal)
+        guard remaining > 0 else { return nil }
+        return Int((remaining / batchesPerSecond).rounded(.up))
+      }()
+
+      await MainActor.run {
+        self.pushBatchesCompleted = batchesCompletedLocal
+        self.pushEstimatedSecondsRemaining = etaSeconds
+      }
+
+      batchSeq += 1
+
       // Short page means we have exported everything
       if exportData.entries.count < batchSize {
         break
       }
     }
 
-    // Persist the push cursor so next cycle is incremental
-    if let ts = afterTimestamp, let eid = afterEntryId {
-      var updatedConfig = config
-      updatedConfig.lastPushTimestamp = ts
-      updatedConfig.lastPushEntryId = eid
-      await MainActor.run { self.config = updatedConfig }
-      saveConfig(updatedConfig)
-      log.info("Push cursor saved: timestamp=\(ts, privacy: .public), entryId=\(eid, privacy: .public)")
+    // Clear progress state and compute final duration.
+    let pushDuration = Date().timeIntervalSince(pushStartTime)
+    await MainActor.run {
+      self.pushEstimatedSecondsRemaining = nil
+      self.pushStartTime = nil
     }
 
-    log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public)")
+    log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public), batches=\(batchesCompletedLocal, privacy: .public), duration=\(String(format: "%.1f", pushDuration), privacy: .public)s")
 
     return PushResult(
       entriesPushed: totalAccepted,
       duplicatesSkipped: totalDupes,
-      serverSequence: lastServerSequence
+      serverSequence: lastServerSequence,
+      durationSeconds: pushDuration,
+      batchesCompleted: batchesCompletedLocal
     )
   }
 
@@ -592,5 +785,185 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
     }
     return error.localizedDescription
+  }
+
+  /// Returns true when the given error represents a connectivity outage.
+  private func isConnectivityError(_ error: Error) -> Bool {
+    if let syncError = error as? CloudSyncError {
+      if case .networkError = syncError {
+        return true
+      }
+    }
+    return false
+  }
+
+  @MainActor
+  private func startStatusPollingIfNeeded() {
+    guard statusPollTask == nil else { return }
+    guard config?.enabled == true else { return }
+
+    statusPollTask = Task.detached(priority: .utility) { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        await self.refreshStatusFromServer()
+
+        let intervalSeconds = await MainActor.run { () -> Double in
+          switch self.syncState {
+          case .syncing:
+            return 15
+          default:
+            return 60
+          }
+        }
+        try? await Task.sleep(for: .seconds(intervalSeconds))
+      }
+    }
+    log.debug("Started cloud status polling task")
+  }
+
+  @MainActor
+  private func stopStatusPolling() {
+    statusPollTask?.cancel()
+    statusPollTask = nil
+    log.debug("Stopped cloud status polling task")
+  }
+
+  // MARK: - App-Level Auto-Sync
+
+  /// Start the app-level auto-sync loop if cloud is configured.
+  /// Called once at app launch. Loads config from disk and begins
+  /// syncing every 5 minutes. Safe to call multiple times (no-ops if running).
+  @MainActor
+  public func startAppLevelAutoSync() {
+    guard autoSyncTask == nil else { return }
+    guard let config = loadConfig(), config.enabled else {
+      log.debug("Auto-sync skipped: no config or disabled")
+      return
+    }
+    configure(config: config)
+    autoSyncEnabled = true
+    log.info("Starting app-level auto-sync")
+
+    autoSyncTask = Task.detached(priority: .background) { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        do {
+          let dbURL = try DatabaseManager.shared.databasePath()
+          let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+          await self.sync(using: queryService)
+        } catch {
+          await self.setErrorForUI("Auto-sync failed to open local database.")
+        }
+        try? await Task.sleep(for: .seconds(300))
+      }
+    }
+  }
+
+  /// Stop the auto-sync loop.
+  @MainActor
+  public func stopAppLevelAutoSync() {
+    autoSyncTask?.cancel()
+    autoSyncTask = nil
+    autoSyncEnabled = false
+    stopStatusPolling()
+    log.info("Stopped app-level auto-sync")
+  }
+
+  /// Full reset for disconnect: stop sync, clear all in-memory state.
+  /// Call this when the user disconnects from cloud sync in Settings.
+  @MainActor
+  public func resetForDisconnect() {
+    stopAppLevelAutoSync()
+    stopStatusPolling()
+    client = nil
+    config = nil
+    lastSyncDate = nil
+    lastPushResult = nil
+    lastPullResult = nil
+    cloudStatus = nil
+    cloudStatusError = nil
+    cloudOffline = false
+    cloudStatusUpdatedAt = nil
+    cloudSmoothedThroughputEntriesPerMin = nil
+    cloudSmoothedEtaSeconds = nil
+    pushTotalEntries = 0
+    pushEstimatedTotalBatches = 0
+    pushBatchesCompleted = 0
+    pushEstimatedSecondsRemaining = nil
+    pushStartTime = nil
+    syncState = .disabled
+    log.info("Reset cloud sync manager after disconnect")
+  }
+
+  /// Toggle auto-sync on/off. For use by Settings UI.
+  /// Persists the `enabled` preference to cloud.json so it survives app restart.
+  /// Persist BEFORE start so startAppLevelAutoSync() sees enabled=true in config.
+  @MainActor
+  public func setAutoSync(enabled: Bool) {
+    // Persist first so startAppLevelAutoSync() reads enabled=true from disk
+    if var config = loadConfig() {
+      config.enabled = enabled
+      self.config = config
+      saveConfig(config)
+      log.info("Persisted auto-sync enabled=\(enabled, privacy: .public) to cloud.json")
+    } else {
+      log.warning("setAutoSync called but no cloud config on disk; preference not persisted")
+    }
+
+    if enabled {
+      startAppLevelAutoSync()
+    } else {
+      stopAppLevelAutoSync()
+    }
+  }
+
+  /// Trigger a one-shot sync. Returns immediately; sync runs in background.
+  @MainActor
+  public func triggerSync() {
+    Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self else { return }
+      do {
+        let dbURL = try DatabaseManager.shared.databasePath()
+        let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+        await self.sync(using: queryService)
+      } catch {
+        await self.setErrorForUI("Failed to open local database for sync.")
+      }
+    }
+  }
+}
+
+private extension CloudSyncManager {
+  @MainActor
+  func updateSmoothedProgressMetrics(from status: CloudSyncStatus) {
+    let alpha = 0.35
+
+    guard let active = status.activePushSession,
+      (active.completionState?.lowercased() == "in_progress"
+        || active.phase.lowercased() == "initial_upload"
+        || active.phase.lowercased() == "syncing"
+        || active.phase.lowercased() == "stalled")
+    else {
+      cloudSmoothedThroughputEntriesPerMin = nil
+      cloudSmoothedEtaSeconds = nil
+      return
+    }
+
+    if let throughput = active.throughputEntriesPerMin, throughput > 0 {
+      if let prev = cloudSmoothedThroughputEntriesPerMin {
+        cloudSmoothedThroughputEntriesPerMin = (alpha * throughput) + ((1.0 - alpha) * prev)
+      } else {
+        cloudSmoothedThroughputEntriesPerMin = throughput
+      }
+    }
+
+    if let eta = active.etaSeconds, eta > 0 {
+      if let prev = cloudSmoothedEtaSeconds {
+        let smoothed = (alpha * Double(eta)) + ((1.0 - alpha) * Double(prev))
+        cloudSmoothedEtaSeconds = Int(smoothed.rounded())
+      } else {
+        cloudSmoothedEtaSeconds = eta
+      }
+    }
   }
 }

@@ -23,6 +23,8 @@ final class CloudSyncModelsTests: XCTestCase {
     let payload = CloudPushPayload(
       idempotencyKey: "test-key",
       batchSeq: 1,
+      syncSessionId: "sess-123",
+      entriesSent: 1,
       device: CloudDeviceInfo(
         machineId: "m-123",
         machineName: "Test Mac",
@@ -30,7 +32,19 @@ final class CloudSyncModelsTests: XCTestCase {
         appVersion: "1.0.0"
       ),
       projects: [
-        CloudPushProject(id: "p-1", name: "MyProject", rootPath: "/Users/test/project")
+        CloudPushProject(
+          id: "p-1",
+          name: "MyProject",
+          rootPath: "/Users/test/project",
+          repoIdentity: "git-common-dir:abc123",
+          repoOriginNormalized: "github.com/example/project",
+          gitCommonDir: "/Users/test/project/.git",
+          isWorktree: true,
+          defaultBranch: "main",
+          vcsProvider: "github",
+          worktreeName: "project-wb1",
+          repoName: "project"
+        )
       ],
       entries: [
         CloudPushEntry(
@@ -65,6 +79,14 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(entries[0]["transcript_id"] as? String, "t-1")
     XCTAssertEqual(entries[0]["content_sha256"] as? String, String(repeating: "a", count: 64))
     XCTAssertEqual(entries[0]["display_in_timeline"] as? Bool, true)
+
+    let projects = json["projects"] as! [[String: Any]]
+    XCTAssertEqual(projects[0]["repo_identity"] as? String, "git-common-dir:abc123")
+    XCTAssertEqual(projects[0]["repo_origin_normalized"] as? String, "github.com/example/project")
+    XCTAssertEqual(projects[0]["is_worktree"] as? Bool, true)
+    XCTAssertEqual(projects[0]["default_branch"] as? String, "main")
+    XCTAssertEqual(projects[0]["worktree_name"] as? String, "project-wb1")
+    XCTAssertEqual(projects[0]["repo_name"] as? String, "project")
   }
 
   func testCloudPushPayloadDefaultsToEmptyArrays() throws {
@@ -95,6 +117,19 @@ final class CloudSyncModelsTests: XCTestCase {
       "errors": ["Entry abc: conflict"],
       "sync_token": "tok-123",
       "idempotency_key": "idem-1",
+      "sync_session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "batch_seq": 7,
+      "entries_sent": 500,
+      "entries_accepted": 480,
+      "entries_duplicates": 20,
+      "entries_conflicted": 0,
+      "entries_blocked_policy": 0,
+      "entries_retriable_failed": 0,
+      "entries_resolved": 500,
+      "checkpoint_safe": true,
+      "completion_state": "in_progress",
+      "needs_attention_count": 0,
+      "error_codes": [],
       "server_sequence": 42
     }
     """.data(using: .utf8)!
@@ -106,6 +141,16 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(response.errors, ["Entry abc: conflict"])
     XCTAssertEqual(response.syncToken, "tok-123")
     XCTAssertEqual(response.idempotencyKey, "idem-1")
+    XCTAssertEqual(response.syncSessionId, "550e8400-e29b-41d4-a716-446655440000")
+    XCTAssertEqual(response.batchSeq, 7)
+    XCTAssertEqual(response.entriesSent, 500)
+    XCTAssertEqual(response.entriesAccepted, 480)
+    XCTAssertEqual(response.entriesDuplicates, 20)
+    XCTAssertEqual(response.entriesResolved, 500)
+    XCTAssertEqual(response.checkpointSafe, true)
+    XCTAssertEqual(response.completionState, "in_progress")
+    XCTAssertEqual(response.needsAttentionCount, 0)
+    XCTAssertEqual(response.errorCodes ?? [], [])
     XCTAssertEqual(response.serverSequence, 42)
   }
 
@@ -196,7 +241,21 @@ final class CloudSyncModelsTests: XCTestCase {
         {"machine_id": "m-1", "machine_name": "Work Mac", "os": "macos", "app_version": "1.3.0"},
         {"machine_id": "m-2", "machine_name": "Home Mac", "os": "macos", "app_version": null}
       ],
-      "server_sequence": 99
+      "server_sequence": 99,
+      "pending_batches": 1,
+      "active_push_session": {
+        "sync_session_id": "550e8400-e29b-41d4-a716-446655440000",
+        "phase": "initial_upload",
+        "entries_resolved": 300,
+        "entries_total": 1000,
+        "progress_percent": 30.0,
+        "throughput_entries_per_min": 2500.0,
+        "eta_seconds": 420,
+        "checkpoint_safe": true,
+        "completion_state": "in_progress",
+        "needs_attention_count": 0,
+        "last_batch_at": "2026-03-12T00:00:00Z"
+      }
     }
     """.data(using: .utf8)!
 
@@ -209,6 +268,11 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(status.devices[0].machineName, "Work Mac")
     XCTAssertEqual(status.devices[1].appVersion, nil)
     XCTAssertEqual(status.serverSequence, 99)
+    XCTAssertEqual(status.pendingBatches, 1)
+    XCTAssertEqual(status.activePushSession?.phase, "initial_upload")
+    XCTAssertEqual(status.activePushSession?.entriesResolved, 300)
+    XCTAssertEqual(status.activePushSession?.entriesTotal, 1000)
+    XCTAssertEqual(status.activePushSession?.checkpointSafe, true)
   }
 
   func testCloudSyncStatusDecodesWithNullLastSync() throws {
@@ -235,7 +299,9 @@ final class CloudSyncModelsTests: XCTestCase {
       apiKey: "ctx_test",
       lastPullSequence: 42,
       lastPushTimestamp: 1700000000,
-      lastPushEntryId: "entry-abc-123"
+      lastPushEntryId: "entry-abc-123",
+      lastPushSessionId: "550e8400-e29b-41d4-a716-446655440000",
+      lastPushBatchSeq: 7
     )
 
     let data = try makeEncoder().encode(config)
@@ -243,6 +309,8 @@ final class CloudSyncModelsTests: XCTestCase {
 
     XCTAssertEqual(json["last_push_timestamp"] as? Int, 1700000000)
     XCTAssertEqual(json["last_push_entry_id"] as? String, "entry-abc-123")
+    XCTAssertEqual(json["last_push_session_id"] as? String, "550e8400-e29b-41d4-a716-446655440000")
+    XCTAssertEqual(json["last_push_batch_seq"] as? Int, 7)
     XCTAssertEqual(json["last_pull_sequence"] as? Int, 42)
   }
 
@@ -256,7 +324,9 @@ final class CloudSyncModelsTests: XCTestCase {
       "enabled": true,
       "last_pull_sequence": 10,
       "last_push_timestamp": 1700000000,
-      "last_push_entry_id": "entry-xyz-789"
+      "last_push_entry_id": "entry-xyz-789",
+      "last_push_session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "last_push_batch_seq": 11
     }
     """.data(using: .utf8)!
 
@@ -264,6 +334,8 @@ final class CloudSyncModelsTests: XCTestCase {
 
     XCTAssertEqual(config.lastPushTimestamp, 1700000000)
     XCTAssertEqual(config.lastPushEntryId, "entry-xyz-789")
+    XCTAssertEqual(config.lastPushSessionId, "550e8400-e29b-41d4-a716-446655440000")
+    XCTAssertEqual(config.lastPushBatchSeq, 11)
     XCTAssertEqual(config.lastPullSequence, 10)
   }
 
@@ -284,6 +356,8 @@ final class CloudSyncModelsTests: XCTestCase {
 
     XCTAssertNil(config.lastPushTimestamp)
     XCTAssertNil(config.lastPushEntryId)
+    XCTAssertNil(config.lastPushSessionId)
+    XCTAssertNil(config.lastPushBatchSeq)
     XCTAssertEqual(config.lastPullSequence, 5)
   }
 
@@ -295,6 +369,8 @@ final class CloudSyncModelsTests: XCTestCase {
 
     XCTAssertNil(config.lastPushTimestamp)
     XCTAssertNil(config.lastPushEntryId)
+    XCTAssertNil(config.lastPushSessionId)
+    XCTAssertNil(config.lastPushBatchSeq)
   }
 
   func testCloudConfigRoundTripWithPushCursor() throws {
@@ -306,7 +382,9 @@ final class CloudSyncModelsTests: XCTestCase {
       enabled: true,
       lastPullSequence: 99,
       lastPushTimestamp: 1700500000,
-      lastPushEntryId: "e-final"
+      lastPushEntryId: "e-final",
+      lastPushSessionId: "550e8400-e29b-41d4-a716-446655440000",
+      lastPushBatchSeq: 123
     )
 
     let data = try makeEncoder().encode(original)
@@ -317,6 +395,8 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(decoded.lastPullSequence, original.lastPullSequence)
     XCTAssertEqual(decoded.lastPushTimestamp, original.lastPushTimestamp)
     XCTAssertEqual(decoded.lastPushEntryId, original.lastPushEntryId)
+    XCTAssertEqual(decoded.lastPushSessionId, original.lastPushSessionId)
+    XCTAssertEqual(decoded.lastPushBatchSeq, original.lastPushBatchSeq)
   }
 }
 

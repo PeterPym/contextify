@@ -328,4 +328,118 @@ final class CLIHealthCheckerTests: XCTestCase {
     XCTAssertEqual(result, .missingPluginEntry)
   }
   #endif
+
+  func testCheckSkillsMarksLegacyInstallWhenMetadataMissing() throws {
+    let homeDir = try makeTemporaryHomeDirectory()
+    defer { try? FileManager.default.removeItem(at: homeDir) }
+
+    _ = try writeInstalledSkill(
+      homeDir: homeDir,
+      clientDirectory: ".claude",
+      content: "legacy skill"
+    )
+
+    let status = CLIHealthChecker.checkSkills(homeDir: homeDir, fileManager: .default)
+    XCTAssertEqual(status.claudeSkillDetails.provenanceStatus, .metadataMissing)
+    XCTAssertTrue(status.claudeSkillPresent)
+  }
+
+  func testCheckSkillsDetectsInstalledSkillModification() throws {
+    let homeDir = try makeTemporaryHomeDirectory()
+    defer { try? FileManager.default.removeItem(at: homeDir) }
+
+    let sourceFile = try writeSourceSkill(named: "source-modified", content: "source content")
+    _ = try writeInstalledSkill(
+      homeDir: homeDir,
+      clientDirectory: ".claude",
+      content: "edited installed content",
+      metadata: makeMetadata(
+        target: "claude",
+        sourceFile: sourceFile,
+        sourceContent: "source content"
+      )
+    )
+
+    let status = CLIHealthChecker.checkSkills(homeDir: homeDir, fileManager: .default)
+    XCTAssertEqual(status.claudeSkillDetails.provenanceStatus, .modified)
+    XCTAssertEqual(status.claudeSkillDetails.installSourceKind, .repo)
+  }
+
+  func testCheckSkillsDetectsSourceChangedSinceInstall() throws {
+    let homeDir = try makeTemporaryHomeDirectory()
+    defer { try? FileManager.default.removeItem(at: homeDir) }
+
+    let sourceFile = try writeSourceSkill(named: "source-changed", content: "original source")
+    _ = try writeInstalledSkill(
+      homeDir: homeDir,
+      clientDirectory: ".claude",
+      content: "original source",
+      metadata: makeMetadata(
+        target: "claude",
+        sourceFile: sourceFile,
+        sourceContent: "original source"
+      )
+    )
+
+    try "updated source".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+    let status = CLIHealthChecker.checkSkills(homeDir: homeDir, fileManager: .default)
+    XCTAssertEqual(status.claudeSkillDetails.provenanceStatus, .sourceChanged)
+    XCTAssertEqual(status.claudeSkillDetails.installSourcePath, sourceFile.path)
+  }
+
+  private func makeTemporaryHomeDirectory() throws -> URL {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cli-health-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
+
+  private func writeSourceSkill(named name: String, content: String) throws -> URL {
+    let sourceDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("cli-health-source-\(name)-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+    let sourceFile = sourceDir.appendingPathComponent("SKILL.md")
+    try content.write(to: sourceFile, atomically: true, encoding: .utf8)
+    return sourceFile
+  }
+
+  @discardableResult
+  private func writeInstalledSkill(
+    homeDir: URL,
+    clientDirectory: String,
+    content: String,
+    metadata: CLIHealthChecker.SkillInstallMetadata? = nil
+  ) throws -> URL {
+    let skillDir = homeDir.appendingPathComponent("\(clientDirectory)/skills/total-recall")
+    try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+    let skillFile = skillDir.appendingPathComponent("SKILL.md")
+    try content.write(to: skillFile, atomically: true, encoding: .utf8)
+
+    if let metadata {
+      let metadataURL = CLIHealthChecker.skillMetadataURL(forSkillFile: skillFile)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+      let data = try encoder.encode(metadata)
+      try data.write(to: metadataURL, options: .atomic)
+    }
+
+    return skillFile
+  }
+
+  private func makeMetadata(
+    target: String,
+    sourceFile: URL,
+    sourceContent: String
+  ) -> CLIHealthChecker.SkillInstallMetadata {
+    let hash = CrossPlatformCrypto.sha256(sourceContent)
+    return CLIHealthChecker.SkillInstallMetadata(
+      installedAt: "2026-03-12T12:00:00Z",
+      installerVersion: "1.3.0-dev",
+      target: target,
+      installSourceKind: .repo,
+      installSourcePath: sourceFile.path,
+      sourceSkillSHA256: hash,
+      installedSkillSHA256: hash
+    )
+  }
 }

@@ -351,6 +351,10 @@ struct ContextifyApp: App {
 
       // PHASE 3: Check for CLI upgrades (background, non-blocking)
       await CLICoordinator.shared.checkAndUpgrade()
+
+      // PHASE 4: Start cloud auto-sync if configured
+      CloudSyncManager.shared.startAppLevelAutoSync()
+      startupLog.info("Cloud auto-sync check complete")
     }
     #endif
 
@@ -387,6 +391,9 @@ struct ContextifyApp: App {
 
                 await AppStateOrchestrator.shared.startup()
                 await StartupCoordinator.shared.start()
+
+                // Start cloud auto-sync if configured
+                CloudSyncManager.shared.startAppLevelAutoSync()
 
                 // Pass the already-built provider to avoid reconstruction
                 await initializeProjectsSystem(existingProvider: provider)
@@ -843,6 +850,7 @@ struct ContextifyApp: App {
             log.info("[INIT] Running deferred startup sequence (App Store subsequent launch)")
             await AppStateOrchestrator.shared.startup()
             await StartupCoordinator.shared.start()
+            CloudSyncManager.shared.startAppLevelAutoSync()
           }
           #endif
         }

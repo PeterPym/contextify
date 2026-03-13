@@ -109,10 +109,12 @@ struct DoctorCommand: ParsableCommand {
     if let path = report.components.skills.claudeSkillPath {
       print("      Path: \(path)")
     }
+    printSkillDetails(report.components.skills.claudeSkillDetails)
     print("    Codex CLI: \(report.components.skills.codexSkillPresent ? "installed" : "missing")")
     if let path = report.components.skills.codexSkillPath {
       print("      Path: \(path)")
     }
+    printSkillDetails(report.components.skills.codexSkillDetails)
 
     // Issues section
     if !report.issues.isEmpty {
@@ -128,5 +130,57 @@ struct DoctorCommand: ParsableCommand {
     }
 
     print("")
+  }
+
+  private func printSkillDetails(_ details: CLIHealthChecker.InstalledSkillStatus) {
+    if let status = details.provenanceStatus {
+      print("      Provenance: \(describeProvenanceStatus(status))")
+    }
+    if let sourceKind = details.installSourceKind {
+      print("      Source: \(describeSkillSource(sourceKind))")
+    }
+    if let sourcePath = details.installSourcePath {
+      print("        \(sourcePath)")
+    }
+    if let installedAt = details.installedAt {
+      print("      Installed at: \(installedAt)")
+    }
+    if let installerVersion = details.installerVersion {
+      print("      Installed by CLI: \(installerVersion)")
+    }
+  }
+
+  private func describeSkillSource(_ sourceKind: CLIHealthChecker.SkillInstallSourceKind) -> String {
+    switch sourceKind {
+    case .repo:
+      return "repo-local source"
+    case .bundle:
+      return "app bundle source"
+    case .sibling:
+      return "CLI-adjacent source"
+    case .cellar:
+      return "Homebrew Cellar source"
+    case .unknown:
+      return "unknown source"
+    }
+  }
+
+  private func describeProvenanceStatus(_ status: CLIHealthChecker.SkillProvenanceStatus) -> String {
+    switch status {
+    case .current:
+      return "current"
+    case .metadataMissing:
+      return "metadata missing"
+    case .metadataUnreadable:
+      return "metadata unreadable"
+    case .skillUnreadable:
+      return "skill unreadable"
+    case .modified:
+      return "installed file modified"
+    case .sourceChanged:
+      return "source changed since install"
+    case .sourceMissing:
+      return "recorded source missing"
+    }
   }
 }
