@@ -178,17 +178,53 @@ public struct CloudPushProject: Codable, Sendable {
   public let id: String
   public let name: String?
   public let rootPath: String
+  public let repoIdentity: String?
+  public let repoOriginNormalized: String?
+  public let gitCommonDir: String?
+  public let isWorktree: Bool
+  public let defaultBranch: String?
+  public let vcsProvider: String?
+  public let worktreeName: String?
+  public let repoName: String?
 
-  public init(id: String, name: String? = nil, rootPath: String) {
+  public init(
+    id: String,
+    name: String? = nil,
+    rootPath: String,
+    repoIdentity: String? = nil,
+    repoOriginNormalized: String? = nil,
+    gitCommonDir: String? = nil,
+    isWorktree: Bool = false,
+    defaultBranch: String? = nil,
+    vcsProvider: String? = nil,
+    worktreeName: String? = nil,
+    repoName: String? = nil
+  ) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
+    self.repoIdentity = repoIdentity
+    self.repoOriginNormalized = repoOriginNormalized
+    self.gitCommonDir = gitCommonDir
+    self.isWorktree = isWorktree
+    self.defaultBranch = defaultBranch
+    self.vcsProvider = vcsProvider
+    self.worktreeName = worktreeName
+    self.repoName = repoName
   }
 
   enum CodingKeys: String, CodingKey {
     case id
     case name
     case rootPath = "root_path"
+    case repoIdentity = "repo_identity"
+    case repoOriginNormalized = "repo_origin_normalized"
+    case gitCommonDir = "git_common_dir"
+    case isWorktree = "is_worktree"
+    case defaultBranch = "default_branch"
+    case vcsProvider = "vcs_provider"
+    case worktreeName = "worktree_name"
+    case repoName = "repo_name"
   }
 }
 

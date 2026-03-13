@@ -32,7 +32,19 @@ final class CloudSyncModelsTests: XCTestCase {
         appVersion: "1.0.0"
       ),
       projects: [
-        CloudPushProject(id: "p-1", name: "MyProject", rootPath: "/Users/test/project")
+        CloudPushProject(
+          id: "p-1",
+          name: "MyProject",
+          rootPath: "/Users/test/project",
+          repoIdentity: "git-common-dir:abc123",
+          repoOriginNormalized: "github.com/example/project",
+          gitCommonDir: "/Users/test/project/.git",
+          isWorktree: true,
+          defaultBranch: "main",
+          vcsProvider: "github",
+          worktreeName: "project-wb1",
+          repoName: "project"
+        )
       ],
       entries: [
         CloudPushEntry(
@@ -67,6 +79,14 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(entries[0]["transcript_id"] as? String, "t-1")
     XCTAssertEqual(entries[0]["content_sha256"] as? String, String(repeating: "a", count: 64))
     XCTAssertEqual(entries[0]["display_in_timeline"] as? Bool, true)
+
+    let projects = json["projects"] as! [[String: Any]]
+    XCTAssertEqual(projects[0]["repo_identity"] as? String, "git-common-dir:abc123")
+    XCTAssertEqual(projects[0]["repo_origin_normalized"] as? String, "github.com/example/project")
+    XCTAssertEqual(projects[0]["is_worktree"] as? Bool, true)
+    XCTAssertEqual(projects[0]["default_branch"] as? String, "main")
+    XCTAssertEqual(projects[0]["worktree_name"] as? String, "project-wb1")
+    XCTAssertEqual(projects[0]["repo_name"] as? String, "project")
   }
 
   func testCloudPushPayloadDefaultsToEmptyArrays() throws {

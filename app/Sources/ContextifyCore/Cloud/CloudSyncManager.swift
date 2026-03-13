@@ -369,7 +369,19 @@ public final class CloudSyncManager: @unchecked Sendable {
         entriesSent: entriesInBatch,
         device: device,
         projects: exportData.projects.map { proj in
-          CloudPushProject(id: proj.id, name: proj.name, rootPath: proj.rootPath)
+          CloudPushProject(
+            id: proj.id,
+            name: proj.name,
+            rootPath: proj.rootPath,
+            repoIdentity: proj.repoIdentity,
+            repoOriginNormalized: proj.repoOriginNormalized,
+            gitCommonDir: proj.gitCommonDir,
+            isWorktree: proj.isWorktree,
+            defaultBranch: proj.defaultBranch,
+            vcsProvider: proj.vcsProvider,
+            worktreeName: proj.worktreeName,
+            repoName: proj.repoName
+          )
         },
         transcripts: exportData.transcripts.map { tx in
           CloudPushTranscript(
