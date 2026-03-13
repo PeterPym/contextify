@@ -38,7 +38,7 @@ struct InstallSkillCommand: ParsableCommand {
     let home = FileManager.default.homeDirectoryForCurrentUser
     let userSkillSource = try findUserSkillSource()
     let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
-    let newData = try Data(contentsOf: skillFile)
+    let newData = try loadSkillData(from: skillFile)
 
     // Set up paths for both targets
     let claudeSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
@@ -148,6 +148,39 @@ private func checkInstallState(dest: URL, newData: Data) throws -> InstallState 
   let existingData = try Data(contentsOf: dest)
   return existingData == newData ? .upToDate : .existsDiffers
 }
+
+private func loadSkillData(from skillFile: URL) throws -> Data {
+  let data = try Data(contentsOf: skillFile)
+  #if os(Linux)
+  guard let content = String(data: data, encoding: .utf8) else {
+    return data
+  }
+  return Data(makeLinuxCompatibleSkill(from: content).utf8)
+  #else
+  return data
+  #endif
+}
+
+#if os(Linux)
+private func makeLinuxCompatibleSkill(from content: String) -> String {
+  let pattern = #"""
+  (?s)
+  \nWhen the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:\n\n```bash\ncontextify search "<expanded-query>" --project \. --days 30 --limit <N> --anchor-git --json\n```\n\nGit anchoring is additive, not exclusive:\n- if the CLI reports it found git anchors, use that ranking signal\n- if it reports no strong commit signal, continue with normal broad search\n- do not stop exploring just because the git path was attempted\n
+  """#
+
+  let replacement = """
+
+  Git-anchored search is not available on Linux yet. Use the standard search command above and continue broad exploration for file and code-history queries.
+
+  """
+
+  return content.replacingOccurrences(
+    of: pattern,
+    with: replacement,
+    options: [.regularExpression]
+  )
+}
+#endif
 
 // MARK: - Helpers
 
