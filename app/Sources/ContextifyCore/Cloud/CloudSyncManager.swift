@@ -417,6 +417,7 @@ public final class CloudSyncManager: @unchecked Sendable {
             id: proj.id,
             name: proj.name,
             rootPath: proj.rootPath,
+            repoGroupKey: proj.repoGroupKey,
             repoIdentity: proj.repoIdentity,
             repoOriginNormalized: proj.repoOriginNormalized,
             gitCommonDir: proj.gitCommonDir,

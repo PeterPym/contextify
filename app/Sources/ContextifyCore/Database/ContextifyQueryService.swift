@@ -1575,6 +1575,7 @@ public struct ContextifyQueryService: Sendable {
             id: project.id,
             name: project.name,
             rootPath: project.rootPath,
+            repoGroupKey: identity?.repoGroupKey,
             repoIdentity: identity?.repoIdentity,
             repoOriginNormalized: identity?.repoOriginNormalized,
             gitCommonDir: identity?.gitCommonDir,
@@ -1757,6 +1758,7 @@ public struct CloudPushExport: Sendable {
     public let id: String
     public let name: String?
     public let rootPath: String
+    public let repoGroupKey: String?
     public let repoIdentity: String?
     public let repoOriginNormalized: String?
     public let gitCommonDir: String?
@@ -1770,6 +1772,7 @@ public struct CloudPushExport: Sendable {
       id: String,
       name: String?,
       rootPath: String,
+      repoGroupKey: String? = nil,
       repoIdentity: String? = nil,
       repoOriginNormalized: String? = nil,
       gitCommonDir: String? = nil,
@@ -1782,6 +1785,7 @@ public struct CloudPushExport: Sendable {
       self.id = id
       self.name = name
       self.rootPath = rootPath
+      self.repoGroupKey = repoGroupKey
       self.repoIdentity = repoIdentity
       self.repoOriginNormalized = repoOriginNormalized
       self.gitCommonDir = gitCommonDir
@@ -1795,6 +1799,7 @@ public struct CloudPushExport: Sendable {
     public var asDictionary: [String: Any] {
       var d: [String: Any] = ["id": id, "root_path": rootPath]
       if let n = name { d["name"] = n }
+      if let repoGroupKey { d["repo_group_key"] = repoGroupKey }
       if let repoIdentity { d["repo_identity"] = repoIdentity }
       if let repoOriginNormalized { d["repo_origin_normalized"] = repoOriginNormalized }
       if let gitCommonDir { d["git_common_dir"] = gitCommonDir }

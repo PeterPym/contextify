@@ -1,6 +1,7 @@
 import Foundation
 
 public struct GitProjectIdentity: Sendable, Equatable {
+  public let repoGroupKey: String?
   public let repoIdentity: String?
   public let repoOriginNormalized: String?
   public let gitCommonDir: String?
@@ -11,6 +12,7 @@ public struct GitProjectIdentity: Sendable, Equatable {
   public let repoName: String?
 
   public init(
+    repoGroupKey: String?,
     repoIdentity: String?,
     repoOriginNormalized: String?,
     gitCommonDir: String?,
@@ -20,6 +22,7 @@ public struct GitProjectIdentity: Sendable, Equatable {
     worktreeName: String?,
     repoName: String?
   ) {
+    self.repoGroupKey = repoGroupKey
     self.repoIdentity = repoIdentity
     self.repoOriginNormalized = repoOriginNormalized
     self.gitCommonDir = gitCommonDir
@@ -42,9 +45,14 @@ public struct GitProjectIdentity: Sendable, Equatable {
     let repoIdentity = "git-common-dir:\(CrossPlatformCrypto.sha256(commonGitDir.path))"
     let originURL = parseOriginURL(fromCommonGitDir: commonGitDir)
     let normalizedOrigin = originURL.flatMap(normalizeOriginURL)
+    let repoGroupKey = deriveRepoGroupKey(
+      repoOriginNormalized: normalizedOrigin,
+      repoIdentity: repoIdentity
+    )
     let repoName = repoName(fromNormalizedOrigin: normalizedOrigin) ?? mainGitRoot.lastPathComponent
 
     return GitProjectIdentity(
+      repoGroupKey: repoGroupKey,
       repoIdentity: repoIdentity,
       repoOriginNormalized: normalizedOrigin,
       gitCommonDir: commonGitDir.path,
@@ -54,6 +62,19 @@ public struct GitProjectIdentity: Sendable, Equatable {
       worktreeName: commonDirResult.isWorktree ? gitRoot.lastPathComponent : nil,
       repoName: repoName.isEmpty ? nil : repoName
     )
+  }
+
+  public static func deriveRepoGroupKey(
+    repoOriginNormalized: String?,
+    repoIdentity: String?
+  ) -> String? {
+    if let repoOriginNormalized, !repoOriginNormalized.isEmpty {
+      return "repo-origin-sha256:\(CrossPlatformCrypto.sha256(repoOriginNormalized))"
+    }
+    if let repoIdentity, !repoIdentity.isEmpty {
+      return repoIdentity
+    }
+    return nil
   }
 
   static func normalizeOriginURL(_ raw: String) -> String? {
