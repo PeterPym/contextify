@@ -41,6 +41,10 @@ public struct PushResult: Sendable {
   public let duplicatesSkipped: Int
   /// Server sequence after the push.
   public let serverSequence: Int
+  /// Total wall-clock duration of the push operation in seconds.
+  public let durationSeconds: Double
+  /// Number of batches completed during this push.
+  public let batchesCompleted: Int
 }
 
 /// Result of a pull operation.
@@ -125,6 +129,24 @@ public final class CloudSyncManager: @unchecked Sendable {
   // Smoothed metrics for stable UX ETA/throughput display.
    public private(set) var cloudSmoothedThroughputEntriesPerMin: Double?
    public private(set) var cloudSmoothedEtaSeconds: Int?
+
+  // MARK: - Push Progress Tracking (MainActor-isolated for SwiftUI)
+
+  /// Total entries counted at push start for progress estimation.
+  @MainActor public private(set) var pushTotalEntries: Int = 0
+
+  /// Estimated total batches for the current push (ceil(totalEntries / batchSize)).
+  @MainActor public private(set) var pushEstimatedTotalBatches: Int = 0
+
+  /// Number of batches completed so far in the current push.
+  @MainActor public private(set) var pushBatchesCompleted: Int = 0
+
+  /// Client-side estimated seconds remaining for the push to complete.
+  /// Computed from elapsed time and batch completion rate.
+  @MainActor public private(set) var pushEstimatedSecondsRemaining: Int?
+
+  /// Timestamp when the current push operation started.
+  @MainActor public private(set) var pushStartTime: Date?
 
   // MARK: - Private State (MainActor-isolated, snapshotted by sync methods)
 
@@ -343,6 +365,27 @@ public final class CloudSyncManager: @unchecked Sendable {
     var totalDupes = 0
     var lastServerSequence = 0
 
+    // Count total entries remaining ONCE at push start for progress estimation.
+    let totalEntriesToPush = try queryService.countEntriesForCloudPush(
+      afterTimestamp: afterTimestamp,
+      afterEntryId: afterEntryId
+    )
+    let estimatedTotalBatches = totalEntriesToPush > 0
+      ? Int((Double(totalEntriesToPush) / Double(batchSize)).rounded(.up))
+      : 0
+    let pushStartTime = Date()
+    var batchesCompletedLocal = 0
+
+    await MainActor.run {
+      self.pushTotalEntries = totalEntriesToPush
+      self.pushEstimatedTotalBatches = estimatedTotalBatches
+      self.pushBatchesCompleted = 0
+      self.pushEstimatedSecondsRemaining = nil
+      self.pushStartTime = pushStartTime
+    }
+
+    log.info("Push: \(totalEntriesToPush, privacy: .public) entries remaining, ~\(estimatedTotalBatches, privacy: .public) batches estimated")
+
     if let ts = afterTimestamp {
       log.info("Push: resuming from saved cursor timestamp=\(ts, privacy: .public)")
     }
@@ -367,6 +410,7 @@ public final class CloudSyncManager: @unchecked Sendable {
         batchSeq: batchSeq,
         syncSessionId: syncSessionId,
         entriesSent: entriesInBatch,
+        totalBatches: estimatedTotalBatches > 0 ? estimatedTotalBatches : nil,
         device: device,
         projects: exportData.projects.map { proj in
           CloudPushProject(
@@ -497,6 +541,23 @@ public final class CloudSyncManager: @unchecked Sendable {
           "Push checkpoint saved: seq=\(batchSeq, privacy: .public), timestamp=\(ts, privacy: .public), entryId=\(eid, privacy: .public)")
       }
 
+      // Update progress tracking after each successful batch.
+      batchesCompletedLocal += 1
+      let elapsed = Date().timeIntervalSince(pushStartTime)
+      let etaSeconds: Int? = {
+        guard elapsed > 0, batchesCompletedLocal > 0 else { return nil }
+        let batchesPerSecond = Double(batchesCompletedLocal) / elapsed
+        guard batchesPerSecond > 0 else { return nil }
+        let remaining = Double(estimatedTotalBatches - batchesCompletedLocal)
+        guard remaining > 0 else { return nil }
+        return Int((remaining / batchesPerSecond).rounded(.up))
+      }()
+
+      await MainActor.run {
+        self.pushBatchesCompleted = batchesCompletedLocal
+        self.pushEstimatedSecondsRemaining = etaSeconds
+      }
+
       batchSeq += 1
 
       // Short page means we have exported everything
@@ -505,12 +566,21 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
     }
 
-    log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public)")
+    // Clear progress state and compute final duration.
+    let pushDuration = Date().timeIntervalSince(pushStartTime)
+    await MainActor.run {
+      self.pushEstimatedSecondsRemaining = nil
+      self.pushStartTime = nil
+    }
+
+    log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public), batches=\(batchesCompletedLocal, privacy: .public), duration=\(String(format: "%.1f", pushDuration), privacy: .public)s")
 
     return PushResult(
       entriesPushed: totalAccepted,
       duplicatesSkipped: totalDupes,
-      serverSequence: lastServerSequence
+      serverSequence: lastServerSequence,
+      durationSeconds: pushDuration,
+      batchesCompleted: batchesCompletedLocal
     )
   }
 
@@ -816,6 +886,11 @@ public final class CloudSyncManager: @unchecked Sendable {
     cloudStatusUpdatedAt = nil
     cloudSmoothedThroughputEntriesPerMin = nil
     cloudSmoothedEtaSeconds = nil
+    pushTotalEntries = 0
+    pushEstimatedTotalBatches = 0
+    pushBatchesCompleted = 0
+    pushEstimatedSecondsRemaining = nil
+    pushStartTime = nil
     syncState = .disabled
     log.info("Reset cloud sync manager after disconnect")
   }
