@@ -6,6 +6,8 @@ public struct CLIHealthChecker: Sendable {
 
   // MARK: - Types
 
+  public static let skillInstallMetadataFileName = ".contextify-install.json"
+
   /// Overall health status of the CLI installation
   public enum HealthStatus: String, Codable, Sendable {
     case healthy       // All components present and valid
@@ -61,12 +63,98 @@ public struct CLIHealthChecker: Sendable {
     }
   }
 
+  /// Where the installed skill was copied from.
+  public enum SkillInstallSourceKind: String, Codable, Sendable {
+    case repo
+    case bundle
+    case sibling
+    case cellar
+    case unknown
+  }
+
+  /// Provenance/parity state for an installed skill.
+  public enum SkillProvenanceStatus: String, Codable, Sendable {
+    case current
+    case metadataMissing
+    case metadataUnreadable
+    case skillUnreadable
+    case modified
+    case sourceChanged
+    case sourceMissing
+  }
+
+  /// Metadata written at install time so doctor can detect drift later.
+  public struct SkillInstallMetadata: Codable, Sendable, Equatable {
+    public let schemaVersion: Int
+    public let installedAt: String
+    public let installerVersion: String
+    public let target: String
+    public let installSourceKind: SkillInstallSourceKind
+    public let installSourcePath: String
+    public let sourceSkillSHA256: String
+    public let installedSkillSHA256: String
+
+    public init(
+      schemaVersion: Int = 1,
+      installedAt: String,
+      installerVersion: String,
+      target: String,
+      installSourceKind: SkillInstallSourceKind,
+      installSourcePath: String,
+      sourceSkillSHA256: String,
+      installedSkillSHA256: String
+    ) {
+      self.schemaVersion = schemaVersion
+      self.installedAt = installedAt
+      self.installerVersion = installerVersion
+      self.target = target
+      self.installSourceKind = installSourceKind
+      self.installSourcePath = installSourcePath
+      self.sourceSkillSHA256 = sourceSkillSHA256
+      self.installedSkillSHA256 = installedSkillSHA256
+    }
+  }
+
+  /// Detailed status for an individual installed skill.
+  public struct InstalledSkillStatus: Codable, Sendable {
+    public let present: Bool
+    public let path: String?
+    public let metadataPath: String?
+    public let provenanceStatus: SkillProvenanceStatus?
+    public let installSourceKind: SkillInstallSourceKind?
+    public let installSourcePath: String?
+    public let installedAt: String?
+    public let installerVersion: String?
+
+    public init(
+      present: Bool,
+      path: String?,
+      metadataPath: String? = nil,
+      provenanceStatus: SkillProvenanceStatus? = nil,
+      installSourceKind: SkillInstallSourceKind? = nil,
+      installSourcePath: String? = nil,
+      installedAt: String? = nil,
+      installerVersion: String? = nil
+    ) {
+      self.present = present
+      self.path = path
+      self.metadataPath = metadataPath
+      self.provenanceStatus = provenanceStatus
+      self.installSourceKind = installSourceKind
+      self.installSourcePath = installSourcePath
+      self.installedAt = installedAt
+      self.installerVersion = installerVersion
+    }
+  }
+
   /// Status of skill files
   public struct SkillsStatus: Codable, Sendable {
     public let claudeSkillPresent: Bool
     public let codexSkillPresent: Bool
     public let claudeSkillPath: String?
     public let codexSkillPath: String?
+    public let claudeSkillDetails: InstalledSkillStatus
+    public let codexSkillDetails: InstalledSkillStatus
 
     public init(claudeSkillPresent: Bool, codexSkillPresent: Bool,
                 claudeSkillPath: String?, codexSkillPath: String?) {
@@ -74,6 +162,23 @@ public struct CLIHealthChecker: Sendable {
       self.codexSkillPresent = codexSkillPresent
       self.claudeSkillPath = claudeSkillPath
       self.codexSkillPath = codexSkillPath
+      self.claudeSkillDetails = InstalledSkillStatus(
+        present: claudeSkillPresent,
+        path: claudeSkillPath
+      )
+      self.codexSkillDetails = InstalledSkillStatus(
+        present: codexSkillPresent,
+        path: codexSkillPath
+      )
+    }
+
+    public init(claudeSkillDetails: InstalledSkillStatus, codexSkillDetails: InstalledSkillStatus) {
+      self.claudeSkillPresent = claudeSkillDetails.present
+      self.codexSkillPresent = codexSkillDetails.present
+      self.claudeSkillPath = claudeSkillDetails.path
+      self.codexSkillPath = codexSkillDetails.path
+      self.claudeSkillDetails = claudeSkillDetails
+      self.codexSkillDetails = codexSkillDetails
     }
   }
 
@@ -124,6 +229,16 @@ public struct CLIHealthChecker: Sendable {
   /// Homebrew paths that are assumed to be on PATH in user shells
   public static let homebrewPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
 
+  private static var installCommandFix: String {
+    #if os(macOS)
+    // macOS repairs the plugin/skill install surface through install-plugin.
+    return "Run: contextify install-plugin"
+    #else
+    // Linux exposes direct skill installation; install-plugin is only a compatibility alias.
+    return "Run: contextify install-skill"
+    #endif
+  }
+
   // MARK: - Main Entry Point
 
   /// Perform a complete health check of the CLI installation
@@ -162,7 +277,7 @@ public struct CLIHealthChecker: Sendable {
         severity: .error,
         code: "SHIM_NOT_FOUND",
         message: "contextify-query binary not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     } else if !shimStatus.onPath {
       issues.append(Issue(
@@ -180,7 +295,7 @@ public struct CLIHealthChecker: Sendable {
         severity: .warning,
         code: "MANIFEST_MISSING",
         message: "Plugin manifest not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     }
 
@@ -190,7 +305,7 @@ public struct CLIHealthChecker: Sendable {
         severity: .warning,
         code: "CLAUDE_SKILL_MISSING",
         message: "Claude Code skill not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     }
 
@@ -200,9 +315,12 @@ public struct CLIHealthChecker: Sendable {
         severity: .warning,
         code: "CODEX_SKILL_MISSING",
         message: "Codex CLI skill not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     }
+
+    issues.append(contentsOf: skillIssues(for: "Claude", state: skillsStatus.claudeSkillDetails))
+    issues.append(contentsOf: skillIssues(for: "Codex", state: skillsStatus.codexSkillDetails))
 
     // Determine overall status
     let overall = determineOverallStatus(
@@ -277,7 +395,7 @@ public struct CLIHealthChecker: Sendable {
       return (ManifestStatus(present: false, version: nil),
               Issue(component: "manifest", severity: .warning, code: "MANIFEST_MALFORMED",
                     message: "Plugin manifest is corrupted or invalid JSON",
-                    fix: "Run: contextify-query install-plugin"))
+                    fix: installCommandFix))
     }
     if case .unreadable = v2Result {
       return (ManifestStatus(present: false, version: nil),
@@ -289,7 +407,7 @@ public struct CLIHealthChecker: Sendable {
       return (ManifestStatus(present: false, version: nil),
               Issue(component: "manifest", severity: .warning, code: "MANIFEST_MALFORMED",
                     message: "Plugin manifest is corrupted or invalid JSON",
-                    fix: "Run: contextify-query install-plugin"))
+                    fix: installCommandFix))
     }
 
     // 4. If either file exists but our entry is missing
@@ -297,13 +415,13 @@ public struct CLIHealthChecker: Sendable {
       return (ManifestStatus(present: false, version: nil),
               Issue(component: "manifest", severity: .warning, code: "MANIFEST_ENTRY_MISSING",
                     message: "Plugin manifest exists but Contextify is not registered",
-                    fix: "Run: contextify-query install-plugin"))
+                    fix: installCommandFix))
     }
     if case .missingPluginEntry = v2Result {
       return (ManifestStatus(present: false, version: nil),
               Issue(component: "manifest", severity: .warning, code: "MANIFEST_ENTRY_MISSING",
                     message: "Plugin manifest exists but Contextify is not registered",
-                    fix: "Run: contextify-query install-plugin"))
+                    fix: installCommandFix))
     }
 
     // 5. Both files not found - no manifest at all
@@ -367,7 +485,7 @@ public struct CLIHealthChecker: Sendable {
         severity: .warning,
         code: "CLAUDE_SKILL_MISSING",
         message: "Claude Code skill not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     }
 
@@ -377,9 +495,12 @@ public struct CLIHealthChecker: Sendable {
         severity: .warning,
         code: "CODEX_SKILL_MISSING",
         message: "Codex CLI skill not found",
-        fix: "Run: contextify-query install-plugin"
+        fix: installCommandFix
       ))
     }
+
+    issues.append(contentsOf: skillIssues(for: "Claude", state: skillsStatus.claudeSkillDetails))
+    issues.append(contentsOf: skillIssues(for: "Codex", state: skillsStatus.codexSkillDetails))
 
     // Determine overall status (Linux: skills-focused)
     let overall: HealthStatus
@@ -405,19 +526,178 @@ public struct CLIHealthChecker: Sendable {
 
   // MARK: - Shared Checks
 
-  private static func checkSkills(homeDir: URL, fileManager: FileManager) -> SkillsStatus {
+  static func checkSkills(homeDir: URL, fileManager: FileManager) -> SkillsStatus {
     let claudeSkillPath = homeDir.appendingPathComponent(".claude/skills/total-recall/SKILL.md")
     let codexSkillPath = homeDir.appendingPathComponent(".codex/skills/total-recall/SKILL.md")
 
-    let claudeExists = fileManager.fileExists(atPath: claudeSkillPath.path)
-    let codexExists = fileManager.fileExists(atPath: codexSkillPath.path)
+    let claudeDetails = inspectInstalledSkill(at: claudeSkillPath, fileManager: fileManager)
+    let codexDetails = inspectInstalledSkill(at: codexSkillPath, fileManager: fileManager)
 
-    return SkillsStatus(
-      claudeSkillPresent: claudeExists,
-      codexSkillPresent: codexExists,
-      claudeSkillPath: claudeExists ? claudeSkillPath.path : nil,
-      codexSkillPath: codexExists ? codexSkillPath.path : nil
+    return SkillsStatus(claudeSkillDetails: claudeDetails, codexSkillDetails: codexDetails)
+  }
+
+  public static func skillMetadataURL(forSkillFile skillFile: URL) -> URL {
+    skillFile.deletingLastPathComponent().appendingPathComponent(skillInstallMetadataFileName)
+  }
+
+  static func inspectInstalledSkill(at skillFile: URL, fileManager: FileManager) -> InstalledSkillStatus {
+    guard fileManager.fileExists(atPath: skillFile.path) else {
+      return InstalledSkillStatus(present: false, path: nil)
+    }
+
+    let metadataURL = skillMetadataURL(forSkillFile: skillFile)
+    let installedData: Data
+    do {
+      installedData = try Data(contentsOf: skillFile)
+    } catch {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: fileManager.fileExists(atPath: metadataURL.path) ? metadataURL.path : nil,
+        provenanceStatus: .skillUnreadable
+      )
+    }
+
+    let installedHash = CrossPlatformCrypto.sha256(installedData)
+
+    guard fileManager.fileExists(atPath: metadataURL.path) else {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: nil,
+        provenanceStatus: .metadataMissing
+      )
+    }
+
+    let metadata: SkillInstallMetadata
+    do {
+      let metadataData = try Data(contentsOf: metadataURL)
+      metadata = try JSONDecoder().decode(SkillInstallMetadata.self, from: metadataData)
+    } catch {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: metadataURL.path,
+        provenanceStatus: .metadataUnreadable
+      )
+    }
+
+    if installedHash != metadata.installedSkillSHA256 {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: metadataURL.path,
+        provenanceStatus: .modified,
+        installSourceKind: metadata.installSourceKind,
+        installSourcePath: metadata.installSourcePath,
+        installedAt: metadata.installedAt,
+        installerVersion: metadata.installerVersion
+      )
+    }
+
+    let sourceURL = URL(fileURLWithPath: metadata.installSourcePath)
+    guard fileManager.fileExists(atPath: sourceURL.path) else {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: metadataURL.path,
+        provenanceStatus: .sourceMissing,
+        installSourceKind: metadata.installSourceKind,
+        installSourcePath: metadata.installSourcePath,
+        installedAt: metadata.installedAt,
+        installerVersion: metadata.installerVersion
+      )
+    }
+
+    let sourceData: Data
+    do {
+      sourceData = try Data(contentsOf: sourceURL)
+    } catch {
+      return InstalledSkillStatus(
+        present: true,
+        path: skillFile.path,
+        metadataPath: metadataURL.path,
+        provenanceStatus: .sourceMissing,
+        installSourceKind: metadata.installSourceKind,
+        installSourcePath: metadata.installSourcePath,
+        installedAt: metadata.installedAt,
+        installerVersion: metadata.installerVersion
+      )
+    }
+
+    let sourceHash = CrossPlatformCrypto.sha256(sourceData)
+
+    return InstalledSkillStatus(
+      present: true,
+      path: skillFile.path,
+      metadataPath: metadataURL.path,
+      provenanceStatus: sourceHash == installedHash ? .current : .sourceChanged,
+      installSourceKind: metadata.installSourceKind,
+      installSourcePath: metadata.installSourcePath,
+      installedAt: metadata.installedAt,
+      installerVersion: metadata.installerVersion
     )
+  }
+
+  private static func skillIssues(for label: String, state: InstalledSkillStatus) -> [Issue] {
+    guard state.present, let status = state.provenanceStatus else { return [] }
+
+    let component = "skills"
+    let installFix = installCommandFix
+    let prefix = label.uppercased()
+
+    switch status {
+    case .current:
+      return []
+    case .metadataMissing:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_PROVENANCE_MISSING",
+        message: "\(label) skill exists but has no provenance metadata",
+        fix: installFix
+      )]
+    case .metadataUnreadable:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_PROVENANCE_UNREADABLE",
+        message: "\(label) skill provenance metadata is unreadable",
+        fix: installFix
+      )]
+    case .skillUnreadable:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_UNREADABLE",
+        message: "\(label) skill exists but cannot be read",
+        fix: installFix
+      )]
+    case .modified:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_MODIFIED",
+        message: "\(label) skill differs from the version Contextify installed",
+        fix: installFix
+      )]
+    case .sourceChanged:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_STALE",
+        message: "\(label) skill is out of sync with its recorded source",
+        fix: installFix
+      )]
+    case .sourceMissing:
+      return [Issue(
+        component: component,
+        severity: .warning,
+        code: "\(prefix)_SKILL_SOURCE_MISSING",
+        message: "\(label) skill source from install time is no longer available",
+        fix: installFix
+      )]
+    }
   }
 
   private static func isDirectoryOnPath(_ dir: String) -> Bool {
