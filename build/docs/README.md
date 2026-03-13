@@ -11,7 +11,7 @@
 |----------|---------|---------------|
 | **Architecture** | System design & data flow | [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Startup Coordinator](architecture/startup-coordinator.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
-| **Cloud** | Cloud sync backend & platform vision | [Platform Vision](cloud/platform-vision.md) |
+| **Cloud** | Cloud sync backend, web dashboard ownership, cross-repo investigation routing | [Platform Vision](cloud/platform-vision.md), [Infrastructure](operations/INFRASTRUCTURE.md), [Cloud Server](operations/CLOUD-SERVER.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-transcript-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
 | **Testing** | QA & testing workflows | [First-Run QA Guide](testing/first-run-qa-guide.md) |
@@ -130,6 +130,10 @@ Cloud sync backend and long-range platform vision.
 
 **Key docs:**
 - [Platform Vision](cloud/platform-vision.md) - The vision for contextify-cloud as a proven foundation for a generalizable AI CLI backend platform, design principles to preserve, and the generalization path
+
+**Investigation routing:**
+- For cloud sync, team dashboards, analytics pages, and server-rendered project/grouping behavior, treat `~/code/projects/contextify-cloud/` as the owning implementation repo.
+- For project grouping bugs that span local ingestion/sync and cloud visualization, inspect both `contextify` and `contextify-cloud` from latest `origin/main`.
 
 ### archive/
 Historical context. Completed investigations, original feature specs (design rationale).

@@ -2,6 +2,15 @@
 
 The cloud sync API runs on a dedicated DigitalOcean droplet, completely separate from the contextify.sh website server.
 
+## Repository Ownership
+
+The deployed implementation on this server comes from `~/code/projects/contextify-cloud/`, not from the public website repo.
+
+- `contextify-cloud` is the source of truth for the cloud API and the web dashboard pages exposed from `cloud.contextify.sh`
+- `contextify` remains the source of truth for local app-side grouping, ingestion, and sync payload production
+
+When investigating analytics/dashboard behavior that depends on local project grouping, use latest `origin/main` from both repos before drawing conclusions. The bug may live in either the local grouping pipeline or the cloud-side visualization/reconciliation layer.
+
 ## Server Details
 
 | Field | Value |

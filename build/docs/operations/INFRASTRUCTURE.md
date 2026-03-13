@@ -29,6 +29,22 @@ All DNS is managed at DigitalOcean (ns1/2/3.digitalocean.com).
 | contextify-cloud | github.com/banagale/contextify-cloud | Cloud server via git pull |
 | contextify (public) | github.com/PeterPym/contextify | GitHub Releases (DMG downloads) |
 
+## Ownership Boundaries
+
+- `contextify` owns the macOS app, local SQLite state, transcript ingestion, worktree grouping detection, and the data that is synced upward.
+- `contextify-cloud` owns the cloud API, PostgreSQL data model, sync reconciliation on the server, and the web dashboard/analytics pages served from `cloud.contextify.sh`.
+- `contextify-public-repo` does not own the cloud analytics/dashboard implementation. It is only the public release/issues surface.
+
+## Investigation Routing
+
+Use this routing before starting cloud-facing debugging work:
+
+- If the problem is about local grouping behavior before sync, start in `contextify`.
+- If the problem is about what the analytics/dashboard page shows, start in `contextify-cloud`.
+- If the problem is about grouping or coalescing differing between local app state and the analytics/dashboard page, inspect both repos from latest `origin/main`.
+
+This matters because the "analytics page" is not part of the static marketing website and is not implemented in the public repo. It is part of the cloud stack on the dedicated cloud server.
+
 ## Detailed Documentation
 
 - **Website server:** [WEBSITE.md](WEBSITE.md) - Deploy, Nginx, analytics, newsletter
