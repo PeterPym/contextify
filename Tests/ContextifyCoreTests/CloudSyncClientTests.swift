@@ -425,6 +425,70 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(decoded.lastPushSessionId, original.lastPushSessionId)
     XCTAssertEqual(decoded.lastPushBatchSeq, original.lastPushBatchSeq)
   }
+
+  func testMergedForConnectionUpdatePreservesSyncStateWhenAPIKeyMatches() {
+    let existing = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_same",
+      deviceId: "old-device",
+      deviceName: "Old Mac",
+      enabled: false,
+      lastPullSequence: 42,
+      lastPushTimestamp: 1700000000,
+      lastPushEntryId: "entry-1",
+      lastPushSessionId: "sess-1",
+      lastPushBatchSeq: 7
+    )
+
+    let merged = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_same",
+      deviceId: "new-device",
+      deviceName: "New Mac"
+    )
+
+    XCTAssertEqual(merged.enabled, false)
+    XCTAssertEqual(merged.deviceId, "new-device")
+    XCTAssertEqual(merged.deviceName, "New Mac")
+    XCTAssertEqual(merged.lastPullSequence, 42)
+    XCTAssertEqual(merged.lastPushTimestamp, 1700000000)
+    XCTAssertEqual(merged.lastPushEntryId, "entry-1")
+    XCTAssertEqual(merged.lastPushSessionId, "sess-1")
+    XCTAssertEqual(merged.lastPushBatchSeq, 7)
+  }
+
+  func testMergedForConnectionUpdateResetsSyncStateWhenAPIKeyChanges() {
+    let existing = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_old",
+      deviceId: "old-device",
+      deviceName: "Old Mac",
+      enabled: false,
+      lastPullSequence: 42,
+      lastPushTimestamp: 1700000000,
+      lastPushEntryId: "entry-1",
+      lastPushSessionId: "sess-1",
+      lastPushBatchSeq: 7
+    )
+
+    let merged = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_new",
+      deviceId: "new-device",
+      deviceName: "New Mac"
+    )
+
+    XCTAssertEqual(merged.enabled, false)
+    XCTAssertEqual(merged.deviceId, "new-device")
+    XCTAssertEqual(merged.deviceName, "New Mac")
+    XCTAssertEqual(merged.lastPullSequence, 0)
+    XCTAssertNil(merged.lastPushTimestamp)
+    XCTAssertNil(merged.lastPushEntryId)
+    XCTAssertNil(merged.lastPushSessionId)
+    XCTAssertNil(merged.lastPushBatchSeq)
+  }
 }
 
 // MARK: - CloudSyncClient Tests

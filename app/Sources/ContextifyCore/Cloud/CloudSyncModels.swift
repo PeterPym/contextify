@@ -123,6 +123,48 @@ public struct CloudConfig: Codable, Sendable {
     let data = try encoder.encode(self)
     try data.write(to: CloudConfig.configFile, options: .atomic)
   }
+
+  /// Builds the config that should be persisted after the user updates their
+  /// cloud connection details in Settings.
+  ///
+  /// Sync cursors are preserved only when the API key is unchanged. When the
+  /// key changes, the new connection starts from a clean sync lineage.
+  public static func mergedForConnectionUpdate(
+    existing: CloudConfig?,
+    serverURL: String,
+    apiKey: String,
+    deviceId: String,
+    deviceName: String
+  ) -> CloudConfig {
+    let enabled = existing?.enabled ?? true
+    guard let existing, existing.apiKey == apiKey else {
+      return CloudConfig(
+        serverURL: serverURL,
+        apiKey: apiKey,
+        deviceId: deviceId,
+        deviceName: deviceName,
+        enabled: enabled,
+        lastPullSequence: 0,
+        lastPushTimestamp: nil,
+        lastPushEntryId: nil,
+        lastPushSessionId: nil,
+        lastPushBatchSeq: nil
+      )
+    }
+
+    return CloudConfig(
+      serverURL: serverURL,
+      apiKey: apiKey,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      enabled: existing.enabled,
+      lastPullSequence: existing.lastPullSequence,
+      lastPushTimestamp: existing.lastPushTimestamp,
+      lastPushEntryId: existing.lastPushEntryId,
+      lastPushSessionId: existing.lastPushSessionId,
+      lastPushBatchSeq: existing.lastPushBatchSeq
+    )
+  }
 }
 
 // MARK: - Account

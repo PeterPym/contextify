@@ -630,36 +630,15 @@ struct CloudSettingsView: View {
     draftApiKey = apiKey
     draftDeviceName = deviceName
     let existing = syncManager.loadConfig()
-    let isEnabled = existing?.enabled ?? true
-
-    // TODO(self-hosted): Replace CloudConfig.defaultServerURL with serverURL state var.
-    let config = CloudConfig(
+    let finalConfig = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
       serverURL: CloudConfig.defaultServerURL,
       apiKey: self.apiKey,
       deviceId: MachineID.current(),
-      deviceName: self.deviceName,
-      enabled: isEnabled,
-      lastPullSequence: 0,
-      lastPushTimestamp: nil,
-      lastPushEntryId: nil,
-      lastPushSessionId: nil,
-      lastPushBatchSeq: nil
+      deviceName: self.deviceName
     )
-
-    var finalConfig = config
-    if let existing {
-      finalConfig = CloudConfig(
-        serverURL: CloudConfig.defaultServerURL,
-        apiKey: self.apiKey,
-        deviceId: MachineID.current(),
-        deviceName: self.deviceName,
-        enabled: existing.enabled,
-        lastPullSequence: existing.lastPullSequence,
-        lastPushTimestamp: existing.lastPushTimestamp,
-        lastPushEntryId: existing.lastPushEntryId,
-        lastPushSessionId: existing.lastPushSessionId,
-        lastPushBatchSeq: existing.lastPushBatchSeq
-      )
+    if let existing, existing.apiKey != apiKey {
+      log.info("[CLOUD-SETTINGS] API key changed; resetting cloud sync cursors")
     }
 
     syncManager.saveConfig(finalConfig)

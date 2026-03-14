@@ -158,6 +158,10 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
+  @MainActor private var connectionRevision: UInt64 = 0
+  var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
+    CloudSyncClient(serverURL: $0, apiKey: $1)
+  }
 
   // MARK: - Initialization
 
@@ -192,8 +196,9 @@ public final class CloudSyncManager: @unchecked Sendable {
       return
     }
 
+    connectionRevision &+= 1
     self.config = config
-    self.client = CloudSyncClient(serverURL: url, apiKey: config.apiKey)
+    self.client = clientFactory(url, config.apiKey)
 
     if config.enabled {
       syncState = .idle
@@ -305,12 +310,13 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Fetches cloud status snapshot for UI state projection.
   public func refreshStatusFromServer() async {
     // Snapshot MainActor-isolated state to avoid data races
-    let client = await MainActor.run { self.client }
+    let (client, revision) = await MainActor.run { (self.client, self.connectionRevision) }
     guard let client else { return }
 
     do {
       let status = try await client.status()
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudStatus = status
         self.cloudStatusUpdatedAt = Date()
         self.cloudStatusError = nil
@@ -321,6 +327,7 @@ public final class CloudSyncManager: @unchecked Sendable {
       let message = userFriendlyMessage(for: error)
       let offline = isConnectivityError(error)
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudStatusUpdatedAt = Date()
         self.cloudStatusError = message
         self.cloudOffline = offline
@@ -331,18 +338,20 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   /// Fetches authenticated account/profile data for the current API key.
   public func refreshAccountProfileFromServer() async {
-    let client = await MainActor.run { self.client }
+    let (client, revision) = await MainActor.run { (self.client, self.connectionRevision) }
     guard let client else { return }
 
     do {
       let profile = try await client.account()
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudAccountProfile = profile
         self.cloudAccountError = nil
       }
     } catch {
       let message = userFriendlyMessage(for: error)
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudAccountProfile = nil
         self.cloudAccountError = message
       }
@@ -922,6 +931,7 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Call this when the user disconnects from cloud sync in Settings.
   @MainActor
   public func resetForDisconnect() {
+    connectionRevision &+= 1
     stopAppLevelAutoSync()
     stopStatusPolling()
     client = nil
