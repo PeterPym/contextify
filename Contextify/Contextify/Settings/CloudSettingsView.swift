@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import ContextifyCore
 import OSLog
+import AppKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSettings")
 
@@ -19,7 +20,6 @@ struct CloudSettingsView: View {
 
   @State private var isConfigured: Bool = false
   @State private var showDisconnectConfirmation: Bool = false
-  @State private var showActivitySheet: Bool = false
   @State private var saveMessage: String?
   @State@State private var now: Date = .now
   @State private var wasOffline: Bool = false
@@ -56,9 +56,6 @@ struct CloudSettingsView: View {
         }
       }
       wasOffline = isOfflineNow
-    }
-    .sheet(isPresented: $showActivitySheet) {
-      CloudSyncActivitySheet(syncManager: syncManager, now: now)
     }
     // No .onDisappear cleanup - sync lives at app level
   }
@@ -295,7 +292,7 @@ struct CloudSettingsView: View {
           }
 
           Button("View Activity") {
-            showActivitySheet = true
+            openCloudSyncPage()
           }
           .buttonStyle(.bordered)
         }
@@ -560,6 +557,14 @@ struct CloudSettingsView: View {
     log.info("[CLOUD-SETTINGS] Disconnected from cloud sync")
   }
 
+  private func openCloudSyncPage() {
+    guard let url = URL(string: "\(CloudConfig.defaultServerURL)/cloud/sync") else {
+      log.error("[CLOUD-SETTINGS] Failed to build cloud sync page URL")
+      return
+    }
+    NSWorkspace.shared.open(url)
+  }
+
   // MARK: - Helpers
 
   private static let relativeDateFormatter: RelativeDateTimeFormatter = {
@@ -618,88 +623,6 @@ struct CloudSettingsView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
     }
-  }
-}
-
-private struct CloudSyncActivitySheet: View {
-  let syncManager: CloudSyncManager
-  let now: Date
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Cloud Sync Activity")
-        .font(.headline)
-
-      if let session = syncManager.cloudStatus?.activePushSession {
-        if let total = session.entriesTotal, total > 0 {
-          let resolved = min(max(session.entriesResolved ?? 0, 0), total)
-          ProgressView(value: Double(resolved), total: Double(total))
-            .progressViewStyle(.linear)
-          Text("\(resolved) / \(total) entries")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        Text("Phase: \(session.phase)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-
-        if let completion = session.completionState {
-          Text("Outcome: \(completion)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let attention = session.needsAttentionCount, attention > 0 {
-          Text("Needs attention: \(attention)")
-            .font(.caption)
-            .foregroundStyle(.orange)
-        }
-
-        let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
-        let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
-
-        if let eta = displayEta, eta > 0 {
-          Text("ETA: ~\(Int(round(Double(eta) / 60.0))) min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let throughput = displayThroughput, throughput > 0 {
-          Text("Throughput: \(Int(throughput.rounded())) entries/min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      } else {
-        Text("No active upload session")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      Divider()
-
-      if let push = syncManager.lastPushResult {
-        Text("Last upload: \(push.entriesPushed) uploaded, \(push.duplicatesSkipped) already synced")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      if let pull = syncManager.lastPullResult {
-        Text("Last download: \(pull.entriesImported) imported, \(pull.entriesSkipped) already present")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      if let updatedAt = syncManager.cloudStatusUpdatedAt {
-        Text("Status refreshed: \(RelativeDateTimeFormatter().localizedString(for: updatedAt, relativeTo: now))")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      Spacer()
-    }
-    .padding()
-    .frame(minWidth: 420, minHeight: 320)
   }
 }
 
