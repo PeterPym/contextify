@@ -220,12 +220,13 @@ struct CloudSetupCommand: ParsableCommand {
       cloudURL = u
       apiKey = k
     } else {
-      print("Contextify Cloud Setup")
-      print("======================")
       print()
-      print("Enter your cloud server URL")
-      print("  (e.g., https://cloud.contextify.sh or http://100.x.y.z:8443)")
-      print("> ", terminator: "")
+      print(CLIStyle.header("Contextify Cloud Setup"))
+      print()
+      print("\(CLIStyle.bold)[1/2]\(CLIStyle.reset) Enter your cloud server URL")
+      let exampleURL = CLIStyle.link("cloud.contextify.sh", url: "https://cloud.contextify.sh")
+      print(CLIStyle.dimText("  (e.g., https://\(exampleURL) or http://100.x.y.z:8443)"))
+      print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
       guard let inputURL = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
             !inputURL.isEmpty else {
         throw ValidationError("URL is required")
@@ -233,8 +234,8 @@ struct CloudSetupCommand: ParsableCommand {
       cloudURL = inputURL
 
       print()
-      print("Enter your API key (starts with ctx_)")
-      print("> ", terminator: "")
+      print("\(CLIStyle.bold)[2/2]\(CLIStyle.reset) Enter your API key \(CLIStyle.dimText("(starts with ctx_)"))")
+      print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
       guard let inputKey = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
             !inputKey.isEmpty else {
         throw ValidationError("API key is required")
@@ -259,7 +260,8 @@ struct CloudSetupCommand: ParsableCommand {
     #endif
 
     // Test connection
-    print("Testing connection to \(cloudURL)...")
+    print()
+    print("Testing connection to \(CLIStyle.cyanText(cloudURL))...")
     let testConfig = CLICloudConfig(
       serverURL: cloudURL, apiKey: apiKey,
       deviceId: machineId, deviceName: machineName)
@@ -267,21 +269,24 @@ struct CloudSetupCommand: ParsableCommand {
       let (_, status) = try cloudRequest(
         config: testConfig, method: "GET", path: "/api/v1/sync/status")
       if status == 200 {
-        print("Connection successful!")
+        print(CLIStyle.success("Connection successful"))
       } else if status == 401 || status == 403 {
-        print("Warning: Authentication failed (HTTP \(status)). Check your API key.")
+        print(CLIStyle.warning("Authentication failed (HTTP \(status)). Check your API key."))
       } else {
-        print("Warning: Server returned HTTP \(status). Saving config anyway.")
+        print(CLIStyle.warning("Server returned HTTP \(status). Saving config anyway."))
       }
     } catch {
-      print("Warning: Could not connect: \(error)")
-      print("Saving configuration anyway.")
+      print(CLIStyle.warning("Could not connect: \(error)"))
+      print(CLIStyle.dimText("Saving configuration anyway."))
     }
 
     try testConfig.save()
     print()
-    print("Saved to \(CLICloudConfig.configFile.path)")
-    print("Run 'contextify cloud status' to verify.")
+    let configPath = CLIStyle.link(
+      CLICloudConfig.configFile.path,
+      url: "file://\(CLICloudConfig.configFile.path)")
+    print(CLIStyle.success("Saved to \(configPath)"))
+    print(CLIStyle.dimText("Run '\(CLIStyle.cyanText("contextify cloud status"))' to verify."))
   }
 }
 
@@ -304,7 +309,7 @@ struct CloudStatusCommand: ParsableCommand {
       if json {
         print(#"{"configured":false,"error":"not_configured"}"#)
       } else {
-        print("Cloud sync not configured. Run 'contextify cloud setup' first.")
+        print(CLIStyle.error("Cloud sync not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
       }
       return
     }
@@ -331,39 +336,46 @@ struct CloudStatusCommand: ParsableCommand {
         print(String(data: data, encoding: .utf8) ?? "{}")
       }
     } else {
-      print("Cloud Sync Status")
-      print("=================")
-      print("Server:     \(config.serverURL)")
-      print("Enabled:    \(config.enabled ? "yes" : "no")")
+      let labelWidth = 12
+      print()
+      print(CLIStyle.header("Cloud Sync Status"))
+      print()
+      let serverLink = CLIStyle.link(config.serverURL, url: config.serverURL)
+      print(CLIStyle.labelValue("Server:", serverLink, padTo: labelWidth))
+      let enabledValue = config.enabled
+        ? CLIStyle.greenText("yes")
+        : CLIStyle.redText("no")
+      print(CLIStyle.labelValue("Enabled:", enabledValue, padTo: labelWidth))
       print()
 
       if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
         if let lastSync = obj["last_sync"] as? String {
-          print("Last sync:  \(lastSync)")
+          print(CLIStyle.labelValue("Last sync:", lastSync, padTo: labelWidth))
         } else {
-          print("Last sync:  never")
+          print(CLIStyle.labelValue("Last sync:", CLIStyle.yellowText("never"), padTo: labelWidth))
         }
         if let entries = obj["entries_synced"] as? Int {
-          print("Entries:    \(entries)")
+          print(CLIStyle.labelValue("Entries:", CLIStyle.boldText("\(entries)"), padTo: labelWidth))
         }
         if let seq = obj["server_sequence"] as? Int {
-          print("Server seq: \(seq)")
+          print(CLIStyle.labelValue("Server seq:", "\(seq)", padTo: labelWidth))
         }
         if let devices = obj["devices"] as? [[String: Any]] {
-          print("Devices:    \(devices.count)")
+          print(CLIStyle.labelValue("Devices:", CLIStyle.boldText("\(devices.count)"), padTo: labelWidth))
           for d in devices {
             let name = d["machine_name"] as? String ?? "unknown"
             let os = d["os"] as? String ?? ""
-            print("  - \(name) (\(os))")
+            print("  \(CLIStyle.dimText("-")) \(CLIStyle.boldText(name)) \(CLIStyle.dimText("(\(os))"))")
           }
         }
       }
       print()
-      print("Local pull cursor: \(config.lastPullSequence)")
+      print(CLIStyle.labelValue("Pull cursor:", "\(config.lastPullSequence)", padTo: labelWidth))
       if let ts = config.lastPushTimestamp {
-        print("Local push cursor: \(ts)" + (config.lastPushEntryId.map { " (\($0))" } ?? ""))
+        let suffix = config.lastPushEntryId.map { " \(CLIStyle.dimText("(\($0))"))" } ?? ""
+        print(CLIStyle.labelValue("Push cursor:", "\(ts)\(suffix)", padTo: labelWidth))
       } else {
-        print("Local push cursor: none (full upload on next push)")
+        print(CLIStyle.labelValue("Push cursor:", CLIStyle.yellowText("none") + CLIStyle.dimText(" (full upload on next push)"), padTo: labelWidth))
       }
     }
   }
@@ -435,7 +447,7 @@ struct CloudPushCommand: ParsableCommand {
           if json {
             print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
           } else {
-            print("No entries to push.")
+            print(CLIStyle.dimText("No entries to push."))
           }
         }
         break
@@ -451,7 +463,7 @@ struct CloudPushCommand: ParsableCommand {
       let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
       if !json {
-        print("Pushing batch \(batchCount): \(exportData.entries.count) entries to \(config.serverURL)...")
+        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(config.serverURL))...")
       }
 
       let (responseData, status) = try cloudRequest(
@@ -505,10 +517,10 @@ struct CloudPushCommand: ParsableCommand {
         let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
         print(String(data: data, encoding: .utf8) ?? "{}")
       } else {
-        print("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))")
+        print(CLIStyle.success("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))"))
         if !totalErrors.isEmpty {
-          print("Errors: \(totalErrors.count)")
-          for e in totalErrors.prefix(5) { print("  - \(e)") }
+          print(CLIStyle.error("Errors: \(totalErrors.count)"))
+          for e in totalErrors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
         }
       }
     }
@@ -559,7 +571,7 @@ struct CloudPullCommand: ParsableCommand {
     var hasMore = true
 
     if !json {
-      print("Pulling from \(config.serverURL) (cursor: \(cursor))...")
+      print("Pulling from \(CLIStyle.cyanText(config.serverURL)) \(CLIStyle.dimText("(cursor: \(cursor))"))...")
     }
 
     while hasMore {
@@ -609,7 +621,7 @@ struct CloudPullCommand: ParsableCommand {
         totalImported += importResult.entriesImported
 
         if !json {
-          print("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))")
+          print(CLIStyle.dimText("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))"))
         }
       }
     }
@@ -624,7 +636,7 @@ struct CloudPullCommand: ParsableCommand {
       let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
       print(String(data: data, encoding: .utf8)!)
     } else {
-      print("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)")
+      print(CLIStyle.success("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)"))
     }
   }
 
@@ -658,21 +670,21 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    if !json { print("=== Push ===") }
+    if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
     push.db = db
     push.limit = 500
     push.json = json
     try push.run()
 
-    if !json { print("\n=== Pull ===") }
+    if !json { print("\n\(CLIStyle.header("Pull"))") }
     var pull = CloudPullCommand()
     pull.db = db
     pull.project = project
     pull.json = json
     try pull.run()
 
-    if !json { print("\nSync complete.") }
+    if !json { print("\n" + CLIStyle.success("Sync complete.")) }
   }
 }
 
@@ -737,7 +749,7 @@ struct CloudSearchCommand: ParsableCommand {
       if json {
         print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
       } else {
-        print("Cloud not configured. Run 'contextify cloud setup' first.")
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
       }
       throw ExitCode(1)
     }
@@ -762,7 +774,7 @@ struct CloudSearchCommand: ParsableCommand {
       if json {
         print(#"{"error":"auth_error","message":"Authentication failed. Check your API key."}"#)
       } else {
-        print("Authentication failed (HTTP \(status)). Check your API key or run 'contextify cloud setup'.")
+        print(CLIStyle.error("Authentication failed (HTTP \(status)). Check your API key or run '\(CLIStyle.cyanText("contextify cloud setup"))'."))
       }
       throw ExitCode(1)
     }
@@ -789,11 +801,11 @@ struct CloudSearchCommand: ParsableCommand {
     let hasMore = response["has_more"] as? Bool ?? false
 
     if results.isEmpty {
-      print("No results found for \"\(trimmedQuery)\".")
+      print(CLIStyle.dimText("No results found for \"\(trimmedQuery)\"."))
       return
     }
 
-    print("Found \(totalCount) result\(totalCount == 1 ? "" : "s") for \"\(trimmedQuery)\" (\(formatQueryMs(queryMs)))\n")
+    print("\(CLIStyle.boldText("Found \(totalCount) result\(totalCount == 1 ? "" : "s")")) for \"\(CLIStyle.cyanText(trimmedQuery))\" \(CLIStyle.dimText("(\(formatQueryMs(queryMs)))"))\n")
 
     for (index, result) in results.enumerated() {
       let kind = result["kind"] as? String ?? "unknown"
@@ -808,15 +820,16 @@ struct CloudSearchCommand: ParsableCommand {
       let dateStr = formatEntryTimestamp(timestamp)
       let num = offset + index + 1
 
-      print("\(num). [\(kind)] \(dateStr)  (project: \(displayProject), score: \(String(format: "%.2f", score)))")
-      // Strip HTML bold tags and sanitize control characters for terminal safety
-      let cleanSnippet = sanitizeForTerminal(stripHTMLBoldTags(snippet))
+      print("\(CLIStyle.boldText("\(num).")) \(CLIStyle.cyanText("[\(kind)]")) \(dateStr)  \(CLIStyle.dimText("(project: \(displayProject), score: \(String(format: "%.2f", score)))"))")
+      // Apply ANSI bold from HTML bold tags, then sanitize control characters
+      let styledSnippet = CLIStyle.styledSnippet(snippet)
+      let cleanSnippet = sanitizeForTerminal(styledSnippet)
       // Indent snippet lines
       let lines = cleanSnippet.components(separatedBy: "\n")
       for line in lines.prefix(4) {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-          print("   \(trimmed)")
+          print("   \(CLIStyle.dimText(trimmed))")
         }
       }
       print()
@@ -825,9 +838,9 @@ struct CloudSearchCommand: ParsableCommand {
     // Pagination hint
     if hasMore {
       let nextOffset = offset + limit
-      print("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results. Use --offset \(nextOffset) for next page.")
+      print(CLIStyle.dimText("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results. Use \(CLIStyle.cyanText("--offset \(nextOffset)")) for next page."))
     } else if totalCount > results.count {
-      print("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results.")
+      print(CLIStyle.dimText("Showing \(offset + 1)-\(offset + results.count) of \(totalCount) results."))
     }
   }
 
@@ -849,20 +862,68 @@ struct CloudSearchCommand: ParsableCommand {
     return Self.entryDateFormatter.string(from: date)
   }
 
-  /// Strip <b> and </b> HTML tags from snippet text for terminal display
-  private func stripHTMLBoldTags(_ text: String) -> String {
-    return text
-      .replacingOccurrences(of: "<b>", with: "")
-      .replacingOccurrences(of: "</b>", with: "")
-  }
-
-  /// Remove terminal control characters (including ANSI escape sequences)
-  /// while preserving newlines and tabs for readable output.
+  /// Remove dangerous control characters while preserving newlines, tabs,
+  /// and ANSI escape sequences (when styling is enabled).
   private func sanitizeForTerminal(_ text: String) -> String {
-    String(text.unicodeScalars.filter { s in
-      if s == "\n" || s == "\r" || s == "\t" { return true }
-      return !s.properties.isControl
-    })
+    if CLIStyle.isStyled {
+      // Preserve ANSI CSI sequences (ESC[...m) and OSC sequences (ESC]...ESC\)
+      // by stripping only non-ANSI control characters
+      var result = ""
+      var i = text.startIndex
+      while i < text.endIndex {
+        let c = text[i]
+        if c == "\u{001B}" {
+          // Start of an escape sequence - pass through until terminator
+          result.append(c)
+          let next = text.index(after: i)
+          if next < text.endIndex {
+            if text[next] == "[" {
+              // CSI sequence: pass through until letter terminates it
+              var j = next
+              while j < text.endIndex {
+                result.append(text[j])
+                if text[j].isLetter { break }
+                j = text.index(after: j)
+              }
+              i = (j < text.endIndex) ? text.index(after: j) : j
+              continue
+            } else if text[next] == "]" {
+              // OSC sequence: pass through until ST (ESC\) or BEL
+              var j = next
+              while j < text.endIndex {
+                result.append(text[j])
+                if text[j] == "\u{0007}" { break }  // BEL terminator
+                if text[j] == "\\" {
+                  // Check for ESC\ (ST)
+                  let prev = text.index(before: j)
+                  if prev >= next && text[prev] == "\u{001B}" { break }
+                }
+                j = text.index(after: j)
+              }
+              i = (j < text.endIndex) ? text.index(after: j) : j
+              continue
+            }
+          }
+          i = text.index(after: i)
+        } else if c == "\n" || c == "\r" || c == "\t" {
+          result.append(c)
+          i = text.index(after: i)
+        } else if c.unicodeScalars.allSatisfy({ $0.properties.isControl }) {
+          // Strip other control characters
+          i = text.index(after: i)
+        } else {
+          result.append(c)
+          i = text.index(after: i)
+        }
+      }
+      return result
+    } else {
+      // No styling - strip all control characters
+      return String(text.unicodeScalars.filter { s in
+        if s == "\n" || s == "\r" || s == "\t" { return true }
+        return !s.properties.isControl
+      })
+    }
   }
 }
 
