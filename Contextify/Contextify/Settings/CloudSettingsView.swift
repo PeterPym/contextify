@@ -113,13 +113,15 @@ struct CloudSettingsView: View {
   private var serverConfigurationSection: some View {
     Section {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Cloud Connection")
+      Text("Cloud Connection")
           .font(.headline)
+          .accessibilityIdentifier("cloud-connection-heading")
 
         Text(CloudConfig.defaultServerURL)
           .font(.caption)
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
+          .accessibilityIdentifier("cloud-server-url")
 
         if isConfigured {
           configuredConnectionSummary
@@ -131,6 +133,7 @@ struct CloudSettingsView: View {
           Text(message)
             .font(.caption)
             .foregroundStyle(message.contains("Error") ? .red : .green)
+            .accessibilityIdentifier("cloud-save-message")
         }
       }
     }
@@ -141,6 +144,7 @@ struct CloudSettingsView: View {
     VStack(alignment: .leading, spacing: 10) {
       Text("This Mac is not connected to Contextify Cloud yet.")
         .font(.subheadline)
+        .accessibilityIdentifier("cloud-connection-empty-state")
 
       Text("Connect with an API key in a modal so the main settings view stays focused on account state instead of raw credential editing.")
         .font(.caption)
@@ -155,6 +159,8 @@ struct CloudSettingsView: View {
       }
       .buttonStyle(.borderedProminent)
       .tint(Color.accentColor)
+      .accessibilityIdentifier("cloud-connect-button")
+      .accessibilityHint("Opens the cloud connection sheet")
     }
   }
 
@@ -168,10 +174,12 @@ struct CloudSettingsView: View {
         Text("Account details unavailable: \(error)")
           .font(.caption)
           .foregroundStyle(.orange)
+          .accessibilityIdentifier("cloud-account-error")
       } else {
         Text("Resolving account details...")
           .font(.caption)
           .foregroundStyle(.secondary)
+          .accessibilityIdentifier("cloud-account-loading")
       }
 
       summaryFactRow(label: "Device name", value: deviceName)
@@ -184,6 +192,8 @@ struct CloudSettingsView: View {
         showConnectionSheet = true
       }
       .buttonStyle(.bordered)
+      .accessibilityIdentifier("cloud-manage-button")
+      .accessibilityHint("Opens the cloud connection sheet")
     }
   }
 
@@ -197,12 +207,14 @@ struct CloudSettingsView: View {
 
         Text("Sync Status")
           .font(.headline)
+          .accessibilityIdentifier("cloud-sync-status-heading")
 
         VStack(alignment: .leading, spacing: 8) {
           HStack(alignment: .center, spacing: 10) {
             syncStatusBadge
             Text(stateHeadlineText)
               .font(.subheadline.weight(.medium))
+              .accessibilityIdentifier("cloud-sync-status-headline")
           }
 
           if showReconnectBanner {
@@ -213,12 +225,14 @@ struct CloudSettingsView: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .background(Color.green.opacity(0.1))
               .cornerRadius(4)
+              .accessibilityIdentifier("cloud-reconnect-banner")
           }
 
           if let summary = connectionSummaryText {
             Text(summary)
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityIdentifier("cloud-sync-status-summary")
           }
 
           if let session = activePushSession, showsBulkCatchUpProgress {
@@ -232,11 +246,13 @@ struct CloudSettingsView: View {
               Text("Latest error")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.red)
+                .accessibilityIdentifier("cloud-sync-error-heading")
               Text(message)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.red)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("cloud-sync-error-message")
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -351,6 +367,7 @@ struct CloudSettingsView: View {
 
         Text("Controls")
           .font(.headline)
+          .accessibilityIdentifier("cloud-controls-heading")
 
         HStack(spacing: 12) {
           Button(primaryActionLabel) {
@@ -359,22 +376,27 @@ struct CloudSettingsView: View {
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
+          .accessibilityIdentifier("cloud-sync-now-button")
 
           if syncManager.syncState == .syncing {
             ProgressView()
               .controlSize(.small)
+              .accessibilityIdentifier("cloud-sync-now-spinner")
           }
 
           Button("View Activity") {
             openCloudSyncPage()
           }
           .buttonStyle(.bordered)
+          .accessibilityIdentifier("cloud-view-activity-button")
+          .accessibilityHint("Opens the cloud sync activity page in your browser")
         }
 
         Toggle("Auto-sync every 5 minutes", isOn: Binding(
           get: { syncManager.autoSyncEnabled },
           set: { syncManager.setAutoSync(enabled: $0) }
         ))
+        .accessibilityIdentifier("cloud-auto-sync-toggle")
       }
     }
   }
@@ -752,6 +774,9 @@ struct CloudSettingsView: View {
       .foregroundStyle(tint)
       .background(tint.opacity(0.12))
       .clipShape(Capsule())
+      .accessibilityIdentifier("cloud-sync-status-badge")
+      .accessibilityLabel("Sync status")
+      .accessibilityValue(text)
   }
 
   @ViewBuilder
@@ -775,6 +800,10 @@ struct CloudSettingsView: View {
       Text(value)
         .font(.subheadline)
     }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(label)
+    .accessibilityValue(value)
+    .accessibilityIdentifier("cloud-summary-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
   }
 }
 
@@ -793,10 +822,12 @@ private struct CloudConnectionSheet: View {
     VStack(alignment: .leading, spacing: 16) {
       Text(mode.title)
         .font(.title3.weight(.semibold))
+        .accessibilityIdentifier("cloud-connection-sheet-title")
 
       Text("The API key is edited here instead of on the main settings surface, so accidental changes are less likely.")
         .font(.caption)
         .foregroundStyle(.secondary)
+        .accessibilityIdentifier("cloud-connection-sheet-summary")
 
       VStack(alignment: .leading, spacing: 8) {
         Text("API Key")
@@ -805,6 +836,8 @@ private struct CloudConnectionSheet: View {
           .textFieldStyle(.roundedBorder)
           .font(.system(.body, design: .monospaced))
           .disabled(isSaving)
+          .accessibilityIdentifier("cloud-connection-api-key")
+          .accessibilityLabel("API Key")
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -813,12 +846,15 @@ private struct CloudConnectionSheet: View {
         TextField("My Mac", text: $deviceName)
           .textFieldStyle(.roundedBorder)
           .disabled(isSaving)
+          .accessibilityIdentifier("cloud-connection-device-name")
+          .accessibilityLabel("Device Name")
       }
 
       if let errorMessage {
         Text(errorMessage)
           .font(.caption)
           .foregroundStyle(.red)
+          .accessibilityIdentifier("cloud-connection-error")
       }
 
       HStack {
@@ -827,6 +863,9 @@ private struct CloudConnectionSheet: View {
         }
         .keyboardShortcut(.cancelAction)
         .disabled(isSaving)
+        .focusable()
+        .accessibilityIdentifier("cloud-connection-cancel")
+        .accessibilityHint("Closes the cloud connection sheet without saving")
 
         if let onDisconnect {
           Button("Disconnect") {
@@ -835,6 +874,9 @@ private struct CloudConnectionSheet: View {
           }
           .foregroundStyle(.red)
           .disabled(isSaving)
+          .focusable()
+          .accessibilityIdentifier("cloud-connection-disconnect")
+          .accessibilityHint("Disconnects this Mac from cloud sync")
         }
 
         Spacer()
@@ -843,11 +885,16 @@ private struct CloudConnectionSheet: View {
           onSave()
         }
         .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
         .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+        .focusable()
+        .accessibilityIdentifier("cloud-connection-confirm")
+        .accessibilityHint("Validates and saves the cloud connection")
 
         if isSaving {
           ProgressView()
             .controlSize(.small)
+            .accessibilityIdentifier("cloud-connection-saving")
         }
       }
     }
