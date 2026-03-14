@@ -1314,7 +1314,9 @@ public struct MultiProviderMetadataParser: TranscriptMetadataParser {
         entryId: entryId
       )
     case "codex.cli":
-      // Codex CLI doesn't have metadata records yet
+      // Upstream Codex TUI now supports queued follow-up messages, but current
+      // local transcripts still expose no machine-readable queue metadata that
+      // Contextify can ingest.
       return MetadataParseResult()
     default:
       throw ParserError.unsupportedProvider(provider)
