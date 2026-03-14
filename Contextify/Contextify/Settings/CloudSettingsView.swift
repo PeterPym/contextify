@@ -449,7 +449,8 @@ struct CloudSettingsView: View {
   }
 
   private var showsBulkCatchUpProgress: Bool {
-    if let session = activePushSession {
+    if let session = activePushSession,
+       (syncManager.cloudStatus?.pendingBatches ?? 0) > 0 {
       let completion = session.completionState?.lowercased()
       return completion == "in_progress" && (session.entriesTotal ?? 0) > 0
     }
