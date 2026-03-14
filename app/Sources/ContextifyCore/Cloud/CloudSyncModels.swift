@@ -181,6 +181,7 @@ public struct CloudPushProject: Codable, Sendable {
   public let id: String
   public let name: String?
   public let rootPath: String
+  public let repoGroupKey: String?
   public let repoIdentity: String?
   public let repoOriginNormalized: String?
   public let gitCommonDir: String?
@@ -194,6 +195,7 @@ public struct CloudPushProject: Codable, Sendable {
     id: String,
     name: String? = nil,
     rootPath: String,
+    repoGroupKey: String? = nil,
     repoIdentity: String? = nil,
     repoOriginNormalized: String? = nil,
     gitCommonDir: String? = nil,
@@ -206,6 +208,7 @@ public struct CloudPushProject: Codable, Sendable {
     self.id = id
     self.name = name
     self.rootPath = rootPath
+    self.repoGroupKey = repoGroupKey
     self.repoIdentity = repoIdentity
     self.repoOriginNormalized = repoOriginNormalized
     self.gitCommonDir = gitCommonDir
@@ -220,6 +223,7 @@ public struct CloudPushProject: Codable, Sendable {
     case id
     case name
     case rootPath = "root_path"
+    case repoGroupKey = "repo_group_key"
     case repoIdentity = "repo_identity"
     case repoOriginNormalized = "repo_origin_normalized"
     case gitCommonDir = "git_common_dir"

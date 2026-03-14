@@ -272,6 +272,77 @@ final class ContextifyQueryServiceTests: XCTestCase {
       "Last entry timestamp should be 300")
   }
 
+  func testImportFromCloudPull_remapsDuplicateRootPathToExistingLocalProject() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-cloud-pull-remap-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('local-project', 'Contextify', '/Users/rob/code/projects/contextify', 0, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let result = try service.importFromCloudPull(
+      projects: [[
+        "id": "cloud-project",
+        "name": "Contextify",
+        "root_path": "/Users/rob/code/projects/contextify",
+      ]],
+      transcripts: [[
+        "id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "file_path": "/Users/rob/code/projects/contextify/.claude/transcript.jsonl",
+        "provider": "claude.code",
+        "line_count": 1,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      entries: [[
+        "id": "cloud-entry",
+        "transcript_id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "provider": "claude.code",
+        "kind": "user",
+        "timestamp": 100,
+        "content": "hello",
+        "content_sha256": "sha-cloud-entry",
+        "display_in_timeline": true,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      summaries: []
+    )
+
+    XCTAssertEqual(result.projectsImported, 0)
+    XCTAssertEqual(result.transcriptsImported, 1)
+    XCTAssertEqual(result.entriesImported, 1)
+
+    try pool.read { db in
+      let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects")
+      XCTAssertEqual(projectCount, 1)
+
+      let transcriptProjectId = try String.fetchOne(
+        db,
+        sql: "SELECT project_id FROM transcripts WHERE id = 'cloud-transcript'"
+      )
+      XCTAssertEqual(transcriptProjectId, "local-project")
+
+      let entryProjectId = try String.fetchOne(
+        db,
+        sql: "SELECT project_id FROM transcript_entries WHERE id = 'cloud-entry'"
+      )
+      XCTAssertEqual(entryProjectId, "local-project")
+    }
+  }
+
   // MARK: - FTS Search Correctness & Query Plan Guards (ct-178)
 
   /// Verifies OR queries return correct results through search, searchCount, and searchTermCounts.

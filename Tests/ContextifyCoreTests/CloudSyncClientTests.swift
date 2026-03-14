@@ -36,6 +36,7 @@ final class CloudSyncModelsTests: XCTestCase {
           id: "p-1",
           name: "MyProject",
           rootPath: "/Users/test/project",
+          repoGroupKey: "repo-origin-sha256:def456",
           repoIdentity: "git-common-dir:abc123",
           repoOriginNormalized: "github.com/example/project",
           gitCommonDir: "/Users/test/project/.git",
@@ -81,6 +82,7 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(entries[0]["display_in_timeline"] as? Bool, true)
 
     let projects = json["projects"] as! [[String: Any]]
+    XCTAssertEqual(projects[0]["repo_group_key"] as? String, "repo-origin-sha256:def456")
     XCTAssertEqual(projects[0]["repo_identity"] as? String, "git-common-dir:abc123")
     XCTAssertEqual(projects[0]["repo_origin_normalized"] as? String, "github.com/example/project")
     XCTAssertEqual(projects[0]["is_worktree"] as? Bool, true)

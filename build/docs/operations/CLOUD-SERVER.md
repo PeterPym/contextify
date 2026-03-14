@@ -2,6 +2,46 @@
 
 The cloud sync API runs on a dedicated DigitalOcean droplet, completely separate from the contextify.sh website server.
 
+## Repository Ownership
+
+The deployed implementation on this server comes from `~/code/projects/contextify-cloud/`, not from the public website repo.
+
+- `contextify-cloud` is the source of truth for the cloud API and the web dashboard pages exposed from `cloud.contextify.sh`
+- `contextify` remains the source of truth for local app-side grouping, ingestion, and sync payload production
+
+When investigating analytics/dashboard behavior that depends on local project grouping, use latest `origin/main` from both repos before drawing conclusions. The bug may live in either the local grouping pipeline or the cloud-side visualization/reconciliation layer.
+
+## Grouping Model
+
+Two different grouping systems matter when a project appears grouped locally but fragmented in cloud analytics.
+
+### Local macOS grouping in `contextify`
+
+The app groups sibling worktrees locally for the Project Switcher and related HUD state.
+
+- discovery starts from the local git root and worktree/common-git-dir relationship
+- grouping state is persisted in the local SQLite tables such as `tab_groups` and `worktree_preferences`
+- this is local UI state, not a cloud grouping key
+
+### Cloud grouping in `contextify-cloud`
+
+The cloud dashboard groups raw synced project rows at read time.
+
+- raw rows remain physically keyed by `projects.id`
+- grouped analytics and grouped project detail are query-time logical views
+- the grouping inputs come from synced repo metadata such as `repo_identity`
+- the cloud does not physically merge multiple raw project rows into one canonical stored row
+
+### Visibility affects cloud grouping
+
+Cloud grouping runs over the rows visible to the current authenticated user, not always over every row in the tenant.
+
+- owners and admins see tenant-wide grouped views
+- members only see rows backed by their own visible entries
+- a grouped project can therefore look partial or split simply because some sibling rows are outside the current user's visibility scope
+
+When a grouping issue spans both local app behavior and the analytics page, check both the local grouping pipeline and the cloud-side visibility and grouping logic before assuming either side is wrong.
+
 ## Server Details
 
 | Field | Value |
