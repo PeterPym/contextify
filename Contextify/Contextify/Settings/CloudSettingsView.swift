@@ -46,7 +46,7 @@ struct CloudSettingsView: View {
   @State private var saveMessage: String?
   @State private var connectionSheetError: String?
   @State private var isSavingConnection: Bool = false
-  @State@State private var now: Date = .now
+  @State private var now: Date = .now
   @State private var wasOffline: Bool = false
   @State private var showReconnectBanner: Bool = false
   @State private var reconnectBannerTask: Task<Void, Never>?
@@ -549,11 +549,21 @@ struct CloudSettingsView: View {
     }
   }
 
+  @MainActor
   private func saveConfiguration() {
     connectionSheetError = nil
+    let trimmedApiKey = draftApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedDeviceName = draftDeviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let mode = connectionSheetMode
+
+    guard !trimmedApiKey.isEmpty else {
+      connectionSheetError = "The API key is required."
+      return
+    }
+
     isSavingConnection = true
 
-    Task {
+    Task { [trimmedApiKey, trimmedDeviceName, mode] in
       defer {
         Task {
           await MainActor.run {
@@ -565,7 +575,7 @@ struct CloudSettingsView: View {
       do {
         _ = try await syncManager.validateConnection(
           serverURL: CloudConfig.defaultServerURL,
-          apiKey: draftApiKey
+          apiKey: trimmedApiKey
         )
       } catch {
         await MainActor.run {
@@ -575,22 +585,32 @@ struct CloudSettingsView: View {
       }
 
       await MainActor.run {
-        persistConfiguration()
+        persistConfiguration(
+          apiKey: trimmedApiKey,
+          deviceName: trimmedDeviceName,
+          mode: mode
+        )
       }
     }
   }
 
   @MainActor
-  private func persistConfiguration() {
-    apiKey = draftApiKey
-    deviceName = draftDeviceName
+  private func persistConfiguration(
+    apiKey: String,
+    deviceName: String,
+    mode: ConnectionSheetMode
+  ) {
+    self.apiKey = apiKey
+    self.deviceName = deviceName
+    draftApiKey = apiKey
+    draftDeviceName = deviceName
 
     // TODO(self-hosted): Replace CloudConfig.defaultServerURL with serverURL state var.
     let config = CloudConfig(
       serverURL: CloudConfig.defaultServerURL,
-      apiKey: apiKey,
+      apiKey: self.apiKey,
       deviceId: MachineID.current(),
-      deviceName: deviceName,
+      deviceName: self.deviceName,
       enabled: true,
       lastPullSequence: 0,
       lastPushTimestamp: nil,
@@ -603,9 +623,9 @@ struct CloudSettingsView: View {
     if let existing = syncManager.loadConfig() {
       finalConfig = CloudConfig(
         serverURL: CloudConfig.defaultServerURL,
-        apiKey: apiKey,
+        apiKey: self.apiKey,
         deviceId: MachineID.current(),
-        deviceName: deviceName,
+        deviceName: self.deviceName,
         enabled: true,
         lastPullSequence: existing.lastPullSequence,
         lastPushTimestamp: existing.lastPushTimestamp,
@@ -626,14 +646,15 @@ struct CloudSettingsView: View {
       }
     }
     isConfigured = true
-    saveMessage = connectionSheetMode == .connect ? "Connected" : "Connection updated"
+    let expectedMessage = mode == .connect ? "Connected" : "Connection updated"
+    saveMessage = expectedMessage
     showConnectionSheet = false
     log.info("[CLOUD-SETTINGS] Configuration saved")
 
     Task {
       try? await Task.sleep(for: .seconds(2))
       await MainActor.run {
-        if saveMessage == "Saved" {
+        if saveMessage == expectedMessage {
           saveMessage = nil
         }
       }
@@ -780,10 +801,10 @@ private struct CloudConnectionSheet: View {
       VStack(alignment: .leading, spacing: 8) {
         Text("API Key")
           .font(.subheadline)
-        TextField("ctx_...", text: $apiKey)
+        SecureField("ctx_...", text: $apiKey)
           .textFieldStyle(.roundedBorder)
           .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
+          .disabled(isSaving)
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -791,6 +812,7 @@ private struct CloudConnectionSheet: View {
           .font(.subheadline)
         TextField("My Mac", text: $deviceName)
           .textFieldStyle(.roundedBorder)
+          .disabled(isSaving)
       }
 
       if let errorMessage {
@@ -804,6 +826,7 @@ private struct CloudConnectionSheet: View {
           dismiss()
         }
         .keyboardShortcut(.cancelAction)
+        .disabled(isSaving)
 
         if let onDisconnect {
           Button("Disconnect") {
@@ -811,6 +834,7 @@ private struct CloudConnectionSheet: View {
             onDisconnect()
           }
           .foregroundStyle(.red)
+          .disabled(isSaving)
         }
 
         Spacer()
@@ -829,6 +853,7 @@ private struct CloudConnectionSheet: View {
     }
     .padding(20)
     .frame(width: 440)
+    .interactiveDismissDisabled(isSaving)
   }
 }
 
