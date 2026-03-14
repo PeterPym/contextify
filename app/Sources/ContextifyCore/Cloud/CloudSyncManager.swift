@@ -60,31 +60,6 @@ public struct PullResult: Sendable {
   public let pagesFetched: Int
 }
 
-/// Process-wide cached machine ID. Computed once on first access to avoid
-/// spawning ioreg on every push. Thread-safe via NSLock.
-private final class CachedMachineId: @unchecked Sendable {
-  static let shared = CachedMachineId()
-  private var _value: String?
-  private let _lock = NSLock()
-
-  func get(compute: () -> String) -> String {
-    // Fast path: return cached value without computing
-    _lock.lock()
-    if let v = _value { _lock.unlock(); return v }
-    _lock.unlock()
-
-    // Compute outside lock (may spawn ioreg)
-    let v = compute()
-
-    // Double-checked: another thread may have computed while we were unlocked
-    _lock.lock()
-    defer { _lock.unlock() }
-    if let existing = _value { return existing }
-    _value = v
-    return v
-  }
-}
-
 // MARK: - CloudSyncManager
 
 /// Orchestrator for cloud sync push and pull operations.
@@ -460,10 +435,14 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     log.info("Starting push")
 
-    // Build device info once (cached machine ID avoids repeated ioreg calls)
-    let machineId = config.deviceId.isEmpty
-      ? CachedMachineId.shared.get(compute: computeMachineId)
-      : config.deviceId
+    // macOS cloud sync uses the shared app-level machine ID so app, CLI, and
+    // persisted cloud config converge on one stable device identity.
+    let machineId = MachineID.normalizedCloudDeviceID(config.deviceId)
+    if machineId != config.deviceId {
+      config.deviceId = machineId
+      await MainActor.run { self.config = config }
+      saveConfig(config)
+    }
     let machineName = config.deviceName.isEmpty
       ? (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
       : config.deviceName
@@ -843,68 +822,6 @@ public final class CloudSyncManager: @unchecked Sendable {
   }
 
   // MARK: - Private Helpers
-
-  /// Stable machine identifier using IOPlatformUUID on macOS, /etc/machine-id on Linux.
-  /// If ioreg fails (e.g. in a sandboxed app), falls back to a persisted UUID stored
-  /// in Application Support to ensure stability across reboots and hostname changes.
-  /// Called once via `cachedMachineId` lazy property; do not call directly.
-  private func computeMachineId() -> String {
-    #if os(macOS)
-    // Try IOPlatformUUID first (works outside sandbox)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
-    process.arguments = ["-rd1", "-c", "IOPlatformExpertDevice"]
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-    try? process.run()
-    process.waitUntilExit()
-    let output = String(
-      data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    if let range = output.range(of: "IOPlatformUUID\" = \"") {
-      let start = range.upperBound
-      if let end = output[start...].firstIndex(of: "\"") {
-        return String(output[start..<end])
-      }
-    }
-    // Fallback: persisted UUID in Application Support (sandbox-safe)
-    return getOrCreatePersistedDeviceId()
-    #else
-    if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
-      .trimmingCharacters(in: .whitespacesAndNewlines) {
-      return id
-    }
-    return ProcessInfo.processInfo.hostName
-    #endif
-  }
-
-  /// Returns a stable device ID persisted in Application Support.
-  /// Creates and stores a new UUID if one doesn't exist yet.
-  private func getOrCreatePersistedDeviceId() -> String {
-    let appSupport = FileManager.default.urls(
-      for: .applicationSupportDirectory, in: .userDomainMask).first!
-    let contextifyDir = appSupport.appendingPathComponent("Contextify")
-    let deviceIdFile = contextifyDir.appendingPathComponent("device_id.txt")
-
-    // Try to read existing
-    if let existing = try? String(contentsOf: deviceIdFile, encoding: .utf8)
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !existing.isEmpty {
-      return existing
-    }
-
-    // Generate and persist a new UUID
-    let newId = UUID().uuidString
-    do {
-      try FileManager.default.createDirectory(
-        at: contextifyDir, withIntermediateDirectories: true)
-      try newId.write(to: deviceIdFile, atomically: true, encoding: .utf8)
-      log.info("Generated and persisted new device ID")
-    } catch {
-      log.warning("Failed to persist device ID: \(error.localizedDescription, privacy: .public)")
-    }
-    return newId
-  }
 
   /// Map CloudSyncError to a user-friendly message string.
   private func userFriendlyMessage(for error: Error) -> String {

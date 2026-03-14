@@ -111,7 +111,13 @@ public struct CloudConfig: Codable, Sendable {
   /// Load configuration from disk.
   public static func load() throws -> CloudConfig {
     let data = try Data(contentsOf: configFile)
-    return try JSONDecoder().decode(CloudConfig.self, from: data)
+    var config = try JSONDecoder().decode(CloudConfig.self, from: data)
+    let normalizedDeviceID = MachineID.normalizedCloudDeviceID(config.deviceId)
+    if normalizedDeviceID != config.deviceId {
+      config.deviceId = normalizedDeviceID
+      try? config.save()
+    }
+    return config
   }
 
   /// Persist configuration to disk, creating the directory if needed.
