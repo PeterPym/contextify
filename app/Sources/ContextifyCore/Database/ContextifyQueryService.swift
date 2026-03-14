@@ -1607,6 +1607,7 @@ public struct ContextifyQueryService: Sendable {
       var transcriptsImported = 0
       var entriesImported = 0
       var skipped = 0
+      var projectIdRemap = [String: String]()
 
       let now = Int(Date().timeIntervalSince1970)
 
@@ -1615,24 +1616,54 @@ public struct ContextifyQueryService: Sendable {
         guard let id = proj["id"] as? String,
               let rootPath = proj["root_path"] as? String else { continue }
         let name = proj["name"] as? String
-        let exists = try Int.fetchOne(db, sql:
-          "SELECT 1 FROM projects WHERE id = ?", arguments: [id])
-        if exists == nil {
+        if let existingId = try String.fetchOne(
+          db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [id]
+        ) {
+          projectIdRemap[id] = existingId
+          continue
+        }
+
+        if let existingId = try String.fetchOne(
+          db,
+          sql: "SELECT id FROM projects WHERE root_path = ?",
+          arguments: [rootPath]
+        ) {
+          projectIdRemap[id] = existingId
+          if let name {
+            try db.execute(
+              sql: """
+                UPDATE projects
+                SET name = COALESCE(name, ?), updated_at = ?
+                WHERE id = ?
+              """,
+              arguments: [name, now, existingId]
+            )
+          }
+          continue
+        }
+
+        do {
           try db.execute(sql: """
             INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
               is_orphaned, created_at, updated_at)
             VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
             """, arguments: [id, name, rootPath, now, now])
           projectsImported += 1
+          projectIdRemap[id] = id
+        } catch {
+          throw error
         }
       }
 
       // Upsert transcripts
       for tx in transcripts {
         guard let id = tx["id"] as? String,
-              let projectId = tx["project_id"] as? String,
+              let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
+        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
         let exists = try Int.fetchOne(db, sql:
           "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
         if exists == nil {
@@ -1659,12 +1690,13 @@ public struct ContextifyQueryService: Sendable {
       for entry in entries {
         guard let id = entry["id"] as? String,
               let transcriptId = entry["transcript_id"] as? String,
-              let projectId = entry["project_id"] as? String,
+              let rawProjectId = entry["project_id"] as? String,
               let provider = entry["provider"] as? String,
               let kind = entry["kind"] as? String,
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
+        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
 
         // Skip 'summary' kind entries entirely - local schema only supports
         // user/assistant/system. Summaries are handled via the summaries table.
