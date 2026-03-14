@@ -29,8 +29,13 @@ These cause real problems when violated:
 12. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
    - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
    - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
-13. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
-14. **No scratch files in repo** - Never write progress tracking, status, or temporary files to the repository. Use `/tmp/` with a unique filename for any scratch output. This applies to all agents and subagents.
+13. **Ship UI with accessibility + automation breadcrumbs** - User-facing UI must expose enough structure for VoiceOver, keyboard use, and deterministic automation. At a minimum:
+   - add meaningful accessibility labels/hints for buttons, tabs, toggles, icons, and status badges
+   - ensure keyboard navigation and focus order are deliberate, visible, and cycle through the actionable controls in dialogs and settings flows
+   - expose obvious state breadcrumbs for automation, such as selected-tab state, status text, button labels/descriptions, and stable defaults overrides or shortcuts when SwiftUI metadata is incomplete
+   - when a flow still cannot be automated reliably, document the gap and add a narrow QA hook rather than relying on brittle coordinate clicking
+14. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
+15. **No scratch files in repo** - Never write progress tracking, status, or temporary files to the repository. Use `/tmp/` with a unique filename for any scratch output. This applies to all agents and subagents.
     ```yaml
     ---
     branch: feature/example
@@ -234,6 +239,12 @@ Skipping architecture docs leads to incomplete implementations and repeated mist
 ## UI Testing Gaps
 
 When UI tests aren't practical, document in `build/notes/todo-support/deferred-ui-tests.md` (behavior, reproduction steps, linked TODO).
+
+Before deferring, first ask whether the UI is missing automation breadcrumbs:
+- accessibility labels or hints for controls
+- deterministic keyboard navigation and focus order
+- explicit selected-state text or status badges
+- QA-only defaults overrides or shortcuts for hard-to-reach SwiftUI state
 
 ## Coding Style & Naming Conventions
 
