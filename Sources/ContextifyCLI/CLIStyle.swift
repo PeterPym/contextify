@@ -178,8 +178,12 @@ enum CLIStyle {
           }
         }
         i = text.index(after: i)
-      } else if c == "\n" || c == "\r" || c == "\t" {
+      } else if c == "\n" || c == "\t" {
         result.append(c)
+        i = text.index(after: i)
+      } else if c == "\r" {
+        // Strip carriage returns from remote content to prevent
+        // terminal line-overwrite attacks (e.g. "safe\rMALICIOUS")
         i = text.index(after: i)
       } else if c.unicodeScalars.allSatisfy({ $0.properties.isControl }) {
         // Skip control characters
