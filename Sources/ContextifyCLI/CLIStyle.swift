@@ -112,15 +112,83 @@ enum CLIStyle {
 
   /// Convert HTML bold tags (<b>...</b>) in search snippets to ANSI bold.
   /// When styling is disabled, strips the tags entirely.
+  ///
+  /// SECURITY: Snippets contain remote content that may include malicious
+  /// terminal escape sequences. We use a sentinel-based approach:
+  /// 1. Replace <b>/<\/b> with private sentinels
+  /// 2. Strip ALL escape/control sequences from the raw text
+  /// 3. Replace sentinels with our own ANSI codes
   static func styledSnippet(_ text: String) -> String {
+    let openSentinel = "\u{FFFE}"  // BOM-reversed, not valid in normal text
+    let closeSentinel = "\u{FFFF}" // Noncharacter, safe sentinel
+
+    // Step 1: Replace HTML bold tags with sentinels
+    var result = text
+      .replacingOccurrences(of: "<b>", with: openSentinel)
+      .replacingOccurrences(of: "</b>", with: closeSentinel)
+
+    // Step 2: Strip ALL escape sequences and control characters from remote content
+    result = stripEscapeSequences(result)
+
+    // Step 3: Replace sentinels with our own ANSI codes (or nothing if unstyled)
     if isStyled {
-      return text
-        .replacingOccurrences(of: "<b>", with: bold)
-        .replacingOccurrences(of: "</b>", with: reset)
+      result = result
+        .replacingOccurrences(of: openSentinel, with: bold)
+        .replacingOccurrences(of: closeSentinel, with: reset)
     } else {
-      return text
-        .replacingOccurrences(of: "<b>", with: "")
-        .replacingOccurrences(of: "</b>", with: "")
+      result = result
+        .replacingOccurrences(of: openSentinel, with: "")
+        .replacingOccurrences(of: closeSentinel, with: "")
     }
+
+    return result
+  }
+
+  /// Strip all ANSI escape sequences and control characters from text,
+  /// preserving only printable content, newlines, and tabs.
+  /// Used to sanitize remote/untrusted content before display.
+  static func stripEscapeSequences(_ text: String) -> String {
+    var result = ""
+    var i = text.startIndex
+    while i < text.endIndex {
+      let c = text[i]
+      if c == "\u{001B}" {
+        // Skip entire escape sequence
+        let next = text.index(after: i)
+        if next < text.endIndex {
+          if text[next] == "[" {
+            // CSI sequence: skip until letter terminator
+            var j = text.index(after: next)
+            while j < text.endIndex && !text[j].isLetter { j = text.index(after: j) }
+            i = (j < text.endIndex) ? text.index(after: j) : j
+            continue
+          } else if text[next] == "]" {
+            // OSC sequence: skip until ST (ESC\) or BEL
+            var j = text.index(after: next)
+            while j < text.endIndex {
+              if text[j] == "\u{0007}" { j = text.index(after: j); break }
+              if text[j] == "\\" {
+                let prev = text.index(before: j)
+                if prev >= next && text[prev] == "\u{001B}" { j = text.index(after: j); break }
+              }
+              j = text.index(after: j)
+            }
+            i = j
+            continue
+          }
+        }
+        i = text.index(after: i)
+      } else if c == "\n" || c == "\r" || c == "\t" {
+        result.append(c)
+        i = text.index(after: i)
+      } else if c.unicodeScalars.allSatisfy({ $0.properties.isControl }) {
+        // Skip control characters
+        i = text.index(after: i)
+      } else {
+        result.append(c)
+        i = text.index(after: i)
+      }
+    }
+    return result
   }
 }

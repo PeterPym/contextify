@@ -300,8 +300,16 @@ private func pollForDeviceToken(
       "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
     ])
 
-    let (data, statusCode) = try unauthenticatedRequest(
-      url: endpoint, method: "POST", body: body)
+    let data: Data
+    let statusCode: Int
+    do {
+      (data, statusCode) = try unauthenticatedRequest(
+        url: endpoint, method: "POST", body: body)
+    } catch {
+      // Network error during polling - back off and retry per RFC 8628
+      currentInterval = min(currentInterval + 5, 30)
+      continue
+    }
 
     if statusCode == 200 {
       // Clear spinner line
@@ -1206,9 +1214,8 @@ struct CloudSearchCommand: ParsableCommand {
       let num = offset + index + 1
 
       print("\(CLIStyle.boldText("\(num).")) \(CLIStyle.cyanText("[\(kind)]")) \(dateStr)  \(CLIStyle.dimText("(project: \(displayProject), score: \(String(format: "%.2f", score)))"))")
-      // Apply ANSI bold from HTML bold tags, then sanitize control characters
-      let styledSnippet = CLIStyle.styledSnippet(snippet)
-      let cleanSnippet = sanitizeForTerminal(styledSnippet)
+      // Apply ANSI bold from HTML bold tags with escape injection protection
+      let cleanSnippet = CLIStyle.styledSnippet(snippet)
       // Indent snippet lines
       let lines = cleanSnippet.components(separatedBy: "\n")
       for line in lines.prefix(4) {
@@ -1247,69 +1254,6 @@ struct CloudSearchCommand: ParsableCommand {
     return Self.entryDateFormatter.string(from: date)
   }
 
-  /// Remove dangerous control characters while preserving newlines, tabs,
-  /// and ANSI escape sequences (when styling is enabled).
-  private func sanitizeForTerminal(_ text: String) -> String {
-    if CLIStyle.isStyled {
-      // Preserve ANSI CSI sequences (ESC[...m) and OSC sequences (ESC]...ESC\)
-      // by stripping only non-ANSI control characters
-      var result = ""
-      var i = text.startIndex
-      while i < text.endIndex {
-        let c = text[i]
-        if c == "\u{001B}" {
-          // Start of an escape sequence - pass through until terminator
-          result.append(c)
-          let next = text.index(after: i)
-          if next < text.endIndex {
-            if text[next] == "[" {
-              // CSI sequence: pass through until letter terminates it
-              var j = next
-              while j < text.endIndex {
-                result.append(text[j])
-                if text[j].isLetter { break }
-                j = text.index(after: j)
-              }
-              i = (j < text.endIndex) ? text.index(after: j) : j
-              continue
-            } else if text[next] == "]" {
-              // OSC sequence: pass through until ST (ESC\) or BEL
-              var j = next
-              while j < text.endIndex {
-                result.append(text[j])
-                if text[j] == "\u{0007}" { break }  // BEL terminator
-                if text[j] == "\\" {
-                  // Check for ESC\ (ST)
-                  let prev = text.index(before: j)
-                  if prev >= next && text[prev] == "\u{001B}" { break }
-                }
-                j = text.index(after: j)
-              }
-              i = (j < text.endIndex) ? text.index(after: j) : j
-              continue
-            }
-          }
-          i = text.index(after: i)
-        } else if c == "\n" || c == "\r" || c == "\t" {
-          result.append(c)
-          i = text.index(after: i)
-        } else if c.unicodeScalars.allSatisfy({ $0.properties.isControl }) {
-          // Strip other control characters
-          i = text.index(after: i)
-        } else {
-          result.append(c)
-          i = text.index(after: i)
-        }
-      }
-      return result
-    } else {
-      // No styling - strip all control characters
-      return String(text.unicodeScalars.filter { s in
-        if s == "\n" || s == "\r" || s == "\t" { return true }
-        return !s.properties.isControl
-      })
-    }
-  }
 }
 
 // MARK: - Helpers
