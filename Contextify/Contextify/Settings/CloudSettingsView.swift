@@ -6,21 +6,46 @@ import AppKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSettings")
 
+private enum ConnectionSheetMode {
+  case connect
+  case manage
+
+  var title: String {
+    switch self {
+    case .connect:
+      return "Connect to Cloud"
+    case .manage:
+      return "Manage Cloud Connection"
+    }
+  }
+
+  var confirmLabel: String {
+    switch self {
+    case .connect:
+      return "Connect"
+    case .manage:
+      return "Save Changes"
+    }
+  }
+}
+
 struct CloudSettingsView: View {
   @State private var syncManager = CloudSyncManager.shared
 
-  // MARK: - Form Fields
-  // TODO(self-hosted): Add @State private var serverURL: String = "" when self-hosted is available.
-  // The Cloud URL field, save/load, and disconnect will need to use it instead of the constant.
-
   @State private var apiKey: String = ""
   @State private var deviceName: String = ""
+  @State private var draftApiKey: String = ""
+  @State private var draftDeviceName: String = ""
 
   // MARK: - UI State
 
   @State private var isConfigured: Bool = false
+  @State private var showConnectionSheet: Bool = false
+  @State private var connectionSheetMode: ConnectionSheetMode = .connect
   @State private var showDisconnectConfirmation: Bool = false
   @State private var saveMessage: String?
+  @State private var connectionSheetError: String?
+  @State private var isSavingConnection: Bool = false
   @State@State private var now: Date = .now
   @State private var wasOffline: Bool = false
   @State private var showReconnectBanner: Bool = false
@@ -41,7 +66,10 @@ struct CloudSettingsView: View {
     .onAppear {
       loadConfiguration()
       wasOffline = syncManager.cloudOffline
-      Task { await syncManager.refreshStatusFromServer() }
+      Task {
+        await syncManager.refreshStatusFromServer()
+        await syncManager.refreshAccountProfileFromServer()
+      }
     }
     .onReceive(clockTimer) { tick in
       now = tick
@@ -57,59 +85,105 @@ struct CloudSettingsView: View {
       }
       wasOffline = isOfflineNow
     }
+    .sheet(isPresented: $showConnectionSheet) {
+      CloudConnectionSheet(
+        mode: connectionSheetMode,
+        apiKey: $draftApiKey,
+        deviceName: $draftDeviceName,
+        isSaving: isSavingConnection,
+        errorMessage: connectionSheetError,
+        onSave: saveConfiguration,
+        onDisconnect: isConfigured ? { showDisconnectConfirmation = true } : nil
+      )
+    }
+    .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Disconnect", role: .destructive) {
+        disconnect()
+      }
+    } message: {
+      Text("This will remove your cloud sync configuration. Your local data will not be affected.")
+    }
     // No .onDisappear cleanup - sync lives at app level
   }
 
-  // MARK: - Server Configuration Section
+  // MARK: - Cloud Connection Section
 
   @ViewBuilder
   private var serverConfigurationSection: some View {
     Section {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Server Configuration")
+        Text("Cloud Connection")
           .font(.headline)
 
-        // TODO: Make Cloud URL editable once self-hosted option is generally available.
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Cloud URL")
-            .font(.subheadline)
-          TextField("", text: .constant(CloudConfig.defaultServerURL))
-            .textFieldStyle(.roundedBorder)
-            .font(.system(.body, design: .monospaced))
-            .disabled(true)
+        Text(CloudConfig.defaultServerURL)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+
+        if isConfigured {
+          configuredConnectionSummary
+        } else {
+          unconfiguredConnectionSummary
         }
 
-        VStack(alignment: .leading, spacing: 8) {
-          Text("API Key")
-            .font(.subheadline)
-          SecureField("ctx_...", text: $apiKey)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(.body, design: .monospaced))
+        if let message = saveMessage {
+          Text(message)
+            .font(.caption)
+            .foregroundStyle(message.contains("Error") ? .red : .green)
         }
-
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Device Name")
-            .font(.subheadline)
-          TextField("My Mac", text: $deviceName)
-            .textFieldStyle(.roundedBorder)
-        }
-
-        HStack {
-          Button("Save") {
-            saveConfiguration()
-          }
-          .buttonStyle(.borderedProminent)
-          .tint(Color.accentColor)
-          .disabled(apiKey.isEmpty)
-
-          if let message = saveMessage {
-            Text(message)
-              .font(.caption)
-              .foregroundStyle(message.contains("Error") ? .red : .green)
-          }
-        }
-        .padding(.top, 4)
       }
+    }
+  }
+
+  @ViewBuilder
+  private var unconfiguredConnectionSummary: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("This Mac is not connected to Contextify Cloud yet.")
+        .font(.subheadline)
+
+      Text("Connect with an API key in a modal so the main settings view stays focused on account state instead of raw credential editing.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      Button("Connect to Cloud") {
+        connectionSheetMode = .connect
+        connectionSheetError = nil
+        draftApiKey = ""
+        draftDeviceName = Host.current().localizedName ?? deviceName
+        showConnectionSheet = true
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(Color.accentColor)
+    }
+  }
+
+  @ViewBuilder
+  private var configuredConnectionSummary: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      if let profile = syncManager.cloudAccountProfile {
+        summaryFactRow(label: "Signed in as", value: profile.email)
+        summaryFactRow(label: "Workspace", value: profile.tenantName)
+      } else if let error = syncManager.cloudAccountError {
+        Text("Account details unavailable: \(error)")
+          .font(.caption)
+          .foregroundStyle(.orange)
+      } else {
+        Text("Resolving account details...")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      summaryFactRow(label: "Device name", value: deviceName)
+
+      Button("Manage Cloud Connection") {
+        connectionSheetMode = .manage
+        connectionSheetError = nil
+        draftApiKey = apiKey
+        draftDeviceName = deviceName
+        showConnectionSheet = true
+      }
+      .buttonStyle(.bordered)
     }
   }
 
@@ -301,20 +375,6 @@ struct CloudSettingsView: View {
           get: { syncManager.autoSyncEnabled },
           set: { syncManager.setAutoSync(enabled: $0) }
         ))
-
-        Button("Disconnect") {
-          showDisconnectConfirmation = true
-        }
-        .buttonStyle(.bordered)
-        .foregroundStyle(.red)
-        .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
-          Button("Cancel", role: .cancel) {}
-          Button("Disconnect", role: .destructive) {
-            disconnect()
-          }
-        } message: {
-          Text("This will remove your cloud sync configuration. Your local data will not be affected.")
-        }
       }
     }
   }
@@ -473,19 +533,58 @@ struct CloudSettingsView: View {
     if let config = syncManager.loadConfig() {
       apiKey = config.apiKey
       deviceName = config.deviceName
+      draftApiKey = config.apiKey
+      draftDeviceName = config.deviceName
       isConfigured = true
       if syncManager.syncState == .idle || syncManager.syncState == .disabled {
         syncManager.configure(config: config)
       }
+      Task { await syncManager.refreshAccountProfileFromServer() }
       log.info("[CLOUD-SETTINGS] Configuration loaded from disk")
     } else {
       deviceName = Host.current().localizedName ?? ""
+      draftDeviceName = deviceName
       isConfigured = false
       log.debug("[CLOUD-SETTINGS] No configuration found")
     }
   }
 
   private func saveConfiguration() {
+    connectionSheetError = nil
+    isSavingConnection = true
+
+    Task {
+      defer {
+        Task {
+          await MainActor.run {
+            isSavingConnection = false
+          }
+        }
+      }
+
+      do {
+        _ = try await syncManager.validateConnection(
+          serverURL: CloudConfig.defaultServerURL,
+          apiKey: draftApiKey
+        )
+      } catch {
+        await MainActor.run {
+          connectionSheetError = userFriendlyConnectionMessage(for: error)
+        }
+        return
+      }
+
+      await MainActor.run {
+        persistConfiguration()
+      }
+    }
+  }
+
+  @MainActor
+  private func persistConfiguration() {
+    apiKey = draftApiKey
+    deviceName = draftDeviceName
+
     // TODO(self-hosted): Replace CloudConfig.defaultServerURL with serverURL state var.
     let config = CloudConfig(
       serverURL: CloudConfig.defaultServerURL,
@@ -521,10 +620,14 @@ struct CloudSettingsView: View {
     if finalConfig.enabled {
       syncManager.startAppLevelAutoSync()
       syncManager.triggerSync()
-      Task { await syncManager.refreshStatusFromServer() }
+      Task {
+        await syncManager.refreshStatusFromServer()
+        await syncManager.refreshAccountProfileFromServer()
+      }
     }
     isConfigured = true
-    saveMessage = "Saved"
+    saveMessage = connectionSheetMode == .connect ? "Connected" : "Connection updated"
+    showConnectionSheet = false
     log.info("[CLOUD-SETTINGS] Configuration saved")
 
     Task {
@@ -551,8 +654,11 @@ struct CloudSettingsView: View {
 
     apiKey = ""
     deviceName = Host.current().localizedName ?? ""
+    draftApiKey = ""
+    draftDeviceName = deviceName
     isConfigured = false
     saveMessage = nil
+    connectionSheetError = nil
 
     log.info("[CLOUD-SETTINGS] Disconnected from cloud sync")
   }
@@ -602,6 +708,20 @@ struct CloudSettingsView: View {
     return "\(Int((fraction * 100.0).rounded()))%"
   }
 
+  private func userFriendlyConnectionMessage(for error: Error) -> String {
+    switch error {
+    case let cloudError as CloudSyncError:
+      switch cloudError {
+      case .unauthorized:
+        return "The API key was rejected. Check the key and try again."
+      default:
+        return cloudError.localizedDescription
+      }
+    default:
+      return error.localizedDescription
+    }
+  }
+
   @ViewBuilder
   private func statusBadge(text: String, systemImage: String, tint: Color) -> some View {
     Label(text, systemImage: systemImage)
@@ -623,6 +743,92 @@ struct CloudSettingsView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
     }
+  }
+
+  @ViewBuilder
+  private func summaryFactRow(label: String, value: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(label)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .font(.subheadline)
+    }
+  }
+}
+
+private struct CloudConnectionSheet: View {
+  let mode: ConnectionSheetMode
+  @Binding var apiKey: String
+  @Binding var deviceName: String
+  let isSaving: Bool
+  let errorMessage: String?
+  let onSave: () -> Void
+  let onDisconnect: (() -> Void)?
+
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text(mode.title)
+        .font(.title3.weight(.semibold))
+
+      Text("The API key is edited here instead of on the main settings surface, so accidental changes are less likely.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("API Key")
+          .font(.subheadline)
+        TextField("ctx_...", text: $apiKey)
+          .textFieldStyle(.roundedBorder)
+          .font(.system(.body, design: .monospaced))
+          .textSelection(.enabled)
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Device Name")
+          .font(.subheadline)
+        TextField("My Mac", text: $deviceName)
+          .textFieldStyle(.roundedBorder)
+      }
+
+      if let errorMessage {
+        Text(errorMessage)
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      HStack {
+        Button("Cancel") {
+          dismiss()
+        }
+        .keyboardShortcut(.cancelAction)
+
+        if let onDisconnect {
+          Button("Disconnect") {
+            dismiss()
+            onDisconnect()
+          }
+          .foregroundStyle(.red)
+        }
+
+        Spacer()
+
+        Button(mode.confirmLabel) {
+          onSave()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+
+        if isSaving {
+          ProgressView()
+            .controlSize(.small)
+        }
+      }
+    }
+    .padding(20)
+    .frame(width: 440)
   }
 }
 

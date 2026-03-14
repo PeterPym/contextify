@@ -117,8 +117,14 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Most recently fetched server-side sync status projection.
   @MainActor public private(set) var cloudStatus: CloudSyncStatus?
 
+  /// Authenticated account/profile data for the current API key.
+  @MainActor public private(set) var cloudAccountProfile: CloudAccountProfile?
+
   /// Last error encountered while fetching status (separate from sync run errors).
   @MainActor public private(set) var cloudStatusError: String?
+
+  /// Last error encountered while fetching account/profile data.
+  @MainActor public private(set) var cloudAccountError: String?
 
   /// True when latest status fetch failed due to connectivity.
   @MainActor public private(set) var cloudOffline: Bool = false
@@ -194,9 +200,12 @@ public final class CloudSyncManager: @unchecked Sendable {
       startStatusPollingIfNeeded()
       Task.detached(priority: .utility) { [weak self] in
         await self?.refreshStatusFromServer()
+        await self?.refreshAccountProfileFromServer()
       }
     } else {
       syncState = .disabled
+      cloudAccountProfile = nil
+      cloudAccountError = nil
       stopStatusPolling()
     }
 
@@ -320,6 +329,39 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
       log.warning("Status refresh failed: \(message, privacy: .public)")
     }
+  }
+
+  /// Fetches authenticated account/profile data for the current API key.
+  public func refreshAccountProfileFromServer() async {
+    let client = await MainActor.run { self.client }
+    guard let client else { return }
+
+    do {
+      let profile = try await client.account()
+      await MainActor.run {
+        self.cloudAccountProfile = profile
+        self.cloudAccountError = nil
+      }
+    } catch {
+      let message = userFriendlyMessage(for: error)
+      await MainActor.run {
+        self.cloudAccountProfile = nil
+        self.cloudAccountError = message
+      }
+      log.warning("Account refresh failed: \(message, privacy: .public)")
+    }
+  }
+
+  /// Validate an API key and return the account profile it resolves to.
+  public func validateConnection(
+    serverURL: String,
+    apiKey: String
+  ) async throws -> CloudAccountProfile {
+    guard let url = URL(string: serverURL) else {
+      throw CloudSyncError.serverError(statusCode: 0, body: "Invalid server URL")
+    }
+    let client = CloudSyncClient(serverURL: url, apiKey: apiKey)
+    return try await client.account()
   }
 
   /// Push local entries to the cloud server.
@@ -883,6 +925,8 @@ public final class CloudSyncManager: @unchecked Sendable {
     lastPullResult = nil
     cloudStatus = nil
     cloudStatusError = nil
+    cloudAccountProfile = nil
+    cloudAccountError = nil
     cloudOffline = false
     cloudStatusUpdatedAt = nil
     cloudSmoothedThroughputEntriesPerMin = nil

@@ -293,6 +293,31 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertTrue(status.devices.isEmpty)
   }
 
+  func testCloudAccountProfileDecodesFromSnakeCase() throws {
+    let json = """
+    {
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "rob@contextify.sh",
+      "name": "Rob",
+      "role": "owner",
+      "tenant_id": "d9428888-122b-11e1-b85c-61cd3cbb3210",
+      "tenant_name": "Contextify",
+      "tenant_plan": "free",
+      "created_at": "2026-03-14T18:00:00Z"
+    }
+    """.data(using: .utf8)!
+
+    let decoder = makeDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let profile = try decoder.decode(CloudAccountProfile.self, from: json)
+
+    XCTAssertEqual(profile.email, "rob@contextify.sh")
+    XCTAssertEqual(profile.name, "Rob")
+    XCTAssertEqual(profile.role, "owner")
+    XCTAssertEqual(profile.tenantName, "Contextify")
+    XCTAssertEqual(profile.tenantPlan, "free")
+  }
+
   // MARK: - CloudConfig Push Cursor Tests
 
   func testCloudConfigEncodesNewPushCursorFields() throws {
@@ -560,6 +585,37 @@ final class CloudSyncClientTests: XCTestCase {
     let client = makeClient()
     let result = try await client.pull(since: 0)
     XCTAssertEqual(result.nextCursor, 0)
+  }
+
+  func testAccountReturnsDecodedResponse() async throws {
+    MockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/v1/account")
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer ctx_test_secret")
+
+      let json = """
+      {
+        "user_id":"550e8400-e29b-41d4-a716-446655440000",
+        "email":"rob@contextify.sh",
+        "name":"Rob",
+        "role":"owner",
+        "tenant_id":"d9428888-122b-11e1-b85c-61cd3cbb3210",
+        "tenant_name":"Contextify",
+        "tenant_plan":"free",
+        "created_at":"2026-03-14T18:00:00Z"
+      }
+      """.data(using: .utf8)!
+      let response = HTTPURLResponse(
+        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+      return (json, response, nil)
+    }
+
+    let client = makeClient()
+    let profile = try await client.account()
+
+    XCTAssertEqual(profile.email, "rob@contextify.sh")
+    XCTAssertEqual(profile.tenantName, "Contextify")
+    XCTAssertEqual(profile.role, "owner")
   }
 
   // MARK: - Error Handling Tests

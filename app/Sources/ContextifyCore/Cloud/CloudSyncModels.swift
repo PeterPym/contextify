@@ -125,6 +125,51 @@ public struct CloudConfig: Codable, Sendable {
   }
 }
 
+// MARK: - Account
+
+/// Authenticated account information returned by `GET /api/v1/account`.
+public struct CloudAccountProfile: Codable, Sendable, Equatable {
+  public let userId: UUID
+  public let email: String
+  public let name: String?
+  public let role: String
+  public let tenantId: UUID
+  public let tenantName: String
+  public let tenantPlan: String
+  public let createdAt: Date
+
+  public init(
+    userId: UUID,
+    email: String,
+    name: String?,
+    role: String,
+    tenantId: UUID,
+    tenantName: String,
+    tenantPlan: String,
+    createdAt: Date
+  ) {
+    self.userId = userId
+    self.email = email
+    self.name = name
+    self.role = role
+    self.tenantId = tenantId
+    self.tenantName = tenantName
+    self.tenantPlan = tenantPlan
+    self.createdAt = createdAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case userId = "user_id"
+    case email
+    case name
+    case role
+    case tenantId = "tenant_id"
+    case tenantName = "tenant_name"
+    case tenantPlan = "tenant_plan"
+    case createdAt = "created_at"
+  }
+}
+
 // MARK: - Device Info
 
 /// Device identity sent with push requests and returned in status responses.
