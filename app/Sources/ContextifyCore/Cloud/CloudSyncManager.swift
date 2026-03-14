@@ -204,8 +204,6 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
     } else {
       syncState = .disabled
-      cloudAccountProfile = nil
-      cloudAccountError = nil
       stopStatusPolling()
     }
 
@@ -362,6 +360,14 @@ public final class CloudSyncManager: @unchecked Sendable {
     }
     let client = CloudSyncClient(serverURL: url, apiKey: apiKey)
     return try await client.account()
+  }
+
+  /// Applies a known-good validated account profile immediately so UI can
+  /// reflect the authenticated identity without waiting on a follow-up fetch.
+  @MainActor
+  public func setValidatedAccountProfile(_ profile: CloudAccountProfile) {
+    cloudAccountProfile = profile
+    cloudAccountError = nil
   }
 
   /// Push local entries to the cloud server.

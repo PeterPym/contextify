@@ -594,8 +594,9 @@ struct CloudSettingsView: View {
         }
       }
 
+      let profile: CloudAccountProfile
       do {
-        _ = try await syncManager.validateConnection(
+        profile = try await syncManager.validateConnection(
           serverURL: CloudConfig.defaultServerURL,
           apiKey: trimmedApiKey
         )
@@ -610,7 +611,8 @@ struct CloudSettingsView: View {
         persistConfiguration(
           apiKey: trimmedApiKey,
           deviceName: trimmedDeviceName,
-          mode: mode
+          mode: mode,
+          validatedProfile: profile
         )
       }
     }
@@ -620,12 +622,15 @@ struct CloudSettingsView: View {
   private func persistConfiguration(
     apiKey: String,
     deviceName: String,
-    mode: ConnectionSheetMode
+    mode: ConnectionSheetMode,
+    validatedProfile: CloudAccountProfile
   ) {
     self.apiKey = apiKey
     self.deviceName = deviceName
     draftApiKey = apiKey
     draftDeviceName = deviceName
+    let existing = syncManager.loadConfig()
+    let isEnabled = existing?.enabled ?? true
 
     // TODO(self-hosted): Replace CloudConfig.defaultServerURL with serverURL state var.
     let config = CloudConfig(
@@ -633,7 +638,7 @@ struct CloudSettingsView: View {
       apiKey: self.apiKey,
       deviceId: MachineID.current(),
       deviceName: self.deviceName,
-      enabled: true,
+      enabled: isEnabled,
       lastPullSequence: 0,
       lastPushTimestamp: nil,
       lastPushEntryId: nil,
@@ -642,13 +647,13 @@ struct CloudSettingsView: View {
     )
 
     var finalConfig = config
-    if let existing = syncManager.loadConfig() {
+    if let existing {
       finalConfig = CloudConfig(
         serverURL: CloudConfig.defaultServerURL,
         apiKey: self.apiKey,
         deviceId: MachineID.current(),
         deviceName: self.deviceName,
-        enabled: true,
+        enabled: existing.enabled,
         lastPullSequence: existing.lastPullSequence,
         lastPushTimestamp: existing.lastPushTimestamp,
         lastPushEntryId: existing.lastPushEntryId,
@@ -659,14 +664,15 @@ struct CloudSettingsView: View {
 
     syncManager.saveConfig(finalConfig)
     syncManager.configure(config: finalConfig)
+    syncManager.setValidatedAccountProfile(validatedProfile)
     if finalConfig.enabled {
       syncManager.startAppLevelAutoSync()
       syncManager.triggerSync()
       Task {
         await syncManager.refreshStatusFromServer()
-        await syncManager.refreshAccountProfileFromServer()
       }
     }
+    Task { await syncManager.refreshAccountProfileFromServer() }
     isConfigured = true
     let expectedMessage = mode == .connect ? "Connected" : "Connection updated"
     saveMessage = expectedMessage
