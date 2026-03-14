@@ -1568,23 +1568,37 @@ public struct ContextifyQueryService: Sendable {
         }
       }
 
+      let enrichedProjects: [CloudPushExport.Project] = projects.map { project in
+        #if INGESTION_CORE
+        // Linux build: GitProjectIdentity is not available (depends on
+        // GitRepositoryResolver which is macOS-only). Push projects without
+        // git identity enrichment; the server treats all git fields as optional.
+        return CloudPushExport.Project(
+          id: project.id,
+          name: project.name,
+          rootPath: project.rootPath,
+          repoName: URL(fileURLWithPath: project.rootPath).lastPathComponent
+        )
+        #else
+        let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath)
+        return CloudPushExport.Project(
+          id: project.id,
+          name: project.name,
+          rootPath: project.rootPath,
+          repoIdentity: identity?.repoIdentity,
+          repoOriginNormalized: identity?.repoOriginNormalized,
+          gitCommonDir: identity?.gitCommonDir,
+          isWorktree: identity?.isWorktree ?? false,
+          defaultBranch: identity?.defaultBranch,
+          vcsProvider: identity?.vcsProvider,
+          worktreeName: identity?.worktreeName,
+          repoName: identity?.repoName ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
+        )
+        #endif
+      }
+
       return CloudPushExport(
-        projects: projects.map { project in
-          let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath)
-          return CloudPushExport.Project(
-            id: project.id,
-            name: project.name,
-            rootPath: project.rootPath,
-            repoIdentity: identity?.repoIdentity,
-            repoOriginNormalized: identity?.repoOriginNormalized,
-            gitCommonDir: identity?.gitCommonDir,
-            isWorktree: identity?.isWorktree ?? false,
-            defaultBranch: identity?.defaultBranch,
-            vcsProvider: identity?.vcsProvider,
-            worktreeName: identity?.worktreeName,
-            repoName: identity?.repoName ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
-          )
-        },
+        projects: enrichedProjects,
         transcripts: transcripts,
         entries: entries)
     }
