@@ -158,6 +158,240 @@ private func cloudRequest(
   return (data, statusCode)
 }
 
+/// Synchronous HTTP request without authentication, for device flow endpoints
+private func unauthenticatedRequest(
+  url urlString: String,
+  method: String,
+  body: Data? = nil,
+  timeoutSeconds: TimeInterval = 15
+) throws -> (Data, Int) {
+  guard let url = URL(string: urlString) else {
+    throw CloudError.networkError("Invalid URL: \(urlString)")
+  }
+
+  var request = URLRequest(url: url)
+  request.httpMethod = method
+  request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+  request.httpBody = body
+  request.timeoutInterval = timeoutSeconds
+
+  let semaphore = DispatchSemaphore(value: 0)
+  var responseData: Data?
+  var statusCode: Int = 0
+  var requestError: Error?
+
+  let task = URLSession.shared.dataTask(with: request) { data, response, error in
+    responseData = data
+    statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+    requestError = error
+    semaphore.signal()
+  }
+  task.resume()
+  let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds + 5)
+  if waitResult == .timedOut {
+    task.cancel()
+    throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
+  }
+
+  if let error = requestError {
+    throw CloudError.networkError(error.localizedDescription)
+  }
+  guard let data = responseData else {
+    throw CloudError.networkError("No response received")
+  }
+  return (data, statusCode)
+}
+
+// MARK: - Device Flow Types
+
+/// Response from POST /api/v1/auth/device/code
+struct DeviceCodeResponse: Codable {
+  let deviceCode: String
+  let userCode: String
+  let verificationUri: String
+  let expiresIn: Int
+  let interval: Int
+
+  enum CodingKeys: String, CodingKey {
+    case deviceCode = "device_code"
+    case userCode = "user_code"
+    case verificationUri = "verification_uri"
+    case expiresIn = "expires_in"
+    case interval
+  }
+}
+
+/// Success response from POST /api/v1/auth/device/token
+struct DeviceTokenResponse: Codable {
+  let apiKey: String
+  let apiKeyPrefix: String?
+  let email: String?
+  let name: String?
+  let role: String?
+  let plan: String?
+  let tenantName: String?
+
+  enum CodingKeys: String, CodingKey {
+    case apiKey = "api_key"
+    case apiKeyPrefix = "api_key_prefix"
+    case email, name, role, plan
+    case tenantName = "tenant_name"
+  }
+}
+
+/// Error response from POST /api/v1/auth/device/token (RFC 8628 section 3.5)
+struct DeviceTokenError: Codable {
+  let error: String
+  let errorDescription: String?
+
+  enum CodingKeys: String, CodingKey {
+    case error
+    case errorDescription = "error_description"
+  }
+}
+
+// MARK: - Device Flow Helpers
+
+/// Request a device code from the server to start the device flow
+private func requestDeviceCode(baseURL: String) throws -> DeviceCodeResponse {
+  let endpoint = "\(baseURL)/api/v1/auth/device/code"
+  let body = try JSONEncoder().encode(["client_name": "contextify-cli"])
+
+  let (data, statusCode) = try unauthenticatedRequest(
+    url: endpoint, method: "POST", body: body)
+
+  guard statusCode == 200 else {
+    let body = String(data: data, encoding: .utf8) ?? "unknown"
+    throw CloudError.apiError(statusCode, "Failed to start device flow: \(body)")
+  }
+
+  return try JSONDecoder().decode(DeviceCodeResponse.self, from: data)
+}
+
+/// Poll the device token endpoint until authorization is granted, denied, or expired.
+/// Uses a text-based spinner to indicate waiting. Returns the API key on success.
+private func pollForDeviceToken(
+  baseURL: String,
+  deviceCode: String,
+  interval: Int,
+  expiresIn: Int
+) throws -> DeviceTokenResponse {
+  let endpoint = "\(baseURL)/api/v1/auth/device/token"
+  var currentInterval = interval
+  let deadline = Date().addingTimeInterval(TimeInterval(expiresIn))
+
+  // Simple spinner frames for the waiting indicator
+  let spinnerFrames = ["*", "o", "O", "o"]
+  var frameIndex = 0
+
+  while Date() < deadline {
+    Thread.sleep(forTimeInterval: TimeInterval(currentInterval))
+
+    // Show spinner progress
+    if CLIStyle.isStyled {
+      let frame = spinnerFrames[frameIndex % spinnerFrames.count]
+      print("\r  \(frame) Waiting for browser authorization...", terminator: "")
+      fflush(stdout)
+      frameIndex += 1
+    }
+
+    let body = try JSONEncoder().encode([
+      "device_code": deviceCode,
+      "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+    ])
+
+    let (data, statusCode) = try unauthenticatedRequest(
+      url: endpoint, method: "POST", body: body)
+
+    if statusCode == 200 {
+      // Clear spinner line
+      if CLIStyle.isStyled {
+        print("\r\u{001B}[2K", terminator: "")
+        fflush(stdout)
+      }
+      return try JSONDecoder().decode(DeviceTokenResponse.self, from: data)
+    }
+
+    if statusCode == 400 {
+      let errorResponse = try JSONDecoder().decode(DeviceTokenError.self, from: data)
+      switch errorResponse.error {
+      case "authorization_pending":
+        continue
+      case "slow_down":
+        currentInterval += 5
+        continue
+      case "expired_token":
+        if CLIStyle.isStyled {
+          print("\r\u{001B}[2K", terminator: "")
+          fflush(stdout)
+        }
+        throw CloudError.networkError("Authorization timed out. The code has expired. Please run setup again.")
+      case "access_denied":
+        if CLIStyle.isStyled {
+          print("\r\u{001B}[2K", terminator: "")
+          fflush(stdout)
+        }
+        throw CloudError.networkError("Authorization was denied by the user.")
+      default:
+        if CLIStyle.isStyled {
+          print("\r\u{001B}[2K", terminator: "")
+          fflush(stdout)
+        }
+        throw CloudError.networkError(
+          errorResponse.errorDescription ?? "Unknown error: \(errorResponse.error)")
+      }
+    }
+
+    // Unexpected status code
+    if CLIStyle.isStyled {
+      print("\r\u{001B}[2K", terminator: "")
+      fflush(stdout)
+    }
+    let respBody = String(data: data, encoding: .utf8) ?? ""
+    throw CloudError.apiError(statusCode, respBody)
+  }
+
+  // Expired by local deadline
+  if CLIStyle.isStyled {
+    print("\r\u{001B}[2K", terminator: "")
+    fflush(stdout)
+  }
+  throw CloudError.networkError("Authorization timed out after \(expiresIn) seconds.")
+}
+
+/// Attempt to open a URL in the user's default browser.
+/// Returns true if the browser was opened, false otherwise.
+private func tryOpenBrowser(url urlString: String) -> Bool {
+  #if os(macOS)
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+  process.arguments = [urlString]
+  process.standardError = FileHandle.nullDevice
+  process.standardOutput = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+    return process.terminationStatus == 0
+  } catch {
+    return false
+  }
+  #else
+  // Linux: try xdg-open
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+  process.arguments = ["xdg-open", urlString]
+  process.standardError = FileHandle.nullDevice
+  process.standardOutput = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+    return process.terminationStatus == 0
+  } catch {
+    return false
+  }
+  #endif
+}
+
 // MARK: - Cloud Command Group
 
 /// Cloud sync commands for multi-machine synchronization
@@ -192,82 +426,84 @@ struct CloudCommand: ParsableCommand {
 
 // MARK: - Setup Command
 
+/// Default cloud server URL for the managed service
+private let defaultCloudServerURL = "https://cloud.contextify.sh"
+
 struct CloudSetupCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "setup",
     abstract: "Configure cloud sync connection",
     discussion: """
-      Set up cloud sync by providing your cloud server URL and API key.
-      Configuration is stored in ~/.config/contextify/cloud.json.
+      Set up cloud sync with your Contextify Cloud account.
+
+      The default flow opens your browser to sign in (device flow auth).
+      For headless environments or CI, use --key to provide an API key directly.
 
       EXAMPLES:
-        contextify cloud setup
-        contextify cloud setup --url https://100.x.y.z:8443 --key ctx_abc123_def456
+        contextify cloud setup                                    # Browser sign-in
+        contextify cloud setup --key ctx_abc123_def456             # Direct API key
+        contextify cloud setup --url https://self-hosted:8443 --key ctx_abc123
+        contextify cloud setup --no-device-flow                   # Legacy URL + key prompts
       """
   )
 
-  @Option(name: .long, help: "Cloud server URL")
+  @Option(name: .long, help: "Cloud server URL (default: cloud.contextify.sh)")
   var url: String?
 
-  @Option(name: .long, help: "API key (ctx_...)")
+  @Option(name: .long, help: "API key (ctx_...) for non-interactive setup")
   var key: String?
 
+  @Flag(name: .long, help: "Disable all interactive prompts; fail if --key is not provided")
+  var noInput: Bool = false
+
+  @Flag(name: .long, help: "Skip device flow auth; use legacy URL + key prompts")
+  var noDeviceFlow: Bool = false
+
   func run() throws {
-    let cloudURL: String
-    let apiKey: String
-
-    if let u = url, let k = key {
-      cloudURL = u
-      apiKey = k
+    if let apiKey = key {
+      // Path A: Direct API key (CI/headless/non-interactive)
+      try setupWithAPIKey(apiKey: apiKey, serverURL: url ?? defaultCloudServerURL)
+    } else if noInput {
+      // Non-interactive without key is an error
+      print(CLIStyle.error("--key is required when using --no-input"))
+      print(CLIStyle.dimText("  Example: contextify cloud setup --no-input --key ctx_abc123"))
+      throw ExitCode(1)
+    } else if noDeviceFlow || isCustomServerURL() {
+      // Path C: Legacy interactive prompts (user explicitly chose, or self-hosted server)
+      try setupWithLegacyPrompts(serverURL: url)
     } else {
-      print()
-      print(CLIStyle.header("Contextify Cloud Setup"))
-      print()
-      print("\(CLIStyle.bold)[1/2]\(CLIStyle.reset) Enter your cloud server URL")
-      let exampleURL = CLIStyle.link("cloud.contextify.sh", url: "https://cloud.contextify.sh")
-      print(CLIStyle.dimText("  (e.g., https://\(exampleURL) or http://100.x.y.z:8443)"))
-      print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
-      guard let inputURL = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !inputURL.isEmpty else {
-        throw ValidationError("URL is required")
-      }
-      cloudURL = inputURL
-
-      print()
-      print("\(CLIStyle.bold)[2/2]\(CLIStyle.reset) Enter your API key \(CLIStyle.dimText("(starts with ctx_)"))")
-      print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
-      guard let inputKey = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !inputKey.isEmpty else {
-        throw ValidationError("API key is required")
-      }
-      apiKey = inputKey
+      // Path B: Device flow (default for interactive sessions with managed server)
+      try setupWithDeviceFlow(serverURL: url ?? defaultCloudServerURL)
     }
+  }
 
-    guard URL(string: cloudURL) != nil else {
-      throw ValidationError("Invalid URL: \(cloudURL)")
+  /// Whether the user specified a custom (non-default) server URL
+  private func isCustomServerURL() -> Bool {
+    guard let u = url else { return false }
+    return u != defaultCloudServerURL && u != "https://cloud.contextify.sh"
+  }
+
+  // MARK: - Path A: Direct API Key
+
+  private func setupWithAPIKey(apiKey: String, serverURL: String) throws {
+    guard URL(string: serverURL) != nil else {
+      throw ValidationError("Invalid URL: \(serverURL)")
     }
     guard apiKey.hasPrefix("ctx_") else {
       throw ValidationError("API key must start with 'ctx_'")
     }
 
-    // Populate device identity
     let machineId = getStableMachineId()
-    let machineName: String
-    #if os(macOS)
-    machineName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-    #else
-    machineName = ProcessInfo.processInfo.hostName
-    #endif
+    let machineName = getLocalMachineName()
 
-    // Test connection
     print()
-    print("Testing connection to \(CLIStyle.cyanText(cloudURL))...")
-    let testConfig = CLICloudConfig(
-      serverURL: cloudURL, apiKey: apiKey,
+    print("Testing connection to \(CLIStyle.cyanText(serverURL))...")
+    let config = CLICloudConfig(
+      serverURL: serverURL, apiKey: apiKey,
       deviceId: machineId, deviceName: machineName)
     do {
       let (_, status) = try cloudRequest(
-        config: testConfig, method: "GET", path: "/api/v1/sync/status")
+        config: config, method: "GET", path: "/api/v1/sync/status")
       if status == 200 {
         print(CLIStyle.success("Connection successful"))
       } else if status == 401 || status == 403 {
@@ -280,13 +516,162 @@ struct CloudSetupCommand: ParsableCommand {
       print(CLIStyle.dimText("Saving configuration anyway."))
     }
 
-    try testConfig.save()
+    try config.save()
     print()
+    print(CLIStyle.success("Cloud sync configured (\(serverURL))"))
     let configPath = CLIStyle.link(
       CLICloudConfig.configFile.path,
       url: "file://\(CLICloudConfig.configFile.path)")
-    print(CLIStyle.success("Saved to \(configPath)"))
-    print(CLIStyle.dimText("Run '\(CLIStyle.cyanText("contextify cloud status"))' to verify."))
+    print(CLIStyle.labelValue("Config:", " \(configPath)"))
+    print()
+    print(CLIStyle.dimText("Next: \(CLIStyle.cyanText("contextify cloud sync"))"))
+  }
+
+  // MARK: - Path B: Device Flow
+
+  private func setupWithDeviceFlow(serverURL: String) throws {
+    print()
+    print(CLIStyle.header("Contextify Cloud Setup"))
+    print()
+
+    // Step 1: Request device code
+    print("\(CLIStyle.bold)Step 1:\(CLIStyle.reset) Authenticate")
+
+    let codeResponse: DeviceCodeResponse
+    do {
+      codeResponse = try requestDeviceCode(baseURL: serverURL)
+    } catch {
+      // Device flow not available: fall back to legacy prompts
+      print(CLIStyle.warning("Device flow unavailable: \(error)"))
+      print(CLIStyle.dimText("Falling back to manual setup..."))
+      print()
+      try setupWithLegacyPrompts(serverURL: serverURL)
+      return
+    }
+
+    // Display verification URL and code
+    let verificationLink = CLIStyle.link(
+      codeResponse.verificationUri, url: codeResponse.verificationUri)
+
+    // Try to open browser
+    let browserOpened = tryOpenBrowser(url: codeResponse.verificationUri)
+
+    if browserOpened {
+      print("  Opening browser...")
+    } else {
+      print("  Open this URL on any device to sign in:")
+    }
+    print("  \(verificationLink)")
+    print()
+    print("  Enter code: \(CLIStyle.boldText(codeResponse.userCode))")
+    print()
+
+    // Step 2: Poll for authorization
+    if !CLIStyle.isStyled {
+      print("  Waiting for authorization...")
+    }
+
+    let tokenResponse: DeviceTokenResponse
+    do {
+      tokenResponse = try pollForDeviceToken(
+        baseURL: serverURL,
+        deviceCode: codeResponse.deviceCode,
+        interval: codeResponse.interval,
+        expiresIn: codeResponse.expiresIn)
+    } catch {
+      print(CLIStyle.error("\(error)"))
+      throw ExitCode(1)
+    }
+
+    let emailDisplay = tokenResponse.email ?? "your account"
+    print(CLIStyle.success("Authenticated as \(emailDisplay)"))
+    print()
+
+    // Step 2: Configure device
+    print("\(CLIStyle.bold)Step 2:\(CLIStyle.reset) Configure")
+
+    let machineId = getStableMachineId()
+    let machineName = getLocalMachineName()
+
+    #if os(macOS)
+    let osLabel = "macOS"
+    #else
+    let osLabel = "Linux"
+    #endif
+    print("  Device: \(machineName) (\(osLabel))")
+
+    let config = CLICloudConfig(
+      serverURL: serverURL,
+      apiKey: tokenResponse.apiKey,
+      deviceId: machineId,
+      deviceName: machineName)
+    try config.save()
+
+    print(CLIStyle.success("Cloud sync configured"))
+    print()
+
+    // Summary
+    if let email = tokenResponse.email {
+      print(CLIStyle.labelValue("  Account:", " \(email)"))
+    }
+    if let team = tokenResponse.tenantName {
+      print(CLIStyle.labelValue("  Team:", "    \(team)"))
+    }
+    if let plan = tokenResponse.plan {
+      print(CLIStyle.labelValue("  Plan:", "    \(plan)"))
+    }
+    let configPath = CLIStyle.link(
+      CLICloudConfig.configFile.path,
+      url: "file://\(CLICloudConfig.configFile.path)")
+    print(CLIStyle.labelValue("  Config:", "  \(configPath)"))
+    print(CLIStyle.labelValue("  Next:", "    \(CLIStyle.cyanText("contextify cloud sync"))"))
+  }
+
+  // MARK: - Path C: Legacy Interactive Prompts
+
+  private func setupWithLegacyPrompts(serverURL: String?) throws {
+    let cloudURL: String
+    let apiKey: String
+
+    print()
+    print(CLIStyle.header("Contextify Cloud Setup"))
+    print()
+
+    if let u = serverURL {
+      cloudURL = u
+      print("  Server: \(CLIStyle.cyanText(u))")
+      print()
+    } else {
+      print("\(CLIStyle.bold)[1/2]\(CLIStyle.reset) Enter your cloud server URL")
+      let exampleURL = CLIStyle.link(
+        "cloud.contextify.sh", url: "https://cloud.contextify.sh")
+      print(CLIStyle.dimText("  (e.g., https://\(exampleURL) or http://100.x.y.z:8443)"))
+      print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
+      guard let inputURL = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !inputURL.isEmpty else {
+        throw ValidationError("URL is required")
+      }
+      cloudURL = inputURL
+    }
+
+    let stepLabel = serverURL != nil ? "[1/1]" : "[2/2]"
+    print()
+    print("\(CLIStyle.bold)\(stepLabel)\(CLIStyle.reset) Enter your API key \(CLIStyle.dimText("(starts with ctx_)"))")
+    print("\(CLIStyle.bold)\(CLIStyle.cyan)> \(CLIStyle.reset)", terminator: "")
+    guard let inputKey = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !inputKey.isEmpty else {
+      throw ValidationError("API key is required")
+    }
+    apiKey = inputKey
+
+    guard URL(string: cloudURL) != nil else {
+      throw ValidationError("Invalid URL: \(cloudURL)")
+    }
+    guard apiKey.hasPrefix("ctx_") else {
+      throw ValidationError("API key must start with 'ctx_'")
+    }
+
+    try setupWithAPIKey(apiKey: apiKey, serverURL: cloudURL)
   }
 }
 
@@ -954,6 +1339,15 @@ private func getStableMachineId() -> String {
     .trimmingCharacters(in: .whitespacesAndNewlines) {
     return id
   }
+  return ProcessInfo.processInfo.hostName
+  #endif
+}
+
+/// Get a human-readable machine name for device identity
+private func getLocalMachineName() -> String {
+  #if os(macOS)
+  return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+  #else
   return ProcessInfo.processInfo.hostName
   #endif
 }
