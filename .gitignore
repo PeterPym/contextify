@@ -95,7 +95,8 @@ website/review-4a125b1d/drafts/
 
 # Environment variables (contains secrets)
 .env
-.secrets/
+.envrc
+.secrets
 build/Contextify.xcarchive/
 build/appstore/
 build/archives/

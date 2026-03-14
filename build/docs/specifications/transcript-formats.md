@@ -419,6 +419,7 @@ Codex CLI stores conversation history in **JSONL** format with a different recor
 - **Tool-focused:** First-class `function_call` / `function_call_output` records
 - **Agent reasoning:** Encrypted `reasoning` records for internal thoughts
 - **Session context:** Explicit `session_meta` with environment/git/instructions
+- **Queued-input UI exists upstream:** current Codex TUI shows queued follow-up messages, but observed local JSONL transcripts still expose only committed user messages
 
 ### Record Types
 
@@ -592,6 +593,12 @@ Varies by `payload.type`. Telemetry/UX stream separate from core messages.
 
 **Note:** `agent_message` events are what Codex CLI displays to the user when resuming sessions, **NOT** the `response_item` with `role=assistant`.
 
+### Queued Input Status
+
+Current upstream Codex source includes queued-input UI in the TUI, including the strings `Messages to be submitted after next tool call`, `Queued follow-up messages`, and `edit last queued message`. In local transcripts captured with Codex CLI `0.114.0`, Contextify has not observed a queue-specific JSONL record or field yet.
+
+**Implication:** Codex queued follow-ups should be treated as unsupported in Contextify ingestion until a machine-readable transcript or sidecar signal is confirmed.
+
 #### `function_call` / `function_call_output` (Tool Invocations)
 
 First-class tool invocation trace with request/response pairing via `call_id`.
@@ -671,6 +678,7 @@ Codex CLI automatically injects context (AGENTS.md + environment) at conversatio
 | **File snapshots** | Yes — `trackedFileBackups` per path with versions/timestamps | No equivalent (tool outputs/logs instead) |
 | **Internal thoughts** | `thinking` blocks in assistant messages | `reasoning` records with `encrypted_content` |
 | **Tool I/O** | `tool_use` / `tool_result` blocks in assistant messages | First-class: `function_call` / `function_call_output` records |
+| **Queued input** | Transcript-visible via `queue-operation` records | TUI-visible upstream, but no confirmed queue record in observed JSONL |
 | **Session preamble** | Implicit via early `user` meta and snapshots | Explicit `session_meta` with all environment/git/instructions |
 | **Timestamps** | ISO strings (**MUST BE MONOTONIC**) on each record | ISO strings (**MUST BE MONOTONIC**) on each record |
 

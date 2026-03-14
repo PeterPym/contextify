@@ -1,7 +1,7 @@
 # Codex CLI Transcript Format - Technical Reference
 
-**Status:** Technical Analysis (2025-11-21)
-**Source:** Local analysis of Codex CLI transcripts + Contextify parser implementation
+**Status:** Technical Analysis (2026-03-14)
+**Source:** Local analysis of Codex CLI transcripts, upstream `openai/codex` source, and Contextify parser implementation
 **Related:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
 ---
@@ -21,92 +21,65 @@ Codex CLI stores conversation history in **JSONL** (JSON Lines) format with a di
 - **Tool-focused:** First-class `function_call` / `function_call_output` records
 - **Agent reasoning:** Encrypted `reasoning` records for internal thoughts
 - **Session context:** Explicit `session_meta` with environment/git/instructions
-- **No message queueing:** Synchronous turn-based interaction model
+- **Queued-input UI exists:** Upstream TUI shows queued follow-up messages and lets the user edit the last queued draft
+- **No documented transcript queue signal:** Current local JSONL transcripts do not expose a queue-specific record or field
 
 ---
 
 ## Concurrent Input Handling
 
-### No Queue Mechanism
+### Queueing Exists in the TUI
 
-Unlike Claude Code, **Codex CLI does not implement message queueing**. This represents a fundamental architectural difference in how user input is handled during tool execution.
+Codex CLI now implements queued input in the open-source TUI, but the queue currently appears to live in widget state rather than in the JSONL transcript format Contextify ingests.
 
-**Verification:**
+**Source anchors:**
+- `codex-rs/tui/src/bottom_pane/pending_input_preview.rs`
+- `codex-rs/tui/src/chatwidget.rs`
+- `codex-rs/tui/src/app.rs`
+- `codex-rs/protocol/src/protocol.rs`
+
+**Observed upstream behavior:**
+- The bottom pane renders:
+  - `Messages to be submitted after next tool call`
+  - `Queued follow-up messages`
+  - `edit last queued message`
+- `chatwidget.rs` stores queued drafts in `queued_user_messages: VecDeque<UserMessage>`
+- `queue_user_message()` appends to that queue while a task is running, while the session is not configured, or while review mode is active
+- `maybe_send_next_queued_input()` submits exactly one queued message when the turn becomes idle
+- The `edit last queued message` keybinding pops the last queued draft back into the composer instead of emitting a transcript event
+- `ThreadInputState` captures `queued_user_messages` only for in-memory thread switching and replay inside the TUI
+- `UserMessageEvent` in `codex-rs/protocol/src/protocol.rs` contains the committed user message text and attachments, but no queue flag or queue status field
+
+**Local transcript verification:**
 ```bash
-$ grep -h '"type":"queue-operation"' ~/.codex/sessions/*/*/*/*.jsonl
-[No results]
+rg -n -i 'queued|queue|next tool call|follow-up' ~/.codex/sessions/*/*/*/*.jsonl
 ```
 
-**Result:** Zero instances of `queue-operation` records across all Codex transcripts.
+**Result:** No queue-specific JSONL records or fields were found in local transcripts captured with Codex CLI `0.114.0`.
 
-### Architectural Difference
+### Current Architectural Difference
 
 | Feature | Claude Code | Codex CLI |
 |---------|-------------|-----------|
-| **Queue mechanism** | Yes (4 operations: enqueue, remove, popAll, dequeue) | No |
-| **User input during tool execution** | Queued for later processing | Unknown (likely blocked or buffered) |
-| **Message ordering** | Guaranteed (FIFO queue) | Linear (no queueing needed) |
-| **Turn interruption** | Not supported (queue instead) | Unknown |
-| **User experience** | Asynchronous (send anytime) | Synchronous (turn-based) |
-
-### Design Philosophy
-
-**Hypothesis 1: Synchronous Turn Model**
-- Codex may enforce strict turn-taking (user waits for completion)
-- Input during tool execution may be blocked until turn completes
-- Simpler concurrency model (no queue state management)
-
-**Hypothesis 2: Different Tool Execution Model**
-- Codex tools may be faster/atomic (no need for queueing)
-- Long-running operations may be handled differently
-- Less emphasis on concurrent user input
-
-**Hypothesis 3: CLI Architecture Constraint**
-- Codex CLI may use blocking I/O for user input
-- Rust-based CLI may have different threading model
-- Terminal interface may naturally enforce turn-taking
-
-### Testing Needed
-
-To validate these hypotheses:
-1. Send message during Codex tool execution and observe behavior
-2. Check if Codex transcript shows any indication of delayed processing
-3. Compare tool execution patterns (long-running tools in Codex?)
-4. Measure time between user input and tool completion
+| **Queue mechanism** | Yes (4 operations: enqueue, remove, popAll, dequeue) | Yes in TUI state; no transcript record documented yet |
+| **User input during tool execution** | Queued for later processing | Queued in `queued_user_messages` while a turn is active |
+| **Message ordering** | Guaranteed (FIFO queue) | FIFO in widget state, then committed as normal user messages |
+| **Turn interruption** | Not supported (queue instead) | Pending steers can interrupt; queued follow-ups wait for next idle turn |
+| **User experience** | Asynchronous (send anytime) | Asynchronous in TUI, but queue is not yet transcript-visible |
 
 ### Implications for Contextify
 
 **Parser Implementation:**
-- No queue-operation parsing needed for Codex
-- Simpler timeline construction (no queue state tracking)
-- Linear message display (no queue badges)
+- Do not invent queue parsing for Codex until a real machine-readable signal is confirmed
+- Current Contextify ingestion sees only committed Codex user messages
+- Queue badges for Codex are unsupported today because no transcript-visible queue state has been observed
 
 **UI Display:**
-- No "QUEUED" badges for Codex transcripts
-- Simple chronological timeline
-- No queue status tooltips
+- Keep Codex timeline display chronological based on committed transcript events
+- Do not show a synthetic `QUEUED` badge for Codex without confirmed source data
 
 **Performance:**
-- Lighter weight parsing (no queue state overhead)
-- No transient queue state management
-- Faster timeline rendering for Codex sessions
-
-**Code Example:**
-```swift
-enum TranscriptProvider {
-    case claudeCode  // Has queueing
-    case codex       // No queueing
-}
-
-func supportsQueueing(provider: TranscriptProvider) -> Bool {
-    switch provider {
-    case .claudeCode:
-        return true
-    case .codex:
-        return false
-    }
-}
-```
+- Parsing remains lighter than Claude queue handling because Contextify has no Codex queue records to ingest today
 
 ---
 
@@ -158,10 +131,10 @@ Unlike Claude Code's explicit parent chaining (`uuid` + `parentUuid`), Codex use
 
 | Feature | Claude Code | Codex CLI |
 |---------|-------------|-----------|
-| **Message queueing** | Yes (queue-operation records) | No |
-| **Concurrent user input** | Supported (messages queued during tool execution) | Unknown (likely blocked) |
-| **Queue state management** | Required (transient state tracking) | Not applicable |
-| **Turn interruption** | Not supported (queue instead) | Unknown |
+| **Message queueing** | Yes (queue-operation records) | Yes in open-source TUI state |
+| **Concurrent user input** | Supported (messages queued during tool execution) | Supported in TUI via queued follow-up messages |
+| **Queue state management** | Required (transient state tracking) | Required in TUI, but not exposed in observed transcripts |
+| **Turn interruption** | Not supported (queue instead) | Pending steers can interrupt active turns |
 
 ### Record Taxonomy
 
@@ -175,7 +148,7 @@ Unlike Claude Code's explicit parent chaining (`uuid` + `parentUuid`), Codex use
 | **Session metadata** | Implicit in early messages | Explicit `type: "session_meta"` |
 | **File snapshots** | `type: "file-history-snapshot"` | No equivalent |
 | **System events** | `type: "system"` | `type: "event_msg"` (various subtypes) |
-| **Queue operations** | `type: "queue-operation"` | **Not present** |
+| **Queue operations** | `type: "queue-operation"` | No queue record documented in observed JSONL |
 
 ### Content Blocks
 
@@ -189,18 +162,18 @@ Unlike Claude Code's explicit parent chaining (`uuid` + `parentUuid`), Codex use
 
 ---
 
-## Queue Operations (Not Applicable)
+## Queue Operations (Transcript Status Unknown)
 
-Codex CLI does not implement message queueing. See [Claude Code Queue Operations](./claude-code-transcript-format.md#queue-operations) for comparison.
+Codex CLI now implements queued-input behavior in the open-source TUI, but no queue-specific JSONL operation has been confirmed in local transcripts so far. See [Claude Code Queue Operations](./claude-code-transcript-format.md#queue-operations) for the richer transcript-visible model that Contextify already supports.
 
-**Summary:**
-- ❌ No `enqueue` operation
-- ❌ No `remove` operation
-- ❌ No `popAll` operation
-- ❌ No `dequeue` operation
-- ❌ No queue state tracking needed
-- ✅ Simpler parser implementation
-- ✅ Linear timeline display
+**Current status:**
+- ✅ Queued follow-up messages exist in TUI state
+- ✅ The UI exposes `edit last queued message`
+- ❌ No confirmed Codex `enqueue` transcript record
+- ❌ No confirmed Codex `remove` transcript record
+- ❌ No confirmed Codex `popAll` transcript record
+- ❌ No confirmed Codex `dequeue` transcript record
+- ❌ No machine-readable queue lifecycle for Contextify to ingest yet
 
 ---
 
@@ -214,7 +187,7 @@ For Codex transcript parsing in Contextify, see:
 1. **Project association:** Extract `cwd` from `session_meta.payload.cwd`
 2. **Session identity:** Use `session_meta.payload.id` for session tracking
 3. **Display text:** Use `agent_message` events, not assistant `response_item`
-4. **No queue handling:** Skip queue operation parsing entirely
+4. **Queue handling:** Skip Codex queue parsing until a real transcript or sidecar signal is confirmed
 5. **Monotonic timestamps:** Validate timestamp ordering (same as Claude Code)
 
 ---
@@ -248,17 +221,15 @@ For Codex transcript parsing in Contextify, see:
 
 ## Conclusion
 
-Codex CLI uses a **synchronous, turn-based interaction model** without message queueing. This architectural decision results in:
-- ✅ **Simpler implementation:** No queue state management
-- ✅ **Lighter weight:** Fewer record types to parse
-- ✅ **Linear timeline:** Straightforward chronological display
-- ❌ **Less flexibility:** Users may not be able to send messages during tool execution
-- ❓ **Unknown UX impact:** Unclear how this affects user experience in practice
+Codex CLI now has visible queued-input behavior in the open-source TUI, but Contextify still lacks a confirmed machine-readable queue signal to ingest. In current local evidence:
+
+- queued follow-up messages are managed in TUI memory
+- the transcript records only committed user messages
+- no Codex queue lifecycle record has been observed in JSONL
 
 For Contextify, this means:
-- No queue-operation parsing for Codex transcripts
-- No queue badges in UI for Codex sessions
-- Simpler timeline construction
-- Potential performance advantage (less parsing overhead)
+- do not ship heuristic queue detection for Codex
+- keep Codex queue support explicitly unsupported until a real source signal exists
+- keep watching upstream transcript and protocol changes
 
-**Recommendation:** Monitor Codex architecture evolution. If queueing is added in future versions, update parser and UI accordingly.
+**Recommendation:** Treat transcript capture as the gate. Once Codex emits queue state in JSONL or another supported local artifact, add parser support and queue badges then.
