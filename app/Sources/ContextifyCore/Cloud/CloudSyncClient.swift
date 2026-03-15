@@ -181,6 +181,20 @@ public actor CloudSyncClient {
     return try decode(CloudSyncStatus.self, from: data)
   }
 
+  /// Get the authenticated account profile for the current API key.
+  ///
+  /// Returns user and tenant details that are safe to display in the app's
+  /// connection summary UI.
+  public func account() async throws -> CloudAccountProfile {
+    let url = buildURL(path: "/api/v1/account")
+
+    log.debug("Fetching cloud account profile")
+
+    let request = buildRequest(url: url, method: "GET")
+    let data = try await execute(request)
+    return try decode(CloudAccountProfile.self, from: data)
+  }
+
   // MARK: - Private Helpers
 
   /// Builds a full URL from a path and optional query items.
@@ -244,6 +258,7 @@ public actor CloudSyncClient {
   /// Decodes JSON data into the specified type, wrapping errors as CloudSyncError.
   private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
     do {
+      decoder.dateDecodingStrategy = .iso8601
       return try decoder.decode(type, from: data)
     } catch {
       log.error("Decoding error: \(error.localizedDescription, privacy: .public)")

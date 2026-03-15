@@ -182,6 +182,17 @@ Build your query following the "Query construction" section above, then search:
 contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
 ```
 
+When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
+
+```bash
+contextify search "<expanded-query>" --project . --days 30 --limit <N> --anchor-git --json
+```
+
+Git anchoring is additive, not exclusive:
+- if the CLI reports it found git anchors, use that ranking signal
+- if it reports no strong commit signal, continue with normal broad search
+- do not stop exploring just because the git path was attempted
+
 Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only` instead (no `--limit` needed).
 
 **Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching. Use parentheses when mixing AND/OR to control grouping; do not rely on default operator precedence.

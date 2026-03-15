@@ -11,6 +11,18 @@ Contextify’s E2E harness (`scripts/qa/`) relies on OSLog capture plus AppleScr
 - Avoid privileged operations in unattended runs.
 - Make failures self-diagnosing (logs + captured stderr + artifact paths).
 
+## Product Policy: Build Breadcrumbs In
+
+User-facing UI should not force automation to guess.
+
+Every new settings pane, sheet, onboarding step, or modal flow should ship with:
+- meaningful accessibility labels and hints for actionable controls
+- deterministic keyboard navigation through all actionable controls, including buttons in dialog footers
+- visible selected-state breadcrumbs for tabs and mode switches
+- textual status labels instead of color-only indicators
+
+When SwiftUI still hides control names or selection state from `System Events`, add the narrowest possible QA hook or defaults override instead of accepting brittle coordinate clicking.
+
 ## Primary Assertion Strategy: Logs First
 
 - Emit bracketed tags in important state changes and action boundaries (at `.info`).
@@ -40,6 +52,7 @@ When tests need a specific state (e.g. “Settings open on the CLI tab”), avoi
 
 - Prefer keyboard shortcuts (`Cmd+,`, `Enter`, explicit shortcuts) when possible.
 - If keyboard navigation is not possible, use small QA-only hooks that set state directly.
+- If the feature is new, fix the missing breadcrumb in product code rather than teaching automation a brittle workaround and walking away.
 
 ## Keyboard-First UI Automation Patterns
 

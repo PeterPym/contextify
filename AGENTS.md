@@ -12,11 +12,12 @@ These cause real problems when violated:
 2. **Run tests before merge** - `swift test` must pass. No exceptions.
 3. **Never do issue work on worktree landing branches** - Branches like `main`, `main-wb1`, `main-wb2`, `main-wb3`, and similar worktree landing branches are not feature branches. Before making code changes for a Bloon issue or any scoped task, create or switch to a dedicated issue branch (for example `ct-320-skill-provenance`). Do not leave implementation work, partial changes, or issue commits sitting on a landing branch.
 4. **Do not stack unrelated work on an existing branch** - Always check the current branch at session start and again before committing. If the branch name does not match the current task, or if the branch already contains older/unmerged commits for different work, stop and warn. Create a new branch for the current issue instead of adding more commits to a stale or unrelated branch.
-5. **No destructive git** - Never `git restore`, `reset --hard`, or `clean` without backup branch + user approval.
-6. **Use project ID, not path** - Always `ActiveProjectContext.id` for queries, never raw paths.
-7. **Sandbox file access** - All FileManager ops must be inside `accessProvider.withAccess()` closure.
-8. **Never skip layers** - UI -> ViewModel -> Orchestrator -> Repository -> Database. No GRDB imports in UI.
-9. **Verify build type before debugging** - When investigating runtime behavior, ALWAYS check which build is running:
+5. **Merge completed slices before starting the next issue** - If a branch contains a completed or review-ready slice, do not begin new issue work on top of it. Get user approval, merge/push that slice to `main`, return the worktree to its landing branch, and sync before starting the next issue. Do not let "temporary" stacked work accumulate on feature branches.
+6. **No destructive git** - Never `git restore`, `reset --hard`, or `clean` without backup branch + user approval.
+7. **Use project ID, not path** - Always `ActiveProjectContext.id` for queries, never raw paths.
+8. **Sandbox file access** - All FileManager ops must be inside `accessProvider.withAccess()` closure.
+9. **Never skip layers** - UI -> ViewModel -> Orchestrator -> Repository -> Database. No GRDB imports in UI.
+10. **Verify build type before debugging** - When investigating runtime behavior, ALWAYS check which build is running:
    ```bash
    ps aux | grep Contextify | grep -v grep | head -1
    ```
@@ -24,12 +25,17 @@ These cause real problems when violated:
    - `.derived-appstore/Build/Products/Debug/` = App Store build (sandboxed, requires onboarding)
 
    App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
-10. **No unassisted merges/deletes** - Do not merge to main or delete branches without user approval, even in autonomous mode.
-11. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
+11. **No unassisted merges/deletes** - Do not merge to main or delete branches without user approval, even in autonomous mode.
+12. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
    - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
    - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
-12. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
-13. **No scratch files in repo** - Never write progress tracking, status, or temporary files to the repository. Use `/tmp/` with a unique filename for any scratch output. This applies to all agents and subagents.
+13. **Ship UI with accessibility + automation breadcrumbs** - User-facing UI must expose enough structure for VoiceOver, keyboard use, and deterministic automation. At a minimum:
+   - add meaningful accessibility labels/hints for buttons, tabs, toggles, icons, and status badges
+   - ensure keyboard navigation and focus order are deliberate, visible, and cycle through the actionable controls in dialogs and settings flows
+   - expose obvious state breadcrumbs for automation, such as selected-tab state, status text, button labels/descriptions, and stable defaults overrides or shortcuts when SwiftUI metadata is incomplete
+   - when a flow still cannot be automated reliably, document the gap and add a narrow QA hook rather than relying on brittle coordinate clicking
+14. **Reports in /tmp/** - For any report-style output (validation, QA, audits, reviews, summaries, investigations, analyses, specs), always write a Markdown file in `/tmp/` and reference it; do not report only in chat. Include YAML front matter for cross-session context:
+15. **No scratch files in repo** - Never write progress tracking, status, or temporary files to the repository. Use `/tmp/` with a unique filename for any scratch output. This applies to all agents and subagents.
     ```yaml
     ---
     branch: feature/example
@@ -48,11 +54,14 @@ These cause real problems when violated:
 - Multiple related features? → Multiple commits
 - Implementation plan has phases/PRs? → Separate commit per phase
 - Before editing, run `git branch --show-current` and verify you are not on `main` or a worktree landing branch like `main-wb*`
+- Before editing, run `git fetch origin` and make sure the branch you create starts from current remote `main` unless the user explicitly wants stacked work
 - For issue work, create a dedicated branch immediately (`git checkout -b <issue-id>-<slug>`) before making changes
 - Do not start a second issue on a branch that already has unmerged commits unless the user explicitly wants that stacking
 - Before committing, inspect recent branch history (`git log --oneline --decorate -5`) and confirm the pending commit belongs with that branch's existing work
 - If the recent commits are not for the current issue, warn and branch off before committing
 - Once an issue branch has active work, prefer finishing, validating, and merging that branch before moving on to another issue
+- If a branch already contains a finished slice, stop there. Do not "just start the next thing" on that branch. Merge first, sync the worktree, then create a fresh issue branch for the next task
+- If you find yourself rationalizing that keeping work unmerged is "temporary," treat that as a warning sign and clean it up before proceeding
 
 ### Task & Roadmap Management
 
@@ -230,6 +239,12 @@ Skipping architecture docs leads to incomplete implementations and repeated mist
 ## UI Testing Gaps
 
 When UI tests aren't practical, document in `build/notes/todo-support/deferred-ui-tests.md` (behavior, reproduction steps, linked TODO).
+
+Before deferring, first ask whether the UI is missing automation breadcrumbs:
+- accessibility labels or hints for controls
+- deterministic keyboard navigation and focus order
+- explicit selected-state text or status badges
+- QA-only defaults overrides or shortcuts for hard-to-reach SwiftUI state
 
 ## Coding Style & Naming Conventions
 
@@ -454,12 +469,15 @@ When files under `Contextify/` are staged, the pre-commit hook runs a headless b
 
 This project uses git worktrees with shared tooling from cli-ai-setup.
 
+**Note:** The `contextify-cloud` repo (`~/code/projects/contextify-cloud/`) does NOT have worktrees yet. It uses a single checkout with feature branches merged to main. If cross-repo parallel work becomes common (e.g., CLI + server changes in the same session), mirrored worktrees may be added (see ct-406).
+
 **Session Start:**
 1. Run `wt-context.sh` to confirm which worktree you're in
 2. Run `git branch --show-current` and confirm you are not about to work on a landing branch such as `main` or `main-wb*`
-3. If starting issue work, create/switch to a dedicated task branch before editing files
-4. Read `current.md` for work coordination and starter prompts
-5. Update `current.md` when starting/finishing significant work
+3. Run `git fetch origin` and check whether this worktree is carrying completed or stale issue work that should be merged before you begin something new
+4. If starting issue work, create/switch to a dedicated task branch before editing files
+5. Read `current.md` for work coordination and starter prompts
+6. Update `current.md` when starting/finishing significant work
 
 **Branch Discipline:**
 - Treat the worktree branch (`main-wb*`) as a landing/sync branch only, not as the branch where issue implementation happens
@@ -467,6 +485,8 @@ This project uses git worktrees with shared tooling from cli-ai-setup.
 - If you discover uncommitted or unrelated committed work on the current branch, stop and call it out before continuing
 - If you need to continue prior work, prefer returning to that issue branch rather than starting new work on top of it
 - Do not leave a branch in a half-finished state and then silently move on to a different issue; either finish it, explicitly park it, or ask the user how to proceed
+- When a slice is done or review-ready, merge it before beginning the next issue. Do not let finished work sit around unmerged while you branch into unrelated implementation
+- After merge, return to the landing branch and run `wt-sync.sh` before starting the next issue so all worktrees stay aligned with `main`
 
 **Coordination:**
 - Check `current.md` at session start to see what siblings are working on

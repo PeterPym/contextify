@@ -60,6 +60,8 @@ public struct ContextifyQueryService: Sendable {
     public let score: Double
     public let contentSnippet: String
     public let contentTruncated: Bool
+    public let gitCommit: String?
+    public let cwd: String?
   }
 
   public struct EntryPayload: Codable, Sendable {
@@ -589,6 +591,8 @@ public struct ContextifyQueryService: Sendable {
           e.provider AS provider,
           e.kind AS kind,
           e.timestamp AS timestamp,
+          e.git_commit AS git_commit,
+          e.cwd AS cwd,
           bm25(transcript_entries_fts) AS score,
           COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', \(snippetTokens)), '') AS snippet,
           CASE
@@ -622,6 +626,8 @@ public struct ContextifyQueryService: Sendable {
         let provider: String
         let kind: String
         let timestamp: Int
+        let gitCommit: String?
+        let cwd: String?
         let score: Double
         let contentSnippet: String
         let contentTruncated: Bool
@@ -635,6 +641,8 @@ public struct ContextifyQueryService: Sendable {
           case provider
           case kind
           case timestamp
+          case gitCommit = "git_commit"
+          case cwd
           case score
           case contentSnippet = "snippet"
           case contentTruncated = "content_truncated"
@@ -654,7 +662,9 @@ public struct ContextifyQueryService: Sendable {
           timestamp: $0.timestamp,
           score: $0.score,
           contentSnippet: $0.contentSnippet,
-          contentTruncated: $0.contentTruncated
+          contentTruncated: $0.contentTruncated,
+          gitCommit: $0.gitCommit,
+          cwd: $0.cwd
         )
       }
     }
@@ -1435,6 +1445,36 @@ public struct ContextifyQueryService: Sendable {
 
   // MARK: - Cloud Push Export
 
+  /// Count entries remaining for cloud push from the given cursor position.
+  ///
+  /// Uses the same keyset pagination WHERE clause as `exportForCloudPush()`
+  /// so the count accurately reflects entries that will be pushed. Runs a
+  /// single COUNT(*) query, which is fast even on large tables.
+  ///
+  /// - Parameters:
+  ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
+  ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
+  /// - Returns: Number of entries remaining to push.
+  public func countEntriesForCloudPush(
+    afterTimestamp: Int? = nil,
+    afterEntryId: String? = nil
+  ) throws -> Int {
+    try pool.read { db in
+      var sql = """
+        SELECT COUNT(*) FROM transcript_entries e
+        WHERE e.display_in_timeline = 1
+        """
+      var args: [DatabaseValueConvertible] = []
+      if let afterTimestamp, let afterEntryId {
+        sql += " AND (e.timestamp > ? OR (e.timestamp = ? AND e.id > ?))"
+        args.append(afterTimestamp)
+        args.append(afterTimestamp)
+        args.append(afterEntryId)
+      }
+      return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(args)) ?? 0
+    }
+  }
+
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
   ///
@@ -1528,8 +1568,40 @@ public struct ContextifyQueryService: Sendable {
         }
       }
 
+      let enrichedProjects: [CloudPushExport.Project] = projects.map { project in
+        #if INGESTION_CORE
+        // Linux build: GitProjectIdentity is not available (depends on
+        // GitRepositoryResolver which is macOS-only). Push projects without
+        // git identity enrichment; the server treats all git fields as optional.
+        return CloudPushExport.Project(
+          id: project.id,
+          name: project.name,
+          rootPath: project.rootPath,
+          repoName: URL(fileURLWithPath: project.rootPath).lastPathComponent
+        )
+        #else
+        let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath)
+        return CloudPushExport.Project(
+          id: project.id,
+          name: project.name,
+          rootPath: project.rootPath,
+          repoGroupKey: identity?.repoGroupKey,
+          repoIdentity: identity?.repoIdentity,
+          repoOriginNormalized: identity?.repoOriginNormalized,
+          gitCommonDir: identity?.gitCommonDir,
+          isWorktree: identity?.isWorktree ?? false,
+          defaultBranch: identity?.defaultBranch,
+          vcsProvider: identity?.vcsProvider,
+          worktreeName: identity?.worktreeName,
+          repoName: identity?.repoName ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
+        )
+        #endif
+      }
+
       return CloudPushExport(
-        projects: projects, transcripts: transcripts, entries: entries)
+        projects: enrichedProjects,
+        transcripts: transcripts,
+        entries: entries)
     }
   }
 
@@ -1549,6 +1621,7 @@ public struct ContextifyQueryService: Sendable {
       var transcriptsImported = 0
       var entriesImported = 0
       var skipped = 0
+      var projectIdRemap = [String: String]()
 
       let now = Int(Date().timeIntervalSince1970)
 
@@ -1557,24 +1630,54 @@ public struct ContextifyQueryService: Sendable {
         guard let id = proj["id"] as? String,
               let rootPath = proj["root_path"] as? String else { continue }
         let name = proj["name"] as? String
-        let exists = try Int.fetchOne(db, sql:
-          "SELECT 1 FROM projects WHERE id = ?", arguments: [id])
-        if exists == nil {
+        if let existingId = try String.fetchOne(
+          db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [id]
+        ) {
+          projectIdRemap[id] = existingId
+          continue
+        }
+
+        if let existingId = try String.fetchOne(
+          db,
+          sql: "SELECT id FROM projects WHERE root_path = ?",
+          arguments: [rootPath]
+        ) {
+          projectIdRemap[id] = existingId
+          if let name {
+            try db.execute(
+              sql: """
+                UPDATE projects
+                SET name = COALESCE(name, ?), updated_at = ?
+                WHERE id = ?
+              """,
+              arguments: [name, now, existingId]
+            )
+          }
+          continue
+        }
+
+        do {
           try db.execute(sql: """
             INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
               is_orphaned, created_at, updated_at)
             VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
             """, arguments: [id, name, rootPath, now, now])
           projectsImported += 1
+          projectIdRemap[id] = id
+        } catch {
+          throw error
         }
       }
 
       // Upsert transcripts
       for tx in transcripts {
         guard let id = tx["id"] as? String,
-              let projectId = tx["project_id"] as? String,
+              let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
+        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
         let exists = try Int.fetchOne(db, sql:
           "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
         if exists == nil {
@@ -1601,12 +1704,13 @@ public struct ContextifyQueryService: Sendable {
       for entry in entries {
         guard let id = entry["id"] as? String,
               let transcriptId = entry["transcript_id"] as? String,
-              let projectId = entry["project_id"] as? String,
+              let rawProjectId = entry["project_id"] as? String,
               let provider = entry["provider"] as? String,
               let kind = entry["kind"] as? String,
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
+        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
 
         // Skip 'summary' kind entries entirely - local schema only supports
         // user/assistant/system. Summaries are handled via the summaries table.
@@ -1700,10 +1804,56 @@ public struct CloudPushExport: Sendable {
     public let id: String
     public let name: String?
     public let rootPath: String
+    public let repoGroupKey: String?
+    public let repoIdentity: String?
+    public let repoOriginNormalized: String?
+    public let gitCommonDir: String?
+    public let isWorktree: Bool
+    public let defaultBranch: String?
+    public let vcsProvider: String?
+    public let worktreeName: String?
+    public let repoName: String
+
+    public init(
+      id: String,
+      name: String?,
+      rootPath: String,
+      repoGroupKey: String? = nil,
+      repoIdentity: String? = nil,
+      repoOriginNormalized: String? = nil,
+      gitCommonDir: String? = nil,
+      isWorktree: Bool = false,
+      defaultBranch: String? = nil,
+      vcsProvider: String? = nil,
+      worktreeName: String? = nil,
+      repoName: String = ""
+    ) {
+      self.id = id
+      self.name = name
+      self.rootPath = rootPath
+      self.repoGroupKey = repoGroupKey
+      self.repoIdentity = repoIdentity
+      self.repoOriginNormalized = repoOriginNormalized
+      self.gitCommonDir = gitCommonDir
+      self.isWorktree = isWorktree
+      self.defaultBranch = defaultBranch
+      self.vcsProvider = vcsProvider
+      self.worktreeName = worktreeName
+      self.repoName = repoName
+    }
 
     public var asDictionary: [String: Any] {
       var d: [String: Any] = ["id": id, "root_path": rootPath]
       if let n = name { d["name"] = n }
+      if let repoGroupKey { d["repo_group_key"] = repoGroupKey }
+      if let repoIdentity { d["repo_identity"] = repoIdentity }
+      if let repoOriginNormalized { d["repo_origin_normalized"] = repoOriginNormalized }
+      if let gitCommonDir { d["git_common_dir"] = gitCommonDir }
+      if isWorktree { d["is_worktree"] = true }
+      if let defaultBranch { d["default_branch"] = defaultBranch }
+      if let vcsProvider { d["vcs_provider"] = vcsProvider }
+      if let worktreeName { d["worktree_name"] = worktreeName }
+      d["repo_name"] = repoName
       return d
     }
   }

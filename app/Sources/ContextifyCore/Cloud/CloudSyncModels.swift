@@ -18,6 +18,9 @@ import Foundation
 /// The CLI's CloudConfig in CloudCommand.swift is a simpler version of this;
 /// this type is the canonical representation for ContextifyCore consumers.
 public struct CloudConfig: Codable, Sendable {
+  /// Managed service URL. Make configurable once self-hosted option is generally available.
+  public static let defaultServerURL = "https://cloud.contextify.sh"
+
   /// Base URL of the contextify-cloud server (e.g. "https://cloud.contextify.sh").
   public var serverURL: String
 
@@ -120,6 +123,93 @@ public struct CloudConfig: Codable, Sendable {
     let data = try encoder.encode(self)
     try data.write(to: CloudConfig.configFile, options: .atomic)
   }
+
+  /// Builds the config that should be persisted after the user updates their
+  /// cloud connection details in Settings.
+  ///
+  /// Sync cursors are preserved only when the API key is unchanged. When the
+  /// key changes, the new connection starts from a clean sync lineage.
+  public static func mergedForConnectionUpdate(
+    existing: CloudConfig?,
+    serverURL: String,
+    apiKey: String,
+    deviceId: String,
+    deviceName: String
+  ) -> CloudConfig {
+    let enabled = existing?.enabled ?? true
+    guard let existing, existing.apiKey == apiKey else {
+      return CloudConfig(
+        serverURL: serverURL,
+        apiKey: apiKey,
+        deviceId: deviceId,
+        deviceName: deviceName,
+        enabled: enabled,
+        lastPullSequence: 0,
+        lastPushTimestamp: nil,
+        lastPushEntryId: nil,
+        lastPushSessionId: nil,
+        lastPushBatchSeq: nil
+      )
+    }
+
+    return CloudConfig(
+      serverURL: serverURL,
+      apiKey: apiKey,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      enabled: existing.enabled,
+      lastPullSequence: existing.lastPullSequence,
+      lastPushTimestamp: existing.lastPushTimestamp,
+      lastPushEntryId: existing.lastPushEntryId,
+      lastPushSessionId: existing.lastPushSessionId,
+      lastPushBatchSeq: existing.lastPushBatchSeq
+    )
+  }
+}
+
+// MARK: - Account
+
+/// Authenticated account information returned by `GET /api/v1/account`.
+public struct CloudAccountProfile: Codable, Sendable, Equatable {
+  public let userId: UUID
+  public let email: String
+  public let name: String?
+  public let role: String
+  public let tenantId: UUID
+  public let tenantName: String
+  public let tenantPlan: String
+  public let createdAt: Date
+
+  public init(
+    userId: UUID,
+    email: String,
+    name: String?,
+    role: String,
+    tenantId: UUID,
+    tenantName: String,
+    tenantPlan: String,
+    createdAt: Date
+  ) {
+    self.userId = userId
+    self.email = email
+    self.name = name
+    self.role = role
+    self.tenantId = tenantId
+    self.tenantName = tenantName
+    self.tenantPlan = tenantPlan
+    self.createdAt = createdAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case userId = "user_id"
+    case email
+    case name
+    case role
+    case tenantId = "tenant_id"
+    case tenantName = "tenant_name"
+    case tenantPlan = "tenant_plan"
+    case createdAt = "created_at"
+  }
 }
 
 // MARK: - Device Info
@@ -178,17 +268,57 @@ public struct CloudPushProject: Codable, Sendable {
   public let id: String
   public let name: String?
   public let rootPath: String
+  public let repoGroupKey: String?
+  public let repoIdentity: String?
+  public let repoOriginNormalized: String?
+  public let gitCommonDir: String?
+  public let isWorktree: Bool
+  public let defaultBranch: String?
+  public let vcsProvider: String?
+  public let worktreeName: String?
+  public let repoName: String?
 
-  public init(id: String, name: String? = nil, rootPath: String) {
+  public init(
+    id: String,
+    name: String? = nil,
+    rootPath: String,
+    repoGroupKey: String? = nil,
+    repoIdentity: String? = nil,
+    repoOriginNormalized: String? = nil,
+    gitCommonDir: String? = nil,
+    isWorktree: Bool = false,
+    defaultBranch: String? = nil,
+    vcsProvider: String? = nil,
+    worktreeName: String? = nil,
+    repoName: String? = nil
+  ) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
+    self.repoGroupKey = repoGroupKey
+    self.repoIdentity = repoIdentity
+    self.repoOriginNormalized = repoOriginNormalized
+    self.gitCommonDir = gitCommonDir
+    self.isWorktree = isWorktree
+    self.defaultBranch = defaultBranch
+    self.vcsProvider = vcsProvider
+    self.worktreeName = worktreeName
+    self.repoName = repoName
   }
 
   enum CodingKeys: String, CodingKey {
     case id
     case name
     case rootPath = "root_path"
+    case repoGroupKey = "repo_group_key"
+    case repoIdentity = "repo_identity"
+    case repoOriginNormalized = "repo_origin_normalized"
+    case gitCommonDir = "git_common_dir"
+    case isWorktree = "is_worktree"
+    case defaultBranch = "default_branch"
+    case vcsProvider = "vcs_provider"
+    case worktreeName = "worktree_name"
+    case repoName = "repo_name"
   }
 }
 
@@ -520,6 +650,9 @@ public struct CloudPushPayload: Codable, Sendable {
   public let syncSessionId: String?
   /// Optional client-declared entries count for sanity checks.
   public let entriesSent: Int?
+  /// Client-estimated total batches for the entire push session.
+  /// Sent on the first batch so the server can populate sync_sessions.total_batches.
+  public let totalBatches: Int?
   /// Device identity for this push.
   public let device: CloudDeviceInfo
   /// Projects referenced by the entries being pushed.
@@ -542,6 +675,7 @@ public struct CloudPushPayload: Codable, Sendable {
     batchSeq: Int? = nil,
     syncSessionId: String? = nil,
     entriesSent: Int? = nil,
+    totalBatches: Int? = nil,
     device: CloudDeviceInfo,
     projects: [CloudPushProject] = [],
     transcripts: [CloudPushTranscript] = [],
@@ -555,6 +689,7 @@ public struct CloudPushPayload: Codable, Sendable {
     self.batchSeq = batchSeq
     self.syncSessionId = syncSessionId
     self.entriesSent = entriesSent
+    self.totalBatches = totalBatches
     self.device = device
     self.projects = projects
     self.transcripts = transcripts
@@ -570,6 +705,7 @@ public struct CloudPushPayload: Codable, Sendable {
     case batchSeq = "batch_seq"
     case syncSessionId = "sync_session_id"
     case entriesSent = "entries_sent"
+    case totalBatches = "total_batches"
     case device
     case projects
     case transcripts

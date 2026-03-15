@@ -32,7 +32,20 @@ final class CloudSyncModelsTests: XCTestCase {
         appVersion: "1.0.0"
       ),
       projects: [
-        CloudPushProject(id: "p-1", name: "MyProject", rootPath: "/Users/test/project")
+        CloudPushProject(
+          id: "p-1",
+          name: "MyProject",
+          rootPath: "/Users/test/project",
+          repoGroupKey: "repo-origin-sha256:def456",
+          repoIdentity: "git-common-dir:abc123",
+          repoOriginNormalized: "github.com/example/project",
+          gitCommonDir: "/Users/test/project/.git",
+          isWorktree: true,
+          defaultBranch: "main",
+          vcsProvider: "github",
+          worktreeName: "project-wb1",
+          repoName: "project"
+        )
       ],
       entries: [
         CloudPushEntry(
@@ -67,6 +80,15 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(entries[0]["transcript_id"] as? String, "t-1")
     XCTAssertEqual(entries[0]["content_sha256"] as? String, String(repeating: "a", count: 64))
     XCTAssertEqual(entries[0]["display_in_timeline"] as? Bool, true)
+
+    let projects = json["projects"] as! [[String: Any]]
+    XCTAssertEqual(projects[0]["repo_group_key"] as? String, "repo-origin-sha256:def456")
+    XCTAssertEqual(projects[0]["repo_identity"] as? String, "git-common-dir:abc123")
+    XCTAssertEqual(projects[0]["repo_origin_normalized"] as? String, "github.com/example/project")
+    XCTAssertEqual(projects[0]["is_worktree"] as? Bool, true)
+    XCTAssertEqual(projects[0]["default_branch"] as? String, "main")
+    XCTAssertEqual(projects[0]["worktree_name"] as? String, "project-wb1")
+    XCTAssertEqual(projects[0]["repo_name"] as? String, "project")
   }
 
   func testCloudPushPayloadDefaultsToEmptyArrays() throws {
@@ -271,6 +293,31 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertTrue(status.devices.isEmpty)
   }
 
+  func testCloudAccountProfileDecodesFromSnakeCase() throws {
+    let json = """
+    {
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "rob@contextify.sh",
+      "name": "Rob",
+      "role": "owner",
+      "tenant_id": "d9428888-122b-11e1-b85c-61cd3cbb3210",
+      "tenant_name": "Contextify",
+      "tenant_plan": "free",
+      "created_at": "2026-03-14T18:00:00Z"
+    }
+    """.data(using: .utf8)!
+
+    let decoder = makeDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let profile = try decoder.decode(CloudAccountProfile.self, from: json)
+
+    XCTAssertEqual(profile.email, "rob@contextify.sh")
+    XCTAssertEqual(profile.name, "Rob")
+    XCTAssertEqual(profile.role, "owner")
+    XCTAssertEqual(profile.tenantName, "Contextify")
+    XCTAssertEqual(profile.tenantPlan, "free")
+  }
+
   // MARK: - CloudConfig Push Cursor Tests
 
   func testCloudConfigEncodesNewPushCursorFields() throws {
@@ -377,6 +424,70 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertEqual(decoded.lastPushEntryId, original.lastPushEntryId)
     XCTAssertEqual(decoded.lastPushSessionId, original.lastPushSessionId)
     XCTAssertEqual(decoded.lastPushBatchSeq, original.lastPushBatchSeq)
+  }
+
+  func testMergedForConnectionUpdatePreservesSyncStateWhenAPIKeyMatches() {
+    let existing = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_same",
+      deviceId: "old-device",
+      deviceName: "Old Mac",
+      enabled: false,
+      lastPullSequence: 42,
+      lastPushTimestamp: 1700000000,
+      lastPushEntryId: "entry-1",
+      lastPushSessionId: "sess-1",
+      lastPushBatchSeq: 7
+    )
+
+    let merged = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_same",
+      deviceId: "new-device",
+      deviceName: "New Mac"
+    )
+
+    XCTAssertEqual(merged.enabled, false)
+    XCTAssertEqual(merged.deviceId, "new-device")
+    XCTAssertEqual(merged.deviceName, "New Mac")
+    XCTAssertEqual(merged.lastPullSequence, 42)
+    XCTAssertEqual(merged.lastPushTimestamp, 1700000000)
+    XCTAssertEqual(merged.lastPushEntryId, "entry-1")
+    XCTAssertEqual(merged.lastPushSessionId, "sess-1")
+    XCTAssertEqual(merged.lastPushBatchSeq, 7)
+  }
+
+  func testMergedForConnectionUpdateResetsSyncStateWhenAPIKeyChanges() {
+    let existing = CloudConfig(
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_old",
+      deviceId: "old-device",
+      deviceName: "Old Mac",
+      enabled: false,
+      lastPullSequence: 42,
+      lastPushTimestamp: 1700000000,
+      lastPushEntryId: "entry-1",
+      lastPushSessionId: "sess-1",
+      lastPushBatchSeq: 7
+    )
+
+    let merged = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
+      serverURL: "https://cloud.contextify.sh",
+      apiKey: "ctx_new",
+      deviceId: "new-device",
+      deviceName: "New Mac"
+    )
+
+    XCTAssertEqual(merged.enabled, false)
+    XCTAssertEqual(merged.deviceId, "new-device")
+    XCTAssertEqual(merged.deviceName, "New Mac")
+    XCTAssertEqual(merged.lastPullSequence, 0)
+    XCTAssertNil(merged.lastPushTimestamp)
+    XCTAssertNil(merged.lastPushEntryId)
+    XCTAssertNil(merged.lastPushSessionId)
+    XCTAssertNil(merged.lastPushBatchSeq)
   }
 }
 
@@ -538,6 +649,37 @@ final class CloudSyncClientTests: XCTestCase {
     let client = makeClient()
     let result = try await client.pull(since: 0)
     XCTAssertEqual(result.nextCursor, 0)
+  }
+
+  func testAccountReturnsDecodedResponse() async throws {
+    MockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/v1/account")
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer ctx_test_secret")
+
+      let json = """
+      {
+        "user_id":"550e8400-e29b-41d4-a716-446655440000",
+        "email":"rob@contextify.sh",
+        "name":"Rob",
+        "role":"owner",
+        "tenant_id":"d9428888-122b-11e1-b85c-61cd3cbb3210",
+        "tenant_name":"Contextify",
+        "tenant_plan":"free",
+        "created_at":"2026-03-14T18:00:00Z"
+      }
+      """.data(using: .utf8)!
+      let response = HTTPURLResponse(
+        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+      return (json, response, nil)
+    }
+
+    let client = makeClient()
+    let profile = try await client.account()
+
+    XCTAssertEqual(profile.email, "rob@contextify.sh")
+    XCTAssertEqual(profile.tenantName, "Contextify")
+    XCTAssertEqual(profile.role, "owner")
   }
 
   // MARK: - Error Handling Tests

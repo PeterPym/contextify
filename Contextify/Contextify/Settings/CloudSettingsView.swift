@@ -2,25 +2,69 @@ import SwiftUI
 import Combine
 import ContextifyCore
 import OSLog
+import AppKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSettings")
+
+private enum ConnectionSheetMode {
+  case connect
+  case manage
+
+  var title: String {
+    switch self {
+    case .connect:
+      return "Connect to Cloud"
+    case .manage:
+      return "Manage Cloud Connection"
+    }
+  }
+
+  var confirmLabel: String {
+    switch self {
+    case .connect:
+      return "Connect"
+    case .manage:
+      return "Save Changes"
+    }
+  }
+
+  var summaryText: String {
+    switch self {
+    case .connect:
+      return "Enter your Contextify Cloud API key to connect this Mac."
+    case .manage:
+      return "Update the API key or device name for this Mac's cloud connection."
+    }
+  }
+
+  var linkLabel: String {
+    switch self {
+    case .connect:
+      return "Get API Key"
+    case .manage:
+      return "Manage API Keys"
+    }
+  }
+}
 
 struct CloudSettingsView: View {
   @State private var syncManager = CloudSyncManager.shared
 
-  // MARK: - Form Fields
-
-  @State private var serverURL: String = ""
   @State private var apiKey: String = ""
   @State private var deviceName: String = ""
+  @State private var draftApiKey: String = ""
+  @State private var draftDeviceName: String = ""
 
   // MARK: - UI State
 
   @State private var isConfigured: Bool = false
+  @State private var showConnectionSheet: Bool = false
+  @State private var connectionSheetMode: ConnectionSheetMode = .connect
   @State private var showDisconnectConfirmation: Bool = false
-  @State private var showActivitySheet: Bool = false
   @State private var saveMessage: String?
-  @State@State private var now: Date = .now
+  @State private var connectionSheetError: String?
+  @State private var isSavingConnection: Bool = false
+  @State private var now: Date = .now
   @State private var wasOffline: Bool = false
   @State private var showReconnectBanner: Bool = false
   @State private var reconnectBannerTask: Task<Void, Never>?
@@ -40,7 +84,10 @@ struct CloudSettingsView: View {
     .onAppear {
       loadConfiguration()
       wasOffline = syncManager.cloudOffline
-      Task { await syncManager.refreshStatusFromServer() }
+      Task {
+        await syncManager.refreshStatusFromServer()
+        await syncManager.refreshAccountProfileFromServer()
+      }
     }
     .onReceive(clockTimer) { tick in
       now = tick
@@ -56,60 +103,128 @@ struct CloudSettingsView: View {
       }
       wasOffline = isOfflineNow
     }
-    .sheet(isPresented: $showActivitySheet) {
-      CloudSyncActivitySheet(syncManager: syncManager, now: now)
+    .sheet(isPresented: $showConnectionSheet) {
+      CloudConnectionSheet(
+        mode: connectionSheetMode,
+        apiKey: $draftApiKey,
+        deviceName: $draftDeviceName,
+        originalAPIKey: connectionSheetMode == .manage ? apiKey : "",
+        originalDeviceName: connectionSheetMode == .manage ? deviceName : (Host.current().localizedName ?? deviceName),
+        isSaving: isSavingConnection,
+        errorMessage: connectionSheetError,
+        onSave: saveConfiguration,
+        onDisconnect: isConfigured ? { showDisconnectConfirmation = true } : nil
+      )
+    }
+    .onChange(of: draftApiKey) { _, _ in
+      if connectionSheetError != nil {
+        connectionSheetError = nil
+      }
+    }
+    .onChange(of: draftDeviceName) { _, _ in
+      if connectionSheetError != nil {
+        connectionSheetError = nil
+      }
+    }
+    .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Disconnect", role: .destructive) {
+        disconnect()
+      }
+    } message: {
+      Text("This removes this Mac's cloud sync configuration. Local data stays on this Mac, and cloud data is not deleted.")
     }
     // No .onDisappear cleanup - sync lives at app level
   }
 
-  // MARK: - Server Configuration Section
+  // MARK: - Cloud Connection Section
 
   @ViewBuilder
   private var serverConfigurationSection: some View {
     Section {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Server Configuration")
+        Text("Cloud Connection")
           .font(.headline)
+          .accessibilityIdentifier("cloud-connection-heading")
 
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Cloud URL")
-            .font(.subheadline)
-          TextField("https://cloud.contextify.sh", text: $serverURL)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(.body, design: .monospaced))
+        if isConfigured {
+          configuredConnectionSummary
+        } else {
+          unconfiguredConnectionSummary
         }
 
-        VStack(alignment: .leading, spacing: 8) {
-          Text("API Key")
-            .font(.subheadline)
-          SecureField("ctx_...", text: $apiKey)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(.body, design: .monospaced))
+        if let message = saveMessage {
+          Text(message)
+            .font(.caption)
+            .foregroundStyle(message.contains("Error") ? .red : .green)
+            .accessibilityIdentifier("cloud-save-message")
         }
-
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Device Name")
-            .font(.subheadline)
-          TextField("My Mac", text: $deviceName)
-            .textFieldStyle(.roundedBorder)
-        }
-
-        HStack {
-          Button("Save") {
-            saveConfiguration()
-          }
-          .buttonStyle(.borderedProminent)
-          .tint(Color.accentColor)
-          .disabled(serverURL.isEmpty || apiKey.isEmpty)
-
-          if let message = saveMessage {
-            Text(message)
-              .font(.caption)
-              .foregroundStyle(message.contains("Error") ? .red : .green)
-          }
-        }
-        .padding(.top, 4)
       }
+    }
+  }
+
+  @ViewBuilder
+  private var unconfiguredConnectionSummary: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("This Mac is not connected to Contextify Cloud yet.")
+        .font(.subheadline)
+        .accessibilityIdentifier("cloud-connection-empty-state")
+
+      Text("Connect with an API key in a modal so the main settings view stays focused on account state instead of raw credential editing.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      Button("Connect to Cloud") {
+        connectionSheetMode = .connect
+        connectionSheetError = nil
+        draftApiKey = ""
+        draftDeviceName = Host.current().localizedName ?? deviceName
+        showConnectionSheet = true
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(Color.accentColor)
+      .accessibilityIdentifier("cloud-connect-button")
+      .accessibilityHint("Opens the cloud connection sheet")
+    }
+  }
+
+  @ViewBuilder
+  private var configuredConnectionSummary: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      if let profile = syncManager.cloudAccountProfile {
+        HStack(alignment: .top, spacing: 18) {
+          compactSummaryFact(label: "Signed in as", value: profile.email)
+          compactSummaryFact(label: "Workspace", value: profile.tenantName)
+          compactSummaryFact(label: "Device name", value: deviceName)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("cloud-connection-summary-row")
+      } else if let error = syncManager.cloudAccountError {
+        Text("Account details unavailable: \(error)")
+          .font(.caption)
+          .foregroundStyle(.orange)
+          .accessibilityIdentifier("cloud-account-error")
+
+        compactSummaryFact(label: "Device name", value: deviceName)
+      } else {
+        Text("Resolving account details...")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("cloud-account-loading")
+
+        compactSummaryFact(label: "Device name", value: deviceName)
+      }
+
+      Button("Manage Cloud Connection") {
+        connectionSheetMode = .manage
+        connectionSheetError = nil
+        draftApiKey = apiKey
+        draftDeviceName = deviceName
+        showConnectionSheet = true
+      }
+      .buttonStyle(.bordered)
+      .accessibilityIdentifier("cloud-manage-button")
+      .accessibilityHint("Opens the cloud connection sheet")
     }
   }
 
@@ -123,12 +238,14 @@ struct CloudSettingsView: View {
 
         Text("Sync Status")
           .font(.headline)
+          .accessibilityIdentifier("cloud-sync-status-heading")
 
         VStack(alignment: .leading, spacing: 8) {
-          HStack(spacing: 8) {
-            stateIndicator
-            Text(stateDescription)
-              .font(.body)
+          HStack(alignment: .center, spacing: 10) {
+            syncStatusBadge
+            Text(stateHeadlineText)
+              .font(.subheadline.weight(.medium))
+              .accessibilityIdentifier("cloud-sync-status-headline")
           }
 
           if showReconnectBanner {
@@ -139,70 +256,50 @@ struct CloudSettingsView: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .background(Color.green.opacity(0.1))
               .cornerRadius(4)
+              .accessibilityIdentifier("cloud-reconnect-banner")
           }
 
           if let summary = connectionSummaryText {
             Text(summary)
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityIdentifier("cloud-sync-status-summary")
           }
 
-          if let session = activePushSession {
+          if let session = activePushSession, showsBulkCatchUpProgress {
             activeSessionProgressCard(session: session)
+          } else if showsClientSideBulkCatchUpProgress {
+            clientSideProgressCard
           }
 
           if let message = statusErrorMessage {
-            Text(message)
-              .font(.caption)
-              .foregroundStyle(.red)
-              .padding(6)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .background(Color.red.opacity(0.1))
-              .cornerRadius(4)
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Latest error")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.red)
+                .accessibilityIdentifier("cloud-sync-error-heading")
+              Text(message)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("cloud-sync-error-message")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.1))
+            .cornerRadius(6)
           }
 
           if let lastSync = syncManager.lastSyncDate {
-            HStack(spacing: 4) {
-              Text("Last sync:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(relativeTimeString(from: lastSync))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            syncFactRow(label: "Last sync", value: relativeTimeString(from: lastSync))
           }
 
-          if let lastStatusAt = syncManager.cloudStatusUpdatedAt {
-            HStack(spacing: 4) {
-              Text("Status refreshed:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(relativeTimeString(from: lastStatusAt))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-
-          if let pushResult = syncManager.lastPushResult {
-            HStack(spacing: 4) {
-              Text("Last upload:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("\(formatCount(pushResult.entriesPushed)) entries uploaded, \(formatCount(pushResult.duplicatesSkipped)) already synced on server")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-
-          if let pullResult = syncManager.lastPullResult {
-            HStack(spacing: 4) {
-              Text("Last download:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("\(formatCount(pullResult.entriesImported)) new entries imported, \(formatCount(pullResult.entriesSkipped)) already on this Mac")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+          if let uploadSummary = lastUploadSummary {
+            syncFactRow(
+              label: "Last upload",
+              value: uploadSummary
+            )
           }
         }
       }
@@ -212,10 +309,23 @@ struct CloudSettingsView: View {
   @ViewBuilder
   private func activeSessionProgressCard(session: CloudActivePushSessionStatus) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(session.phase.lowercased() == "initial_upload" ? "Uploading timeline-visible history" : "Sync in progress")
+      Text("Catch-up sync in progress")
         .font(.subheadline.weight(.medium))
 
-      if let total = session.entriesTotal, total > 0 {
+      // Prefer client-side progress (always available during push) over server-side
+      let totalBatches = syncManager.pushEstimatedTotalBatches
+      let batchesDone = syncManager.pushBatchesCompleted
+      if totalBatches > 0 {
+        ProgressView(value: Double(batchesDone), total: Double(totalBatches))
+          .progressViewStyle(.linear)
+
+        let totalEntries = syncManager.pushTotalEntries
+        let entriesDone = batchesDone * 500  // approximate
+        Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else if let total = session.entriesTotal, total > 0 {
+        // Fallback to server-side session data
         let resolved = min(max(session.entriesResolved ?? 0, 0), total)
         ProgressView(value: Double(resolved), total: Double(total))
           .progressViewStyle(.linear)
@@ -225,33 +335,51 @@ struct CloudSettingsView: View {
           .foregroundStyle(.secondary)
       }
 
-      let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
-      let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
+      // ETA: prefer client-side, then smoothed server-side, then raw server-side
+      let clientEta = syncManager.pushEstimatedSecondsRemaining
+      let displayEta = clientEta ?? syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
 
-      HStack(spacing: 12) {
-        if let eta = displayEta, eta > 0 {
-          Text("About (etaString(seconds: eta)) remaining")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let throughput = displayThroughput, throughput > 0 {
-          Text("(formatCount(Int(throughput.rounded()))) entries/min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-
-      if let pending = pendingEntriesCount(session: session), pending > 0 {
-        Text("\(formatCount(pending)) entries queued for upload")
+      if let eta = displayEta, eta > 0 {
+        Text("About \(etaString(seconds: eta)) remaining")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
 
       if let attention = session.needsAttentionCount, attention > 0 {
-        Text("\(formatCount(attention)) entries need attention before this upload is fully healthy")
+        Text("\(formatCount(attention)) entries need attention")
           .font(.caption)
           .foregroundStyle(.orange)
+      }
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.secondary.opacity(0.08))
+    .cornerRadius(6)
+  }
+
+  /// Progress card shown when client is actively pushing but server session data isn't available yet.
+  @ViewBuilder
+  private var clientSideProgressCard: some View {
+    let totalBatches = syncManager.pushEstimatedTotalBatches
+    let batchesDone = syncManager.pushBatchesCompleted
+    let totalEntries = syncManager.pushTotalEntries
+
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Catch-up sync in progress")
+        .font(.subheadline.weight(.medium))
+
+      ProgressView(value: Double(batchesDone), total: Double(totalBatches))
+        .progressViewStyle(.linear)
+
+      let entriesDone = batchesDone * 500
+      Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      if let eta = syncManager.pushEstimatedSecondsRemaining, eta > 0 {
+        Text("About \(etaString(seconds: eta)) remaining")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
     .padding(8)
@@ -270,6 +398,7 @@ struct CloudSettingsView: View {
 
         Text("Controls")
           .font(.headline)
+          .accessibilityIdentifier("cloud-controls-heading")
 
         HStack(spacing: 12) {
           Button(primaryActionLabel) {
@@ -278,36 +407,27 @@ struct CloudSettingsView: View {
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
+          .accessibilityIdentifier("cloud-sync-now-button")
 
           if syncManager.syncState == .syncing {
             ProgressView()
               .controlSize(.small)
+              .accessibilityIdentifier("cloud-sync-now-spinner")
           }
 
           Button("View Activity") {
-            showActivitySheet = true
+            openCloudSyncPage()
           }
           .buttonStyle(.bordered)
+          .accessibilityIdentifier("cloud-view-activity-button")
+          .accessibilityHint("Opens the cloud sync activity page in your browser")
         }
 
         Toggle("Auto-sync every 5 minutes", isOn: Binding(
           get: { syncManager.autoSyncEnabled },
           set: { syncManager.setAutoSync(enabled: $0) }
         ))
-
-        Button("Disconnect") {
-          showDisconnectConfirmation = true
-        }
-        .buttonStyle(.bordered)
-        .foregroundStyle(.red)
-        .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
-          Button("Cancel", role: .cancel) {}
-          Button("Disconnect", role: .destructive) {
-            disconnect()
-          }
-        } message: {
-          Text("This will remove your cloud sync configuration. Your local data will not be affected.")
-        }
+        .accessibilityIdentifier("cloud-auto-sync-toggle")
       }
     }
   }
@@ -315,9 +435,8 @@ struct CloudSettingsView: View {
   // MARK: - Status Mapping
 
   private enum SyncDisplayState {
-    case upToDate
+    case healthy
     case syncing
-    case stalled
     case offline
     case needsAttention
     case error
@@ -326,6 +445,13 @@ struct CloudSettingsView: View {
 
   private var activePushSession: CloudActivePushSessionStatus? {
     syncManager.cloudStatus?.activePushSession
+  }
+
+  private var lastUploadSummary: String? {
+    guard let pushResult = syncManager.lastPushResult else { return nil }
+    guard pushResult.entriesPushed > 0 else { return nil }
+    let noun = pushResult.entriesPushed == 1 ? "entry" : "entries"
+    return "\(formatCount(pushResult.entriesPushed)) new \(noun) uploaded"
   }
 
   private var displayState: SyncDisplayState {
@@ -337,7 +463,7 @@ struct CloudSettingsView: View {
       let completion = session.completionState?.lowercased()
       let attention = session.needsAttentionCount ?? 0
 
-      if phase == "stalled" { return .stalled }
+      if phase == "stalled" { return .needsAttention }
       if completion == "blocked" || completion == "completed_with_issues" || attention > 0 {
         return .needsAttention
       }
@@ -348,71 +474,71 @@ struct CloudSettingsView: View {
 
     if syncManager.syncState == .syncing { return .syncing }
     if case .error = syncManager.syncState { return .error }
-    return .upToDate
+    return .healthy
   }
 
   @ViewBuilder
-  private var stateIndicator: some View {
+  private var syncStatusBadge: some View {
     switch displayState {
-    case .upToDate:
-      Image(systemName: "checkmark.circle.fill")
-        .foregroundStyle(.green)
+    case .healthy:
+      statusBadge(text: "Healthy", systemImage: "checkmark.circle.fill", tint: .green)
     case .syncing:
-      ProgressView()
-        .controlSize(.small)
-    case .stalled:
-      Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
-        .foregroundStyle(.orange)
+      statusBadge(text: "Syncing", systemImage: "arrow.triangle.2.circlepath", tint: .blue)
     case .offline:
-      Image(systemName: "wifi.slash")
-        .foregroundStyle(.orange)
+      statusBadge(text: "Offline", systemImage: "wifi.slash", tint: .orange)
     case .needsAttention:
-      Image(systemName: "exclamationmark.circle.fill")
-        .foregroundStyle(.orange)
+      statusBadge(text: "Attention needed", systemImage: "exclamationmark.triangle.fill", tint: .orange)
     case .error:
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(.red)
+      statusBadge(text: "Error", systemImage: "exclamationmark.octagon.fill", tint: .red)
     case .disabled:
-      Image(systemName: "minus.circle.fill")
-        .foregroundStyle(.secondary)
+      statusBadge(text: "Disabled", systemImage: "minus.circle.fill", tint: .secondary)
     }
   }
 
-  private var stateDescription: String {
+  private var stateHeadlineText: String {
     switch displayState {
-    case .upToDate:
-      return "Synced to cloud"
+    case .healthy:
+      return "Day-to-day sync is caught up."
     case .syncing:
-      if let session = activePushSession,
+      if showsBulkCatchUpProgress,
+         let session = activePushSession,
          let total = session.entriesTotal,
          let resolved = session.entriesResolved,
          total > 0 {
-        return "Syncing \(formatPercent(resolved: min(max(resolved, 0), total), total: total))"
+        return "Uploading catch-up batch (\(formatPercent(resolved: min(max(resolved, 0), total), total: total)))."
       }
-      return "Syncing"
-    case .stalled:
-      return "Sync stalled"
+      return "Uploading recent changes."
     case .offline:
-      return "Offline (saved locally)"
+      return "Cloud sync is offline."
     case .needsAttention:
-      return "Sync needs attention"
+      return "Cloud sync needs attention."
     case .error:
-      return "Sync error"
+      return "The latest sync attempt failed."
     case .disabled:
-      return "Disabled"
+      return "Cloud sync is disabled."
     }
   }
 
   private var connectionSummaryText: String? {
     switch displayState {
+    case .healthy:
+      return nil
+    case .syncing:
+      if showsBulkCatchUpProgress {
+        return "This is a bounded catch-up upload, so progress and ETA are shown."
+      }
+      return nil
     case .offline:
       return "Changes are saved locally and queued for upload. Upload resumes automatically when connection returns."
-    case .stalled:
-      return "No progress checkpoint recently. Use Retry Now to continue from the last safe checkpoint."
     case .needsAttention:
+      if let session = activePushSession, session.phase.lowercased() == "stalled" {
+        return "No recent catch-up progress checkpoint. Retry resumes from the last safe point."
+      }
       return "Upload progress is safe, but some entries need review before the session is fully healthy."
-    default:
-      return nil
+    case .error:
+      return "The error details below come from the latest local or server sync failure."
+    case .disabled:
+      return "Connect this Mac to Contextify Cloud to enable sync."
     }
   }
 
@@ -425,7 +551,7 @@ struct CloudSettingsView: View {
 
   private var primaryActionLabel: String {
     switch displayState {
-    case .offline, .stalled, .error, .needsAttention:
+    case .offline, .error, .needsAttention:
       return "Retry Now"
     default:
       return "Sync Now"
@@ -434,9 +560,25 @@ struct CloudSettingsView: View {
 
   private var reconnectBannerText: String {
     if let session = activePushSession, let pending = pendingEntriesCount(session: session), pending > 0 {
-      return "Back online. Uploading (formatCount(pending)) pending entries..."
+      return "Back online. Uploading \(formatCount(pending)) pending entries..."
     }
     return "Back online. Resuming cloud upload..."
+  }
+
+  private var showsBulkCatchUpProgress: Bool {
+    if let session = activePushSession,
+       (syncManager.cloudStatus?.pendingBatches ?? 0) > 0 {
+      let completion = session.completionState?.lowercased()
+      return completion == "in_progress" && (session.entriesTotal ?? 0) > 0
+    }
+    return false
+  }
+
+  private var showsClientSideBulkCatchUpProgress: Bool {
+    activePushSession == nil
+      && syncManager.syncState == .syncing
+      && syncManager.pushEstimatedTotalBatches > 1
+      && syncManager.pushTotalEntries > 0
   }
 
   private func pendingEntriesCount(session: CloudActivePushSessionStatus) -> Int? {
@@ -449,66 +591,120 @@ struct CloudSettingsView: View {
 
   private func loadConfiguration() {
     if let config = syncManager.loadConfig() {
-      serverURL = config.serverURL
       apiKey = config.apiKey
       deviceName = config.deviceName
+      draftApiKey = config.apiKey
+      draftDeviceName = config.deviceName
       isConfigured = true
       if syncManager.syncState == .idle || syncManager.syncState == .disabled {
         syncManager.configure(config: config)
       }
+      Task { await syncManager.refreshAccountProfileFromServer() }
       log.info("[CLOUD-SETTINGS] Configuration loaded from disk")
     } else {
       deviceName = Host.current().localizedName ?? ""
+      draftDeviceName = deviceName
       isConfigured = false
       log.debug("[CLOUD-SETTINGS] No configuration found")
     }
   }
 
+  @MainActor
   private func saveConfiguration() {
-    let config = CloudConfig(
-      serverURL: serverURL,
-      apiKey: apiKey,
-      deviceId: MachineID.current(),
-      deviceName: deviceName,
-      enabled: true,
-      lastPullSequence: 0,
-      lastPushTimestamp: nil,
-      lastPushEntryId: nil,
-      lastPushSessionId: nil,
-      lastPushBatchSeq: nil
-    )
+    connectionSheetError = nil
+    let trimmedApiKey = draftApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedDeviceName = draftDeviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let mode = connectionSheetMode
 
-    var finalConfig = config
-    if let existing = syncManager.loadConfig() {
-      finalConfig = CloudConfig(
-        serverURL: serverURL,
-        apiKey: apiKey,
-        deviceId: MachineID.current(),
-        deviceName: deviceName,
-        enabled: true,
-        lastPullSequence: existing.lastPullSequence,
-        lastPushTimestamp: existing.lastPushTimestamp,
-        lastPushEntryId: existing.lastPushEntryId,
-        lastPushSessionId: existing.lastPushSessionId,
-        lastPushBatchSeq: existing.lastPushBatchSeq
-      )
+    guard !trimmedApiKey.isEmpty else {
+      connectionSheetError = "The API key is required."
+      return
+    }
+
+    guard CloudConnectionSheet.isStructurallyValidAPIKey(trimmedApiKey) else {
+      connectionSheetError = "API keys must match the format ctx_<16 hex>_<24 hex>."
+      return
+    }
+
+    isSavingConnection = true
+
+    Task { [trimmedApiKey, trimmedDeviceName, mode] in
+      defer {
+        Task {
+          await MainActor.run {
+            isSavingConnection = false
+          }
+        }
+      }
+
+      let profile: CloudAccountProfile
+      do {
+        profile = try await syncManager.validateConnection(
+          serverURL: CloudConfig.defaultServerURL,
+          apiKey: trimmedApiKey
+        )
+      } catch {
+        await MainActor.run {
+          connectionSheetError = userFriendlyConnectionMessage(for: error)
+        }
+        return
+      }
+
+      await MainActor.run {
+        persistConfiguration(
+          apiKey: trimmedApiKey,
+          deviceName: trimmedDeviceName,
+          mode: mode,
+          validatedProfile: profile
+        )
+      }
+    }
+  }
+
+  @MainActor
+  private func persistConfiguration(
+    apiKey: String,
+    deviceName: String,
+    mode: ConnectionSheetMode,
+    validatedProfile: CloudAccountProfile
+  ) {
+    self.apiKey = apiKey
+    self.deviceName = deviceName
+    draftApiKey = apiKey
+    draftDeviceName = deviceName
+    let existing = syncManager.loadConfig()
+    let finalConfig = CloudConfig.mergedForConnectionUpdate(
+      existing: existing,
+      serverURL: CloudConfig.defaultServerURL,
+      apiKey: self.apiKey,
+      deviceId: MachineID.current(),
+      deviceName: self.deviceName
+    )
+    if let existing, existing.apiKey != apiKey {
+      log.info("[CLOUD-SETTINGS] API key changed; resetting cloud sync cursors")
     }
 
     syncManager.saveConfig(finalConfig)
     syncManager.configure(config: finalConfig)
+    syncManager.setValidatedAccountProfile(validatedProfile)
     if finalConfig.enabled {
       syncManager.startAppLevelAutoSync()
       syncManager.triggerSync()
-      Task { await syncManager.refreshStatusFromServer() }
+      Task {
+        await syncManager.refreshStatusFromServer()
+      }
     }
+    Task { await syncManager.refreshAccountProfileFromServer() }
     isConfigured = true
-    saveMessage = "Saved"
+    let expectedMessage = mode == .connect ? "Connected" : "Connection updated"
+    saveMessage = expectedMessage
+    showConnectionSheet = false
     log.info("[CLOUD-SETTINGS] Configuration saved")
 
     Task {
       try? await Task.sleep(for: .seconds(2))
       await MainActor.run {
-        if saveMessage == "Saved" {
+        if saveMessage == expectedMessage {
           saveMessage = nil
         }
       }
@@ -527,13 +723,23 @@ struct CloudSettingsView: View {
       log.error("[CLOUD-SETTINGS] Failed to remove config file: \(error.localizedDescription, privacy: .public)")
     }
 
-    serverURL = ""
     apiKey = ""
     deviceName = Host.current().localizedName ?? ""
+    draftApiKey = ""
+    draftDeviceName = deviceName
     isConfigured = false
     saveMessage = nil
+    connectionSheetError = nil
 
     log.info("[CLOUD-SETTINGS] Disconnected from cloud sync")
+  }
+
+  private func openCloudSyncPage() {
+    guard let url = URL(string: "\(CloudConfig.defaultServerURL)/cloud/sync") else {
+      log.error("[CLOUD-SETTINGS] Failed to build cloud sync page URL")
+      return
+    }
+    NSWorkspace.shared.open(url)
   }
 
   // MARK: - Helpers
@@ -545,7 +751,10 @@ struct CloudSettingsView: View {
   }()
 
   private func relativeTimeString(from date: Date) -> String {
-    Self.relativeDateFormatter.localizedString(for: date, relativeTo: now)
+    if date > now {
+      return "just now"
+    }
+    return Self.relativeDateFormatter.localizedString(for: date, relativeTo: now)
   }
 
   private func etaString(seconds: Int) -> String {
@@ -569,87 +778,274 @@ struct CloudSettingsView: View {
     let fraction = Double(resolved) / Double(total)
     return "\(Int((fraction * 100.0).rounded()))%"
   }
+
+  private func userFriendlyConnectionMessage(for error: Error) -> String {
+    switch error {
+    case let cloudError as CloudSyncError:
+      switch cloudError {
+      case .unauthorized:
+        return "The API key was rejected and was not saved. Check the key and try again."
+      default:
+        return cloudError.localizedDescription
+      }
+    default:
+      return error.localizedDescription
+    }
+  }
+
+  @ViewBuilder
+  private func statusBadge(text: String, systemImage: String, tint: Color) -> some View {
+    Label(text, systemImage: systemImage)
+      .font(.caption.weight(.semibold))
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .foregroundStyle(tint)
+      .background(tint.opacity(0.12))
+      .clipShape(Capsule())
+      .accessibilityIdentifier("cloud-sync-status-badge")
+      .accessibilityLabel("Sync status")
+      .accessibilityValue(text)
+  }
+
+  @ViewBuilder
+  private func syncFactRow(label: String, value: String) -> some View {
+    HStack(alignment: .top, spacing: 6) {
+      Text("\(label):")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder
+  private func compactSummaryFact(label: String, value: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(label)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .font(.subheadline)
+        .lineLimit(2)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(label)
+    .accessibilityValue(value)
+    .accessibilityIdentifier("cloud-summary-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+  }
 }
 
-private struct CloudSyncActivitySheet: View {
-  let syncManager: CloudSyncManager
-  let now: Date
+private struct CloudConnectionSheet: View {
+  private enum FocusField: Hashable {
+    case apiKey
+    case deviceName
+  }
+
+  let mode: ConnectionSheetMode
+  @Binding var apiKey: String
+  @Binding var deviceName: String
+  let originalAPIKey: String
+  let originalDeviceName: String
+  let isSaving: Bool
+  let errorMessage: String?
+  let onSave: () -> Void
+  let onDisconnect: (() -> Void)?
+
+  @Environment(\.dismiss) private var dismiss
+  @State private var showDisconnectInfo: Bool = false
+  @FocusState private var focusedField: FocusField?
+
+  private var trimmedAPIKey: String {
+    apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var trimmedDeviceName: String {
+    deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var hasMeaningfulChanges: Bool {
+    trimmedAPIKey != originalAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+      || trimmedDeviceName != originalDeviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var apiKeyFormatError: String? {
+    guard !trimmedAPIKey.isEmpty else { return nil }
+    guard Self.isStructurallyValidAPIKey(trimmedAPIKey) else {
+      return "Invalid API key format. Use a valid Contextify Cloud API key."
+    }
+    return nil
+  }
+
+  private var canConfirm: Bool {
+    !trimmedAPIKey.isEmpty && apiKeyFormatError == nil && !isSaving && hasMeaningfulChanges
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Cloud Sync Activity")
-        .font(.headline)
+    VStack(alignment: .leading, spacing: 16) {
+      Text(mode.title)
+        .font(.title3.weight(.semibold))
+        .accessibilityIdentifier("cloud-connection-sheet-title")
 
-      if let session = syncManager.cloudStatus?.activePushSession {
-        if let total = session.entriesTotal, total > 0 {
-          let resolved = min(max(session.entriesResolved ?? 0, 0), total)
-          ProgressView(value: Double(resolved), total: Double(total))
-            .progressViewStyle(.linear)
-          Text("\(resolved) / \(total) entries")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+      Text(mode.summaryText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("cloud-connection-sheet-summary")
 
-        Text("Phase: \(session.phase)")
+      if let settingsURL = URL(string: "\(CloudConfig.defaultServerURL)/cloud/settings") {
+        Link(mode.linkLabel, destination: settingsURL)
+          .buttonStyle(.link)
           .font(.caption)
-          .foregroundStyle(.secondary)
-
-        if let completion = session.completionState {
-          Text("Outcome: \(completion)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let attention = session.needsAttentionCount, attention > 0 {
-          Text("Needs attention: \(attention)")
-            .font(.caption)
-            .foregroundStyle(.orange)
-        }
-
-        let displayEta = syncManager.cloudSmoothedEtaSeconds ?? session.etaSeconds
-        let displayThroughput = syncManager.cloudSmoothedThroughputEntriesPerMin ?? session.throughputEntriesPerMin
-
-        if let eta = displayEta, eta > 0 {
-          Text("ETA: ~(Int(round(Double(eta) / 60.0))) min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-
-        if let throughput = displayThroughput, throughput > 0 {
-          Text("Throughput: (Int(throughput.rounded())) entries/min")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      } else {
-        Text("No active upload session")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .modifier(PointingHandCursorModifier())
+          .accessibilityIdentifier("cloud-connection-api-key-link")
+          .accessibilityHint("Opens the Contextify Cloud settings page in your browser")
       }
 
-      Divider()
-
-      if let push = syncManager.lastPushResult {
-        Text("Last upload: \(push.entriesPushed) uploaded, \(push.duplicatesSkipped) already synced")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 8) {
+        Text("API Key")
+          .font(.subheadline)
+        TextField("ctx_...", text: $apiKey)
+          .textFieldStyle(.roundedBorder)
+          .font(.system(.body, design: .monospaced))
+#if os(macOS)
+          .autocorrectionDisabled(true)
+#endif
+          .disabled(isSaving)
+          .focused($focusedField, equals: .apiKey)
+          .accessibilityIdentifier("cloud-connection-api-key")
+          .accessibilityLabel("API Key")
       }
 
-      if let pull = syncManager.lastPullResult {
-        Text("Last download: \(pull.entriesImported) imported, \(pull.entriesSkipped) already present")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Device Name")
+          .font(.subheadline)
+        TextField("My Mac", text: $deviceName)
+          .textFieldStyle(.roundedBorder)
+          .disabled(isSaving)
+          .focused($focusedField, equals: .deviceName)
+          .accessibilityIdentifier("cloud-connection-device-name")
+          .accessibilityLabel("Device Name")
       }
 
-      if let updatedAt = syncManager.cloudStatusUpdatedAt {
-        Text("Status refreshed: \(RelativeDateTimeFormatter().localizedString(for: updatedAt, relativeTo: now))")
+      if let message = errorMessage ?? apiKeyFormatError {
+        Text(message)
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.red)
+          .accessibilityIdentifier("cloud-connection-error")
       }
 
-      Spacer()
+      HStack {
+        Button("Cancel") {
+          dismiss()
+        }
+        .keyboardShortcut(.cancelAction)
+        .disabled(isSaving)
+        .accessibilityIdentifier("cloud-connection-cancel")
+        .accessibilityHint("Closes the cloud connection sheet without saving")
+
+        if let onDisconnect {
+          HStack(spacing: 6) {
+            Button("Disconnect") {
+              dismiss()
+              onDisconnect()
+            }
+            .foregroundStyle(.red)
+            .disabled(isSaving)
+            .accessibilityIdentifier("cloud-connection-disconnect")
+            .accessibilityHint("Disconnects this Mac from cloud sync")
+
+            Button {
+              showDisconnectInfo.toggle()
+            } label: {
+              Image(systemName: "info.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(isSaving)
+            .popover(isPresented: $showDisconnectInfo, arrowEdge: .bottom) {
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Disconnect stops cloud sync on this Mac.")
+                  .font(.headline)
+                Text("Your local data stays on this Mac.")
+                Text("Your cloud data is not deleted.")
+                Text("You can reconnect later with the same or a different API key.")
+              }
+              .font(.caption)
+              .padding(12)
+              .frame(width: 280, alignment: .leading)
+              .accessibilityIdentifier("cloud-connection-disconnect-popover")
+            }
+            .accessibilityIdentifier("cloud-connection-disconnect-info")
+            .accessibilityLabel("Explain disconnect")
+            .accessibilityHint("Shows what disconnect does and does not remove")
+          }
+        }
+
+        Spacer()
+
+        if canConfirm {
+          Button(mode.confirmLabel) {
+            onSave()
+          }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+          .focusable()
+          .accessibilityIdentifier("cloud-connection-confirm")
+          .accessibilityHint("Validates and saves the cloud connection")
+        } else {
+          Button(mode.confirmLabel) {}
+            .buttonStyle(.bordered)
+            .disabled(true)
+            .accessibilityIdentifier("cloud-connection-confirm")
+            .accessibilityHint("Validates and saves the cloud connection")
+        }
+
+        if isSaving {
+          ProgressView()
+            .controlSize(.small)
+            .accessibilityIdentifier("cloud-connection-saving")
+        }
+      }
     }
-    .padding()
-    .frame(minWidth: 420, minHeight: 320)
+    .padding(20)
+    .frame(width: 440)
+    .interactiveDismissDisabled(isSaving)
+    .onChange(of: errorMessage) { _, newValue in
+      guard newValue != nil else { return }
+      focusAndSelectAPIKey()
+    }
+  }
+
+  @MainActor
+  private func focusAndSelectAPIKey() {
+    focusedField = .apiKey
+    DispatchQueue.main.async {
+      (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+    }
+  }
+
+  static func isStructurallyValidAPIKey(_ key: String) -> Bool {
+    let parts = key.split(separator: "_", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[0] == "ctx" else { return false }
+    guard parts[1].count == 16, parts[2].count == 24 else { return false }
+    return parts[1].allSatisfy(\.isHexDigit) && parts[2].allSatisfy(\.isHexDigit)
+  }
+}
+
+private struct PointingHandCursorModifier: ViewModifier {
+  @State private var cursorPushed = false
+
+  func body(content: Content) -> some View {
+    content.onHover { hovering in
+      if hovering, !cursorPushed {
+        NSCursor.pointingHand.push()
+        cursorPushed = true
+      } else if !hovering, cursorPushed {
+        NSCursor.pop()
+        cursorPushed = false
+      }
+    }
   }
 }
 

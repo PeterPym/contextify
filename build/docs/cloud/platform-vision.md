@@ -82,6 +82,8 @@ None of this is currently in scope. It depends entirely on the Contextify build 
 ## Related
 
 - **contextify-cloud repo:** `~/code/projects/contextify-cloud/` -- the server implementation
+- **Cloud dashboard ownership:** team/dashboard/analytics pages under `cloud.contextify.sh` live in `contextify-cloud`, not in the static website repo
+- **Cross-repo debugging rule:** if a problem spans local grouping and cloud visualization, inspect latest `origin/main` in both `contextify` and `contextify-cloud`
 - **Homeserver setup:** `contextify-cloud/scripts/homeserver-setup.sh`
 - **Mac Mini setup task:** `bloon show ad-3` (administration project)
 - **Cloud deploy task:** `bloon show ct-209` (contextify project, cloud tag)
