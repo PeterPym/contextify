@@ -254,15 +254,6 @@ struct ContextifyApp: App {
   @State private var showLaunchAtLoginPrompt = false  // First-run launch-at-login offer (DMG only)
   @State private var showLaunchAtLoginFollowUp = false  // Follow-up after Enable fails or needs approval
 
-  // Menu bar extra visibility: @AppStorage drives scene-level invalidation so
-  // SwiftUI re-evaluates the MenuBarExtra(isInserted:) binding when prefs change.
-  // The binding SETTER is a no-op to avoid a reconciliation loop
-  // (see /tmp/ct-429-startup-beachball-root-cause.md).
-  @AppStorage(HUDPreferences.menuBarExtraEnabledKey, store: ContextifyDefaults.shared)
-  private var menuBarExtraEnabled = false
-  @AppStorage(HUDPreferences.backgroundUtilityModeEnabledKey, store: ContextifyDefaults.shared)
-  private var backgroundUtilityModeEnabled = false
-
   /// Startup-only cache for the access provider. Ensures single construction per process.
   /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
   /// Do not call buildAndConfigureAccessProvider() after reconfigure.
@@ -273,13 +264,6 @@ struct ContextifyApp: App {
   #if DEBUG
   private static var hasReconfiguredAccessProvider = false
   #endif
-
-  private var showsMenuBarExtra: Bool {
-    AppPresentationPreferences.resolvedMenuBarExtraEnabled(
-      menuBarExtraEnabled: menuBarExtraEnabled,
-      backgroundUtilityModeEnabled: backgroundUtilityModeEnabled
-    )
-  }
 
   #if SPARKLE
   /// Sparkle updater controller for DMG distribution auto-updates.
@@ -375,6 +359,13 @@ struct ContextifyApp: App {
       startupLog.info("Cloud auto-sync check complete")
     }
     #endif
+
+    // Start the NSStatusItem controller. This evaluates the current menu bar
+    // preference and creates the status item if enabled. Must run after
+    // NSApp is available (hence the Task).
+    Task { @MainActor in
+      StatusItemController.shared.start()
+    }
 
   }
 
@@ -550,6 +541,7 @@ struct ContextifyApp: App {
       }
       // NOTE: Permission notification observer is in AppLifecycleState (not tied to window).
       // NOTE: Database reset in App Store builds requires restart.
+      .background(StatusItemWindowBridge())
     }
     // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
     // Height minimum: 360 (ContentView.minHeight) + ~25 (titlebar)
@@ -602,21 +594,6 @@ struct ContextifyApp: App {
       }
     }
     .defaultSize(width: 800, height: 600)
-
-    MenuBarExtra(isInserted: Binding(
-      get: { showsMenuBarExtra },
-      set: { _ in
-        // No-op: preferences are the sole source of truth for menu bar visibility.
-        // Writing to @AppStorage from this setter caused a reconciliation loop;
-        // ignoring writes here breaks that cycle while still tracking pref changes
-        // via the getter (see /tmp/ct-429-startup-beachball-root-cause.md).
-      }
-    )) {
-      ContextifyMenuBarExtraContent()
-    } label: {
-      ContextifyMenuBarExtraLabel()
-    }
-    .menuBarExtraStyle(.menu)
   }
 
   private func isAnotherInstanceRunning() -> Bool {

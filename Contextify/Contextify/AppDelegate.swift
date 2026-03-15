@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     Task { @MainActor in
+      // Tear down the NSStatusItem and popover
+      StatusItemController.shared.tearDown()
+
       // Cancel FSEvents monitoring task
       AppLifecycleState.shared.projectMonitoringTask?.cancel()
     }
