@@ -27,6 +27,24 @@ private enum ConnectionSheetMode {
       return "Save Changes"
     }
   }
+
+  var summaryText: String {
+    switch self {
+    case .connect:
+      return "Enter your Contextify Cloud API key to connect this Mac."
+    case .manage:
+      return "Update the API key or device name for this Mac's cloud connection."
+    }
+  }
+
+  var linkLabel: String {
+    switch self {
+    case .connect:
+      return "Get API Key"
+    case .manage:
+      return "Manage API Keys"
+    }
+  }
 }
 
 struct CloudSettingsView: View {
@@ -97,6 +115,16 @@ struct CloudSettingsView: View {
         onSave: saveConfiguration,
         onDisconnect: isConfigured ? { showDisconnectConfirmation = true } : nil
       )
+    }
+    .onChange(of: draftApiKey) { _, _ in
+      if connectionSheetError != nil {
+        connectionSheetError = nil
+      }
+    }
+    .onChange(of: draftDeviceName) { _, _ in
+      if connectionSheetError != nil {
+        connectionSheetError = nil
+      }
     }
     .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
       Button("Cancel", role: .cancel) {}
@@ -593,6 +621,11 @@ struct CloudSettingsView: View {
       return
     }
 
+    guard CloudConnectionSheet.isStructurallyValidAPIKey(trimmedApiKey) else {
+      connectionSheetError = "API keys must match the format ctx_<16 hex>_<24 hex>."
+      return
+    }
+
     isSavingConnection = true
 
     Task { [trimmedApiKey, trimmedDeviceName, mode] in
@@ -751,7 +784,7 @@ struct CloudSettingsView: View {
     case let cloudError as CloudSyncError:
       switch cloudError {
       case .unauthorized:
-        return "The API key was rejected. Check the key and try again."
+        return "The API key was rejected and was not saved. Check the key and try again."
       default:
         return cloudError.localizedDescription
       }
@@ -805,6 +838,11 @@ struct CloudSettingsView: View {
 }
 
 private struct CloudConnectionSheet: View {
+  private enum FocusField: Hashable {
+    case apiKey
+    case deviceName
+  }
+
   let mode: ConnectionSheetMode
   @Binding var apiKey: String
   @Binding var deviceName: String
@@ -817,6 +855,7 @@ private struct CloudConnectionSheet: View {
 
   @Environment(\.dismiss) private var dismiss
   @State private var showDisconnectInfo: Bool = false
+  @FocusState private var focusedField: FocusField?
 
   private var trimmedAPIKey: String {
     apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -831,8 +870,16 @@ private struct CloudConnectionSheet: View {
       || trimmedDeviceName != originalDeviceName.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
+  private var apiKeyFormatError: String? {
+    guard !trimmedAPIKey.isEmpty else { return nil }
+    guard Self.isStructurallyValidAPIKey(trimmedAPIKey) else {
+      return "Invalid API key format. Use a valid Contextify Cloud API key."
+    }
+    return nil
+  }
+
   private var canConfirm: Bool {
-    !trimmedAPIKey.isEmpty && !isSaving && hasMeaningfulChanges
+    !trimmedAPIKey.isEmpty && apiKeyFormatError == nil && !isSaving && hasMeaningfulChanges
   }
 
   var body: some View {
@@ -841,18 +888,31 @@ private struct CloudConnectionSheet: View {
         .font(.title3.weight(.semibold))
         .accessibilityIdentifier("cloud-connection-sheet-title")
 
-      Text("The API key is edited here instead of on the main settings surface, so accidental changes are less likely.")
+      Text(mode.summaryText)
         .font(.caption)
         .foregroundStyle(.secondary)
         .accessibilityIdentifier("cloud-connection-sheet-summary")
 
+      if let settingsURL = URL(string: "\(CloudConfig.defaultServerURL)/cloud/settings") {
+        Link(mode.linkLabel, destination: settingsURL)
+          .buttonStyle(.link)
+          .font(.caption)
+          .modifier(PointingHandCursorModifier())
+          .accessibilityIdentifier("cloud-connection-api-key-link")
+          .accessibilityHint("Opens the Contextify Cloud settings page in your browser")
+      }
+
       VStack(alignment: .leading, spacing: 8) {
         Text("API Key")
           .font(.subheadline)
-        SecureField("ctx_...", text: $apiKey)
+        TextField("ctx_...", text: $apiKey)
           .textFieldStyle(.roundedBorder)
           .font(.system(.body, design: .monospaced))
+#if os(macOS)
+          .autocorrectionDisabled(true)
+#endif
           .disabled(isSaving)
+          .focused($focusedField, equals: .apiKey)
           .accessibilityIdentifier("cloud-connection-api-key")
           .accessibilityLabel("API Key")
       }
@@ -863,12 +923,13 @@ private struct CloudConnectionSheet: View {
         TextField("My Mac", text: $deviceName)
           .textFieldStyle(.roundedBorder)
           .disabled(isSaving)
+          .focused($focusedField, equals: .deviceName)
           .accessibilityIdentifier("cloud-connection-device-name")
           .accessibilityLabel("Device Name")
       }
 
-      if let errorMessage {
-        Text(errorMessage)
+      if let message = errorMessage ?? apiKeyFormatError {
+        Text(message)
           .font(.caption)
           .foregroundStyle(.red)
           .accessibilityIdentifier("cloud-connection-error")
@@ -880,7 +941,6 @@ private struct CloudConnectionSheet: View {
         }
         .keyboardShortcut(.cancelAction)
         .disabled(isSaving)
-        .focusable()
         .accessibilityIdentifier("cloud-connection-cancel")
         .accessibilityHint("Closes the cloud connection sheet without saving")
 
@@ -892,7 +952,6 @@ private struct CloudConnectionSheet: View {
             }
             .foregroundStyle(.red)
             .disabled(isSaving)
-            .focusable()
             .accessibilityIdentifier("cloud-connection-disconnect")
             .accessibilityHint("Disconnects this Mac from cloud sync")
 
@@ -904,7 +963,6 @@ private struct CloudConnectionSheet: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .disabled(isSaving)
-            .focusable()
             .popover(isPresented: $showDisconnectInfo, arrowEdge: .bottom) {
               VStack(alignment: .leading, spacing: 8) {
                 Text("Disconnect stops cloud sync on this Mac.")
@@ -926,15 +984,22 @@ private struct CloudConnectionSheet: View {
 
         Spacer()
 
-        Button(mode.confirmLabel) {
-          onSave()
+        if canConfirm {
+          Button(mode.confirmLabel) {
+            onSave()
+          }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+          .focusable()
+          .accessibilityIdentifier("cloud-connection-confirm")
+          .accessibilityHint("Validates and saves the cloud connection")
+        } else {
+          Button(mode.confirmLabel) {}
+            .buttonStyle(.bordered)
+            .disabled(true)
+            .accessibilityIdentifier("cloud-connection-confirm")
+            .accessibilityHint("Validates and saves the cloud connection")
         }
-        .buttonStyle(.borderedProminent)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!canConfirm)
-        .focusable()
-        .accessibilityIdentifier("cloud-connection-confirm")
-        .accessibilityHint("Validates and saves the cloud connection")
 
         if isSaving {
           ProgressView()
@@ -946,6 +1011,41 @@ private struct CloudConnectionSheet: View {
     .padding(20)
     .frame(width: 440)
     .interactiveDismissDisabled(isSaving)
+    .onChange(of: errorMessage) { _, newValue in
+      guard newValue != nil else { return }
+      focusAndSelectAPIKey()
+    }
+  }
+
+  @MainActor
+  private func focusAndSelectAPIKey() {
+    focusedField = .apiKey
+    DispatchQueue.main.async {
+      (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+    }
+  }
+
+  static func isStructurallyValidAPIKey(_ key: String) -> Bool {
+    let parts = key.split(separator: "_", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[0] == "ctx" else { return false }
+    guard parts[1].count == 16, parts[2].count == 24 else { return false }
+    return parts[1].allSatisfy(\.isHexDigit) && parts[2].allSatisfy(\.isHexDigit)
+  }
+}
+
+private struct PointingHandCursorModifier: ViewModifier {
+  @State private var cursorPushed = false
+
+  func body(content: Content) -> some View {
+    content.onHover { hovering in
+      if hovering, !cursorPushed {
+        NSCursor.pointingHand.push()
+        cursorPushed = true
+      } else if !hovering, cursorPushed {
+        NSCursor.pop()
+        cursorPushed = false
+      }
+    }
   }
 }
 
