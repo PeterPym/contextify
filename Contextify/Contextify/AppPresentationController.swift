@@ -19,11 +19,13 @@ final class AppPresentationController {
     if let window = MainWindowTracker.shared.window {
       return window.isVisible
     }
-    // Fallback: look for any visible, titled, normal-level window from this app
-    // that matches the main window characteristics.
+    // Fallback: look for any visible, titled window from this app that matches
+    // the main window characteristics. Include .floating level for Keep on Top.
     return NSApp?.windows.contains(where: {
-      $0.isVisible && $0.level == .normal && $0.styleMask.contains(.titled)
-      && $0.title.contains("Contextify")
+      $0.isVisible
+        && ($0.level == .normal || $0.level == .floating)
+        && $0.styleMask.contains(.titled)
+        && $0.title.contains("Contextify")
     }) == true
   }
 
@@ -41,23 +43,14 @@ final class AppPresentationController {
 
   /// Desired activation policy based on current state.
   /// - .regular when utility mode is OFF (normal app behavior)
-  /// - .accessory when utility mode is ON and no "regular" windows are showing
-  /// - .regular when utility mode is ON but a window is visible (temporary promotion)
+  /// - .accessory when utility mode is ON
+  ///
+  /// When utility mode is ON the policy is always .accessory so the Dock icon
+  /// and Command-Tab entry disappear as soon as the toggle is flipped.
+  /// promoteForWindowPresentation() handles the temporary .regular raise when
+  /// a window is explicitly opened via the menu bar popover.
   private var desiredActivationPolicy: NSApplication.ActivationPolicy {
-    guard isUtilityMode else { return .regular }
-    return hasAnyVisibleRegularWindow ? .regular : .accessory
-  }
-
-  /// Check whether any "regular" window (main, settings, projects, transcripts) is visible.
-  /// Excludes the menu bar extra popover and other transient panels.
-  private var hasAnyVisibleRegularWindow: Bool {
-    guard let windows = NSApp?.windows else { return false }
-    return windows.contains { window in
-      window.isVisible
-        && !window.isKind(of: NSPanel.self)
-        && window.level == .normal
-        && window.styleMask.contains(.titled)
-    }
+    isUtilityMode ? .accessory : .regular
   }
 
   func refreshActivationPolicy() {
@@ -184,5 +177,10 @@ final class AppPresentationController {
     guard app.activationPolicy() != desired else { return }
     log.info("[POLICY] Setting activation policy to \(desired == .regular ? ".regular" : ".accessory", privacy: .public)")
     app.setActivationPolicy(desired)
+
+    // Deactivate so the Dock icon disappears promptly when entering utility mode.
+    if desired == .accessory {
+      app.deactivate()
+    }
   }
 }

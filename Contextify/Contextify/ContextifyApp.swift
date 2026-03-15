@@ -27,7 +27,13 @@ struct WindowCommands: Commands {
         get: { windowAlwaysOnTop },
         set: { newValue in
           windowAlwaysOnTop = newValue
-          if let window = MainWindowTracker.shared.window {
+          let window = MainWindowTracker.shared.window
+            ?? NSApp.windows.first(where: {
+              ($0.level == .normal || $0.level == .floating)
+                && $0.styleMask.contains(.titled)
+                && $0.title.contains("Contextify")
+            })
+          if let window {
             applyKeepOnTop(window, enabled: newValue)
           }
         }
