@@ -266,7 +266,7 @@ struct CloudSettingsView: View {
               .accessibilityIdentifier("cloud-sync-status-summary")
           }
 
-          if let session = activePushSession, showsBulkCatchUpProgress {
+          if let session = visibleActivePushSession, showsBulkCatchUpProgress {
             activeSessionProgressCard(session: session)
           } else if showsClientSideBulkCatchUpProgress {
             clientSideProgressCard
@@ -447,6 +447,16 @@ struct CloudSettingsView: View {
     syncManager.cloudStatus?.activePushSession
   }
 
+  /// Returns the server's active push session only when it belongs to this
+  /// client's current connection. Returns nil for orphaned sessions so all
+  /// UI derivation treats them as nonexistent.
+  private var visibleActivePushSession: CloudActivePushSessionStatus? {
+    guard let session = activePushSession, !syncManager.isActiveSessionOrphaned else {
+      return nil
+    }
+    return session
+  }
+
   private var lastUploadSummary: String? {
     guard let pushResult = syncManager.lastPushResult else { return nil }
     guard pushResult.entriesPushed > 0 else { return nil }
@@ -462,7 +472,7 @@ struct CloudSettingsView: View {
     // client's current connection. After disconnect/reconnect the server may
     // still report a stalled session from the old connection which is no
     // longer actionable.
-    if let session = activePushSession, !syncManager.isActiveSessionOrphaned {
+    if let session = visibleActivePushSession {
       let phase = session.phase.lowercased()
       let completion = session.completionState?.lowercased()
       let attention = session.needsAttentionCount ?? 0
@@ -505,7 +515,7 @@ struct CloudSettingsView: View {
       return "Day-to-day sync is caught up."
     case .syncing:
       if showsBulkCatchUpProgress,
-         let session = activePushSession,
+         let session = visibleActivePushSession,
          let total = session.entriesTotal,
          let resolved = session.entriesResolved,
          total > 0 {
@@ -535,7 +545,7 @@ struct CloudSettingsView: View {
     case .offline:
       return "Changes are saved locally and queued for upload. Upload resumes automatically when connection returns."
     case .needsAttention:
-      if let session = activePushSession, session.phase.lowercased() == "stalled" {
+      if let session = visibleActivePushSession, session.phase.lowercased() == "stalled" {
         return "No recent catch-up progress checkpoint. Retry resumes from the last safe point."
       }
       return "Upload progress is safe, but some entries need review before the session is fully healthy."
@@ -563,15 +573,14 @@ struct CloudSettingsView: View {
   }
 
   private var reconnectBannerText: String {
-    if let session = activePushSession, let pending = pendingEntriesCount(session: session), pending > 0 {
+    if let session = visibleActivePushSession, let pending = pendingEntriesCount(session: session), pending > 0 {
       return "Back online. Uploading \(formatCount(pending)) pending entries..."
     }
     return "Back online. Resuming cloud upload..."
   }
 
   private var showsBulkCatchUpProgress: Bool {
-    if let session = activePushSession,
-       !syncManager.isActiveSessionOrphaned,
+    if let session = visibleActivePushSession,
        (syncManager.cloudStatus?.pendingBatches ?? 0) > 0 {
       let completion = session.completionState?.lowercased()
       return completion == "in_progress" && (session.entriesTotal ?? 0) > 0
@@ -580,7 +589,7 @@ struct CloudSettingsView: View {
   }
 
   private var showsClientSideBulkCatchUpProgress: Bool {
-    activePushSession == nil
+    visibleActivePushSession == nil
       && syncManager.syncState == .syncing
       && syncManager.pushEstimatedTotalBatches > 1
       && syncManager.pushTotalEntries > 0

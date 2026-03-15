@@ -639,13 +639,22 @@ private extension StatusBarView {
         cloudSyncManager.cloudStatus?.activePushSession
     }
 
+    /// Returns the server's active push session only when it belongs to this
+    /// client's current connection. Returns nil for orphaned sessions.
+    var visibleCloudActiveSession: CloudActivePushSessionStatus? {
+        guard let session = cloudActiveSession, !cloudSyncManager.isActiveSessionOrphaned else {
+            return nil
+        }
+        return session
+    }
+
     var cloudDisplayState: CloudSyncDisplayState {
         if cloudSyncManager.syncState == .disabled { return .disabled }
         if cloudSyncManager.cloudOffline { return .offline }
 
         // Skip server-side session state when the session is orphaned
         // (from a previous connection, not this client's current session).
-        if let session = cloudActiveSession, !cloudSyncManager.isActiveSessionOrphaned {
+        if let session = visibleCloudActiveSession {
             let phase = session.phase.lowercased()
             let completion = session.completionState?.lowercased()
             let attention = session.needsAttentionCount ?? 0
@@ -704,8 +713,7 @@ private extension StatusBarView {
             Text(cloudChipText)
                 .font(.subheadline)
 
-            if let session = cloudActiveSession,
-               !cloudSyncManager.isActiveSessionOrphaned,
+            if let session = visibleCloudActiveSession,
                let total = session.entriesTotal, total > 0 {
                 let resolved = min(max(session.entriesResolved ?? 0, 0), total)
                 ProgressView(value: Double(resolved), total: Double(total))
@@ -812,7 +820,7 @@ private extension StatusBarView {
         case .upToDate:
             return "Cloud up to date"
         case .syncing:
-            if let session = cloudActiveSession,
+            if let session = visibleCloudActiveSession,
                let total = session.entriesTotal,
                let resolved = session.entriesResolved,
                total > 0 {
