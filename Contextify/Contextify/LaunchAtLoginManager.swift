@@ -29,6 +29,10 @@ final class LaunchAtLoginManager {
 
   func refreshStatus() {
     status = SMAppService.mainApp.status
+    // Clear stale error when status recovers (e.g., user fixed it in System Settings)
+    if status == .enabled || status == .notRegistered {
+      lastErrorMessage = nil
+    }
     log.debug("Launch at login status: \(String(describing: self.status), privacy: .public)")
   }
 

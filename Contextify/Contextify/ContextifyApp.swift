@@ -252,6 +252,7 @@ struct ContextifyApp: App {
   @State private var showWelcomeModal = false  // C3.2: Welcome modal state
   @State private var showLiteModeInfo = false  // Lite mode info modal for subsequent launches
   @State private var showLaunchAtLoginPrompt = false  // First-run launch-at-login offer (DMG only)
+  @State private var showLaunchAtLoginFollowUp = false  // Follow-up after Enable fails or needs approval
 
   /// Startup-only cache for the access provider. Ensures single construction per process.
   /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
@@ -438,14 +439,32 @@ struct ContextifyApp: App {
       }
       .alert("Launch at Login", isPresented: $showLaunchAtLoginPrompt) {
         Button("Enable") {
-          LaunchAtLoginManager.shared.setEnabled(true)
+          let status = LaunchAtLoginManager.shared.setEnabled(true)
           UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
+          let mgr = LaunchAtLoginManager.shared
+          if mgr.requiresApproval || mgr.lastErrorMessage != nil {
+            showLaunchAtLoginFollowUp = true
+          }
         }
         Button("Not Now", role: .cancel) {
           UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
         }
       } message: {
         Text("Would you like Contextify to start automatically when you log in? You can change this later in Settings.")
+      }
+      .alert("Additional Step Needed", isPresented: $showLaunchAtLoginFollowUp) {
+        Button("Open Login Items Settings") {
+          if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+            NSWorkspace.shared.open(url)
+          }
+        }
+        Button("OK", role: .cancel) { }
+      } message: {
+        if let error = LaunchAtLoginManager.shared.lastErrorMessage {
+          Text("Could not enable launch at login: \(error). You can try again in Settings > General.")
+        } else {
+          Text("Contextify needs permission to launch at login. Please allow it in System Settings > Login Items.")
+        }
       }
       .task {
         // Initialize projects system and auto-discover at app launch
