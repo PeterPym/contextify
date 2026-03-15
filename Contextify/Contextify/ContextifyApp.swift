@@ -439,11 +439,14 @@ struct ContextifyApp: App {
       }
       .alert("Launch at Login", isPresented: $showLaunchAtLoginPrompt) {
         Button("Enable") {
-          let status = LaunchAtLoginManager.shared.setEnabled(true)
+          LaunchAtLoginManager.shared.setEnabled(true)
           UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
           let mgr = LaunchAtLoginManager.shared
           if mgr.requiresApproval || mgr.lastErrorMessage != nil {
-            showLaunchAtLoginFollowUp = true
+            // Defer to next run loop to avoid chained alert presentation issues
+            DispatchQueue.main.async {
+              showLaunchAtLoginFollowUp = true
+            }
           }
         }
         Button("Not Now", role: .cancel) {
