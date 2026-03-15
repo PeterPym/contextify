@@ -52,6 +52,19 @@ final class StatusItemController: NSObject {
 
   /// Call once at app launch. Evaluates the current preference and creates
   /// or skips the status item accordingly, then observes future changes.
+  /// Closure set by StatusItemWindowBridge to provide openWindow capability.
+  /// StatusItemController lives outside the SwiftUI scene graph and cannot
+  /// access @Environment(\.openWindow), so the bridge provides this.
+  var openWindowHandler: ((String) -> Void)?
+
+  /// Closure set by StatusItemWindowBridge to open the Settings window.
+  /// Uses @Environment(\.openSettings) with the required activation-policy
+  /// timing dance (setActivationPolicy → 100ms → activate → openSettings →
+  /// 200ms → makeKeyAndOrderFront). NSApp.sendAction("showSettingsWindow:")
+  /// is unreliable from .accessory policy; the environment action is the
+  /// correct path on macOS 14+.
+  var openSettingsHandler: (() -> Void)?
+
   func start() {
     log.notice("[STATUS-ITEM] Starting StatusItemController")
 
@@ -355,12 +368,7 @@ extension StatusItemController: NSPopoverDelegate {
 private struct StatusItemPopoverContent: View {
   @State private var cloudSyncManager = CloudSyncManager.shared
   @State private var activityModel = MenuBarActivityModel.shared
-  /// Tracks main window visibility. Updated by window notifications so the
-  /// Show/Hide button label stays correct while the popover is open.
-  @State private var mainWindowVisible = false
-  @AppStorage(HUDPreferences.backgroundUtilityModeEnabledKey, store: ContextifyDefaults.shared)
-  private var backgroundUtilityModeEnabled = false
-
+  private let log = Logger(subsystem: "dev.contextify", category: "StatusItemPopover")
   private var presentation: MenuBarPresentation {
     MenuBarStatusDeriver.derivePresentation(
       syncState: cloudSyncManager.syncState,
@@ -371,30 +379,13 @@ private struct StatusItemPopoverContent: View {
     )
   }
 
-  private var isCloudConfigured: Bool {
-    cloudSyncManager.syncState != .disabled
-      || cloudSyncManager.cloudStatus != nil
-      || !(cloudSyncManager.cloudStatusError?.isEmpty ?? true)
-  }
-
-  private var mainWindowButtonLabel: String {
-    mainWindowVisible ? "Hide Contextify" : "Show Contextify"
-  }
-
-  /// Promote activation policy and activate the app before presenting a window.
-  private func activateForWindow() {
-    AppPresentationController.shared.promoteForWindowPresentation()
-    NSApp.activate(ignoringOtherApps: true)
-  }
-
   private func dismissPopover() {
     StatusItemController.shared.dismissPopover()
   }
 
   private func openSettings() {
     dismissPopover()
-    activateForWindow()
-    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    StatusItemController.shared.openSettingsHandler?()
   }
 
   var body: some View {
@@ -425,9 +416,12 @@ private struct StatusItemPopoverContent: View {
             .foregroundStyle(.secondary)
         }
 
-        Text(presentation.cloudText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        // Only show cloudText when it adds information beyond statusText
+        if !presentation.cloudText.isEmpty && presentation.cloudText != presentation.statusText {
+          Text(presentation.cloudText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
 
         if let lastSyncDate = cloudSyncManager.lastSyncDate {
           Text("Last sync \(RelativeDateTimeFormatter().localizedString(for: lastSyncDate, relativeTo: .now))")
@@ -442,45 +436,6 @@ private struct StatusItemPopoverContent: View {
 
       // Actions
       VStack(spacing: 2) {
-        PopoverButton(label: mainWindowButtonLabel) {
-          dismissPopover()
-          if AppPresentationController.shared.isMainWindowVisible {
-            AppPresentationController.shared.hideMainWindow()
-          } else {
-            AppPresentationController.shared.showMainWindow {
-              openWindowByID("main")
-            }
-          }
-        }
-        .accessibilityIdentifier("menubar-popover-toggle-main")
-        .accessibilityLabel(mainWindowButtonLabel)
-
-        PopoverButton(label: "Projects") {
-          dismissPopover()
-          activateForWindow()
-          // Use NSApp to open the window by sending the appropriate action
-          openWindowByID("projects")
-        }
-        .accessibilityIdentifier("menubar-popover-projects")
-        .accessibilityLabel("Open Projects window")
-
-        PopoverButton(label: "Transcripts") {
-          dismissPopover()
-          activateForWindow()
-          openWindowByID("transcript-inventory")
-        }
-        .accessibilityIdentifier("menubar-popover-transcripts")
-        .accessibilityLabel("Open Transcripts window")
-
-        if isCloudConfigured {
-          PopoverButton(label: "Sync Now") {
-            cloudSyncManager.triggerSync()
-            Task { await cloudSyncManager.refreshStatusFromServer() }
-          }
-          .accessibilityIdentifier("menubar-popover-sync")
-          .accessibilityLabel("Run cloud sync now")
-        }
-
         PopoverButton(label: "Settings") {
           openSettings()
         }
@@ -488,16 +443,6 @@ private struct StatusItemPopoverContent: View {
         .accessibilityLabel("Open Settings")
       }
       .padding(.vertical, 4)
-
-      Divider()
-
-      // Mode indicator
-      Text(backgroundUtilityModeEnabled ? "Background utility mode on" : "Background utility mode off")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .accessibilityIdentifier("menubar-popover-mode-indicator")
 
       Divider()
 
@@ -511,43 +456,16 @@ private struct StatusItemPopoverContent: View {
     }
     .frame(width: 260)
     .accessibilityIdentifier("menubar-popover-content")
-    .onAppear {
-      mainWindowVisible = MainWindowTracker.shared.window?.isVisible == true
-    }
     .task {
       activityModel.start()
-      if isCloudConfigured {
+      if cloudSyncManager.syncState != .disabled
+          || cloudSyncManager.cloudStatus != nil
+          || !(cloudSyncManager.cloudStatusError?.isEmpty ?? true) {
         await cloudSyncManager.refreshStatusFromServer()
-      }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
-        mainWindowVisible = true
-      }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
-      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
-        mainWindowVisible = false
-      }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { note in
-      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
-        mainWindowVisible = false
       }
     }
   }
 
-  /// Open a SwiftUI Window by its identifier using NotificationCenter.
-  /// Since we are outside the SwiftUI scene graph, @Environment(\.openWindow)
-  /// is not available. Instead we post a notification that ContextifyApp
-  /// observes to call openWindow on our behalf.
-  private func openWindowByID(_ id: String) {
-    NotificationCenter.default.post(
-      name: .statusItemOpenWindow,
-      object: nil,
-      userInfo: ["windowID": id]
-    )
-  }
 }
 
 /// A simple button styled for popover use (full-width, hover highlight).
@@ -577,31 +495,47 @@ private struct PopoverButton: View {
   }
 }
 
-// MARK: - Notification Name
-
-extension Notification.Name {
-  /// Posted by StatusItemPopoverContent to request ContextifyApp open a
-  /// window by its SwiftUI scene id. userInfo contains ["windowID": String].
-  static let statusItemOpenWindow = Notification.Name("dev.contextify.statusItemOpenWindow")
-}
-
 // MARK: - Window Bridge
 
-/// Invisible view embedded in the main Window scene. Provides access to
-/// @Environment(\.openWindow) for the status item popover, which lives outside
-/// the SwiftUI scene graph and cannot access environment values directly.
-/// The popover posts a .statusItemOpenWindow notification; this view receives
-/// it and calls openWindow(id:) on behalf of the popover.
+/// Invisible view embedded in the main Window scene. Bridges SwiftUI
+/// environment actions (openWindow, openSettings) to StatusItemController,
+/// which lives outside the SwiftUI scene graph and cannot access them directly.
 struct StatusItemWindowBridge: View {
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     Color.clear
       .frame(width: 0, height: 0)
       .allowsHitTesting(false)
-      .onReceive(NotificationCenter.default.publisher(for: .statusItemOpenWindow)) { note in
-        guard let windowID = note.userInfo?["windowID"] as? String else { return }
-        openWindow(id: windowID)
+      .onAppear {
+        StatusItemController.shared.openWindowHandler = { id in
+          openWindow(id: id)
+        }
+
+        // openSettings() requires the app to be in .regular activation policy
+        // and fully activated before the call. The timing delays are required:
+        // the window server processes policy changes asynchronously.
+        StatusItemController.shared.openSettingsHandler = {
+          Task { @MainActor in
+            AppPresentationController.shared.promoteForWindowPresentation()
+            try? await Task.sleep(for: .milliseconds(100))
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+            // After openSettings(), wait for SwiftUI to create the window,
+            // then force it to front.
+            try? await Task.sleep(for: .milliseconds(200))
+            if let w = NSApp.windows.first(where: {
+              $0.identifier?.rawValue == "com.apple.SwiftUI.Settings"
+                || ($0.isVisible
+                  && $0.styleMask.contains(.titled)
+                  && ($0.title.localizedCaseInsensitiveContains("settings")
+                    || $0.title.localizedCaseInsensitiveContains("preferences")))
+            }) {
+              w.makeKeyAndOrderFront(nil)
+            }
+          }
+        }
       }
   }
 }

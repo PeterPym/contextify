@@ -13,7 +13,18 @@ final class AppPresentationController {
   private init() {}
 
   var isMainWindowVisible: Bool {
-    MainWindowTracker.shared.window?.isVisible == true
+    // Check the tracked window first, fall back to scanning NSApp windows.
+    // The weak reference in MainWindowTracker can go nil if SwiftUI releases
+    // the window, so the fallback ensures detection still works.
+    if let window = MainWindowTracker.shared.window {
+      return window.isVisible
+    }
+    // Fallback: look for any visible, titled, normal-level window from this app
+    // that matches the main window characteristics.
+    return NSApp?.windows.contains(where: {
+      $0.isVisible && $0.level == .normal && $0.styleMask.contains(.titled)
+      && $0.title.contains("Contextify")
+    }) == true
   }
 
   /// Whether utility mode (background/accessory) is currently enabled.
@@ -94,11 +105,14 @@ final class AppPresentationController {
       return
     }
 
+    // Window reference is nil (released by SwiftUI scene management).
+    // Use the openWindow callback to ask SwiftUI to recreate it, then
+    // also try activating via NSApp as a fallback.
     openWindow?()
+    NSApp.activate(ignoringOtherApps: true)
 
     DispatchQueue.main.async {
       if let window = MainWindowTracker.shared.window {
-        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
       }
     }
