@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var hasLaunchedOnce = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    AppPresentationController.shared.refreshActivationPolicy()
+
     // Log build stamp for debugging (critical for VM testing)
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
