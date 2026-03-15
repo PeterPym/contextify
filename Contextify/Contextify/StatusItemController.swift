@@ -409,6 +409,7 @@ private struct StatusItemPopoverContent: View {
         Text(presentation.statusText)
           .font(.subheadline)
           .foregroundStyle(.secondary)
+          .accessibilityIdentifier("menubar-popover-status")
 
         if presentation.localActivityText != "No background work" {
           Text(presentation.localActivityText)
@@ -443,6 +444,7 @@ private struct StatusItemPopoverContent: View {
             }
           }
         }
+        .accessibilityIdentifier("menubar-popover-toggle-main")
         .accessibilityLabel(mainWindowButtonLabel)
 
         PopoverButton(label: "Projects") {
@@ -451,6 +453,7 @@ private struct StatusItemPopoverContent: View {
           // Use NSApp to open the window by sending the appropriate action
           openWindowByID("projects")
         }
+        .accessibilityIdentifier("menubar-popover-projects")
         .accessibilityLabel("Open Projects window")
 
         PopoverButton(label: "Transcripts") {
@@ -458,6 +461,7 @@ private struct StatusItemPopoverContent: View {
           activateForWindow()
           openWindowByID("transcript-inventory")
         }
+        .accessibilityIdentifier("menubar-popover-transcripts")
         .accessibilityLabel("Open Transcripts window")
 
         if isCloudConfigured {
@@ -465,12 +469,14 @@ private struct StatusItemPopoverContent: View {
             cloudSyncManager.triggerSync()
             Task { await cloudSyncManager.refreshStatusFromServer() }
           }
+          .accessibilityIdentifier("menubar-popover-sync")
           .accessibilityLabel("Run cloud sync now")
         }
 
         PopoverButton(label: "Settings") {
           openSettings()
         }
+        .accessibilityIdentifier("menubar-popover-settings")
         .accessibilityLabel("Open Settings")
       }
       .padding(.vertical, 4)
@@ -483,6 +489,7 @@ private struct StatusItemPopoverContent: View {
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .accessibilityIdentifier("menubar-popover-mode-indicator")
 
       Divider()
 
@@ -490,10 +497,12 @@ private struct StatusItemPopoverContent: View {
       PopoverButton(label: "Quit Contextify") {
         NSApp.terminate(nil)
       }
+      .accessibilityIdentifier("menubar-popover-quit")
       .accessibilityLabel("Quit Contextify")
       .padding(.bottom, 4)
     }
     .frame(width: 260)
+    .accessibilityIdentifier("menubar-popover-content")
     .task {
       activityModel.start()
       if isCloudConfigured {
