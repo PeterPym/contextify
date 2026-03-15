@@ -355,6 +355,9 @@ extension StatusItemController: NSPopoverDelegate {
 private struct StatusItemPopoverContent: View {
   @State private var cloudSyncManager = CloudSyncManager.shared
   @State private var activityModel = MenuBarActivityModel.shared
+  /// Tracks main window visibility. Updated by window notifications so the
+  /// Show/Hide button label stays correct while the popover is open.
+  @State private var mainWindowVisible = false
   @AppStorage(HUDPreferences.backgroundUtilityModeEnabledKey, store: ContextifyDefaults.shared)
   private var backgroundUtilityModeEnabled = false
 
@@ -375,7 +378,7 @@ private struct StatusItemPopoverContent: View {
   }
 
   private var mainWindowButtonLabel: String {
-    AppPresentationController.shared.isMainWindowVisible ? "Hide Contextify" : "Show Contextify"
+    mainWindowVisible ? "Hide Contextify" : "Show Contextify"
   }
 
   /// Promote activation policy and activate the app before presenting a window.
@@ -508,10 +511,28 @@ private struct StatusItemPopoverContent: View {
     }
     .frame(width: 260)
     .accessibilityIdentifier("menubar-popover-content")
+    .onAppear {
+      mainWindowVisible = MainWindowTracker.shared.window?.isVisible == true
+    }
     .task {
       activityModel.start()
       if isCloudConfigured {
         await cloudSyncManager.refreshStatusFromServer()
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
+        mainWindowVisible = true
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
+        mainWindowVisible = false
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { note in
+      if let window = note.object as? NSWindow, window === MainWindowTracker.shared.window {
+        mainWindowVisible = false
       }
     }
   }
