@@ -95,8 +95,16 @@ struct ContextifyMenuBarExtraContent: View {
     AppPresentationController.shared.isMainWindowVisible ? "Hide Contextify" : "Show Contextify"
   }
 
-  private func openSettings() {
+  /// Promote activation policy and activate the app before presenting a window.
+  /// In utility mode this switches from .accessory to .regular so the Dock icon
+  /// and Command-Tab entry appear while windows are visible.
+  private func activateForWindow() {
+    AppPresentationController.shared.promoteForWindowPresentation()
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func openSettings() {
+    activateForWindow()
     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
   }
 
@@ -124,13 +132,13 @@ struct ContextifyMenuBarExtraContent: View {
     .accessibilityLabel(mainWindowButtonLabel)
 
     Button("Projects") {
-      NSApp.activate(ignoringOtherApps: true)
+      activateForWindow()
       openWindow(id: "projects")
     }
     .accessibilityLabel("Open Projects window")
 
     Button("Transcripts") {
-      NSApp.activate(ignoringOtherApps: true)
+      activateForWindow()
       openWindow(id: "transcript-inventory")
     }
     .accessibilityLabel("Open Transcripts window")
