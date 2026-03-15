@@ -119,12 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - Window Restoration Suppression
 
   func application(_ application: NSApplication, willEncodeRestorableState coder: NSCoder) {
-    // Intentionally empty: prevent window restoration state from being saved
-    // when utility mode is enabled. This avoids restored windows breaking
-    // the hidden/background startup experience.
-    if HUDPreferences.isBackgroundUtilityModeEnabled() {
-      log.debug("[LIFECYCLE] Suppressing restorable state encoding (utility mode)")
-    }
+    // Suppress window restoration when utility mode is active so restored
+    // windows don't break the hidden/background startup experience.
+    // In normal mode, allow default restoration behavior (window positions).
+    guard HUDPreferences.isBackgroundUtilityModeEnabled() else { return }
+    log.debug("[LIFECYCLE] Suppressing restorable state encoding (utility mode)")
+    // Encode nothing - coder is left empty, discarding window state.
   }
 
   func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

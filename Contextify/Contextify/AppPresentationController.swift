@@ -132,11 +132,10 @@ final class AppPresentationController {
     ) { [weak self] notification in
       guard let self else { return }
       guard notification.object is NSWindow else { return }
-      // Defer policy check to let the window fully close first
+      // Defer policy check to let the window fully close first.
+      // Already on main queue (observer queue: .main), so just async to next run loop.
       DispatchQueue.main.async {
-        Task { @MainActor in
-          self.applyActivationPolicyAfterWindowChange()
-        }
+        self.applyActivationPolicyAfterWindowChange()
       }
     }
   }

@@ -8,8 +8,7 @@ import OSLog
 /// can be managed explicitly (create/remove on preference change, clean up on
 /// termination).
 ///
-/// The popover hosts the existing ContextifyMenuBarExtraContent view via
-/// NSHostingController so all SwiftUI menu-bar content is reused.
+/// The popover hosts StatusItemPopoverContent via NSHostingController.
 @MainActor
 final class StatusItemController: NSObject {
   static let shared = StatusItemController()
