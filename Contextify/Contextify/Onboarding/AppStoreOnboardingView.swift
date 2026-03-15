@@ -98,10 +98,9 @@ struct AppStoreOnboardingView: View {
       handleEnterStep1()
     } else if currentStep == 2 {
       handleEnterStep2()
-    } else {
-      // Step 3 (launch at login): Enter completes the wizard
-      onComplete()
     }
+    // Step 3: no custom Enter override. Let the focused Continue button
+    // handle Return naturally via its default button behavior.
   }
 
   /// Step 1: Enter triggers folder picker or advances to step 2

@@ -439,8 +439,11 @@ struct ContextifyApp: App {
       .alert("Launch at Login", isPresented: $showLaunchAtLoginPrompt) {
         Button("Enable") {
           LaunchAtLoginManager.shared.setEnabled(true)
+          UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
         }
-        Button("Not Now", role: .cancel) { }
+        Button("Not Now", role: .cancel) {
+          UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
+        }
       } message: {
         Text("Would you like Contextify to start automatically when you log in? You can change this later in Settings.")
       }
@@ -456,8 +459,8 @@ struct ContextifyApp: App {
         // One-time offer to enable launch at login (DMG builds only)
         // App Store builds handle this in the onboarding wizard (step 3).
         if !Sandbox.isSandboxed,
-           !UserDefaults.standard.bool(forKey: HUDPreferences.hasOfferedLaunchAtLoginKey) {
-          UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
+           !UserDefaults.standard.bool(forKey: HUDPreferences.hasOfferedLaunchAtLoginKey),
+           !showWelcomeModal, !showLiteModeInfo {
           showLaunchAtLoginPrompt = true
         }
 

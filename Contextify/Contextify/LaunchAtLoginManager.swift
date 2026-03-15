@@ -10,11 +10,13 @@ import OSLog
 ///   - Read `isEnabled` / `requiresApproval` for current state
 ///   - Call `setEnabled(_:)` to register or unregister
 ///   - Call `refreshStatus()` to re-read system state (e.g., on Settings appear)
+@MainActor
 @Observable
 final class LaunchAtLoginManager {
   static let shared = LaunchAtLoginManager()
 
   private(set) var status: SMAppService.Status = .notRegistered
+  private(set) var lastErrorMessage: String?
   private let log = Logger(subsystem: "dev.contextify", category: "LaunchAtLogin")
 
   var isEnabled: Bool {
@@ -30,7 +32,9 @@ final class LaunchAtLoginManager {
     log.debug("Launch at login status: \(String(describing: self.status), privacy: .public)")
   }
 
-  func setEnabled(_ enabled: Bool) {
+  @discardableResult
+  func setEnabled(_ enabled: Bool) -> SMAppService.Status {
+    lastErrorMessage = nil
     do {
       if enabled {
         try SMAppService.mainApp.register()
@@ -40,9 +44,11 @@ final class LaunchAtLoginManager {
         log.info("Unregistered launch at login")
       }
     } catch {
+      lastErrorMessage = error.localizedDescription
       log.error("Failed to \(enabled ? "register" : "unregister", privacy: .public) launch at login: \(error.localizedDescription, privacy: .public)")
     }
     refreshStatus()
+    return status
   }
 
   private init() {

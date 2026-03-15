@@ -14,6 +14,18 @@ struct GeneralSettingsView: View {
         .accessibilityLabel("Launch Contextify at login")
         .accessibilityHint("When enabled, Contextify starts automatically when you log in")
 
+        if let errorMessage = manager.lastErrorMessage {
+          HStack {
+            Image(systemName: "xmark.circle")
+              .foregroundStyle(.red)
+            Text(errorMessage)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityLabel("Error: \(errorMessage)")
+        }
+
         if manager.requiresApproval {
           HStack {
             Image(systemName: "exclamationmark.triangle")

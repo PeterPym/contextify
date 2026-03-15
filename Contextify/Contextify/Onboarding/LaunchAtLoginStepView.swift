@@ -47,17 +47,40 @@ struct LaunchAtLoginStepView: View {
       .accessibilityLabel("Launch Contextify at login")
       .accessibilityHint("When enabled, Contextify starts automatically when you log in")
 
-      if manager.requiresApproval {
+      if let errorMessage = manager.lastErrorMessage {
         HStack(spacing: 6) {
-          Image(systemName: "exclamationmark.triangle")
-            .foregroundStyle(.yellow)
-          Text("Permission needed. Open System Settings to allow Contextify in Login Items.")
+          Image(systemName: "xmark.circle")
+            .foregroundStyle(.red)
+          Text(errorMessage)
             .font(.caption)
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 40)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Permission required: Open System Settings to allow Contextify in Login Items")
+        .accessibilityLabel("Error: \(errorMessage)")
+      }
+
+      if manager.requiresApproval {
+        VStack(spacing: 8) {
+          HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+              .foregroundStyle(.yellow)
+            Text("Permission needed. Open System Settings to allow Contextify in Login Items.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityLabel("Permission required: Open System Settings to allow Contextify in Login Items")
+
+          Button("Open Login Items Settings") {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+              NSWorkspace.shared.open(url)
+            }
+          }
+          .font(.caption)
+          .accessibilityLabel("Open Login Items in System Settings")
+        }
+        .padding(.horizontal, 40)
       }
 
       Spacer()
