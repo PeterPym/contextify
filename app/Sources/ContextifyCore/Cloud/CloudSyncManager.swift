@@ -117,8 +117,14 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Most recently fetched server-side sync status projection.
   @MainActor public private(set) var cloudStatus: CloudSyncStatus?
 
+  /// Authenticated account/profile data for the current API key.
+  @MainActor public private(set) var cloudAccountProfile: CloudAccountProfile?
+
   /// Last error encountered while fetching status (separate from sync run errors).
   @MainActor public private(set) var cloudStatusError: String?
+
+  /// Last error encountered while fetching account/profile data.
+  @MainActor public private(set) var cloudAccountError: String?
 
   /// True when latest status fetch failed due to connectivity.
   @MainActor public private(set) var cloudOffline: Bool = false
@@ -152,6 +158,10 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
+  @MainActor private var connectionRevision: UInt64 = 0
+  @MainActor var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
+    CloudSyncClient(serverURL: $0, apiKey: $1)
+  }
 
   // MARK: - Initialization
 
@@ -180,20 +190,29 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// - Parameter config: Cloud configuration with server URL and API key.
   @MainActor
   public func configure(config: CloudConfig) {
+    let previousConfig = self.config
+    let connectionIdentityChanged =
+      previousConfig?.serverURL != config.serverURL || previousConfig?.apiKey != config.apiKey
+
     guard let url = URL(string: config.serverURL) else {
       log.error("Invalid server URL in config: \(config.serverURL, privacy: .public)")
       syncState = .error("Invalid server URL")
       return
     }
 
+    connectionRevision &+= 1
+    if connectionIdentityChanged {
+      clearConnectionScopedState()
+    }
     self.config = config
-    self.client = CloudSyncClient(serverURL: url, apiKey: config.apiKey)
+    self.client = clientFactory(url, config.apiKey)
 
     if config.enabled {
       syncState = .idle
       startStatusPollingIfNeeded()
       Task.detached(priority: .utility) { [weak self] in
         await self?.refreshStatusFromServer()
+        await self?.refreshAccountProfileFromServer()
       }
     } else {
       syncState = .disabled
@@ -298,12 +317,13 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Fetches cloud status snapshot for UI state projection.
   public func refreshStatusFromServer() async {
     // Snapshot MainActor-isolated state to avoid data races
-    let client = await MainActor.run { self.client }
+    let (client, revision) = await MainActor.run { (self.client, self.connectionRevision) }
     guard let client else { return }
 
     do {
       let status = try await client.status()
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudStatus = status
         self.cloudStatusUpdatedAt = Date()
         self.cloudStatusError = nil
@@ -314,12 +334,57 @@ public final class CloudSyncManager: @unchecked Sendable {
       let message = userFriendlyMessage(for: error)
       let offline = isConnectivityError(error)
       await MainActor.run {
+        guard self.connectionRevision == revision else { return }
         self.cloudStatusUpdatedAt = Date()
         self.cloudStatusError = message
         self.cloudOffline = offline
       }
       log.warning("Status refresh failed: \(message, privacy: .public)")
     }
+  }
+
+  /// Fetches authenticated account/profile data for the current API key.
+  public func refreshAccountProfileFromServer() async {
+    let (client, revision) = await MainActor.run { (self.client, self.connectionRevision) }
+    guard let client else { return }
+
+    do {
+      let profile = try await client.account()
+      await MainActor.run {
+        guard self.connectionRevision == revision else { return }
+        self.cloudAccountProfile = profile
+        self.cloudAccountError = nil
+      }
+    } catch {
+      let message = userFriendlyMessage(for: error)
+      await MainActor.run {
+        guard self.connectionRevision == revision else { return }
+        self.cloudAccountProfile = nil
+        self.cloudAccountError = message
+      }
+      log.warning("Account refresh failed: \(message, privacy: .public)")
+    }
+  }
+
+  /// Validate an API key and return the account profile it resolves to.
+  public func validateConnection(
+    serverURL: String,
+    apiKey: String
+  ) async throws -> CloudAccountProfile {
+    guard let url = URL(string: serverURL) else {
+      throw CloudSyncError.serverError(statusCode: 0, body: "Invalid server URL")
+    }
+    let factory = await MainActor.run { self.clientFactory }
+    let client = factory(url, apiKey)
+    return try await client.account()
+  }
+
+  /// Applies a known-good validated account profile immediately so UI can
+  /// reflect the authenticated identity without waiting on a follow-up fetch.
+  @MainActor
+  public func setValidatedAccountProfile(_ profile: CloudAccountProfile) {
+    cloudAccountProfile = profile
+    cloudAccountError = nil
   }
 
   /// Push local entries to the cloud server.
@@ -874,15 +939,25 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Call this when the user disconnects from cloud sync in Settings.
   @MainActor
   public func resetForDisconnect() {
+    connectionRevision &+= 1
     stopAppLevelAutoSync()
     stopStatusPolling()
     client = nil
     config = nil
+    clearConnectionScopedState()
+    syncState = .disabled
+    log.info("Reset cloud sync manager after disconnect")
+  }
+
+  @MainActor
+  private func clearConnectionScopedState() {
     lastSyncDate = nil
     lastPushResult = nil
     lastPullResult = nil
     cloudStatus = nil
     cloudStatusError = nil
+    cloudAccountProfile = nil
+    cloudAccountError = nil
     cloudOffline = false
     cloudStatusUpdatedAt = nil
     cloudSmoothedThroughputEntriesPerMin = nil
@@ -892,8 +967,6 @@ public final class CloudSyncManager: @unchecked Sendable {
     pushBatchesCompleted = 0
     pushEstimatedSecondsRemaining = nil
     pushStartTime = nil
-    syncState = .disabled
-    log.info("Reset cloud sync manager after disconnect")
   }
 
   /// Toggle auto-sync on/off. For use by Settings UI.

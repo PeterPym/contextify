@@ -123,6 +123,93 @@ public struct CloudConfig: Codable, Sendable {
     let data = try encoder.encode(self)
     try data.write(to: CloudConfig.configFile, options: .atomic)
   }
+
+  /// Builds the config that should be persisted after the user updates their
+  /// cloud connection details in Settings.
+  ///
+  /// Sync cursors are preserved only when the API key is unchanged. When the
+  /// key changes, the new connection starts from a clean sync lineage.
+  public static func mergedForConnectionUpdate(
+    existing: CloudConfig?,
+    serverURL: String,
+    apiKey: String,
+    deviceId: String,
+    deviceName: String
+  ) -> CloudConfig {
+    let enabled = existing?.enabled ?? true
+    guard let existing, existing.apiKey == apiKey else {
+      return CloudConfig(
+        serverURL: serverURL,
+        apiKey: apiKey,
+        deviceId: deviceId,
+        deviceName: deviceName,
+        enabled: enabled,
+        lastPullSequence: 0,
+        lastPushTimestamp: nil,
+        lastPushEntryId: nil,
+        lastPushSessionId: nil,
+        lastPushBatchSeq: nil
+      )
+    }
+
+    return CloudConfig(
+      serverURL: serverURL,
+      apiKey: apiKey,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      enabled: existing.enabled,
+      lastPullSequence: existing.lastPullSequence,
+      lastPushTimestamp: existing.lastPushTimestamp,
+      lastPushEntryId: existing.lastPushEntryId,
+      lastPushSessionId: existing.lastPushSessionId,
+      lastPushBatchSeq: existing.lastPushBatchSeq
+    )
+  }
+}
+
+// MARK: - Account
+
+/// Authenticated account information returned by `GET /api/v1/account`.
+public struct CloudAccountProfile: Codable, Sendable, Equatable {
+  public let userId: UUID
+  public let email: String
+  public let name: String?
+  public let role: String
+  public let tenantId: UUID
+  public let tenantName: String
+  public let tenantPlan: String
+  public let createdAt: Date
+
+  public init(
+    userId: UUID,
+    email: String,
+    name: String?,
+    role: String,
+    tenantId: UUID,
+    tenantName: String,
+    tenantPlan: String,
+    createdAt: Date
+  ) {
+    self.userId = userId
+    self.email = email
+    self.name = name
+    self.role = role
+    self.tenantId = tenantId
+    self.tenantName = tenantName
+    self.tenantPlan = tenantPlan
+    self.createdAt = createdAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case userId = "user_id"
+    case email
+    case name
+    case role
+    case tenantId = "tenant_id"
+    case tenantName = "tenant_name"
+    case tenantPlan = "tenant_plan"
+    case createdAt = "created_at"
+  }
 }
 
 // MARK: - Device Info

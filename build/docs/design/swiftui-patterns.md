@@ -23,6 +23,7 @@
 13. [macOS 15 (Sequoia) Quirks](#macos-15-sequoia-quirks)
 14. [Search Field Conventions](#search-field-conventions)
 15. [Custom Keyboard Navigation (Tab/Shift+Tab/Enter)](#custom-keyboard-navigation-tabshift-tabenter)
+16. [Automation Breadcrumbs and Accessibility](#automation-breadcrumbs-and-accessibility)
 
 ---
 
@@ -1868,6 +1869,32 @@ if isReady {
 ---
 
 ## Custom Keyboard Navigation (Tab/Shift+Tab/Enter)
+
+## Automation Breadcrumbs and Accessibility
+
+SwiftUI surfaces in Contextify must be built so they can be validated without pixel-hunting.
+
+### Required breadcrumbs for new UI
+
+- Every actionable control needs meaningful accessibility metadata.
+  - Use `.accessibilityLabel()` and `.accessibilityHint()` for icon-only controls, status badges, and custom button compositions.
+  - If `System Events` exposes an empty `name`, add enough surrounding label text or explicit accessibility metadata so automation still has a stable selector.
+- Dialogs, sheets, and settings flows need deliberate keyboard navigation.
+  - Tab order should move through all actionable controls, not just text fields.
+  - Primary and cancel actions should have keyboard shortcuts where that matches macOS conventions.
+  - Focus state should be visually obvious so humans and automation can tell which control is active.
+- Tabbed and mode-switching UI needs an explicit selected-state breadcrumb.
+  - The selected tab should be visually obvious and discoverable via accessibility.
+  - When SwiftUI tab metadata is weak, provide a stable defaults override or another narrow hook so automation can open the right tab deterministically.
+- Status-driven UI needs textual state, not color alone.
+  - Good examples: `Healthy`, `Syncing`, `Attention needed`, `Connected`.
+  - Avoid states that can only be inferred from a spinner, highlight, or timing.
+
+### Validation expectations
+
+- Manual validation should include keyboard traversal through the feature, especially sheets and settings panes.
+- E2E-oriented flows should prefer log tags plus accessibility breadcrumbs instead of coordinate clicking.
+- If a SwiftUI surface still cannot be automated reliably, document the missing breadcrumb and add the narrowest possible QA hook rather than normalizing brittle selectors.
 
 ### Problem: SwiftUI Keyboard Shortcut Limitations
 
