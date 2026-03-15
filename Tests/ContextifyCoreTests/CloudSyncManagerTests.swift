@@ -298,4 +298,45 @@ final class CloudSyncManagerTests: XCTestCase {
     XCTAssertEqual(profile.email, "validated@example.com")
     XCTAssertEqual(profile.tenantName, "Tenant")
   }
+
+  func testConfigurePreservesConnectionScopedStateWhenOnlyDeviceNameChanges() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+
+    let profile = CloudAccountProfile(
+      userId: UUID(uuidString: "7C9138BE-C8D7-4A6E-A804-430D239D4825")!,
+      email: "same@example.com",
+      name: "Test User",
+      role: "owner",
+      tenantId: UUID(uuidString: "F154C9FE-9804-4582-8308-495ABFA302A2")!,
+      tenantName: "Same Tenant",
+      tenantPlan: "solo",
+      createdAt: ISO8601DateFormatter().date(from: "2026-03-14T23:00:00Z")!
+    )
+
+    await MainActor.run {
+      manager.configure(config: CloudConfig(
+        serverURL: CloudConfig.defaultServerURL,
+        apiKey: "ctx_same",
+        deviceId: "device-1",
+        deviceName: "Old Mac",
+        enabled: false
+      ))
+      manager.setValidatedAccountProfile(profile)
+    }
+
+    await MainActor.run {
+      manager.configure(config: CloudConfig(
+        serverURL: CloudConfig.defaultServerURL,
+        apiKey: "ctx_same",
+        deviceId: "device-1",
+        deviceName: "New Mac",
+        enabled: false
+      ))
+    }
+
+    let finalProfile = await MainActor.run { manager.cloudAccountProfile }
+    XCTAssertEqual(finalProfile?.email, "same@example.com")
+    XCTAssertEqual(finalProfile?.tenantName, "Same Tenant")
+  }
 }
