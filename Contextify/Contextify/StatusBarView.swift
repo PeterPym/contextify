@@ -643,7 +643,9 @@ private extension StatusBarView {
         if cloudSyncManager.syncState == .disabled { return .disabled }
         if cloudSyncManager.cloudOffline { return .offline }
 
-        if let session = cloudActiveSession {
+        // Skip server-side session state when the session is orphaned
+        // (from a previous connection, not this client's current session).
+        if let session = cloudActiveSession, !cloudSyncManager.isActiveSessionOrphaned {
             let phase = session.phase.lowercased()
             let completion = session.completionState?.lowercased()
             let attention = session.needsAttentionCount ?? 0
@@ -703,6 +705,7 @@ private extension StatusBarView {
                 .font(.subheadline)
 
             if let session = cloudActiveSession,
+               !cloudSyncManager.isActiveSessionOrphaned,
                let total = session.entriesTotal, total > 0 {
                 let resolved = min(max(session.entriesResolved ?? 0, 0), total)
                 ProgressView(value: Double(resolved), total: Double(total))
@@ -892,6 +895,7 @@ private struct CloudSyncDetailSheet: View {
                 .font(.headline)
 
             if let session = syncManager.cloudStatus?.activePushSession,
+               !syncManager.isActiveSessionOrphaned,
                let total = session.entriesTotal, total > 0 {
                 let resolved = min(max(session.entriesResolved ?? 0, 0), total)
                 ProgressView(value: Double(resolved), total: Double(total))

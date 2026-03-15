@@ -458,7 +458,11 @@ struct CloudSettingsView: View {
     if syncManager.syncState == .disabled { return .disabled }
     if syncManager.cloudOffline { return .offline }
 
-    if let session = activePushSession {
+    // Only use server-side session state when the session belongs to this
+    // client's current connection. After disconnect/reconnect the server may
+    // still report a stalled session from the old connection which is no
+    // longer actionable.
+    if let session = activePushSession, !syncManager.isActiveSessionOrphaned {
       let phase = session.phase.lowercased()
       let completion = session.completionState?.lowercased()
       let attention = session.needsAttentionCount ?? 0
@@ -567,6 +571,7 @@ struct CloudSettingsView: View {
 
   private var showsBulkCatchUpProgress: Bool {
     if let session = activePushSession,
+       !syncManager.isActiveSessionOrphaned,
        (syncManager.cloudStatus?.pendingBatches ?? 0) > 0 {
       let completion = session.completionState?.lowercased()
       return completion == "in_progress" && (session.entriesTotal ?? 0) > 0
