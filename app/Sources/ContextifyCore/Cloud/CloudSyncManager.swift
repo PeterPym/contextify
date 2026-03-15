@@ -159,7 +159,7 @@ public final class CloudSyncManager: @unchecked Sendable {
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
   @MainActor private var connectionRevision: UInt64 = 0
-  var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
+  @MainActor var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
     CloudSyncClient(serverURL: $0, apiKey: $1)
   }
 
@@ -190,6 +190,10 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// - Parameter config: Cloud configuration with server URL and API key.
   @MainActor
   public func configure(config: CloudConfig) {
+    let previousConfig = self.config
+    let connectionIdentityChanged =
+      previousConfig?.serverURL != config.serverURL || previousConfig?.apiKey != config.apiKey
+
     guard let url = URL(string: config.serverURL) else {
       log.error("Invalid server URL in config: \(config.serverURL, privacy: .public)")
       syncState = .error("Invalid server URL")
@@ -197,6 +201,9 @@ public final class CloudSyncManager: @unchecked Sendable {
     }
 
     connectionRevision &+= 1
+    if connectionIdentityChanged {
+      clearConnectionScopedState()
+    }
     self.config = config
     self.client = clientFactory(url, config.apiKey)
 
@@ -367,7 +374,8 @@ public final class CloudSyncManager: @unchecked Sendable {
     guard let url = URL(string: serverURL) else {
       throw CloudSyncError.serverError(statusCode: 0, body: "Invalid server URL")
     }
-    let client = CloudSyncClient(serverURL: url, apiKey: apiKey)
+    let factory = await MainActor.run { self.clientFactory }
+    let client = factory(url, apiKey)
     return try await client.account()
   }
 
@@ -936,6 +944,13 @@ public final class CloudSyncManager: @unchecked Sendable {
     stopStatusPolling()
     client = nil
     config = nil
+    clearConnectionScopedState()
+    syncState = .disabled
+    log.info("Reset cloud sync manager after disconnect")
+  }
+
+  @MainActor
+  private func clearConnectionScopedState() {
     lastSyncDate = nil
     lastPushResult = nil
     lastPullResult = nil
@@ -952,8 +967,6 @@ public final class CloudSyncManager: @unchecked Sendable {
     pushBatchesCompleted = 0
     pushEstimatedSecondsRemaining = nil
     pushStartTime = nil
-    syncState = .disabled
-    log.info("Reset cloud sync manager after disconnect")
   }
 
   /// Toggle auto-sync on/off. For use by Settings UI.

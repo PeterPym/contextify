@@ -171,4 +171,131 @@ final class CloudSyncManagerTests: XCTestCase {
     XCTAssertEqual(finalProfile?.email, "new@example.com")
     XCTAssertEqual(finalProfile?.tenantName, "New Tenant")
   }
+
+  func testConfigureClearsConnectionScopedStateWhenAPIKeyChanges() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let statusResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/sync/status")!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+    let accountResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/account")!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+
+    DelayedMockURLProtocol.handler = { request in
+      switch request.url?.path {
+      case "/api/v1/sync/status":
+        let data = """
+        {
+          "last_sync": "2026-03-14T23:00:00Z",
+          "entries_synced": 12,
+          "devices": [],
+          "server_sequence": 34,
+          "pending_batches": 0,
+          "active_push_session": null
+        }
+        """.data(using: .utf8)!
+        return (data, statusResponse, nil)
+      case "/api/v1/account":
+        let data = """
+        {
+          "user_id": "7C9138BE-C8D7-4A6E-A804-430D239D4825",
+          "email": "old@example.com",
+          "name": "Test User",
+          "role": "owner",
+          "tenant_id": "F154C9FE-9804-4582-8308-495ABFA302A2",
+          "tenant_name": "Old Tenant",
+          "tenant_plan": "solo",
+          "created_at": "2026-03-14T23:00:00Z"
+        }
+        """.data(using: .utf8)!
+        return (data, accountResponse, nil)
+      default:
+        XCTFail("Unexpected path \(request.url?.path ?? "<nil>")")
+        return (Data(), statusResponse, URLError(.badURL))
+      }
+    }
+
+    await MainActor.run {
+      manager.configure(config: CloudConfig(
+        serverURL: CloudConfig.defaultServerURL,
+        apiKey: "ctx_old",
+        deviceId: "device-1",
+        deviceName: "Mac",
+        enabled: false
+      ))
+    }
+
+    await manager.refreshStatusFromServer()
+    await manager.refreshAccountProfileFromServer()
+
+    await MainActor.run {
+      manager.configure(config: CloudConfig(
+        serverURL: CloudConfig.defaultServerURL,
+        apiKey: "ctx_new",
+        deviceId: "device-1",
+        deviceName: "Mac",
+        enabled: false
+      ))
+    }
+
+    let cleared = await MainActor.run {
+      (
+        manager.cloudStatus,
+        manager.cloudAccountProfile,
+        manager.cloudStatusError,
+        manager.cloudAccountError,
+        manager.cloudOffline
+      )
+    }
+
+    XCTAssertNil(cleared.0)
+    XCTAssertNil(cleared.1)
+    XCTAssertNil(cleared.2)
+    XCTAssertNil(cleared.3)
+    XCTAssertFalse(cleared.4)
+  }
+
+  func testValidateConnectionUsesInjectedClientFactory() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let response = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/account")!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+
+    DelayedMockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/v1/account")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer ctx_test")
+      let data = """
+      {
+        "user_id": "7C9138BE-C8D7-4A6E-A804-430D239D4825",
+        "email": "validated@example.com",
+        "name": "Test User",
+        "role": "owner",
+        "tenant_id": "F154C9FE-9804-4582-8308-495ABFA302A2",
+        "tenant_name": "Tenant",
+        "tenant_plan": "solo",
+        "created_at": "2026-03-14T23:00:00Z"
+      }
+      """.data(using: .utf8)!
+      return (data, response, nil)
+    }
+
+    let profile = try await manager.validateConnection(
+      serverURL: CloudConfig.defaultServerURL,
+      apiKey: "ctx_test"
+    )
+
+    XCTAssertEqual(profile.email, "validated@example.com")
+    XCTAssertEqual(profile.tenantName, "Tenant")
+  }
 }
