@@ -102,11 +102,25 @@ final class GitProjectIdentityTests: XCTestCase {
     XCTAssertEqual(mainIdentity.repoGroupKey, mainIdentity.repoIdentity)
   }
 
+  /// Run a git command with full environment isolation.
+  ///
+  /// Pre-commit hooks and CI runners inject GIT_DIR, GIT_INDEX_FILE, and
+  /// other GIT_* environment variables into child processes. Without
+  /// clearing them, commands here would target the *parent* repository
+  /// instead of the temporary test repo.
   private func runGit(_ arguments: [String], in directory: URL) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = arguments
     process.currentDirectoryURL = directory
+
+    // Strip all GIT_* env vars so the child git process discovers the
+    // repo purely from currentDirectoryURL / the working directory.
+    var cleanEnv = ProcessInfo.processInfo.environment
+    for key in cleanEnv.keys where key.hasPrefix("GIT_") {
+      cleanEnv.removeValue(forKey: key)
+    }
+    process.environment = cleanEnv
 
     let output = Pipe()
     process.standardOutput = output
