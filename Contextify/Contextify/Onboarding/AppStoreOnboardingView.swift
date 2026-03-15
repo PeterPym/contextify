@@ -46,7 +46,7 @@ struct AppStoreOnboardingView: View {
   /// Trigger for Grant Access action (set by Enter key handler)
   @State private var triggerGrantAccess: SourceID?
 
-  private let totalSteps = 2
+  private let totalSteps = 3
 
   /// Returns the ordered list of focusable items on step 2
   private var availableFocusTargets: [PermissionsFocus] {
@@ -96,9 +96,11 @@ struct AppStoreOnboardingView: View {
   private func handleEnterForCurrentStep() {
     if currentStep == 1 {
       handleEnterStep1()
-    } else {
+    } else if currentStep == 2 {
       handleEnterStep2()
     }
+    // Step 3: no custom Enter override. Let the focused Continue button
+    // handle Return naturally via its default button behavior.
   }
 
   /// Step 1: Enter triggers folder picker or advances to step 2
@@ -152,7 +154,7 @@ struct AppStoreOnboardingView: View {
             selectedFolderName: $selectedFolderName,
             openPickerTrigger: $openFolderPickerTrigger
           )
-        } else {
+        } else if currentStep == 2 {
           PermissionsStepView(
             folderAccessController: folderAccessController,
             isConfigured: $permissionsConfigured,
@@ -160,6 +162,8 @@ struct AppStoreOnboardingView: View {
             authorizations: $authorizations,
             triggerGrantAccess: $triggerGrantAccess
           )
+        } else {
+          LaunchAtLoginStepView()
         }
       }
 
@@ -217,7 +221,7 @@ struct AppStoreOnboardingView: View {
 
         // Buttons aligned to edges
         HStack {
-          // Previous button (only on step 2)
+          // Previous button (steps 2+)
           if currentStep > 1 {
             Button("Previous") {
               withAnimation {
@@ -230,9 +234,10 @@ struct AppStoreOnboardingView: View {
 
           Spacer()
 
-          // Next button (step 1) or Continue button (step 2)
-          // Enabled: borderedProminent with brand color (filled, vibrant) + focus ring
-          // Disabled: bordered (outline only, visually recedes)
+          // Navigation buttons per step:
+          // Step 1: Next (enabled when database configured)
+          // Step 2: Next (enabled when permissions configured)
+          // Step 3: Continue (always enabled -- launch at login is optional)
           if currentStep == 1 {
             if databaseLocationConfigured {
               Button("Next") {
@@ -240,7 +245,22 @@ struct AppStoreOnboardingView: View {
               }
               .buttonStyle(.borderedProminent)
               .tint(Color.contextifyBlue)
-              .modifier(FocusRingStyle(isActive: true))  // Always show ring when enabled
+              .modifier(FocusRingStyle(isActive: true))
+              .accessibilityIdentifier("onboarding-next")
+            } else {
+              Button("Next") {}
+                .buttonStyle(.bordered)
+                .disabled(true)
+                .accessibilityIdentifier("onboarding-next")
+            }
+          } else if currentStep == 2 {
+            if permissionsConfigured {
+              Button("Next") {
+                withAnimation { currentStep += 1 }
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+              .modifier(FocusRingStyle(isActive: permissionsFocus == .continueButton))
               .accessibilityIdentifier("onboarding-next")
             } else {
               Button("Next") {}
@@ -249,20 +269,12 @@ struct AppStoreOnboardingView: View {
                 .accessibilityIdentifier("onboarding-next")
             }
           } else {
-            // Continue button - uses focus ring instead of system keyboard shortcut
-            // to maintain consistent brand colors
-            if permissionsConfigured {
-              Button("Continue") { onComplete() }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.contextifyBlue)
-                .modifier(FocusRingStyle(isActive: permissionsFocus == .continueButton))
-                .accessibilityIdentifier("onboarding-continue")
-            } else {
-              Button("Continue") {}
-                .buttonStyle(.bordered)
-                .disabled(true)
-                .accessibilityIdentifier("onboarding-continue")
-            }
+            // Step 3: Launch at login (optional) -- Continue always enabled
+            Button("Continue") { onComplete() }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+              .modifier(FocusRingStyle(isActive: true))
+              .accessibilityIdentifier("onboarding-continue")
           }
         }
       }

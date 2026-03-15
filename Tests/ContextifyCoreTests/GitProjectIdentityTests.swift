@@ -102,11 +102,58 @@ final class GitProjectIdentityTests: XCTestCase {
     XCTAssertEqual(mainIdentity.repoGroupKey, mainIdentity.repoIdentity)
   }
 
+  /// Proves that runGit ignores inherited GIT_* variables.
+  /// Without the env stripping in runGit, this test would fail because
+  /// git would follow GIT_DIR to a bogus path instead of the temp repo.
+  func testRunGitIgnoresInheritedGitEnvironment() throws {
+    let tempRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let repo = tempRoot.appendingPathComponent("repo", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try runGit(["init", "--initial-branch=main", repo.path], in: tempRoot)
+    try runGit(["config", "user.email", "test@example.com"], in: repo)
+    try runGit(["config", "user.name", "Test User"], in: repo)
+
+    // Poison the environment with bogus GIT_DIR and GIT_WORK_TREE
+    let oldGitDir = getenv("GIT_DIR").map { String(cString: $0) }
+    let oldGitWorkTree = getenv("GIT_WORK_TREE").map { String(cString: $0) }
+    defer {
+      if let v = oldGitDir { setenv("GIT_DIR", v, 1) } else { unsetenv("GIT_DIR") }
+      if let v = oldGitWorkTree { setenv("GIT_WORK_TREE", v, 1) } else { unsetenv("GIT_WORK_TREE") }
+    }
+    setenv("GIT_DIR", "/nonexistent/bogus.git", 1)
+    setenv("GIT_WORK_TREE", "/nonexistent/nowhere", 1)
+
+    // If runGit does NOT strip GIT_*, this will fail because git follows GIT_DIR
+    try "seed".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+    try runGit(["add", "README.md"], in: repo)
+    try runGit(["commit", "-m", "Initial commit"], in: repo)
+
+    let identity = try XCTUnwrap(GitProjectIdentity.resolve(forProjectRootPath: repo.path))
+    XCTAssertEqual(identity.repoName, "repo")
+  }
+
+  /// Run a git command with full environment isolation.
+  ///
+  /// Pre-commit hooks and CI runners inject GIT_DIR, GIT_INDEX_FILE, and
+  /// other GIT_* environment variables into child processes. Without
+  /// clearing them, commands here would target the *parent* repository
+  /// instead of the temporary test repo.
   private func runGit(_ arguments: [String], in directory: URL) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = arguments
     process.currentDirectoryURL = directory
+
+    // Strip all GIT_* env vars so the child git process discovers the
+    // repo purely from currentDirectoryURL / the working directory.
+    var cleanEnv = ProcessInfo.processInfo.environment
+    for key in cleanEnv.keys where key.hasPrefix("GIT_") {
+      cleanEnv.removeValue(forKey: key)
+    }
+    process.environment = cleanEnv
 
     let output = Pipe()
     process.standardOutput = output

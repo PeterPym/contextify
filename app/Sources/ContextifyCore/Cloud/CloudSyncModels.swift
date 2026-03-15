@@ -1056,6 +1056,32 @@ public struct CloudActivePushSessionStatus: Codable, Sendable {
   public let needsAttentionCount: Int?
   public let lastBatchAt: String?
 
+  public init(
+    serverSessionId: String,
+    phase: String,
+    entriesResolved: Int? = nil,
+    entriesTotal: Int? = nil,
+    progressPercent: Double? = nil,
+    throughputEntriesPerMin: Double? = nil,
+    etaSeconds: Int? = nil,
+    checkpointSafe: Bool? = nil,
+    completionState: String? = nil,
+    needsAttentionCount: Int? = nil,
+    lastBatchAt: String? = nil
+  ) {
+    self.syncSessionId = serverSessionId
+    self.phase = phase
+    self.entriesResolved = entriesResolved
+    self.entriesTotal = entriesTotal
+    self.progressPercent = progressPercent
+    self.throughputEntriesPerMin = throughputEntriesPerMin
+    self.etaSeconds = etaSeconds
+    self.checkpointSafe = checkpointSafe
+    self.completionState = completionState
+    self.needsAttentionCount = needsAttentionCount
+    self.lastBatchAt = lastBatchAt
+  }
+
   enum CodingKeys: String, CodingKey {
     case syncSessionId = "sync_session_id"
     case phase

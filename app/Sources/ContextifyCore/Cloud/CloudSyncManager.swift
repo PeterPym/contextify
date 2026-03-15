@@ -136,6 +136,30 @@ public final class CloudSyncManager: @unchecked Sendable {
    public private(set) var cloudSmoothedThroughputEntriesPerMin: Double?
    public private(set) var cloudSmoothedEtaSeconds: Int?
 
+  /// The push session ID this client is currently using or last used.
+  /// Exposed so the UI can compare against the server's active push session
+  /// to detect orphaned/stalled sessions from previous connections.
+  @MainActor public var currentPushSessionId: String? {
+    config?.lastPushSessionId
+  }
+
+  /// Whether the server's active push session is from a different/previous
+  /// connection and should be ignored for UI state decisions.
+  ///
+  /// After disconnect/reconnect, the server may still report a stalled session
+  /// from the old connection. The client's current session ID won't match,
+  /// so the UI should treat the server session as irrelevant.
+  @MainActor public var isActiveSessionOrphaned: Bool {
+    guard let serverSessionId = cloudStatus?.activePushSession?.syncSessionId else {
+      return false
+    }
+    guard let clientSessionId = currentPushSessionId else {
+      // No client session yet; any server session is from a prior connection
+      return true
+    }
+    return serverSessionId != clientSessionId
+  }
+
   // MARK: - Push Progress Tracking (MainActor-isolated for SwiftUI)
 
   /// Total entries counted at push start for progress estimation.

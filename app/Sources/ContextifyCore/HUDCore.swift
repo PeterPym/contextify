@@ -31,6 +31,9 @@ public enum HUDPreferences {
   // Window behavior
   public static let windowAlwaysOnTopKey = "dev.contextify.windowAlwaysOnTop"
 
+  // Launch at login
+  public static let hasOfferedLaunchAtLoginKey = "dev.contextify.hasOfferedLaunchAtLogin"
+
   // CLI install location (App Store builds)
   public static let cliInstallLocationKey = "dev.contextify.cliInstallLocation"
   public static let cliInstallBookmarkKey = "dev.contextify.cliInstallBookmark"

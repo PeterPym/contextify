@@ -299,6 +299,132 @@ final class CloudSyncManagerTests: XCTestCase {
     XCTAssertEqual(profile.tenantName, "Tenant")
   }
 
+  // MARK: - Orphaned Session Detection
+
+  private func statusJSON(activeSessionId: String?, phase: String = "stalled") -> String {
+    let sessionBlock: String
+    if let id = activeSessionId {
+      sessionBlock = """
+      {
+        "sync_session_id": "\(id)",
+        "phase": "\(phase)",
+        "entries_resolved": 70,
+        "entries_total": 77,
+        "progress_percent": 90.9,
+        "completion_state": "in_progress",
+        "needs_attention_count": 0
+      }
+      """
+    } else {
+      sessionBlock = "null"
+    }
+    return """
+    {
+      "last_sync": "2026-03-14T23:00:00Z",
+      "entries_synced": 100,
+      "devices": [],
+      "server_sequence": 100,
+      "pending_batches": 3,
+      "active_push_session": \(sessionBlock)
+    }
+    """
+  }
+
+  private func configureWithMockStatus(
+    manager: CloudSyncManager,
+    session: URLSession,
+    clientSessionId: String?,
+    serverSessionId: String?,
+    serverPhase: String = "stalled"
+  ) async {
+    let statusResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/sync/status")!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+
+    DelayedMockURLProtocol.delay = 0
+    DelayedMockURLProtocol.handler = { [self] request in
+      let data = self.statusJSON(activeSessionId: serverSessionId, phase: serverPhase).data(using: .utf8)!
+      return (data, statusResponse, nil)
+    }
+
+    await MainActor.run {
+      manager.configure(config: CloudConfig(
+        serverURL: CloudConfig.defaultServerURL,
+        apiKey: "ctx_test1234567890_abcdefghijklmnopqrstuvwx",
+        deviceId: "device-1",
+        deviceName: "Mac",
+        enabled: false,
+        lastPushSessionId: clientSessionId
+      ))
+    }
+
+    await manager.refreshStatusFromServer()
+  }
+
+  func testIsActiveSessionOrphanedWhenSessionIdsDiffer() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+
+    await configureWithMockStatus(
+      manager: manager,
+      session: session,
+      clientSessionId: "client-session-aaa",
+      serverSessionId: "server-session-bbb"
+    )
+
+    let isOrphaned = await MainActor.run { manager.isActiveSessionOrphaned }
+    XCTAssertTrue(isOrphaned, "Session with different ID should be detected as orphaned")
+  }
+
+  func testIsActiveSessionNotOrphanedWhenSessionIdsMatch() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let sharedId = "shared-session-id"
+
+    await configureWithMockStatus(
+      manager: manager,
+      session: session,
+      clientSessionId: sharedId,
+      serverSessionId: sharedId
+    )
+
+    let isOrphaned = await MainActor.run { manager.isActiveSessionOrphaned }
+    XCTAssertFalse(isOrphaned, "Session with matching ID should not be orphaned")
+  }
+
+  func testIsActiveSessionOrphanedWhenNoClientSessionExists() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+
+    await configureWithMockStatus(
+      manager: manager,
+      session: session,
+      clientSessionId: nil,
+      serverSessionId: "leftover-session"
+    )
+
+    let isOrphaned = await MainActor.run { manager.isActiveSessionOrphaned }
+    XCTAssertTrue(isOrphaned, "Any server session should be orphaned when client has no session")
+  }
+
+  func testIsActiveSessionNotOrphanedWhenNoServerSession() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+
+    await configureWithMockStatus(
+      manager: manager,
+      session: session,
+      clientSessionId: "client-session",
+      serverSessionId: nil
+    )
+
+    let isOrphaned = await MainActor.run { manager.isActiveSessionOrphaned }
+    XCTAssertFalse(isOrphaned, "No server session means nothing to be orphaned")
+  }
+
   func testConfigurePreservesConnectionScopedStateWhenOnlyDeviceNameChanges() async throws {
     let session = makeSession()
     let manager = await makeManager(session: session)
