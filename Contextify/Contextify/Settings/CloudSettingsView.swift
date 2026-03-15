@@ -90,6 +90,8 @@ struct CloudSettingsView: View {
         mode: connectionSheetMode,
         apiKey: $draftApiKey,
         deviceName: $draftDeviceName,
+        originalAPIKey: connectionSheetMode == .manage ? apiKey : "",
+        originalDeviceName: connectionSheetMode == .manage ? deviceName : (Host.current().localizedName ?? deviceName),
         isSaving: isSavingConnection,
         errorMessage: connectionSheetError,
         onSave: saveConfiguration,
@@ -102,7 +104,7 @@ struct CloudSettingsView: View {
         disconnect()
       }
     } message: {
-      Text("This will remove your cloud sync configuration. Your local data will not be affected.")
+      Text("This removes this Mac's cloud sync configuration. Local data stays on this Mac, and cloud data is not deleted.")
     }
     // No .onDisappear cleanup - sync lives at app level
   }
@@ -113,15 +115,9 @@ struct CloudSettingsView: View {
   private var serverConfigurationSection: some View {
     Section {
       VStack(alignment: .leading, spacing: 12) {
-      Text("Cloud Connection")
+        Text("Cloud Connection")
           .font(.headline)
           .accessibilityIdentifier("cloud-connection-heading")
-
-        Text(CloudConfig.defaultServerURL)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-          .accessibilityIdentifier("cloud-server-url")
 
         if isConfigured {
           configuredConnectionSummary
@@ -168,21 +164,28 @@ struct CloudSettingsView: View {
   private var configuredConnectionSummary: some View {
     VStack(alignment: .leading, spacing: 10) {
       if let profile = syncManager.cloudAccountProfile {
-        summaryFactRow(label: "Signed in as", value: profile.email)
-        summaryFactRow(label: "Workspace", value: profile.tenantName)
+        HStack(alignment: .top, spacing: 18) {
+          compactSummaryFact(label: "Signed in as", value: profile.email)
+          compactSummaryFact(label: "Workspace", value: profile.tenantName)
+          compactSummaryFact(label: "Device name", value: deviceName)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("cloud-connection-summary-row")
       } else if let error = syncManager.cloudAccountError {
         Text("Account details unavailable: \(error)")
           .font(.caption)
           .foregroundStyle(.orange)
           .accessibilityIdentifier("cloud-account-error")
+
+        compactSummaryFact(label: "Device name", value: deviceName)
       } else {
         Text("Resolving account details...")
           .font(.caption)
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("cloud-account-loading")
-      }
 
-      summaryFactRow(label: "Device name", value: deviceName)
+        compactSummaryFact(label: "Device name", value: deviceName)
+      }
 
       Button("Manage Cloud Connection") {
         connectionSheetMode = .manage
@@ -264,10 +267,10 @@ struct CloudSettingsView: View {
             syncFactRow(label: "Last sync", value: relativeTimeString(from: lastSync))
           }
 
-          if let pushResult = syncManager.lastPushResult {
+          if let uploadSummary = lastUploadSummary {
             syncFactRow(
               label: "Last upload",
-              value: "\(formatCount(pushResult.entriesPushed)) uploaded, \(formatCount(pushResult.duplicatesSkipped)) already on server"
+              value: uploadSummary
             )
           }
         }
@@ -414,6 +417,13 @@ struct CloudSettingsView: View {
 
   private var activePushSession: CloudActivePushSessionStatus? {
     syncManager.cloudStatus?.activePushSession
+  }
+
+  private var lastUploadSummary: String? {
+    guard let pushResult = syncManager.lastPushResult else { return nil }
+    guard pushResult.entriesPushed > 0 else { return nil }
+    let noun = pushResult.entriesPushed == 1 ? "entry" : "entries"
+    return "\(formatCount(pushResult.entriesPushed)) new \(noun) uploaded"
   }
 
   private var displayState: SyncDisplayState {
@@ -777,14 +787,16 @@ struct CloudSettingsView: View {
   }
 
   @ViewBuilder
-  private func summaryFactRow(label: String, value: String) -> some View {
+  private func compactSummaryFact(label: String, value: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(label)
         .font(.caption)
         .foregroundStyle(.secondary)
       Text(value)
         .font(.subheadline)
+        .lineLimit(2)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(label)
     .accessibilityValue(value)
@@ -796,12 +808,32 @@ private struct CloudConnectionSheet: View {
   let mode: ConnectionSheetMode
   @Binding var apiKey: String
   @Binding var deviceName: String
+  let originalAPIKey: String
+  let originalDeviceName: String
   let isSaving: Bool
   let errorMessage: String?
   let onSave: () -> Void
   let onDisconnect: (() -> Void)?
 
   @Environment(\.dismiss) private var dismiss
+  @State private var showDisconnectInfo: Bool = false
+
+  private var trimmedAPIKey: String {
+    apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var trimmedDeviceName: String {
+    deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var hasMeaningfulChanges: Bool {
+    trimmedAPIKey != originalAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+      || trimmedDeviceName != originalDeviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var canConfirm: Bool {
+    !trimmedAPIKey.isEmpty && !isSaving && hasMeaningfulChanges
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -853,15 +885,43 @@ private struct CloudConnectionSheet: View {
         .accessibilityHint("Closes the cloud connection sheet without saving")
 
         if let onDisconnect {
-          Button("Disconnect") {
-            dismiss()
-            onDisconnect()
+          HStack(spacing: 6) {
+            Button("Disconnect") {
+              dismiss()
+              onDisconnect()
+            }
+            .foregroundStyle(.red)
+            .disabled(isSaving)
+            .focusable()
+            .accessibilityIdentifier("cloud-connection-disconnect")
+            .accessibilityHint("Disconnects this Mac from cloud sync")
+
+            Button {
+              showDisconnectInfo.toggle()
+            } label: {
+              Image(systemName: "info.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(isSaving)
+            .focusable()
+            .popover(isPresented: $showDisconnectInfo, arrowEdge: .bottom) {
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Disconnect stops cloud sync on this Mac.")
+                  .font(.headline)
+                Text("Your local data stays on this Mac.")
+                Text("Your cloud data is not deleted.")
+                Text("You can reconnect later with the same or a different API key.")
+              }
+              .font(.caption)
+              .padding(12)
+              .frame(width: 280, alignment: .leading)
+              .accessibilityIdentifier("cloud-connection-disconnect-popover")
+            }
+            .accessibilityIdentifier("cloud-connection-disconnect-info")
+            .accessibilityLabel("Explain disconnect")
+            .accessibilityHint("Shows what disconnect does and does not remove")
           }
-          .foregroundStyle(.red)
-          .disabled(isSaving)
-          .focusable()
-          .accessibilityIdentifier("cloud-connection-disconnect")
-          .accessibilityHint("Disconnects this Mac from cloud sync")
         }
 
         Spacer()
@@ -871,7 +931,7 @@ private struct CloudConnectionSheet: View {
         }
         .buttonStyle(.borderedProminent)
         .keyboardShortcut(.defaultAction)
-        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+        .disabled(!canConfirm)
         .focusable()
         .accessibilityIdentifier("cloud-connection-confirm")
         .accessibilityHint("Validates and saves the cloud connection")
