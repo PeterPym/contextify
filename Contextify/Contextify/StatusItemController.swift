@@ -53,7 +53,16 @@ final class StatusItemController: NSObject {
   /// Call once at app launch. Evaluates the current preference and creates
   /// or skips the status item accordingly, then observes future changes.
   func start() {
-    log.info("[STATUS-ITEM] Starting StatusItemController")
+    log.notice("[STATUS-ITEM] Starting StatusItemController")
+
+    let menuBarEnabled = HUDPreferences.isMenuBarExtraEnabled()
+    let utilityMode = HUDPreferences.isBackgroundUtilityModeEnabled()
+    let resolved = AppPresentationPreferences.resolvedMenuBarExtraEnabled(
+      menuBarExtraEnabled: menuBarEnabled,
+      backgroundUtilityModeEnabled: utilityMode
+    )
+    log.notice("[STATUS-ITEM] Prefs at start: menuBarEnabled=\(menuBarEnabled, privacy: .public), utilityMode=\(utilityMode, privacy: .public), resolved=\(resolved, privacy: .public)")
+
     applyCurrentPreference()
     observePreferenceChanges()
   }
@@ -69,10 +78,13 @@ final class StatusItemController: NSObject {
   // MARK: - Preference Observation
 
   private func observePreferenceChanges() {
-    // Observe both keys that affect menu bar visibility
+    // Observe UserDefaults changes with object: nil because
+    // ContextifyDefaults.shared and HUDPreferences.sharedDefaults may be
+    // different Swift instances of the same suite, and the notification is
+    // posted on the instance that was written to.
     preferencesObserver = NotificationCenter.default.addObserver(
       forName: UserDefaults.didChangeNotification,
-      object: ContextifyDefaults.shared,
+      object: nil,
       queue: .main
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
@@ -109,11 +121,10 @@ final class StatusItemController: NSObject {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     if let button = item.button {
-      // Use a simple SF Symbol rendered as a template image.
-      let image = NSImage(
-        systemSymbolName: "doc.text.magnifyingglass",
-        accessibilityDescription: "Contextify"
-      )
+      // Use the Contextify infinity logomark from the asset catalog.
+      // The imageset has template-rendering-intent: template, so macOS
+      // handles light/dark tinting automatically.
+      let image = NSImage(named: "menubar-icon")
       image?.isTemplate = true
       button.image = image
       button.target = self
@@ -122,7 +133,7 @@ final class StatusItemController: NSObject {
     }
 
     self.statusItem = item
-    log.info("[STATUS-ITEM] Created NSStatusItem")
+    log.notice("[STATUS-ITEM] Created NSStatusItem, button=\(item.button != nil, privacy: .public)")
 
     // Start updating the icon based on app state
     startIconUpdates()
@@ -176,15 +187,10 @@ final class StatusItemController: NSObject {
       backgroundIngestMessage: MenuBarActivityModel.shared.backgroundIngestMessage
     )
 
-    // Update the SF Symbol icon based on derived state
-    let image = NSImage(
-      systemSymbolName: presentation.iconSystemName,
-      accessibilityDescription: presentation.statusText
-    )
-    image?.isTemplate = true
-    if let image {
-      setButtonImage(button, image: image)
-    }
+    // Keep the branded logomark as the icon; update only the tooltip
+    // to reflect current state. The icon stays constant (Contextify infinity
+    // mark) rather than swapping symbols per state - status detail lives
+    // in the popover and tooltip.
     button.toolTip = presentation.statusText
   }
 
