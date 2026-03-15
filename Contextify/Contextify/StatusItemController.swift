@@ -24,6 +24,27 @@ final class StatusItemController: NSObject {
   /// Tracks the presentation model to update the icon reactively.
   private var iconUpdateTask: Task<Void, Never>?
 
+  // MARK: - Appearance Observation (ct-462)
+
+  /// KVO token for NSApp.effectiveAppearance.
+  /// IMPORTANT: Observe NSApp, NOT per-button effectiveAppearance. Setting
+  /// button.image triggers effectiveAppearance KVO on the button itself, which
+  /// causes an infinite redraw loop (observe -> set image -> KVO fires -> observe ...).
+  private var appearanceObservation: NSKeyValueObservation?
+
+  /// Last observed appearance name, used to de-duplicate KVO callbacks
+  /// that fire without an actual appearance change.
+  private var lastObservedAppearanceName: NSAppearance.Name?
+
+  /// Debounce timer for appearance changes. Multiple displays can fire
+  /// appearance-change KVO simultaneously; coalesce into one re-render.
+  private var appearanceDebounceTimer: Timer?
+
+  /// Cache of last-assigned image data per button, keyed by ObjectIdentifier.
+  /// Compared via tiffRepresentation to avoid redundant button.image assignments
+  /// that would trigger unnecessary KVO and potential redraw churn.
+  private var lastImageData: [ObjectIdentifier: Data] = [:]
+
   private override init() {
     super.init()
   }
@@ -90,7 +111,6 @@ final class StatusItemController: NSObject {
 
     if let button = item.button {
       // Use a simple SF Symbol rendered as a template image.
-      // ct-462 will add proper branded icon with appearance-aware caching.
       let image = NSImage(
         systemSymbolName: "doc.text.magnifyingglass",
         accessibilityDescription: "Contextify"
@@ -107,6 +127,7 @@ final class StatusItemController: NSObject {
 
     // Start updating the icon based on app state
     startIconUpdates()
+    startObservingAppearance()
   }
 
   private func removeStatusItem() {
@@ -114,6 +135,8 @@ final class StatusItemController: NSObject {
 
     iconUpdateTask?.cancel()
     iconUpdateTask = nil
+
+    stopObservingAppearance()
 
     if let item = statusItem {
       NSStatusBar.system.removeStatusItem(item)
@@ -160,8 +183,80 @@ final class StatusItemController: NSObject {
       accessibilityDescription: presentation.statusText
     )
     image?.isTemplate = true
-    button.image = image
+    if let image {
+      setButtonImage(button, image: image)
+    }
     button.toolTip = presentation.statusText
+  }
+
+  // MARK: - Image Caching (ct-462)
+
+  /// Assigns an image to a status bar button only if it differs from the
+  /// previously assigned image. Compares tiffRepresentation data to avoid
+  /// redundant assignments that trigger KVO on the button, which can cause
+  /// unnecessary redraws or feed into an infinite loop if the button's
+  /// effectiveAppearance is being observed (see appearance observation note).
+  private func setButtonImage(_ button: NSStatusBarButton, image: NSImage) {
+    let buttonId = ObjectIdentifier(button)
+    guard let newData = image.tiffRepresentation else {
+      button.image = image
+      return
+    }
+    if lastImageData[buttonId] == newData { return }
+    lastImageData[buttonId] = newData
+    button.image = image
+  }
+
+  // MARK: - Appearance Observation (ct-462)
+
+  /// Begin observing NSApp.effectiveAppearance for light/dark mode changes.
+  /// IMPORTANT: We observe NSApp, NOT the per-button effectiveAppearance.
+  /// Setting button.image triggers effectiveAppearance KVO on the button,
+  /// which would create an infinite redraw loop if we observed that property.
+  private func startObservingAppearance() {
+    lastObservedAppearanceName = NSApp.effectiveAppearance.name
+
+    appearanceObservation = NSApp.observe(
+      \.effectiveAppearance,
+      options: [.new]
+    ) { [weak self] _, change in
+      // Extract the appearance name before crossing isolation boundaries.
+      // NSKeyValueObservedChange is not Sendable, so we must read it here.
+      let newName = change.newValue?.name
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        guard newName != self.lastObservedAppearanceName else { return }
+        self.lastObservedAppearanceName = newName
+        // Clear image cache so re-rendered images are compared fresh
+        // against the new appearance variant.
+        self.lastImageData.removeAll()
+        self.scheduleAppearanceUpdate()
+      }
+    }
+    log.debug("[STATUS-ITEM] Started observing NSApp.effectiveAppearance")
+  }
+
+  private func stopObservingAppearance() {
+    appearanceObservation?.invalidate()
+    appearanceObservation = nil
+    appearanceDebounceTimer?.invalidate()
+    appearanceDebounceTimer = nil
+    lastObservedAppearanceName = nil
+    lastImageData.removeAll()
+  }
+
+  /// Coalesce rapid appearance-change notifications (e.g., from multiple
+  /// displays switching simultaneously) into a single re-render pass.
+  private func scheduleAppearanceUpdate() {
+    appearanceDebounceTimer?.invalidate()
+    appearanceDebounceTimer = Timer.scheduledTimer(
+      withTimeInterval: 0.15,
+      repeats: false
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.updateIcon()
+      }
+    }
   }
 
   // MARK: - Popover
