@@ -14,7 +14,7 @@ struct SettingsView: View {
   private static let selectedTabOverrideKey = "Contextify.Settings.SelectedTabOverride"
   private static let selectedTabKey = "Contextify.Settings.SelectedTab"
 
-  @State private var selectedTab: String = "database"
+  @State private var selectedTab: String = "general"
 
   private var overriddenSelectedTab: String? {
     ContextifyDefaults.shared.string(forKey: Self.selectedTabOverrideKey)
@@ -22,8 +22,14 @@ struct SettingsView: View {
 
   var body: some View {
     if Sandbox.isSandboxed {
-      // App Store build: show both Database and Permissions tabs
+      // App Store build: General + Database + Permissions + CLI + Cloud
       TabView(selection: $selectedTab) {
+        GeneralSettingsView()
+          .tabItem {
+            Label("General", systemImage: "gear")
+          }
+          .tag("general")
+
         DatabaseSettingsTab()
           .tabItem {
             Label("Database", systemImage: "cylinder")
@@ -49,7 +55,7 @@ struct SettingsView: View {
           .tag("cloud")
       }
       .onAppear {
-        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "general"
         if let overriddenSelectedTab {
           selectedTab = overriddenSelectedTab
         }
@@ -59,8 +65,14 @@ struct SettingsView: View {
       }
       .frame(width: 520, height: 520)
     } else {
-      // DMG build: Database + CLI (no permissions needed)
+      // DMG build: General + Database + CLI + Cloud (no permissions needed)
       TabView(selection: $selectedTab) {
+        GeneralSettingsView()
+          .tabItem {
+            Label("General", systemImage: "gear")
+          }
+          .tag("general")
+
         DatabaseSettingsTab()
           .tabItem {
             Label("Database", systemImage: "cylinder")
@@ -80,7 +92,7 @@ struct SettingsView: View {
           .tag("cloud")
       }
       .onAppear {
-        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "general"
         if let overriddenSelectedTab {
           selectedTab = overriddenSelectedTab
         }
