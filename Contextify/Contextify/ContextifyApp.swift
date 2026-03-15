@@ -251,6 +251,7 @@ struct ContextifyApp: App {
   @State private var projectDirectoryMonitor: FSEventsMonitor?
   @State private var showWelcomeModal = false  // C3.2: Welcome modal state
   @State private var showLiteModeInfo = false  // Lite mode info modal for subsequent launches
+  @State private var showLaunchAtLoginPrompt = false  // First-run launch-at-login offer (DMG only)
 
   /// Startup-only cache for the access provider. Ensures single construction per process.
   /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
@@ -435,6 +436,14 @@ struct ContextifyApp: App {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
+      .alert("Launch at Login", isPresented: $showLaunchAtLoginPrompt) {
+        Button("Enable") {
+          LaunchAtLoginManager.shared.setEnabled(true)
+        }
+        Button("Not Now", role: .cancel) { }
+      } message: {
+        Text("Would you like Contextify to start automatically when you log in? You can change this later in Settings.")
+      }
       .task {
         // Initialize projects system and auto-discover at app launch
         // Skip if:
@@ -443,6 +452,14 @@ struct ContextifyApp: App {
         guard !onboardingCoordinator.shouldShowWizard,
               !onboardingCoordinator.isHandlingCompletion else { return }
         await initializeProjectsSystem()
+
+        // One-time offer to enable launch at login (DMG builds only)
+        // App Store builds handle this in the onboarding wizard (step 3).
+        if !Sandbox.isSandboxed,
+           !UserDefaults.standard.bool(forKey: HUDPreferences.hasOfferedLaunchAtLoginKey) {
+          UserDefaults.standard.set(true, forKey: HUDPreferences.hasOfferedLaunchAtLoginKey)
+          showLaunchAtLoginPrompt = true
+        }
 
         // Show lite mode info on subsequent launches (not first launch, which uses WelcomeModal)
         // Conditions:
