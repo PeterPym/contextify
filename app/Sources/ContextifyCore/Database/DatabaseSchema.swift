@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v34 (v33: ingestion_runs for CLI debugging, v34: tab grouping)
+/// Current version: v36 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 34
+  public static let version = 36
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -1035,6 +1035,24 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v35] P5 cleanup complete")
     }
 
+    // v36: Device provenance - track which machine ingested each entry
+    migrator.registerMigration("v36_device_provenance") { db in
+      logger.info("[MIGRATION-v36] Adding device provenance columns to transcript_entries")
+
+      if try !db.columnExists("source_device_id", in: "transcript_entries") {
+        try db.execute(sql: """
+          ALTER TABLE transcript_entries ADD COLUMN source_device_id TEXT
+        """)
+      }
+      if try !db.columnExists("source_device_name", in: "transcript_entries") {
+        try db.execute(sql: """
+          ALTER TABLE transcript_entries ADD COLUMN source_device_name TEXT
+        """)
+      }
+
+      logger.info("[MIGRATION-v36] Device provenance migration complete")
+    }
+
     return migrator
   }
 
@@ -1202,6 +1220,9 @@ public enum DatabaseSchema {
       t.column("is_queued", .integer).notNull().defaults(to: 0)
       // v30: Sidechain marker for agent transcripts (hidden from timeline)
       t.column("is_sidechain", .integer).notNull().defaults(to: 0)
+      // v36: Device provenance
+      t.column("source_device_id", .text)  // Stable machine ID (MachineID.current())
+      t.column("source_device_name", .text)  // Human-readable machine name
     }
     try db.create(index: "idx_entries_transcript_time", on: "transcript_entries", columns: ["transcript_id", "timestamp"], ifNotExists: true)
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
