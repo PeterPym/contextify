@@ -42,7 +42,8 @@ final class DeviceProvenanceTests: XCTestCase {
 
   // MARK: - Ingest Stamp Tests
 
-  func testLocalIngestStampsDeviceId() throws {
+  /// Verify that the BulkIngestManager round-trip persists device fields correctly.
+  func testLocalIngestPersistsDeviceFields() throws {
     let manager = BulkIngestManager(dbPath: dbPath.path)
     try manager.open()
     defer { manager.close() }
@@ -63,7 +64,6 @@ final class DeviceProvenanceTests: XCTestCase {
     let inserted = try manager.commitBatch(entries: [entry], toolInvocations: [])
     XCTAssertEqual(inserted, 1)
 
-    // Verify device fields were persisted
     let (deviceId, deviceName) = try pool.read { db -> (String?, String?) in
       let row = try Row.fetchOne(db, sql: """
         SELECT source_device_id, source_device_name
@@ -74,6 +74,62 @@ final class DeviceProvenanceTests: XCTestCase {
 
     XCTAssertEqual(deviceId, "ctx-test-device-123")
     XCTAssertEqual(deviceName, "Test MacBook")
+  }
+
+  /// Verify that EntryInsert.toModel() automatically stamps source_device_id/name
+  /// from MachineID.current() / DeviceName.current() — the actual ingest hot path.
+  func testEntryInsertToModelAutoStampsDeviceProvenance() throws {
+    let manager = BulkIngestManager(dbPath: dbPath.path)
+    try manager.open()
+    defer { manager.close() }
+
+    let pool = try DatabasePool(path: dbPath.path)
+    let (projectId, transcriptId) = try createTestProjectAndTranscript(pool: pool)
+
+    // Capture expected values before ingest
+    let expectedDeviceId = MachineID.current()
+    let expectedDeviceName = DeviceName.current()
+    XCTAssertFalse(expectedDeviceId.isEmpty, "MachineID.current() must return a value")
+    XCTAssertFalse(expectedDeviceName.isEmpty, "DeviceName.current() must return a value")
+
+    // Build an EntryInsert and convert via toModel() — this is the real ingest path
+    let entryInsert = EntryInsert(
+      id: UUID().uuidString,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      sessionId: nil,
+      provider: "claude.code",
+      kind: "user",
+      timestamp: Date(),
+      content: "Auto-stamp test",
+      contentSha256: "autosha",
+      parentId: nil,
+      gitBranch: nil,
+      gitCommit: nil,
+      cwd: nil
+    )
+    let model = entryInsert.toModel()
+
+    // Verify toModel() stamped both fields automatically
+    XCTAssertEqual(model.sourceDeviceId, expectedDeviceId,
+      "toModel() must stamp sourceDeviceId from MachineID.current()")
+    XCTAssertEqual(model.sourceDeviceName, expectedDeviceName,
+      "toModel() must stamp sourceDeviceName from DeviceName.current()")
+
+    // Persist and verify round-trip through DB
+    let inserted = try manager.commitBatch(entries: [model], toolInvocations: [])
+    XCTAssertEqual(inserted, 1)
+
+    let (storedId, storedName) = try pool.read { db -> (String?, String?) in
+      let row = try Row.fetchOne(db, sql: """
+        SELECT source_device_id, source_device_name
+        FROM transcript_entries WHERE id = ?
+      """, arguments: [entryInsert.id])
+      return (row?["source_device_id"] as? String, row?["source_device_name"] as? String)
+    }
+
+    XCTAssertEqual(storedId, expectedDeviceId, "DB must store auto-stamped device ID")
+    XCTAssertEqual(storedName, expectedDeviceName, "DB must store auto-stamped device name")
   }
 
   // MARK: - Null Device ID Tests
@@ -137,6 +193,7 @@ final class DeviceProvenanceTests: XCTestCase {
         "created_at": now,
         "updated_at": now,
         "source_device_id": "remote-device-uuid-456",
+        "source_device_name": "Rob's Work MacBook Pro",
       ] as [String: Any]
     ]
 
@@ -149,14 +206,16 @@ final class DeviceProvenanceTests: XCTestCase {
 
     XCTAssertEqual(result.entriesImported, 1)
 
-    // Verify device ID was persisted from pull
-    let deviceId = try pool.read { db -> String? in
-      try String.fetchOne(db, sql: """
-        SELECT source_device_id FROM transcript_entries WHERE id = ?
+    // Verify both device fields were persisted from pull
+    let (deviceId, deviceName) = try pool.read { db -> (String?, String?) in
+      let row = try Row.fetchOne(db, sql: """
+        SELECT source_device_id, source_device_name FROM transcript_entries WHERE id = ?
       """, arguments: [entryId])
+      return (row?["source_device_id"] as? String, row?["source_device_name"] as? String)
     }
 
     XCTAssertEqual(deviceId, "remote-device-uuid-456")
+    XCTAssertEqual(deviceName, "Rob's Work MacBook Pro", "Cloud pull must persist source_device_name")
   }
 
   // MARK: - DeviceName Utility Tests

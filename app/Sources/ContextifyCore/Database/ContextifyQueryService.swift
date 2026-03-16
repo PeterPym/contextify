@@ -548,8 +548,17 @@ public struct ContextifyQueryService: Sendable {
       args.append(until)
     }
     if let device {
-      // Case-insensitive substring match on device name, falling back to device ID
-      whereParts.append("(e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE OR e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)")
+      // Match device name when present; fall back to device ID only when name is absent.
+      // This prevents a UUID substring coincidentally matching a different device's entries.
+      whereParts.append("""
+        (
+          (e.source_device_name IS NOT NULL AND e.source_device_name != ''
+            AND e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE)
+          OR
+          ((e.source_device_name IS NULL OR e.source_device_name = '')
+            AND e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)
+        )
+        """)
       args.append(device)
       args.append(device)
     }
@@ -1259,7 +1268,16 @@ public struct ContextifyQueryService: Sendable {
         args.append(until)
       }
       if let device {
-        sql += " AND (e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE OR e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)"
+        // Match device name when present; fall back to device ID only when name is absent.
+        sql += """
+           AND (
+            (e.source_device_name IS NOT NULL AND e.source_device_name != ''
+              AND e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE)
+            OR
+            ((e.source_device_name IS NULL OR e.source_device_name = '')
+              AND e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)
+          )
+          """
         args.append(device)
         args.append(device)
       }
@@ -1754,8 +1772,8 @@ public struct ContextifyQueryService: Sendable {
           INSERT INTO transcript_entries (id, transcript_id, project_id,
             session_id, provider, kind, timestamp, content, content_sha256,
             display_in_timeline, git_branch, git_commit, cwd,
-            created_at, updated_at, created_ts, source_device_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, updated_at, created_ts, source_device_id, source_device_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             id, transcriptId, projectId,
             entry["session_id"] as? String,
@@ -1767,6 +1785,7 @@ public struct ContextifyQueryService: Sendable {
             createdAt, updatedAt,
             Double(timestamp),
             entry["source_device_id"] as? String,
+            entry["source_device_name"] as? String,
           ])
         entriesImported += 1
       }
