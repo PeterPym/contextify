@@ -65,6 +65,12 @@ final class StatusItemController: NSObject {
   /// correct path on macOS 14+.
   var openSettingsHandler: (() -> Void)?
 
+  /// Closure set by StatusItemWindowBridge to show/foreground the main window.
+  /// Uses @Environment(\.openWindow) with the same timing dance as Settings:
+  /// policy change must be processed by the window server before the window
+  /// operation fires, otherwise the window appears behind other apps.
+  var showMainWindowHandler: (() -> Void)?
+
   func start() {
     log.notice("[STATUS-ITEM] Starting StatusItemController")
 
@@ -368,7 +374,13 @@ extension StatusItemController: NSPopoverDelegate {
 private struct StatusItemPopoverContent: View {
   @State private var cloudSyncManager = CloudSyncManager.shared
   @State private var activityModel = MenuBarActivityModel.shared
+  @State private var mainWindowVisible = false
   private let log = Logger(subsystem: "dev.contextify", category: "StatusItemPopover")
+
+  private var mainWindowButtonLabel: String {
+    mainWindowVisible ? "Hide Main Window" : "Show Main Window"
+  }
+
   private var presentation: MenuBarPresentation {
     MenuBarStatusDeriver.derivePresentation(
       syncState: cloudSyncManager.syncState,
@@ -436,6 +448,24 @@ private struct StatusItemPopoverContent: View {
 
       // Actions
       VStack(spacing: 2) {
+        PopoverButton(label: mainWindowButtonLabel) {
+          dismissPopover()
+          if mainWindowVisible {
+            let window = MainWindowTracker.shared.window
+              ?? NSApp.windows.first(where: {
+                $0.isVisible
+                  && ($0.level == .normal || $0.level == .floating)
+                  && $0.styleMask.contains(.titled)
+                  && $0.title.contains("Contextify")
+              })
+            window?.performClose(nil)
+          } else {
+            StatusItemController.shared.showMainWindowHandler?()
+          }
+        }
+        .accessibilityIdentifier("menubar-popover-toggle-main")
+        .accessibilityLabel(mainWindowButtonLabel)
+
         PopoverButton(label: "Settings") {
           openSettings()
         }
@@ -447,7 +477,7 @@ private struct StatusItemPopoverContent: View {
       Divider()
 
       // Quit
-      PopoverButton(label: "Quit Contextify") {
+      PopoverButton(label: "Quit") {
         NSApp.terminate(nil)
       }
       .accessibilityIdentifier("menubar-popover-quit")
@@ -456,6 +486,9 @@ private struct StatusItemPopoverContent: View {
     }
     .frame(width: 260)
     .accessibilityIdentifier("menubar-popover-content")
+    .onAppear {
+      mainWindowVisible = AppPresentationController.shared.isMainWindowVisible
+    }
     .task {
       activityModel.start()
       if cloudSyncManager.syncState != .disabled
@@ -511,6 +544,24 @@ struct StatusItemWindowBridge: View {
       .onAppear {
         StatusItemController.shared.openWindowHandler = { id in
           openWindow(id: id)
+        }
+
+        // Showing the main window from .accessory policy requires the same
+        // timing dance as Settings: promote policy, wait for the window server
+        // to process it, then activate and bring the window to front.
+        StatusItemController.shared.showMainWindowHandler = {
+          Task { @MainActor in
+            AppPresentationController.shared.promoteForWindowPresentation()
+            try? await Task.sleep(for: .milliseconds(100))
+            NSApp.activate(ignoringOtherApps: true)
+            if let window = MainWindowTracker.shared.window {
+              window.makeKeyAndOrderFront(nil)
+            } else {
+              openWindow(id: "main")
+              try? await Task.sleep(for: .milliseconds(200))
+              MainWindowTracker.shared.window?.makeKeyAndOrderFront(nil)
+            }
+          }
         }
 
         // openSettings() requires the app to be in .regular activation policy

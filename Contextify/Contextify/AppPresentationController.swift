@@ -9,6 +9,7 @@ final class AppPresentationController {
   private let log = Logger(subsystem: "dev.contextify", category: "AppPresentation")
   private var hasHandledInitialMainWindow = false
   private var windowCloseObserver: NSObjectProtocol?
+  private var windowKeyObserver: NSObjectProtocol?
 
   private init() {}
 
@@ -127,8 +128,8 @@ final class AppPresentationController {
 
   // MARK: - Window Lifecycle Observation
 
-  /// Observe window close/miniaturize notifications to return to .accessory
-  /// policy when all regular windows are closed in utility mode.
+  /// Observe window lifecycle to manage activation policy and Keep on Top
+  /// level ordering.
   private func startObservingWindowLifecycle() {
     guard windowCloseObserver == nil else { return }
 
@@ -143,6 +144,20 @@ final class AppPresentationController {
       // Already on main queue (observer queue: .main), so just async to next run loop.
       DispatchQueue.main.async {
         self.applyActivationPolicyAfterWindowChange()
+      }
+    }
+
+    // When Settings (or any auxiliary window) becomes key, ensure its window
+    // level sits above the floating main window if Keep on Top is active.
+    windowKeyObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didBecomeKeyNotification,
+      object: nil,
+      queue: .main
+    ) { notification in
+      guard let window = notification.object as? NSWindow else { return }
+      guard isSettingsWindow(window) else { return }
+      if HUDPreferences.isWindowAlwaysOnTop() {
+        window.level = keepOnTopAuxiliaryLevel
       }
     }
   }
