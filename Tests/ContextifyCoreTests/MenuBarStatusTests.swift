@@ -106,7 +106,7 @@ final class MenuBarStatusTests: XCTestCase {
 
   func testDerivePresentationShowsCloudSyncingBeforeLocalActivity() {
     let session = CloudActivePushSessionStatus(
-      syncSessionId: "sync-1",
+      serverSessionId: "sync-1",
       phase: "syncing",
       entriesResolved: 3,
       entriesTotal: 10,
@@ -135,7 +135,7 @@ final class MenuBarStatusTests: XCTestCase {
 
   func testDerivePresentationShowsCloudNeedsAttentionBeforeOfflineOrLocalActivity() {
     let session = CloudActivePushSessionStatus(
-      syncSessionId: "sync-2",
+      serverSessionId: "sync-2",
       phase: "stalled",
       entriesResolved: nil,
       entriesTotal: nil,
@@ -160,6 +160,36 @@ final class MenuBarStatusTests: XCTestCase {
     XCTAssertEqual(presentation.displayState, .cloudNeedsAttention)
     XCTAssertEqual(presentation.statusText, "Cloud needs attention")
     XCTAssertEqual(presentation.cloudText, "Cloud needs attention")
+  }
+
+  func testDerivePresentationIgnoresOrphanedServerSession() {
+    let session = CloudActivePushSessionStatus(
+      serverSessionId: "stale-session",
+      phase: "stalled",
+      entriesResolved: nil,
+      entriesTotal: nil,
+      progressPercent: nil,
+      throughputEntriesPerMin: nil,
+      etaSeconds: nil,
+      checkpointSafe: nil,
+      completionState: "blocked",
+      needsAttentionCount: 2,
+      lastBatchAt: nil
+    )
+    let status = CloudSyncStatus(activePushSession: session)
+
+    let presentation = MenuBarStatusDeriver.derivePresentation(
+      syncState: .idle,
+      cloudOffline: false,
+      cloudStatus: status,
+      cloudStatusError: nil,
+      backgroundIngestMessage: nil,
+      isActiveSessionOrphaned: true
+    )
+
+    XCTAssertNotEqual(presentation.displayState, MenuBarDisplayState.cloudNeedsAttention)
+    XCTAssertNotEqual(presentation.displayState, MenuBarDisplayState.cloudSyncing)
+    XCTAssertEqual(presentation.displayState, MenuBarDisplayState.idle)
   }
 
   func testDerivePresentationShowsIdleWhenNothingIsActive() {

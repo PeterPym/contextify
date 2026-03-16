@@ -42,16 +42,27 @@ final class AppPresentationController {
     )
   }
 
+  /// Any titled, visible, non-miniaturized app window whose presence should
+  /// keep the app in `.regular` activation while utility mode is enabled.
+  private var hasVisiblePresentableWindow: Bool {
+    NSApp?.windows.contains(where: { window in
+      window.isVisible
+        && !window.isMiniaturized
+        && window.styleMask.contains(.titled)
+    }) == true
+  }
+
   /// Desired activation policy based on current state.
   /// - .regular when utility mode is OFF (normal app behavior)
-  /// - .accessory when utility mode is ON
+  /// - .accessory when utility mode is ON and no titled windows are visible
+  /// - .regular when utility mode is ON but a titled window is still visible
   ///
-  /// When utility mode is ON the policy is always .accessory so the Dock icon
-  /// and Command-Tab entry disappear as soon as the toggle is flipped.
-  /// promoteForWindowPresentation() handles the temporary .regular raise when
-  /// a window is explicitly opened via the menu bar popover.
+  /// Checking visible windows prevents premature demotion: closing Settings
+  /// while the main window is still open should not hide the Dock icon.
+  /// promoteForWindowPresentation() raises to .regular when opening a window.
   private var desiredActivationPolicy: NSApplication.ActivationPolicy {
-    isUtilityMode ? .accessory : .regular
+    guard isUtilityMode else { return .regular }
+    return hasVisiblePresentableWindow ? .regular : .accessory
   }
 
   func refreshActivationPolicy() {

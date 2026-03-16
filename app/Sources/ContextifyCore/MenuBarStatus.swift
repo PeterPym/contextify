@@ -52,22 +52,33 @@ public enum MenuBarStatusDeriver {
     cloudOffline: Bool,
     cloudStatus: CloudSyncStatus?,
     cloudStatusError: String?,
-    backgroundIngestMessage: String?
+    backgroundIngestMessage: String?,
+    isActiveSessionOrphaned: Bool = false
   ) -> MenuBarPresentation {
     let localActivityText = normalizedLocalActivityText(backgroundIngestMessage)
     let cloudText = normalizedCloudText(
       syncState: syncState,
       cloudOffline: cloudOffline,
       cloudStatus: cloudStatus,
-      cloudStatusError: cloudStatusError
+      cloudStatusError: cloudStatusError,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
     )
 
     let displayState: MenuBarDisplayState
-    if needsCloudAttention(syncState: syncState, cloudStatus: cloudStatus, cloudStatusError: cloudStatusError) {
+    if needsCloudAttention(
+      syncState: syncState,
+      cloudStatus: cloudStatus,
+      cloudStatusError: cloudStatusError,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) {
       displayState = .cloudNeedsAttention
     } else if cloudOffline {
       displayState = .cloudOffline
-    } else if isCloudSyncing(syncState: syncState, cloudStatus: cloudStatus) {
+    } else if isCloudSyncing(
+      syncState: syncState,
+      cloudStatus: cloudStatus,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) {
       displayState = .cloudSyncing
     } else if normalizedLocalActivityText(backgroundIngestMessage) != "No background work" {
       displayState = .localActivity
@@ -126,14 +137,20 @@ public enum MenuBarStatusDeriver {
     syncState: SyncState,
     cloudOffline: Bool,
     cloudStatus: CloudSyncStatus?,
-    cloudStatusError: String?
+    cloudStatusError: String?,
+    isActiveSessionOrphaned: Bool
   ) -> String {
     let configured = isCloudConfigured(syncState: syncState, cloudStatus: cloudStatus, cloudStatusError: cloudStatusError)
     guard configured else {
       return "Cloud sync off"
     }
 
-    if needsCloudAttention(syncState: syncState, cloudStatus: cloudStatus, cloudStatusError: cloudStatusError) {
+    if needsCloudAttention(
+      syncState: syncState,
+      cloudStatus: cloudStatus,
+      cloudStatusError: cloudStatusError,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) {
       return "Cloud needs attention"
     }
 
@@ -141,8 +158,12 @@ public enum MenuBarStatusDeriver {
       return "Cloud sync is offline"
     }
 
-    if isCloudSyncing(syncState: syncState, cloudStatus: cloudStatus) {
-      if let session = cloudStatus?.activePushSession,
+    if isCloudSyncing(
+      syncState: syncState,
+      cloudStatus: cloudStatus,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) {
+      if let session = visibleActivePushSession(cloudStatus: cloudStatus, isActiveSessionOrphaned: isActiveSessionOrphaned),
          let total = session.entriesTotal, total > 0 {
         let resolved = min(max(session.entriesResolved ?? 0, 0), total)
         return "Cloud syncing \(resolved)/\(total) entries"
@@ -167,13 +188,17 @@ public enum MenuBarStatusDeriver {
 
   private static func isCloudSyncing(
     syncState: SyncState,
-    cloudStatus: CloudSyncStatus?
+    cloudStatus: CloudSyncStatus?,
+    isActiveSessionOrphaned: Bool
   ) -> Bool {
     if syncState == .syncing {
       return true
     }
 
-    guard let session = cloudStatus?.activePushSession else {
+    guard let session = visibleActivePushSession(
+      cloudStatus: cloudStatus,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) else {
       return false
     }
 
@@ -185,7 +210,8 @@ public enum MenuBarStatusDeriver {
   private static func needsCloudAttention(
     syncState: SyncState,
     cloudStatus: CloudSyncStatus?,
-    cloudStatusError: String?
+    cloudStatusError: String?,
+    isActiveSessionOrphaned: Bool
   ) -> Bool {
     if case .error = syncState {
       return true
@@ -195,7 +221,10 @@ public enum MenuBarStatusDeriver {
       return true
     }
 
-    guard let session = cloudStatus?.activePushSession else {
+    guard let session = visibleActivePushSession(
+      cloudStatus: cloudStatus,
+      isActiveSessionOrphaned: isActiveSessionOrphaned
+    ) else {
       return false
     }
 
@@ -207,5 +236,18 @@ public enum MenuBarStatusDeriver {
       || completion == "blocked"
       || completion == "completed_with_issues"
       || attention > 0
+  }
+
+  /// Returns the active push session only when it is not orphaned.
+  /// An orphaned session is a stale server-side session from a previous
+  /// connection whose push session ID no longer matches the current sync.
+  /// Passing nil keeps the existing menu bar status paths consistent with
+  /// how CloudSettingsView and StatusBarView already suppress orphaned sessions.
+  private static func visibleActivePushSession(
+    cloudStatus: CloudSyncStatus?,
+    isActiveSessionOrphaned: Bool
+  ) -> CloudActivePushSessionStatus? {
+    guard !isActiveSessionOrphaned else { return nil }
+    return cloudStatus?.activePushSession
   }
 }

@@ -7,15 +7,28 @@ import FoundationModels
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let log = Logger(subsystem: "dev.contextify", category: "AppDelegate")
+  private let quitKeepsWindowsKey = "NSQuitAlwaysKeepsWindows"
+  private let quitKeepsWindowsBackupKey = "dev.contextify.backup.NSQuitAlwaysKeepsWindows"
 
   /// Track if this is the first activation (avoid refresh on initial launch)
   private var hasLaunchedOnce = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Restore any previously backed-up window restoration preference before
+    // potentially overwriting it again. This handles the case where a previous
+    // utility-mode launch didn't get to clean up on termination.
+    restoreWindowRestorationPreferenceIfNeeded()
+
     // Suppress window restoration when utility mode is active.
     // This prevents restored windows from flashing on screen during background startup.
+    // Back up the current value first so it can be restored on termination.
     if HUDPreferences.isBackgroundUtilityModeEnabled() {
-      UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+      let defaults = UserDefaults.standard
+      if defaults.object(forKey: quitKeepsWindowsBackupKey) == nil,
+         let current = defaults.object(forKey: quitKeepsWindowsKey) as? Bool {
+        defaults.set(current, forKey: quitKeepsWindowsBackupKey)
+      }
+      defaults.set(false, forKey: quitKeepsWindowsKey)
       log.info("[LIFECYCLE] NSQuitAlwaysKeepsWindows set to false (utility mode active)")
     }
 
@@ -54,13 +67,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    Task { @MainActor in
-      // Tear down the NSStatusItem and popover
-      StatusItemController.shared.tearDown()
+    restoreWindowRestorationPreferenceIfNeeded()
+    // Tear down the NSStatusItem and popover
+    StatusItemController.shared.tearDown()
+    // Cancel FSEvents monitoring task
+    AppLifecycleState.shared.projectMonitoringTask?.cancel()
+  }
 
-      // Cancel FSEvents monitoring task
-      AppLifecycleState.shared.projectMonitoringTask?.cancel()
-    }
+  private func restoreWindowRestorationPreferenceIfNeeded() {
+    let defaults = UserDefaults.standard
+    guard let previous = defaults.object(forKey: quitKeepsWindowsBackupKey) as? Bool else { return }
+    defaults.set(previous, forKey: quitKeepsWindowsKey)
+    defaults.removeObject(forKey: quitKeepsWindowsBackupKey)
+    log.info("[LIFECYCLE] NSQuitAlwaysKeepsWindows restored to \(previous, privacy: .public)")
   }
 
   func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
