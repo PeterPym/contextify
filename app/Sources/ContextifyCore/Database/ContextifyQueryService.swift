@@ -511,7 +511,8 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String?,
     includeHidden: Bool,
     timeRange: QueryTimeRange,
-    kinds: [String]?
+    kinds: [String]?,
+    device: String? = nil
   ) -> FTSFilterClause {
     var whereParts: [String] = []
     var args: [DatabaseValueConvertible] = [query]
@@ -546,6 +547,12 @@ public struct ContextifyQueryService: Sendable {
       whereParts.append("e.timestamp <= ?")
       args.append(until)
     }
+    if let device {
+      // Case-insensitive substring match on device name, falling back to device ID
+      whereParts.append("(e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE OR e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)")
+      args.append(device)
+      args.append(device)
+    }
 
     let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
     return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
@@ -561,7 +568,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
     snippetTokens: Int = 10,
-    treatAsFTS: Bool = false
+    treatAsFTS: Bool = false,
+    device: String? = nil
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
@@ -572,7 +580,8 @@ public struct ContextifyQueryService: Sendable {
       transcriptId: transcriptId,
       includeHidden: includeHidden,
       timeRange: timeRange,
-      kinds: kinds
+      kinds: kinds,
+      device: device
     )
     guard !filter.emptyResult else { return [] }
 
@@ -679,7 +688,8 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String? = nil,
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
-    kinds: [String]? = nil
+    kinds: [String]? = nil,
+    device: String? = nil
   ) throws -> [String: Int]? {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
@@ -698,7 +708,8 @@ public struct ContextifyQueryService: Sendable {
         includeHidden: includeHidden,
         timeRange: timeRange,
         kinds: kinds,
-        treatAsFTS: true
+        treatAsFTS: true,
+        device: device
       )
       result[term] = count
     }
@@ -752,7 +763,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
-    treatAsFTS: Bool = false
+    treatAsFTS: Bool = false,
+    device: String? = nil
   ) throws -> Int {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
@@ -763,7 +775,8 @@ public struct ContextifyQueryService: Sendable {
       transcriptId: transcriptId,
       includeHidden: includeHidden,
       timeRange: timeRange,
-      kinds: kinds
+      kinds: kinds,
+      device: device
     )
     guard !filter.emptyResult else { return 0 }
 
@@ -1111,7 +1124,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
-    maxContentBytes: Int = 2048
+    maxContentBytes: Int = 2048,
+    device: String? = nil
   ) throws -> [ActivityItem] {
     let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
     return try activityImpl(
@@ -1122,7 +1136,8 @@ public struct ContextifyQueryService: Sendable {
       timeRange: timeRange,
       includeContent: includeContent,
       fullContent: fullContent,
-      maxContentBytes: maxContentBytes
+      maxContentBytes: maxContentBytes,
+      device: device
     )
   }
 
@@ -1163,7 +1178,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
-    maxContentBytes: Int = 2048
+    maxContentBytes: Int = 2048,
+    device: String? = nil
   ) throws -> [ActivityItem] {
     try pool.read { db in
       struct Row: FetchableRecord, Decodable {
@@ -1241,6 +1257,11 @@ public struct ContextifyQueryService: Sendable {
       if let until = timeRange.untilTimestamp {
         sql += " AND e.timestamp <= ?"
         args.append(until)
+      }
+      if let device {
+        sql += " AND (e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE OR e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)"
+        args.append(device)
+        args.append(device)
       }
 
       sql += " ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC LIMIT ?"
@@ -1733,8 +1754,8 @@ public struct ContextifyQueryService: Sendable {
           INSERT INTO transcript_entries (id, transcript_id, project_id,
             session_id, provider, kind, timestamp, content, content_sha256,
             display_in_timeline, git_branch, git_commit, cwd,
-            created_at, updated_at, created_ts)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, updated_at, created_ts, source_device_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             id, transcriptId, projectId,
             entry["session_id"] as? String,
@@ -1745,6 +1766,7 @@ public struct ContextifyQueryService: Sendable {
             entry["cwd"] as? String,
             createdAt, updatedAt,
             Double(timestamp),
+            entry["source_device_id"] as? String,
           ])
         entriesImported += 1
       }
