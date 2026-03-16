@@ -563,7 +563,7 @@ fi
 # Scenario 9: Open auxiliary windows from popover in utility mode
 # ─────────────────────────────────────────────────────────────────────────────
 
-header "Scenario 9: Open Windows from Popover (Utility Mode)"
+header "Scenario 9: Open Settings from Popover (Utility Mode)"
 
 step "Switching to utility mode..."
 echo ""
@@ -575,7 +575,7 @@ echo ""
 prompt_continue
 
 echo -e "${BOLD}ACTION: From the popover, click 'Settings'.${NC}"
-echo "EXPECTED: Settings window opens, app activates, Dock icon appears."
+echo "EXPECTED: Settings window opens, app activates, Dock icon appears, popover closes."
 prompt_continue
 
 if prompt_yn "Did the Settings window open and the app come to the front?"; then
@@ -584,32 +584,10 @@ else
   fail "S9a: Settings window did NOT open from popover"
 fi
 
-echo ""
-echo "Close the Settings window, then click the menu bar extra again."
-prompt_continue
-
-echo -e "${BOLD}ACTION: From the popover, click 'Projects'.${NC}"
-echo "EXPECTED: Projects window opens, app activates."
-prompt_continue
-
-if prompt_yn "Did the Projects window open?"; then
-  pass "S9b: Projects window opened from popover in utility mode"
+if prompt_yn "Did the popover close automatically after clicking Settings?"; then
+  pass "S9b: Popover dismissed automatically after action"
 else
-  fail "S9b: Projects window did NOT open from popover"
-fi
-
-echo ""
-echo "Close the Projects window, then click the menu bar extra again."
-prompt_continue
-
-echo -e "${BOLD}ACTION: From the popover, click 'Transcripts'.${NC}"
-echo "EXPECTED: Transcripts window opens, app activates."
-prompt_continue
-
-if prompt_yn "Did the Transcripts window open?"; then
-  pass "S9c: Transcripts window opened from popover in utility mode"
-else
-  fail "S9c: Transcripts window did NOT open from popover"
+  fail "S9b: Popover remained open after Settings action"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -649,6 +627,63 @@ if prompt_yn "Did the popover toggle correctly?"; then
   pass "S10c: Popover toggles on repeated clicks"
 else
   fail "S10c: Popover did NOT toggle correctly"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scenario 11: Activation policy – Settings close while main window visible
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Scenario 11: Close Settings While Main Window Still Open (Utility Mode)"
+
+echo ""
+echo -e "${BOLD}ACTION:${NC}"
+echo "  1. Ensure utility mode is ON and the main window is visible"
+echo "  2. Open Settings (Cmd+, or from menu bar popover)"
+echo "  3. Close Settings (Cmd+W)"
+echo ""
+echo "EXPECTED: Dock icon remains while the main window is still visible."
+echo "  The Dock icon should NOT disappear until the main window is also closed."
+prompt_continue
+
+if prompt_yn "Does the Dock icon persist after closing Settings (while main window is still open)?"; then
+  pass "S11: Dock icon not removed when only Settings is closed (main window still visible)"
+else
+  fail "S11: Dock icon incorrectly disappeared when Settings closed (main window still open)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scenario 12: Keep on Top window level ordering
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Scenario 12: Keep on Top + Settings Elevation"
+
+echo "Ensure main window is open and app is in normal mode."
+quit_app
+set_pref "dev.contextify.menuBarExtraEnabled" false
+set_pref "dev.contextify.backgroundUtilityModeEnabled" false
+launch_app
+prompt_continue
+
+echo -e "${BOLD}ACTION:${NC}"
+echo "  1. In the menu bar, choose Window > Keep on Top (or use the menu item)"
+echo "  2. The main window should float above all other windows"
+prompt_continue
+
+if prompt_yn "Does the main window float above other app windows after enabling Keep on Top?"; then
+  pass "S12a: Keep on Top makes window float above others"
+else
+  fail "S12a: Keep on Top did NOT make window float"
+fi
+
+echo ""
+echo -e "${BOLD}ACTION: Open Settings (Cmd+,) while Keep on Top is active.${NC}"
+echo "EXPECTED: Settings window should appear ABOVE the floating main window, not behind it."
+prompt_continue
+
+if prompt_yn "Does the Settings window appear above (in front of) the floating main window?"; then
+  pass "S12b: Settings window appears above floating main window"
+else
+  fail "S12b: Settings window appeared BEHIND the floating main window"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

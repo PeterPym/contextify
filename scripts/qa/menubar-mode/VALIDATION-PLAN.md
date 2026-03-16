@@ -2,7 +2,7 @@
 feature: menubar-background-mode
 branch: ct-429-menubar-background-mode
 date: 2026-03-15
-status: in-progress
+status: ready-for-merge
 ---
 
 # Menu Bar / Background Utility Mode - Validation Plan
@@ -74,13 +74,12 @@ transitions introduced in ct-429 (Phase 2: ct-458).
 - [ ] Menu bar extra appears when toggled on
 - [ ] Menu bar extra disappears when toggled off
 
-### S9: Open auxiliary windows from popover
+### S9: Open Settings from popover (utility mode)
 **Automatable:** Difficult (popover is outside SwiftUI scene graph; System Events scripting is fragile)
 
 - [ ] Settings window opens from popover in utility mode
-- [ ] Projects window opens from popover
-- [ ] Transcripts window opens from popover
-- [ ] App activates and Dock icon appears for each
+- [ ] App activates and Dock icon appears
+- [ ] Popover closes automatically after action
 
 ### S10: Popover dismiss behavior
 **Automatable:** Difficult (requires click-coordinate scripting)
@@ -88,6 +87,20 @@ transitions introduced in ct-429 (Phase 2: ct-458).
 - [ ] Popover opens on status item click
 - [ ] Popover dismisses on outside click
 - [ ] Popover toggles on repeated status item clicks
+
+### S11: Close Settings while main window still open (utility mode)
+**Automatable:** Partially (activation policy observable via OSLog `[POLICY]` tags)
+
+- [ ] Open main window + Settings while in utility mode
+- [ ] Close Settings; Dock icon persists (main window still visible)
+- [ ] Close main window; Dock icon then disappears
+
+### S12: Keep on Top + Settings window elevation
+**Automatable:** No (window z-order requires visual confirmation)
+
+- [ ] Enabling Keep on Top floats main window above other apps
+- [ ] Settings window appears above the floating main window (not behind it)
+- [ ] Disabling Keep on Top restores normal window level
 
 ---
 
@@ -107,12 +120,8 @@ The following accessibility identifiers and labels are available for automation:
 |---------|-----------|-------|
 | Popover container | `menubar-popover-content` | -- |
 | Status text | `menubar-popover-status` | (dynamic) |
-| Show/Hide Contextify button | `menubar-popover-toggle-main` | "Show Contextify" / "Hide Contextify" |
-| Projects button | `menubar-popover-projects` | "Open Projects window" |
-| Transcripts button | `menubar-popover-transcripts` | "Open Transcripts window" |
+| Show/Hide Main Window button | `menubar-popover-toggle-main` | "Show Main Window" / "Hide Main Window" |
 | Settings button | `menubar-popover-settings` | "Open Settings" |
-| Sync Now button | `menubar-popover-sync` | "Run cloud sync now" |
-| Mode indicator | `menubar-popover-mode-indicator` | (dynamic text) |
 | Quit button | `menubar-popover-quit` | "Quit Contextify" |
 
 ### Menu Bar Status Item
