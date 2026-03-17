@@ -936,14 +936,19 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         isPrimer: isPrimer
       )
     } else {
-      try discoverTranscriptInternal(
-        projectId: projectId,
-        fileURL: fileURL,
-        provider: provider,
-        providerSessionId: providerSessionId,
-        startWatching: startWatching,
-        bypassScheduler: true
-      )
+      // Gate non-scheduler ingest through the write coordinator so cloud
+      // sync pull never overlaps with active bulk ingest. The scope is
+      // released between transcripts, giving sync a window to run.
+      try await DatabaseWriteCoordinator.shared.withIngestScope {
+        try self.discoverTranscriptInternal(
+          projectId: projectId,
+          fileURL: fileURL,
+          provider: provider,
+          providerSessionId: providerSessionId,
+          startWatching: startWatching,
+          bypassScheduler: true
+        )
+      }
     }
 
     evaluatePrimerReadinessIfNeeded(projectId: projectId)

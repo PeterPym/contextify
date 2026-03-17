@@ -2,6 +2,7 @@
 // CloudSyncManager.swift - Orchestrator for cloud push/pull sync operations
 
 import Foundation
+import GRDB
 
 #if canImport(OSLog)
 import OSLog
@@ -16,12 +17,13 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Cl
 public enum SyncState: Sendable, Equatable {
   case idle
   case syncing
+  case deferred
   case error(String)
   case disabled
 
   public static func == (lhs: SyncState, rhs: SyncState) -> Bool {
     switch (lhs, rhs) {
-    case (.idle, .idle), (.syncing, .syncing), (.disabled, .disabled):
+    case (.idle, .idle), (.syncing, .syncing), (.deferred, .deferred), (.disabled, .disabled):
       return true
     case (.error(let a), .error(let b)):
       return a == b
@@ -319,7 +321,21 @@ public final class CloudSyncManager: @unchecked Sendable {
       let pushResult = try await push(using: queryService)
       await MainActor.run { self.lastPushResult = pushResult }
 
-      let pullResult = try await pull(using: queryService)
+      // Gate the pull through the write coordinator so it never overlaps
+      // with active bulk ingest. On timeout, defer instead of blocking.
+      let pullResult: PullResult
+      if let result = try await DatabaseWriteCoordinator.shared.withSyncScope(timeout: .seconds(30), {
+        try await self.pull(using: queryService)
+      }) {
+        pullResult = result
+      } else {
+        // Ingest is active and did not finish within the timeout window
+        await MainActor.run { self.syncState = .deferred }
+        log.info("Sync deferred: ingest is active, will retry next cycle")
+        await refreshStatusFromServer()
+        return
+      }
+
       await MainActor.run {
         self.lastPullResult = pullResult
         self.lastSyncDate = Date()
@@ -331,10 +347,15 @@ public final class CloudSyncManager: @unchecked Sendable {
       let pulled = pullResult.entriesImported
       log.info("Sync complete: pushed \(pushed, privacy: .public), pulled \(pulled, privacy: .public)")
     } catch {
-      let message = userFriendlyMessage(for: error)
-      await MainActor.run { self.syncState = .error(message) }
+      if isTransientDatabaseError(error) {
+        await MainActor.run { self.syncState = .deferred }
+        log.info("Sync deferred due to transient database contention")
+      } else {
+        let message = userFriendlyMessage(for: error)
+        await MainActor.run { self.syncState = .error(message) }
+        log.error("Sync failed: \(message, privacy: .public)")
+      }
       await refreshStatusFromServer()
-      log.error("Sync failed: \(message, privacy: .public)")
     }
   }
 
@@ -757,12 +778,29 @@ public final class CloudSyncManager: @unchecked Sendable {
           return d
         }
 
-        let importResult = try queryService.importFromCloudPull(
-          projects: projectDicts,
-          transcripts: transcriptDicts,
-          entries: entryDicts,
-          summaries: summaryDicts
-        )
+        // Retry on transient SQLITE_BUSY within the same sync cycle rather than
+        // deferring the entire cycle. The write coordinator prevents overlap in
+        // most cases, but TranscriptOrchestrator lightweight writes can still
+        // briefly contend.
+        var importResult: CloudPullImportResult
+        var importAttempt = 0
+        let maxImportRetries = 3
+        while true {
+          do {
+            importResult = try queryService.importFromCloudPull(
+              projects: projectDicts,
+              transcripts: transcriptDicts,
+              entries: entryDicts,
+              summaries: summaryDicts
+            )
+            break
+          } catch let error as DatabaseError where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
+            importAttempt += 1
+            guard importAttempt < maxImportRetries else { throw error }
+            log.warning("Pull import retry \(importAttempt, privacy: .public)/\(maxImportRetries, privacy: .public) after SQLITE_BUSY")
+            try await Task.sleep(for: .milliseconds(100 * (1 << (importAttempt - 1))))
+          }
+        }
 
         totalImported += importResult.entriesImported
         totalSkipped += importResult.entriesSkipped
@@ -887,6 +925,16 @@ public final class CloudSyncManager: @unchecked Sendable {
       if case .networkError = syncError {
         return true
       }
+    }
+    return false
+  }
+
+  /// Returns true when the error is a transient SQLite lock contention that
+  /// should result in a deferred sync rather than a user-visible error badge.
+  private func isTransientDatabaseError(_ error: Error) -> Bool {
+    if let dbError = error as? DatabaseError {
+      return dbError.resultCode == .SQLITE_BUSY
+          || dbError.resultCode == .SQLITE_LOCKED
     }
     return false
   }
