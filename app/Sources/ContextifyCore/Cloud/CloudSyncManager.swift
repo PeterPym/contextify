@@ -778,12 +778,29 @@ public final class CloudSyncManager: @unchecked Sendable {
           return d
         }
 
-        let importResult = try queryService.importFromCloudPull(
-          projects: projectDicts,
-          transcripts: transcriptDicts,
-          entries: entryDicts,
-          summaries: summaryDicts
-        )
+        // Retry on transient SQLITE_BUSY within the same sync cycle rather than
+        // deferring the entire cycle. The write coordinator prevents overlap in
+        // most cases, but TranscriptOrchestrator lightweight writes can still
+        // briefly contend.
+        var importResult: CloudPullImportResult
+        var importAttempt = 0
+        let maxImportRetries = 3
+        while true {
+          do {
+            importResult = try queryService.importFromCloudPull(
+              projects: projectDicts,
+              transcripts: transcriptDicts,
+              entries: entryDicts,
+              summaries: summaryDicts
+            )
+            break
+          } catch let error as DatabaseError where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
+            importAttempt += 1
+            guard importAttempt < maxImportRetries else { throw error }
+            log.warning("Pull import retry \(importAttempt, privacy: .public)/\(maxImportRetries, privacy: .public) after SQLITE_BUSY")
+            try await Task.sleep(for: .milliseconds(100 * (1 << (importAttempt - 1))))
+          }
+        }
 
         totalImported += importResult.entriesImported
         totalSkipped += importResult.entriesSkipped

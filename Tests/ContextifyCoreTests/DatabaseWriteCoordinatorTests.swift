@@ -233,7 +233,92 @@ final class DatabaseWriteCoordinatorTests: XCTestCase {
     XCTAssertNotEqual(SyncState.idle, SyncState.syncing)
   }
 
-  // MARK: - Concurrent Scope Release Between Transcripts
+  // MARK: - Concurrent Ingest (Readers-Writer Pattern)
+
+  func testMultipleConcurrentIngestScopesAllowed() async {
+    let coordinator = DatabaseWriteCoordinator()
+    let bothRunning = expectation(description: "both ingests running concurrently")
+    bothRunning.expectedFulfillmentCount = 2
+
+    let tracker = OrderTracker()
+
+    // Two concurrent ingest scopes should both acquire immediately
+    Task {
+      await coordinator.withIngestScope {
+        await tracker.record("ingest-1-start")
+        bothRunning.fulfill()
+        try? await Task.sleep(for: .milliseconds(200))
+        await tracker.record("ingest-1-end")
+      }
+    }
+
+    Task {
+      await coordinator.withIngestScope {
+        await tracker.record("ingest-2-start")
+        bothRunning.fulfill()
+        try? await Task.sleep(for: .milliseconds(200))
+        await tracker.record("ingest-2-end")
+      }
+    }
+
+    await fulfillment(of: [bothRunning], timeout: 2)
+
+    // Both should be active at the same time
+    let isActive = await coordinator.isIngestActive
+    XCTAssertTrue(isActive, "isIngestActive should be true with concurrent ingests")
+  }
+
+  func testSyncBlockedUntilAllConcurrentIngestsFinish() async throws {
+    let coordinator = DatabaseWriteCoordinator()
+    let bothIngestsStarted = expectation(description: "both ingests started")
+    bothIngestsStarted.expectedFulfillmentCount = 2
+    let syncCompleted = expectation(description: "sync completed")
+
+    let tracker = OrderTracker()
+
+    // Two concurrent ingests
+    Task {
+      await coordinator.withIngestScope {
+        await tracker.record("ingest-1-start")
+        bothIngestsStarted.fulfill()
+        try? await Task.sleep(for: .milliseconds(300))
+        await tracker.record("ingest-1-end")
+      }
+    }
+
+    Task {
+      await coordinator.withIngestScope {
+        await tracker.record("ingest-2-start")
+        bothIngestsStarted.fulfill()
+        try? await Task.sleep(for: .milliseconds(400))
+        await tracker.record("ingest-2-end")
+      }
+    }
+
+    await fulfillment(of: [bothIngestsStarted], timeout: 2)
+
+    // Sync should wait for BOTH ingests to finish
+    Task {
+      let result = try await coordinator.withSyncScope(timeout: .seconds(5)) {
+        await tracker.record("sync-acquired")
+        return true
+      }
+      XCTAssertEqual(result, true)
+      syncCompleted.fulfill()
+    }
+
+    await fulfillment(of: [syncCompleted], timeout: 5)
+
+    let events = await tracker.events
+    // Sync should be after both ingests end
+    let syncIndex = events.firstIndex(of: "sync-acquired")!
+    let ingest1End = events.firstIndex(of: "ingest-1-end")!
+    let ingest2End = events.firstIndex(of: "ingest-2-end")!
+    XCTAssertTrue(syncIndex > ingest1End, "Sync should start after ingest 1 finishes")
+    XCTAssertTrue(syncIndex > ingest2End, "Sync should start after ingest 2 finishes")
+  }
+
+  // MARK: - Scope Release Between Transcripts
 
   func testScopeReleasedBetweenConsecutiveIngestCalls() async {
     let coordinator = DatabaseWriteCoordinator()

@@ -13,125 +13,162 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Wr
 /// Gates heavy write operations (cloud sync pull and bulk ingest) so they
 /// never compete for the SQLite WAL writer lock simultaneously.
 ///
-/// This actor does NOT replace DatabaseWriteQueue or BulkIngestManager.
-/// It operates at a higher level, ensuring the two heavy write streams
-/// (cloud pull and local ingest) are mutually exclusive.
+/// Uses a readers-writer pattern: multiple ingest scopes can run concurrently
+/// (HooverScheduler supports maxConcurrency=6), but sync is exclusive -- it
+/// waits for all active ingests to finish, and blocks new ingests while running.
 ///
 /// TranscriptOrchestrator's lightweight writes (via DatabaseWriteQueue)
-/// are NOT gated here. They use the main pool's writer with retry logic,
-/// which is fast enough to interleave with either heavy writer.
+/// are NOT gated here. They use the main pool's writer with retry logic.
 public actor DatabaseWriteCoordinator {
   public static let shared = DatabaseWriteCoordinator()
 
-  private var activeScope: WriteScope? = nil
-  private var pendingContinuations: [(id: UUID, scope: WriteScope, continuation: CheckedContinuation<Bool, Never>)] = []
+  /// Number of currently active ingest scopes (0 = no ingest running).
+  private var activeIngestCount: Int = 0
+  /// Whether a sync scope is currently held.
+  private var syncActive: Bool = false
+  /// Whether a sync scope is waiting to acquire (blocks new ingest).
+  private var syncWaiting: Bool = false
 
-  public enum WriteScope: String, Sendable {
-    case ingest
-    case sync
-  }
+  private var pendingIngestContinuations: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
+  private var pendingSyncContinuation: (id: UUID, continuation: CheckedContinuation<Bool, Never>)? = nil
 
-  /// Execute a closure while holding the ingest scope.
-  /// If sync is active, suspends until sync completes.
+  // MARK: - Public API
+
+  /// Execute a closure while holding an ingest scope.
+  /// Multiple ingest scopes can run concurrently.
+  /// If sync is active or waiting, suspends until sync completes.
   public func withIngestScope<T: Sendable>(
     _ body: @Sendable () async throws -> T
   ) async rethrows -> T {
-    await acquireScope(.ingest)
-    defer { releaseScope(.ingest) }
-    return try await body()
+    await acquireIngest()
+    do {
+      let result = try await body()
+      releaseIngest()
+      return result
+    } catch {
+      releaseIngest()
+      throw error
+    }
   }
 
-  /// Execute a closure while holding the sync scope.
-  /// If ingest is active, suspends until ingest completes (with timeout).
+  /// Execute a closure while holding the sync scope (exclusive).
+  /// Waits for all active ingest scopes to complete (with timeout).
   /// Returns nil if the timeout expires, allowing the caller to defer.
   public func withSyncScope<T: Sendable>(
     timeout: Duration = .seconds(30),
     _ body: @Sendable () async throws -> T
   ) async rethrows -> T? {
-    let acquired = await acquireScopeWithTimeout(.sync, timeout: timeout)
+    let acquired = await acquireSync(timeout: timeout)
     guard acquired else { return nil }
-    defer { releaseScope(.sync) }
-    return try await body()
+    do {
+      let result = try await body()
+      releaseSync()
+      return result
+    } catch {
+      releaseSync()
+      throw error
+    }
   }
 
-  /// Whether an ingest scope is currently held.
-  public var isIngestActive: Bool { activeScope == .ingest }
+  /// Whether any ingest scope is currently held.
+  public var isIngestActive: Bool { activeIngestCount > 0 }
 
-  /// Whether a sync scope is currently held.
-  public var isSyncActive: Bool { activeScope == .sync }
+  /// Whether the sync scope is currently held.
+  public var isSyncActive: Bool { syncActive }
 
-  // MARK: - Internal Scope Management
+  // MARK: - Ingest Scope Management
 
-  private func acquireScope(_ scope: WriteScope) async {
-    if activeScope == nil {
-      activeScope = scope
-      log.debug("Acquired \(scope.rawValue, privacy: .public) scope immediately")
-      return
+  private func acquireIngest() async {
+    // If sync is active or waiting, suspend until sync finishes
+    if syncActive || syncWaiting {
+      log.info("Ingest waiting for sync to complete")
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        pendingIngestContinuations.append((id: UUID(), continuation: continuation))
+      }
     }
-    log.info("Waiting for \(scope.rawValue, privacy: .public) scope (active: \(self.activeScope?.rawValue ?? "none", privacy: .public))")
-    let _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-      pendingContinuations.append((id: UUID(), scope: scope, continuation: continuation))
-    }
-    // When resumed by releaseScope -> resumeNextPending, activeScope is already set.
+    activeIngestCount += 1
+    log.debug("Acquired ingest scope (count: \(self.activeIngestCount, privacy: .public))")
   }
 
-  private func acquireScopeWithTimeout(_ scope: WriteScope, timeout: Duration) async -> Bool {
-    if activeScope == nil {
-      activeScope = scope
-      log.debug("Acquired \(scope.rawValue, privacy: .public) scope immediately")
+  private func releaseIngest() {
+    activeIngestCount = max(0, activeIngestCount - 1)
+    log.debug("Released ingest scope (count: \(self.activeIngestCount, privacy: .public))")
+
+    // If all ingests are done and sync is waiting, grant sync
+    if activeIngestCount == 0, let pending = pendingSyncContinuation {
+      pendingSyncContinuation = nil
+      syncActive = true
+      syncWaiting = false
+      log.debug("All ingests complete, granting sync scope")
+      pending.continuation.resume(returning: true)
+    }
+  }
+
+  // MARK: - Sync Scope Management
+
+  private func acquireSync(timeout: Duration) async -> Bool {
+    if activeIngestCount == 0 && !syncActive {
+      syncActive = true
+      log.debug("Acquired sync scope immediately")
       return true
     }
 
-    log.info("Waiting for \(scope.rawValue, privacy: .public) scope with timeout (active: \(self.activeScope?.rawValue ?? "none", privacy: .public))")
+    if syncActive {
+      // Another sync is already running (shouldn't happen due to SyncState guard, but be safe)
+      log.warning("Sync scope already active, deferring")
+      return false
+    }
+
+    // Ingest is active -- wait for all to finish
+    log.info("Sync waiting for \(self.activeIngestCount, privacy: .public) active ingest(s) to complete")
+    syncWaiting = true
 
     let waiterId = UUID()
-
-    // Enqueue the continuation, then race it against a timeout task.
-    // The continuation resumes with `true` if the scope was granted,
-    // or `false` if the timeout expired and cancelled the waiter.
     let acquired = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-      pendingContinuations.append((id: waiterId, scope: scope, continuation: continuation))
+      pendingSyncContinuation = (id: waiterId, continuation: continuation)
 
-      // Fire-and-forget timeout task. After the deadline, if this waiter
-      // is still pending, cancel it by resuming with false.
-      Task { [weak self] in
+      Task {
         try? await Task.sleep(for: timeout)
-        await self?.cancelPendingWaiter(id: waiterId)
+        await self.cancelSyncWaiter(id: waiterId)
       }
     }
 
     if !acquired {
-      log.info("Timeout waiting for \(scope.rawValue, privacy: .public) scope")
+      syncWaiting = false
+      log.info("Sync scope acquisition timed out")
     }
     return acquired
   }
 
-  /// Cancel a pending waiter by ID. Resumes its continuation with `false`.
-  /// No-op if the waiter was already granted (removed from pending list).
-  private func cancelPendingWaiter(id: UUID) {
-    guard let index = pendingContinuations.firstIndex(where: { $0.id == id }) else {
-      // Already granted by resumeNextPending; nothing to do.
-      return
+  private func cancelSyncWaiter(id: UUID) {
+    guard let pending = pendingSyncContinuation, pending.id == id else {
+      return // Already granted
     }
-    let entry = pendingContinuations.remove(at: index)
-    entry.continuation.resume(returning: false)
+    pendingSyncContinuation = nil
+    syncWaiting = false
+    pending.continuation.resume(returning: false)
+    // Resume any blocked ingest continuations since sync is no longer waiting
+    resumePendingIngests()
   }
 
-  private func releaseScope(_ scope: WriteScope) {
-    guard activeScope == scope else {
-      log.warning("Attempted to release \(scope.rawValue, privacy: .public) scope but active scope is \(self.activeScope?.rawValue ?? "none", privacy: .public)")
+  private func releaseSync() {
+    guard syncActive else {
+      log.warning("Attempted to release sync scope but it is not active")
       return
     }
-    activeScope = nil
-    log.debug("Released \(scope.rawValue, privacy: .public) scope")
-    resumeNextPending()
+    syncActive = false
+    log.debug("Released sync scope")
+    // Resume any ingest continuations that were blocked while sync was active
+    resumePendingIngests()
   }
 
-  private func resumeNextPending() {
-    guard !pendingContinuations.isEmpty else { return }
-    let entry = pendingContinuations.removeFirst()
-    activeScope = entry.scope
-    log.debug("Resumed pending \(entry.scope.rawValue, privacy: .public) scope")
-    entry.continuation.resume(returning: true)
+  private func resumePendingIngests() {
+    guard !pendingIngestContinuations.isEmpty else { return }
+    let pending = pendingIngestContinuations
+    pendingIngestContinuations = []
+    log.debug("Resuming \(pending.count, privacy: .public) pending ingest scope(s)")
+    for entry in pending {
+      entry.continuation.resume()
+    }
   }
 }
