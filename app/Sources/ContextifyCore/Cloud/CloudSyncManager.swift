@@ -17,13 +17,14 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Cl
 public enum SyncState: Sendable, Equatable {
   case idle
   case syncing
+  case waitingForIngest
   case deferred
   case error(String)
   case disabled
 
   public static func == (lhs: SyncState, rhs: SyncState) -> Bool {
     switch (lhs, rhs) {
-    case (.idle, .idle), (.syncing, .syncing), (.deferred, .deferred), (.disabled, .disabled):
+    case (.idle, .idle), (.syncing, .syncing), (.waitingForIngest, .waitingForIngest), (.deferred, .deferred), (.disabled, .disabled):
       return true
     case (.error(let a), .error(let b)):
       return a == b
@@ -291,6 +292,15 @@ public final class CloudSyncManager: @unchecked Sendable {
   ///
   /// - Parameter queryService: The query service for database export/import.
   public func sync(using queryService: ContextifyQueryService) async {
+    // Pre-flight: if ingest is active, don't even start. No network calls,
+    // no payload assembly. Show a neutral waiting state and return.
+    let ingestActive = await DatabaseWriteCoordinator.shared.isIngestActive
+    if ingestActive {
+      await MainActor.run { self.syncState = .waitingForIngest }
+      log.info("Sync skipped: ingest is active, waiting for completion")
+      return
+    }
+
     // Atomic check-and-set: skip if already syncing or disabled
     let shouldStart = await MainActor.run { () -> Bool in
       switch self.syncState {
@@ -996,7 +1006,39 @@ public final class CloudSyncManager: @unchecked Sendable {
         } catch {
           await self.setErrorForUI("Auto-sync failed to open local database.")
         }
-        try? await Task.sleep(for: .seconds(300))
+
+        // Wait for the 5-minute timer OR for ingest to complete (whichever
+        // comes first). This triggers an immediate sync after ingest finishes
+        // rather than waiting up to 5 minutes for the next cycle.
+        //
+        // We always listen for ingest completion, not just when state is
+        // .waitingForIngest. Ingest can start mid-sleep (after a successful
+        // sync), and we want to sync again as soon as it produces new data.
+        await withTaskGroup(of: Void.self) { group in
+          group.addTask {
+            try? await Task.sleep(for: .seconds(300))
+          }
+          group.addTask {
+            // Wait for ingest to finish. If no ingest is active right now,
+            // this returns immediately -- so we also sleep to avoid a tight
+            // loop. The key: if ingest starts and finishes during our sleep,
+            // waitForIngestComplete won't catch it (already done). We poll
+            // periodically to cover that gap.
+            while !Task.isCancelled {
+              let ingestActive = await DatabaseWriteCoordinator.shared.isIngestActive
+              if ingestActive {
+                // Ingest is running -- wait for it to finish, then break
+                await DatabaseWriteCoordinator.shared.waitForIngestComplete()
+                break
+              }
+              // No ingest right now. Check again in 10 seconds.
+              try? await Task.sleep(for: .seconds(10))
+            }
+          }
+          // First task to finish wins; cancel the other
+          await group.next()
+          group.cancelAll()
+        }
       }
     }
   }

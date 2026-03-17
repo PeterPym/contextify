@@ -32,7 +32,20 @@ public actor DatabaseWriteCoordinator {
   private var pendingIngestContinuations: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
   private var pendingSyncContinuation: (id: UUID, continuation: CheckedContinuation<Bool, Never>)? = nil
 
+  /// Continuations waiting for ingest to finish (for post-ingest sync trigger).
+  private var ingestCompleteContinuations: [CheckedContinuation<Void, Never>] = []
+
   // MARK: - Public API
+
+  /// Suspends until all active ingest scopes have completed.
+  /// Returns immediately if no ingest is active.
+  /// Used by CloudSyncManager to trigger sync right after ingest finishes.
+  public func waitForIngestComplete() async {
+    guard activeIngestCount > 0 else { return }
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      ingestCompleteContinuations.append(continuation)
+    }
+  }
 
   /// Execute a closure while holding an ingest scope.
   /// Multiple ingest scopes can run concurrently.
@@ -101,6 +114,16 @@ public actor DatabaseWriteCoordinator {
       syncWaiting = false
       log.debug("All ingests complete, granting sync scope")
       pending.continuation.resume(returning: true)
+    }
+
+    // Notify any waitForIngestComplete() callers
+    if activeIngestCount == 0 && !ingestCompleteContinuations.isEmpty {
+      let waiters = ingestCompleteContinuations
+      ingestCompleteContinuations = []
+      log.debug("Notifying \(waiters.count, privacy: .public) ingest-complete waiter(s)")
+      for waiter in waiters {
+        waiter.resume()
+      }
     }
   }
 
