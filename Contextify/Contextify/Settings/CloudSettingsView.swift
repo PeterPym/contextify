@@ -437,6 +437,7 @@ struct CloudSettingsView: View {
   private enum SyncDisplayState {
     case healthy
     case syncing
+    case waitingForIngest
     case deferred
     case offline
     case needsAttention
@@ -488,6 +489,7 @@ struct CloudSettingsView: View {
     }
 
     if syncManager.syncState == .syncing { return .syncing }
+    if syncManager.syncState == .waitingForIngest { return .waitingForIngest }
     if syncManager.syncState == .deferred { return .deferred }
     if case .error = syncManager.syncState { return .error }
     return .healthy
@@ -500,6 +502,8 @@ struct CloudSettingsView: View {
       statusBadge(text: "Healthy", systemImage: "checkmark.circle.fill", tint: .green)
     case .syncing:
       statusBadge(text: "Syncing", systemImage: "arrow.triangle.2.circlepath", tint: .blue)
+    case .waitingForIngest:
+      statusBadge(text: "Waiting", systemImage: "hourglass", tint: .secondary)
     case .deferred:
       statusBadge(text: "Deferred", systemImage: "clock.arrow.circlepath", tint: .secondary)
     case .offline:
@@ -526,6 +530,8 @@ struct CloudSettingsView: View {
         return "Uploading catch-up batch (\(formatPercent(resolved: min(max(resolved, 0), total), total: total)))."
       }
       return "Uploading recent changes."
+    case .waitingForIngest:
+      return "Waiting for transcript ingestion to complete before syncing."
     case .deferred:
       return "Sync paused while transcript ingestion is active."
     case .offline:
@@ -548,6 +554,8 @@ struct CloudSettingsView: View {
         return "This is a bounded catch-up upload, so progress and ETA are shown."
       }
       return nil
+    case .waitingForIngest:
+      return "Sync will begin automatically as soon as ingestion finishes."
     case .deferred:
       return "Sync will retry on the next scheduled cycle, or you can sync manually."
     case .offline:
