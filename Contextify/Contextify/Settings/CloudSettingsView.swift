@@ -549,7 +549,7 @@ struct CloudSettingsView: View {
       }
       return nil
     case .deferred:
-      return "Sync will resume automatically after ingestion completes, or on the next scheduled cycle."
+      return "Sync will retry on the next scheduled cycle, or you can sync manually."
     case .offline:
       return "Changes are saved locally and queued for upload. Upload resumes automatically when connection returns."
     case .needsAttention:

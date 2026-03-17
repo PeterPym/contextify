@@ -318,6 +318,59 @@ final class DatabaseWriteCoordinatorTests: XCTestCase {
     XCTAssertTrue(syncIndex > ingest2End, "Sync should start after ingest 2 finishes")
   }
 
+  // MARK: - Second Sync Waiter Guard
+
+  func testSecondSyncWaiterDoesNotOverwriteFirst() async throws {
+    let coordinator = DatabaseWriteCoordinator()
+    let ingestStarted = expectation(description: "ingest started")
+    let syncAResult = expectation(description: "sync A result")
+    let syncBResult = expectation(description: "sync B result")
+
+    let tracker = OrderTracker()
+
+    // Hold ingest so both syncs must wait
+    Task {
+      await coordinator.withIngestScope {
+        ingestStarted.fulfill()
+        try? await Task.sleep(for: .milliseconds(500))
+        await tracker.record("ingest-done")
+      }
+    }
+
+    await fulfillment(of: [ingestStarted], timeout: 2)
+
+    // Sync A: should queue as the pending waiter
+    Task {
+      let result = try await coordinator.withSyncScope(timeout: .seconds(5)) {
+        await tracker.record("sync-A-acquired")
+        return "A"
+      }
+      await tracker.record("sync-A-result-\(result ?? "nil")")
+      syncAResult.fulfill()
+    }
+
+    // Small delay to ensure A queues first
+    try await Task.sleep(for: .milliseconds(50))
+
+    // Sync B: should be rejected immediately (not overwrite A's continuation)
+    Task {
+      let result = try await coordinator.withSyncScope(timeout: .seconds(5)) {
+        await tracker.record("sync-B-acquired")
+        return "B"
+      }
+      await tracker.record("sync-B-result-\(result ?? "nil")")
+      syncBResult.fulfill()
+    }
+
+    await fulfillment(of: [syncAResult, syncBResult], timeout: 5)
+
+    let events = await tracker.events
+    // Sync B should have been rejected (nil result), sync A should have succeeded
+    XCTAssertTrue(events.contains("sync-B-result-nil"), "Second sync waiter should be rejected")
+    XCTAssertTrue(events.contains("sync-A-result-A"), "First sync waiter should succeed after ingest")
+    XCTAssertFalse(events.contains("sync-B-acquired"), "Second sync should never acquire scope")
+  }
+
   // MARK: - Scope Release Between Transcripts
 
   func testScopeReleasedBetweenConsecutiveIngestCalls() async {

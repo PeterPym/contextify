@@ -113,9 +113,10 @@ public actor DatabaseWriteCoordinator {
       return true
     }
 
-    if syncActive {
-      // Another sync is already running (shouldn't happen due to SyncState guard, but be safe)
-      log.warning("Sync scope already active, deferring")
+    if syncActive || pendingSyncContinuation != nil {
+      // Another sync is already running or waiting. Only one sync waiter is
+      // supported to avoid overwriting the pending continuation and leaking it.
+      log.warning("Sync scope already active or queued, deferring")
       return false
     }
 
