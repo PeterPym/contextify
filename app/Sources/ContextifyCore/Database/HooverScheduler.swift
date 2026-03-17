@@ -97,14 +97,18 @@ public actor HooverScheduler {
       Task { self.taskCompleted(fileURL: fileURL, projectId: item.projectId) }
     }
 
-    try orchestrator.discoverTranscriptInternal(
-      projectId: item.projectId,
-      fileURL: item.fileURL,
-      provider: item.provider,
-      providerSessionId: item.sessionId,
-      startWatching: true,
-      bypassScheduler: true
-    )
+    // Gate per-transcript ingest through the write coordinator so cloud
+    // sync pull never overlaps with active bulk ingest.
+    try await DatabaseWriteCoordinator.shared.withIngestScope {
+      try self.orchestrator.discoverTranscriptInternal(
+        projectId: item.projectId,
+        fileURL: item.fileURL,
+        provider: item.provider,
+        providerSessionId: item.sessionId,
+        startWatching: true,
+        bypassScheduler: true
+      )
+    }
   }
 
   private func taskCompleted(fileURL: URL, projectId: String) {
