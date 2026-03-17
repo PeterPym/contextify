@@ -3,6 +3,10 @@ import ContextifyCore
 
 struct GeneralSettingsView: View {
   @State private var manager = LaunchAtLoginManager.shared
+  @AppStorage(HUDPreferences.menuBarExtraEnabledKey, store: ContextifyDefaults.shared)
+  private var menuBarExtraEnabled = false
+  @AppStorage(HUDPreferences.backgroundUtilityModeEnabledKey, store: ContextifyDefaults.shared)
+  private var backgroundUtilityModeEnabled = false
 
   var body: some View {
     Form {
@@ -61,9 +65,54 @@ struct GeneralSettingsView: View {
           }
         }
       }
+
+      Section("App Presence") {
+        Toggle("Show menu bar extra", isOn: Binding(
+          get: { menuBarExtraEnabled || backgroundUtilityModeEnabled },
+          set: { newValue in
+            HUDPreferences.setMenuBarExtraEnabled(newValue)
+            menuBarExtraEnabled = HUDPreferences.isMenuBarExtraEnabled()
+            AppPresentationController.shared.refreshActivationPolicy()
+          }
+        ))
+        .disabled(backgroundUtilityModeEnabled)
+        .accessibilityIdentifier("general-menu-bar-extra-toggle")
+        .accessibilityLabel("Show menu bar extra")
+        .accessibilityHint("Keeps Contextify available from the menu bar")
+
+        Toggle("Run as background utility", isOn: Binding(
+          get: { backgroundUtilityModeEnabled },
+          set: { newValue in
+            HUDPreferences.setBackgroundUtilityModeEnabled(newValue)
+            backgroundUtilityModeEnabled = HUDPreferences.isBackgroundUtilityModeEnabled()
+            menuBarExtraEnabled = HUDPreferences.isMenuBarExtraEnabled()
+            AppPresentationController.shared.refreshActivationPolicy()
+          }
+        ))
+        .accessibilityIdentifier("general-background-utility-toggle")
+        .accessibilityLabel("Run as background utility")
+        .accessibilityHint("Hides Dock and Command-Tab presence while keeping Contextify running in the menu bar")
+
+        Text("The menu bar extra gives quick access to Contextify when the main window is closed.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Text(
+          backgroundUtilityModeEnabled
+            ? "Background utility mode is on. Contextify stays reachable from the menu bar while Dock and Command-Tab presence stay hidden."
+            : "Background utility mode keeps Contextify running without a Dock or Command-Tab presence. Turning it on automatically keeps the menu bar extra available."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("general-background-utility-status")
+      }
     }
     .formStyle(.grouped)
-    .onAppear { manager.refreshStatus() }
+    .onAppear {
+      manager.refreshStatus()
+      menuBarExtraEnabled = HUDPreferences.isMenuBarExtraEnabled()
+      backgroundUtilityModeEnabled = HUDPreferences.isBackgroundUtilityModeEnabled()
+    }
     .accessibilityElement(children: .contain)
   }
 }

@@ -68,7 +68,7 @@ public final class BulkIngestManager: @unchecked Sendable {
 
     // Pre-compile prepared statements for the hottest tables
     try queue?.write { db in
-      // TranscriptEntry: 25 columns (embedding columns set to NULL during ingest)
+      // TranscriptEntry: 27 columns (embedding columns set to NULL during ingest)
       self.entryInsertStmt = try db.makeStatement(sql: """
         INSERT OR IGNORE INTO transcript_entries (
           id, transcript_id, project_id, session_id, provider,
@@ -76,8 +76,9 @@ public final class BulkIngestManager: @unchecked Sendable {
           parent_id, git_branch, git_commit, cwd,
           prev1_id, prev2_id, window_sha256,
           embedding, embedding_version, embedding_generated_at,
-          created_ts, created_at, updated_at, is_queued, is_sidechain
-        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?,?,?)
+          created_ts, created_at, updated_at, is_queued, is_sidechain,
+          source_device_id, source_device_name
+        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?,?,?, ?,?)
       """)
 
       // ToolInvocation: 17 columns
@@ -146,7 +147,9 @@ public final class BulkIngestManager: @unchecked Sendable {
           entry.createdAt,
           entry.updatedAt,
           entry.isQueued,
-          entry.isSidechain
+          entry.isSidechain,
+          entry.sourceDeviceId,
+          entry.sourceDeviceName
         ] as [(any DatabaseValueConvertible)?])
         // Use setUncheckedArguments for maximum performance (no validation)
         entryStmt.setUncheckedArguments(entryArgs)

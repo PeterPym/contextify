@@ -544,6 +544,8 @@ public final class CloudSyncManager: @unchecked Sendable {
             gitBranch: entry.gitBranch,
             gitCommit: entry.gitCommit,
             cwd: entry.cwd,
+            sourceDeviceId: entry.sourceDeviceId,
+            sourceDeviceName: entry.sourceDeviceName,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt
           )
@@ -740,6 +742,8 @@ public final class CloudSyncManager: @unchecked Sendable {
           if let b = entry.gitBranch { d["git_branch"] = b }
           if let c = entry.gitCommit { d["git_commit"] = c }
           if let c = entry.cwd { d["cwd"] = c }
+          if let deviceId = entry.uploadedByDeviceId { d["source_device_id"] = deviceId }
+          if let deviceName = entry.uploadedByDeviceName { d["source_device_name"] = deviceName }
           return d
         }
 

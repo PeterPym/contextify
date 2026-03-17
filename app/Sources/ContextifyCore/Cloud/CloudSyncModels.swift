@@ -388,6 +388,10 @@ public struct CloudPushEntry: Codable, Sendable {
   public let gitBranch: String?
   public let gitCommit: String?
   public let cwd: String?
+  /// Per-entry device provenance from the originating machine.
+  /// Sent so the server stores the *originator*, not just the *uploader*.
+  public let sourceDeviceId: String?
+  public let sourceDeviceName: String?
   public let createdAt: Int
   public let updatedAt: Int
 
@@ -405,6 +409,8 @@ public struct CloudPushEntry: Codable, Sendable {
     gitBranch: String? = nil,
     gitCommit: String? = nil,
     cwd: String? = nil,
+    sourceDeviceId: String? = nil,
+    sourceDeviceName: String? = nil,
     createdAt: Int,
     updatedAt: Int
   ) {
@@ -421,6 +427,8 @@ public struct CloudPushEntry: Codable, Sendable {
     self.gitBranch = gitBranch
     self.gitCommit = gitCommit
     self.cwd = cwd
+    self.sourceDeviceId = sourceDeviceId
+    self.sourceDeviceName = sourceDeviceName
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -439,6 +447,8 @@ public struct CloudPushEntry: Codable, Sendable {
     case gitBranch = "git_branch"
     case gitCommit = "git_commit"
     case cwd
+    case sourceDeviceId = "source_device_id"
+    case sourceDeviceName = "source_device_name"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
@@ -851,6 +861,9 @@ public struct CloudPullEntry: Codable, Sendable {
   public let uploadedByUserId: String
   /// The device ID that uploaded this entry.
   public let uploadedByDeviceId: String?
+  /// The human-readable device name that uploaded this entry (e.g. "Rob's MacBook Pro").
+  /// Nil for entries pulled from servers that pre-date device name propagation.
+  public let uploadedByDeviceName: String?
   /// Monotonically increasing server sequence number. Used as cursor for pull pagination.
   public let serverSequence: Int
   public let createdAt: Int
@@ -872,6 +885,7 @@ public struct CloudPullEntry: Codable, Sendable {
     cwd: String? = nil,
     uploadedByUserId: String,
     uploadedByDeviceId: String? = nil,
+    uploadedByDeviceName: String? = nil,
     serverSequence: Int,
     createdAt: Int,
     updatedAt: Int
@@ -891,6 +905,7 @@ public struct CloudPullEntry: Codable, Sendable {
     self.cwd = cwd
     self.uploadedByUserId = uploadedByUserId
     self.uploadedByDeviceId = uploadedByDeviceId
+    self.uploadedByDeviceName = uploadedByDeviceName
     self.serverSequence = serverSequence
     self.createdAt = createdAt
     self.updatedAt = updatedAt
@@ -912,6 +927,7 @@ public struct CloudPullEntry: Codable, Sendable {
     case cwd
     case uploadedByUserId = "uploaded_by_user_id"
     case uploadedByDeviceId = "uploaded_by_device_id"
+    case uploadedByDeviceName = "uploaded_by_device_name"
     case serverSequence = "server_sequence"
     case createdAt = "created_at"
     case updatedAt = "updated_at"

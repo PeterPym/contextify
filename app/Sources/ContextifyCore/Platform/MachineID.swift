@@ -85,3 +85,19 @@ public enum MachineID {
     }
   }
 }
+
+/// Provides the human-readable device name for this Mac.
+/// Used alongside MachineID for device provenance on transcript entries.
+public enum DeviceName {
+  private enum Cache {
+    static let name: String = {
+      Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    }()
+  }
+
+  /// Returns the human-readable device name (e.g. "Rob's MacBook Pro").
+  /// Cached on first access for thread safety and performance.
+  public static func current() -> String {
+    Cache.name
+  }
+}
