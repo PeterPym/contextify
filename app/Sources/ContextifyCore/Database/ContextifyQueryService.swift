@@ -1565,6 +1565,8 @@ public struct ContextifyQueryService: Sendable {
           displayInTimeline: row["display_in_timeline"],
           gitBranch: row["git_branch"], gitCommit: row["git_commit"],
           cwd: row["cwd"],
+          sourceDeviceId: row["source_device_id"],
+          sourceDeviceName: row["source_device_name"],
           createdAt: row["created_at"], updatedAt: row["updated_at"]
         )
       }
@@ -1934,6 +1936,8 @@ public struct CloudPushExport: Sendable {
     public let gitBranch: String?
     public let gitCommit: String?
     public let cwd: String?
+    public let sourceDeviceId: String?
+    public let sourceDeviceName: String?
     public let createdAt: Int
     public let updatedAt: Int
 

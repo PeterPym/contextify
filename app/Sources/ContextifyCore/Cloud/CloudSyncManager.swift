@@ -544,6 +544,8 @@ public final class CloudSyncManager: @unchecked Sendable {
             gitBranch: entry.gitBranch,
             gitCommit: entry.gitCommit,
             cwd: entry.cwd,
+            sourceDeviceId: entry.sourceDeviceId,
+            sourceDeviceName: entry.sourceDeviceName,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt
           )

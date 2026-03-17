@@ -388,6 +388,10 @@ public struct CloudPushEntry: Codable, Sendable {
   public let gitBranch: String?
   public let gitCommit: String?
   public let cwd: String?
+  /// Per-entry device provenance from the originating machine.
+  /// Sent so the server stores the *originator*, not just the *uploader*.
+  public let sourceDeviceId: String?
+  public let sourceDeviceName: String?
   public let createdAt: Int
   public let updatedAt: Int
 
@@ -405,6 +409,8 @@ public struct CloudPushEntry: Codable, Sendable {
     gitBranch: String? = nil,
     gitCommit: String? = nil,
     cwd: String? = nil,
+    sourceDeviceId: String? = nil,
+    sourceDeviceName: String? = nil,
     createdAt: Int,
     updatedAt: Int
   ) {
@@ -421,6 +427,8 @@ public struct CloudPushEntry: Codable, Sendable {
     self.gitBranch = gitBranch
     self.gitCommit = gitCommit
     self.cwd = cwd
+    self.sourceDeviceId = sourceDeviceId
+    self.sourceDeviceName = sourceDeviceName
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -439,6 +447,8 @@ public struct CloudPushEntry: Codable, Sendable {
     case gitBranch = "git_branch"
     case gitCommit = "git_commit"
     case cwd
+    case sourceDeviceId = "source_device_id"
+    case sourceDeviceName = "source_device_name"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
