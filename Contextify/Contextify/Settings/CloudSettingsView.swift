@@ -143,7 +143,7 @@ struct CloudSettingsView: View {
   private var serverConfigurationSection: some View {
     Section {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Cloud Connection")
+        Text("Connection")
           .font(.headline)
           .accessibilityIdentifier("cloud-connection-heading")
 
@@ -520,7 +520,7 @@ struct CloudSettingsView: View {
   private var stateHeadlineText: String {
     switch displayState {
     case .healthy:
-      return "Day-to-day sync is caught up."
+      return "Cloud up to date."
     case .syncing:
       if showsBulkCatchUpProgress,
          let session = visibleActivePushSession,

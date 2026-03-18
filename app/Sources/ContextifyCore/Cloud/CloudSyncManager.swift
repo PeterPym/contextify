@@ -160,6 +160,10 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
+
+  /// The configured cloud server base URL (e.g. "https://cloud.contextify.sh").
+  /// Nil when cloud sync is not configured.
+  @MainActor public var configuredServerURL: String? { config?.serverURL }
   @MainActor private var connectionRevision: UInt64 = 0
   @MainActor var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
     CloudSyncClient(serverURL: $0, apiKey: $1)
