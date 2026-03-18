@@ -202,8 +202,8 @@ struct StatusBarView: View {
         // Set tab override to trigger permissions tab selection
         ContextifyDefaults.shared.set("permissions", forKey: "Contextify.Settings.SelectedTabOverride")
 
-        // Open Settings window
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        // Open Settings window via the handler that properly promotes the app
+        StatusItemController.shared.openSettingsHandler?()
 
         // Clear override after a short delay (so it doesn't persist)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -707,11 +707,28 @@ private extension StatusBarView {
     @ViewBuilder
     var cloudSyncPopoverContent: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Cloud Sync")
-                .font(.headline)
+            HStack {
+                Text("Cloud Sync")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    openCloudSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle().inset(by: -8))
+                .help("Open Cloud Settings")
+            }
 
-            Text(cloudChipText)
-                .font(.subheadline)
+            HStack(spacing: 6) {
+                Image(systemName: cloudChipIconName)
+                    .foregroundStyle(cloudChipColor)
+                    .font(.subheadline)
+                Text(cloudChipText)
+                    .font(.subheadline)
+            }
 
             if let session = visibleCloudActiveSession,
                let total = session.entriesTotal, total > 0 {
@@ -754,31 +771,27 @@ private extension StatusBarView {
             Divider()
 
             HStack(spacing: 8) {
-                Button(cloudPrimaryActionLabel) {
+                Button {
                     cloudSyncManager.triggerSync()
                     Task { await cloudSyncManager.refreshStatusFromServer() }
+                } label: {
+                    Label(cloudPrimaryActionLabel, systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.bordered)
 
-                Button("Open Cloud Settings") {
-                    openCloudSettings()
+                Button {
+                    if let url = URL(string: "https://cloud.contextify.sh/cloud/sync") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("View Details", systemImage: "globe")
                 }
                 .buttonStyle(.bordered)
-            }
-
-            Button("View Details") {
-                showCloudSyncDetail = true
-            }
-            .buttonStyle(.bordered)
-
-            if let refreshed = cloudSyncManager.cloudStatusUpdatedAt {
-                Text("Status refreshed \(RelativeDateTimeFormatter().localizedString(for: refreshed, relativeTo: cloudStatusNow))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding()
-        .frame(width: 340)
+        .frame(width: 340, alignment: .leading)
+        .animation(nil, value: cloudChipText)
     }
 
     var cloudChipIconName: String {
@@ -886,7 +899,7 @@ private extension StatusBarView {
 
     func openCloudSettings() {
         ContextifyDefaults.shared.set("cloud", forKey: "Contextify.Settings.SelectedTabOverride")
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        StatusItemController.shared.openSettingsHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             ContextifyDefaults.shared.removeObject(forKey: "Contextify.Settings.SelectedTabOverride")
         }
