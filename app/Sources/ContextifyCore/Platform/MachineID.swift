@@ -57,6 +57,26 @@ public enum MachineID {
     Cache.machineID
   }
 
+  /// Returns the normalized macOS cloud device ID.
+  ///
+  /// Older cloud sync builds stored raw hardware identifiers in cloud.json.
+  /// Newer builds use the persisted app-level machine ID (`ctx-...`) so the
+  /// app, CLI, and other local identity surfaces stay aligned.
+  public static func normalizedCloudDeviceID(_ storedID: String?) -> String {
+    guard let storedID, !storedID.isEmpty else {
+      return current()
+    }
+    #if os(macOS)
+    if storedID.hasPrefix("ctx-") {
+      return storedID
+    }
+    log.info("Migrating legacy cloud device ID to app-level machine ID")
+    return current()
+    #else
+    return storedID
+    #endif
+  }
+
   /// Reads machine ID from Application Support
   private static func readFromFile() -> String? {
     guard let fileURL = machineIDFile else { return nil }

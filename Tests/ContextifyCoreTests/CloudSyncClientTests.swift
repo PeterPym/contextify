@@ -489,6 +489,56 @@ final class CloudSyncModelsTests: XCTestCase {
     XCTAssertNil(merged.lastPushSessionId)
     XCTAssertNil(merged.lastPushBatchSeq)
   }
+
+  func testMachineIDNormalizationKeepsContextifyDeviceID() {
+    XCTAssertEqual(
+      MachineID.normalizedCloudDeviceID("ctx-1234abcd"),
+      "ctx-1234abcd"
+    )
+  }
+
+  func testCloudConfigLoadMigratesLegacyMacDeviceID() throws {
+    #if os(macOS)
+    let tempConfigRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempConfigRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempConfigRoot) }
+
+    let previousXDG = getenv("XDG_CONFIG_HOME").map { String(cString: $0) }
+    setenv("XDG_CONFIG_HOME", tempConfigRoot.path, 1)
+    defer {
+      if let previousXDG {
+        setenv("XDG_CONFIG_HOME", previousXDG, 1)
+      } else {
+        unsetenv("XDG_CONFIG_HOME")
+      }
+    }
+
+    let configDir = tempConfigRoot.appendingPathComponent("contextify", isDirectory: true)
+    try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+    let legacyConfigFile = configDir.appendingPathComponent("cloud.json")
+    let legacyConfig = """
+    {
+      "server_url": "https://cloud.contextify.sh",
+      "api_key": "ctx_test",
+      "device_id": "546F57CD-CAAC-557D-88AD-6F8E70BDD57C",
+      "device_name": "Rob’s MacBook Air",
+      "enabled": true,
+      "last_pull_sequence": 12
+    }
+    """
+    try legacyConfig.write(to: legacyConfigFile, atomically: true, encoding: .utf8)
+
+    let loaded = try CloudConfig.load()
+
+    XCTAssertTrue(loaded.deviceId.hasPrefix("ctx-"))
+    XCTAssertNotEqual(loaded.deviceId, "546F57CD-CAAC-557D-88AD-6F8E70BDD57C")
+
+    let persistedData = try Data(contentsOf: legacyConfigFile)
+    let persisted = try makeDecoder().decode(CloudConfig.self, from: persistedData)
+    XCTAssertEqual(persisted.deviceId, loaded.deviceId)
+    #endif
+  }
 }
 
 // MARK: - CloudSyncClient Tests
