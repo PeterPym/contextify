@@ -719,6 +719,7 @@ private extension StatusBarView {
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle().inset(by: -8))
+                .accessibilityLabel("Open Cloud Settings")
                 .help("Open Cloud Settings")
             }
 
@@ -780,9 +781,7 @@ private extension StatusBarView {
                 .buttonStyle(.bordered)
 
                 Button {
-                    if let url = URL(string: "https://cloud.contextify.sh/cloud/sync") {
-                        NSWorkspace.shared.open(url)
-                    }
+                    openCloudDashboard()
                 } label: {
                     Label("View Details", systemImage: "globe")
                 }
@@ -895,6 +894,14 @@ private extension StatusBarView {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    func openCloudDashboard() {
+        guard let base = cloudSyncManager.configuredServerURL,
+              var components = URLComponents(string: base) else { return }
+        components.path = "/cloud/sync"
+        guard let url = components.url else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func openCloudSettings() {
