@@ -1699,17 +1699,32 @@ public struct ContextifyQueryService: Sendable {
           continue
         }
 
-        do {
-          try db.execute(sql: """
-            INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
-              is_orphaned, created_at, updated_at)
-            VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
-            """, arguments: [id, name, rootPath, now, now])
-          projectsImported += 1
-          projectIdRemap[id] = id
-        } catch {
-          throw error
+        try db.execute(sql: """
+          INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
+            is_orphaned, created_at, updated_at)
+          VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
+          ON CONFLICT(root_path) DO NOTHING
+          """, arguments: [id, name, rootPath, now, now])
+        // After insert-or-skip, look up the local owner of this root_path.
+        // This handles both the fresh-insert case and the conflict case where
+        // the local project has a different ID than the server's.
+        guard let localId = try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE root_path = ?",
+          arguments: [rootPath]) else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .error("Project root_path invariant failed: no row for root_path=\(rootPath, privacy: .public) after insert-or-skip (server id=\(id, privacy: .public))")
+          #endif
+          continue  // Skip this project rather than crash the sync
         }
+        if localId != id {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .info("Project ID remap: server=\(id, privacy: .public) -> local=\(localId, privacy: .public) (root_path=\(rootPath, privacy: .public))")
+          #endif
+        }
+        projectIdRemap[id] = localId
+        projectsImported += 1
       }
 
       // Upsert transcripts
