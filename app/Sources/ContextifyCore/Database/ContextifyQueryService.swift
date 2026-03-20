@@ -1730,7 +1730,23 @@ public struct ContextifyQueryService: Sendable {
               let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
-        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
+        // Resolve server project ID to local project ID. Prefer remap (covers
+        // cross-machine ID divergence), fall back to direct lookup (covers
+        // projects already present from a prior sync page or local ingest).
+        let projectId: String
+        if let remapped = projectIdRemap[rawProjectId] {
+          projectId = remapped
+        } else if let existing = try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [rawProjectId]) {
+          projectId = existing
+        } else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping transcript \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
+          #endif
+          continue
+        }
         let exists = try Int.fetchOne(db, sql:
           "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
         if exists == nil {
@@ -1763,7 +1779,21 @@ public struct ContextifyQueryService: Sendable {
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
-        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
+        // Resolve server project ID to local (same logic as transcripts above)
+        let projectId: String
+        if let remapped = projectIdRemap[rawProjectId] {
+          projectId = remapped
+        } else if let existing = try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [rawProjectId]) {
+          projectId = existing
+        } else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping entry \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
+          #endif
+          continue
+        }
 
         // Skip 'summary' kind entries entirely - local schema only supports
         // user/assistant/system. Summaries are handled via the summaries table.
