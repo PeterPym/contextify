@@ -1711,11 +1711,8 @@ public struct ContextifyQueryService: Sendable {
         guard let localId = try String.fetchOne(db,
           sql: "SELECT id FROM projects WHERE root_path = ?",
           arguments: [rootPath]) else {
-          #if canImport(OSLog)
-          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
-            .error("Project root_path invariant failed: no row for root_path=\(rootPath, privacy: .public) after insert-or-skip (server id=\(id, privacy: .public))")
-          #endif
-          continue  // Skip this project rather than crash the sync
+          throw DatabaseError(resultCode: .SQLITE_INTERNAL, message:
+            "Project root_path invariant failed: no row for root_path=\(rootPath) after insert-or-skip (server id=\(id))")
         }
         if localId != id {
           #if canImport(OSLog)
