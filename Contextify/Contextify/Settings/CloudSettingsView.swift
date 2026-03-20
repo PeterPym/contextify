@@ -67,6 +67,8 @@ struct CloudSettingsView: View {
   @State private var now: Date = .now
   @State private var wasOffline: Bool = false
   @State private var showReconnectBanner: Bool = false
+  @State private var localConversationCount: Int = 0
+  @State private var localProjectCount: Int = 0
   @State private var reconnectBannerTask: Task<Void, Never>?
 
   private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -80,10 +82,11 @@ struct CloudSettingsView: View {
         controlsSection
       }
     }
-    .padding()
+    .formStyle(.grouped)
     .onAppear {
       loadConfiguration()
       wasOffline = syncManager.cloudOffline
+      loadLocalStats()
       Task {
         await syncManager.refreshStatusFromServer()
         await syncManager.refreshAccountProfileFromServer()
@@ -141,12 +144,8 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var serverConfigurationSection: some View {
-    Section {
+    Section("Connection") {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Connection")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-connection-heading")
-
         if isConfigured {
           configuredConnectionSummary
         } else {
@@ -232,14 +231,8 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var syncStatusSection: some View {
-    Section {
+    Section("Status") {
       VStack(alignment: .leading, spacing: 12) {
-        Divider()
-
-        Text("Sync Status")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-sync-status-heading")
-
         VStack(alignment: .leading, spacing: 8) {
           HStack(alignment: .center, spacing: 10) {
             syncStatusBadge
@@ -302,7 +295,43 @@ struct CloudSettingsView: View {
             )
           }
         }
+
+        if let status = syncManager.cloudStatus {
+          Divider()
+
+          HStack(spacing: 0) {
+            cloudStatItem(
+              value: formatCount(status.entriesSynced),
+              label: "Cloud entries"
+            )
+            Spacer()
+            cloudStatItem(
+              value: formatCount(localProjectCount),
+              label: "Projects"
+            )
+            Spacer()
+            cloudStatItem(
+              value: formatCount(localConversationCount),
+              label: "Conversations"
+            )
+            Spacer()
+            cloudStatItem(
+              value: "\(status.devices.count)",
+              label: status.devices.count == 1 ? "Device" : "Devices"
+            )
+          }
+        }
       }
+    }
+  }
+
+  private func cloudStatItem(value: String, label: String) -> some View {
+    VStack(spacing: 2) {
+      Text(value)
+        .font(.title3.weight(.semibold).monospacedDigit())
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -392,31 +421,23 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var controlsSection: some View {
-    Section {
+    Section("Controls") {
       VStack(alignment: .leading, spacing: 12) {
-        Divider()
-
-        Text("Controls")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-controls-heading")
-
         HStack(spacing: 12) {
-          Button(primaryActionLabel) {
+          Button {
             syncManager.triggerSync()
             Task { await syncManager.refreshStatusFromServer() }
+          } label: {
+            Label(primaryActionLabel, systemImage: "arrow.triangle.2.circlepath")
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
           .accessibilityIdentifier("cloud-sync-now-button")
 
-          if syncManager.syncState == .syncing {
-            ProgressView()
-              .controlSize(.small)
-              .accessibilityIdentifier("cloud-sync-now-spinner")
-          }
-
-          Button("View Activity") {
+          Button {
             openCloudSyncPage()
+          } label: {
+            Label("View Activity", systemImage: "globe")
           }
           .buttonStyle(.bordered)
           .accessibilityIdentifier("cloud-view-activity-button")
@@ -618,6 +639,18 @@ struct CloudSettingsView: View {
   }
 
   // MARK: - Actions
+
+  private func loadLocalStats() {
+    do {
+      let dbURL = try DatabaseManager.shared.databasePath()
+      let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: true)
+      let dbCounts = try service.counts()
+      localConversationCount = dbCounts.transcriptCount
+      localProjectCount = dbCounts.projectCount
+    } catch {
+      localConversationCount = 0
+    }
+  }
 
   private func loadConfiguration() {
     if let config = syncManager.loadConfig() {

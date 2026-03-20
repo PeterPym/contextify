@@ -783,7 +783,7 @@ private extension StatusBarView {
                 Button {
                     openCloudDashboard()
                 } label: {
-                    Label("View Details", systemImage: "globe")
+                    Label("View Activity", systemImage: "globe")
                 }
                 .buttonStyle(.bordered)
             }
