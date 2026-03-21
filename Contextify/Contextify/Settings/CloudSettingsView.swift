@@ -277,6 +277,17 @@ struct CloudSettingsView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("cloud-sync-error-message")
+
+              if let reportURL = syncManager.syncErrorReportURL {
+                Button {
+                  NSWorkspace.shared.open(reportURL)
+                } label: {
+                  Label("Report Issue", systemImage: "envelope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Report this sync error to support via email")
+              }
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)

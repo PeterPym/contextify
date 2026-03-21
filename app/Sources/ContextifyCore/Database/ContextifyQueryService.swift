@@ -13,6 +13,47 @@ public struct ContextifyQueryService: Sendable {
   public enum QueryError: Error, Sendable, Equatable {
     case featureUnavailable(feature: String, message: String)
   }
+
+  /// Structured errors for cloud pull import failures.
+  /// Each case has a stable error code for support reporting.
+  public enum CloudPullImportError: Error, Sendable {
+    /// Project root_path invariant failed: row expected but not found after insert-or-skip.
+    case projectRootPathInvariant(serverId: String, rootPath: String)
+
+    /// A stable error code string suitable for support reporting.
+    public var errorCode: String {
+      switch self {
+      case .projectRootPathInvariant: return "SYNC_PROJECT_ROOTPATH_INVARIANT"
+      }
+    }
+
+    /// Human-readable description including error code.
+    public var localizedDescription: String {
+      switch self {
+      case .projectRootPathInvariant(let serverId, let rootPath):
+        return "[\(errorCode)] Project root_path invariant failed: no local row for root_path=\"\(rootPath)\" after insert (server id=\(serverId))"
+      }
+    }
+
+    /// Generates a mailto: URL for reporting this error to support.
+    public func supportMailtoURL(deviceName: String? = nil, account: String? = nil) -> URL? {
+      let subject = "Contextify Sync Error: \(errorCode)"
+      var body = "Error: \(localizedDescription)\n"
+      body += "Timestamp: \(ISO8601DateFormatter().string(from: Date()))\n"
+      if let deviceName { body += "Device: \(deviceName)\n" }
+      if let account { body += "Account: \(account)\n" }
+      body += "\n--- Please describe what you were doing when this occurred ---\n"
+
+      var components = URLComponents()
+      components.scheme = "mailto"
+      components.path = "support@contextify.sh"
+      components.queryItems = [
+        URLQueryItem(name: "subject", value: subject),
+        URLQueryItem(name: "body", value: body),
+      ]
+      return components.url
+    }
+  }
   private let pool: DatabasePool
   private let entriesPKIndex: String?
 
@@ -1711,8 +1752,7 @@ public struct ContextifyQueryService: Sendable {
         guard let localId = try String.fetchOne(db,
           sql: "SELECT id FROM projects WHERE root_path = ?",
           arguments: [rootPath]) else {
-          throw DatabaseError(resultCode: .SQLITE_INTERNAL, message:
-            "Project root_path invariant failed: no row for root_path=\(rootPath) after insert-or-skip (server id=\(id))")
+          throw CloudPullImportError.projectRootPathInvariant(serverId: id, rootPath: rootPath)
         }
         if localId != id {
           #if canImport(OSLog)
