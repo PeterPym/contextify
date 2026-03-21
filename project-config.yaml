@@ -30,7 +30,7 @@ remote: origin
 
 sync:
   strategy: merge
-  push_landing: true
+  push_landing: false
   push_to_canonical: true
 
 hooks:
