@@ -1724,23 +1724,27 @@ public struct ContextifyQueryService: Sendable {
         projectsImported += 1
       }
 
+      // Resolve a server project ID to its local equivalent.
+      // Checks the remap dictionary first (covers cross-machine ID divergence),
+      // then falls back to a direct DB lookup (covers projects already present
+      // from a prior sync page or local ingest). Returns nil if no local
+      // project exists for this ID.
+      func resolveLocalProjectId(_ serverId: String) throws -> String? {
+        if let remapped = projectIdRemap[serverId] {
+          return remapped
+        }
+        return try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [serverId])
+      }
+
       // Upsert transcripts
       for tx in transcripts {
         guard let id = tx["id"] as? String,
               let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
-        // Resolve server project ID to local project ID. Prefer remap (covers
-        // cross-machine ID divergence), fall back to direct lookup (covers
-        // projects already present from a prior sync page or local ingest).
-        let projectId: String
-        if let remapped = projectIdRemap[rawProjectId] {
-          projectId = remapped
-        } else if let existing = try String.fetchOne(db,
-          sql: "SELECT id FROM projects WHERE id = ?",
-          arguments: [rawProjectId]) {
-          projectId = existing
-        } else {
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping transcript \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
@@ -1779,15 +1783,7 @@ public struct ContextifyQueryService: Sendable {
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
-        // Resolve server project ID to local (same logic as transcripts above)
-        let projectId: String
-        if let remapped = projectIdRemap[rawProjectId] {
-          projectId = remapped
-        } else if let existing = try String.fetchOne(db,
-          sql: "SELECT id FROM projects WHERE id = ?",
-          arguments: [rawProjectId]) {
-          projectId = existing
-        } else {
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping entry \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
