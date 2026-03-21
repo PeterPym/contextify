@@ -13,6 +13,46 @@ public struct ContextifyQueryService: Sendable {
   public enum QueryError: Error, Sendable, Equatable {
     case featureUnavailable(feature: String, message: String)
   }
+
+  /// Structured errors for cloud pull import failures.
+  /// Each case has a stable error code for support reporting.
+  public enum CloudPullImportError: Error, LocalizedError, Sendable {
+    /// Project root_path invariant failed: row expected but not found after insert-or-skip.
+    case projectRootPathInvariant(serverId: String, rootPath: String)
+
+    /// A stable error code string suitable for support reporting.
+    public var errorCode: String {
+      switch self {
+      case .projectRootPathInvariant: return "SYNC_PROJECT_ROOTPATH_INVARIANT"
+      }
+    }
+
+    /// Human-readable description via LocalizedError protocol.
+    public var errorDescription: String? {
+      switch self {
+      case .projectRootPathInvariant(let serverId, let rootPath):
+        return "[\(errorCode)] Project root_path invariant failed: no local row for root_path=\"\(rootPath)\" after insert (server id=\(serverId))"
+      }
+    }
+
+    /// Generates a mailto: URL for reporting this error to support.
+    public func supportMailtoURL(deviceName: String? = nil) -> URL? {
+      let subject = "Contextify Sync Error: \(errorCode)"
+      var body = "Error: \(errorDescription ?? errorCode)\n"
+      body += "Timestamp: \(ISO8601DateFormatter().string(from: Date()))\n"
+      if let deviceName { body += "Device: \(deviceName)\n" }
+      body += "\n--- Please describe what you were doing when this occurred ---\n"
+
+      var components = URLComponents()
+      components.scheme = "mailto"
+      components.path = "support@contextify.sh"
+      components.queryItems = [
+        URLQueryItem(name: "subject", value: subject),
+        URLQueryItem(name: "body", value: body),
+      ]
+      return components.url
+    }
+  }
   private let pool: DatabasePool
   private let entriesPKIndex: String?
 
@@ -1711,8 +1751,7 @@ public struct ContextifyQueryService: Sendable {
         guard let localId = try String.fetchOne(db,
           sql: "SELECT id FROM projects WHERE root_path = ?",
           arguments: [rootPath]) else {
-          throw DatabaseError(resultCode: .SQLITE_INTERNAL, message:
-            "Project root_path invariant failed: no row for root_path=\(rootPath) after insert-or-skip (server id=\(id))")
+          throw CloudPullImportError.projectRootPathInvariant(serverId: id, rootPath: rootPath)
         }
         if localId != id {
           #if canImport(OSLog)
@@ -1724,23 +1763,27 @@ public struct ContextifyQueryService: Sendable {
         projectsImported += 1
       }
 
+      // Resolve a server project ID to its local equivalent.
+      // Checks the remap dictionary first (covers cross-machine ID divergence),
+      // then falls back to a direct DB lookup (covers projects already present
+      // from a prior sync page or local ingest). Returns nil if no local
+      // project exists for this ID.
+      func resolveLocalProjectId(_ serverId: String) throws -> String? {
+        if let remapped = projectIdRemap[serverId] {
+          return remapped
+        }
+        return try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [serverId])
+      }
+
       // Upsert transcripts
       for tx in transcripts {
         guard let id = tx["id"] as? String,
               let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
-        // Resolve server project ID to local project ID. Prefer remap (covers
-        // cross-machine ID divergence), fall back to direct lookup (covers
-        // projects already present from a prior sync page or local ingest).
-        let projectId: String
-        if let remapped = projectIdRemap[rawProjectId] {
-          projectId = remapped
-        } else if let existing = try String.fetchOne(db,
-          sql: "SELECT id FROM projects WHERE id = ?",
-          arguments: [rawProjectId]) {
-          projectId = existing
-        } else {
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping transcript \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
@@ -1779,19 +1822,25 @@ public struct ContextifyQueryService: Sendable {
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
-        // Resolve server project ID to local (same logic as transcripts above)
-        let projectId: String
-        if let remapped = projectIdRemap[rawProjectId] {
-          projectId = remapped
-        } else if let existing = try String.fetchOne(db,
-          sql: "SELECT id FROM projects WHERE id = ?",
-          arguments: [rawProjectId]) {
-          projectId = existing
-        } else {
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping entry \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
           #endif
+          skipped += 1
+          continue
+        }
+
+        // Validate transcript exists locally before inserting entry
+        let transcriptExists = try Int.fetchOne(db,
+          sql: "SELECT 1 FROM transcripts WHERE id = ?",
+          arguments: [transcriptId])
+        guard transcriptExists != nil else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping entry \(id, privacy: .public): no local transcript for transcript_id=\(transcriptId, privacy: .public)")
+          #endif
+          skipped += 1
           continue
         }
 

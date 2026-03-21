@@ -86,6 +86,10 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Current sync state for UI display.
   @MainActor public private(set) var syncState: SyncState = .disabled
 
+  /// Mailto URL for reporting the most recent sync error to support.
+  /// Non-nil only when syncState is .error and the error was a structured import error.
+  @MainActor public private(set) var syncErrorReportURL: URL?
+
   /// Result from the most recent push operation.
   @MainActor public private(set) var lastPushResult: PushResult?
 
@@ -329,6 +333,7 @@ public final class CloudSyncManager: @unchecked Sendable {
         self.lastPullResult = pullResult
         self.lastSyncDate = Date()
         self.syncState = .idle
+        self.syncErrorReportURL = nil
       }
       await refreshStatusFromServer()
 
@@ -341,7 +346,14 @@ public final class CloudSyncManager: @unchecked Sendable {
         log.info("Sync deferred due to transient database contention")
       } else {
         let message = userFriendlyMessage(for: error)
-        await MainActor.run { self.syncState = .error(message) }
+        let importError = error as? ContextifyQueryService.CloudPullImportError
+        await MainActor.run {
+          let reportURL = importError?.supportMailtoURL(
+            deviceName: self.config?.deviceName
+          )
+          self.syncState = .error(message)
+          self.syncErrorReportURL = reportURL
+        }
         log.error("Sync failed: \(message, privacy: .public)")
       }
       await refreshStatusFromServer()
@@ -846,6 +858,9 @@ public final class CloudSyncManager: @unchecked Sendable {
       case .partialPushFailure(let accepted, let errors):
         return "Push partially failed: \(accepted) entries synced, \(errors.count) failed. Will retry on next sync."
       }
+    }
+    if let importError = error as? ContextifyQueryService.CloudPullImportError {
+      return "Sync import error [\(importError.errorCode)]. Use 'Report Issue' in Cloud settings to report this."
     }
     return error.localizedDescription
   }
