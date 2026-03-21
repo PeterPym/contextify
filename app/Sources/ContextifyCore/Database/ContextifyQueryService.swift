@@ -16,7 +16,7 @@ public struct ContextifyQueryService: Sendable {
 
   /// Structured errors for cloud pull import failures.
   /// Each case has a stable error code for support reporting.
-  public enum CloudPullImportError: Error, Sendable {
+  public enum CloudPullImportError: Error, LocalizedError, Sendable {
     /// Project root_path invariant failed: row expected but not found after insert-or-skip.
     case projectRootPathInvariant(serverId: String, rootPath: String)
 
@@ -27,8 +27,8 @@ public struct ContextifyQueryService: Sendable {
       }
     }
 
-    /// Human-readable description including error code.
-    public var localizedDescription: String {
+    /// Human-readable description via LocalizedError protocol.
+    public var errorDescription: String? {
       switch self {
       case .projectRootPathInvariant(let serverId, let rootPath):
         return "[\(errorCode)] Project root_path invariant failed: no local row for root_path=\"\(rootPath)\" after insert (server id=\(serverId))"
@@ -36,12 +36,11 @@ public struct ContextifyQueryService: Sendable {
     }
 
     /// Generates a mailto: URL for reporting this error to support.
-    public func supportMailtoURL(deviceName: String? = nil, account: String? = nil) -> URL? {
+    public func supportMailtoURL(deviceName: String? = nil) -> URL? {
       let subject = "Contextify Sync Error: \(errorCode)"
-      var body = "Error: \(localizedDescription)\n"
+      var body = "Error: \(errorDescription ?? errorCode)\n"
       body += "Timestamp: \(ISO8601DateFormatter().string(from: Date()))\n"
       if let deviceName { body += "Device: \(deviceName)\n" }
-      if let account { body += "Account: \(account)\n" }
       body += "\n--- Please describe what you were doing when this occurred ---\n"
 
       var components = URLComponents()
@@ -1828,6 +1827,7 @@ public struct ContextifyQueryService: Sendable {
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping entry \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
           #endif
+          skipped += 1
           continue
         }
 
@@ -1840,6 +1840,7 @@ public struct ContextifyQueryService: Sendable {
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping entry \(id, privacy: .public): no local transcript for transcript_id=\(transcriptId, privacy: .public)")
           #endif
+          skipped += 1
           continue
         }
 

@@ -349,8 +349,7 @@ public final class CloudSyncManager: @unchecked Sendable {
         let importError = error as? ContextifyQueryService.CloudPullImportError
         await MainActor.run {
           let reportURL = importError?.supportMailtoURL(
-            deviceName: self.config?.deviceName,
-            account: self.config?.apiKey.prefix(10).description
+            deviceName: self.config?.deviceName
           )
           self.syncState = .error(message)
           self.syncErrorReportURL = reportURL
