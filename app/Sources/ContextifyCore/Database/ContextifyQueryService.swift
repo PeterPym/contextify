@@ -1831,6 +1831,18 @@ public struct ContextifyQueryService: Sendable {
           continue
         }
 
+        // Validate transcript exists locally before inserting entry
+        let transcriptExists = try Int.fetchOne(db,
+          sql: "SELECT 1 FROM transcripts WHERE id = ?",
+          arguments: [transcriptId])
+        guard transcriptExists != nil else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping entry \(id, privacy: .public): no local transcript for transcript_id=\(transcriptId, privacy: .public)")
+          #endif
+          continue
+        }
+
         // Skip 'summary' kind entries entirely - local schema only supports
         // user/assistant/system. Summaries are handled via the summaries table.
         if kind == "summary" {
