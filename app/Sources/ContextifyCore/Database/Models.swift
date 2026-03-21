@@ -236,9 +236,12 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
   public var isQueued: Int  // SQLite boolean (0=false, 1=true)
   // v30: Sidechain flag for agent transcripts
   public var isSidechain: Int  // SQLite boolean (0=false, 1=true)
+  // v36: Device provenance - which machine ingested this entry
+  public var sourceDeviceId: String?  // Stable machine ID (e.g. MachineID.current())
+  public var sourceDeviceName: String?  // Human-readable machine name (e.g. "Rob's MacBook Pro")
 
   public static let databaseTableName = "transcript_entries"
-  public static let databaseColumnCount = 25
+  public static let databaseColumnCount = 27
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -266,6 +269,8 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
     case updatedAt = "updated_at"
     case isQueued = "is_queued"
     case isSidechain = "is_sidechain"
+    case sourceDeviceId = "source_device_id"
+    case sourceDeviceName = "source_device_name"
   }
 }
 

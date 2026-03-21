@@ -228,7 +228,9 @@ public struct EntryInsert {
       createdAt: now,
       updatedAt: now,
       isQueued: isQueued ? 1 : 0,
-      isSidechain: isSidechain ? 1 : 0
+      isSidechain: isSidechain ? 1 : 0,
+      sourceDeviceId: MachineID.current(),
+      sourceDeviceName: DeviceName.current()
     )
   }
 }

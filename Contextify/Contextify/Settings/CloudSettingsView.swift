@@ -67,6 +67,8 @@ struct CloudSettingsView: View {
   @State private var now: Date = .now
   @State private var wasOffline: Bool = false
   @State private var showReconnectBanner: Bool = false
+  @State private var localConversationCount: Int = 0
+  @State private var localProjectCount: Int = 0
   @State private var reconnectBannerTask: Task<Void, Never>?
 
   private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -80,10 +82,11 @@ struct CloudSettingsView: View {
         controlsSection
       }
     }
-    .padding()
+    .formStyle(.grouped)
     .onAppear {
       loadConfiguration()
       wasOffline = syncManager.cloudOffline
+      loadLocalStats()
       Task {
         await syncManager.refreshStatusFromServer()
         await syncManager.refreshAccountProfileFromServer()
@@ -141,12 +144,8 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var serverConfigurationSection: some View {
-    Section {
+    Section("Connection") {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Cloud Connection")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-connection-heading")
-
         if isConfigured {
           configuredConnectionSummary
         } else {
@@ -232,14 +231,8 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var syncStatusSection: some View {
-    Section {
+    Section("Status") {
       VStack(alignment: .leading, spacing: 12) {
-        Divider()
-
-        Text("Sync Status")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-sync-status-heading")
-
         VStack(alignment: .leading, spacing: 8) {
           HStack(alignment: .center, spacing: 10) {
             syncStatusBadge
@@ -284,6 +277,17 @@ struct CloudSettingsView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("cloud-sync-error-message")
+
+              if let reportURL = syncManager.syncErrorReportURL {
+                Button {
+                  NSWorkspace.shared.open(reportURL)
+                } label: {
+                  Label("Report Issue", systemImage: "envelope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Report this sync error to support via email")
+              }
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,7 +306,43 @@ struct CloudSettingsView: View {
             )
           }
         }
+
+        if let status = syncManager.cloudStatus {
+          Divider()
+
+          HStack(spacing: 0) {
+            cloudStatItem(
+              value: formatCount(status.entriesSynced),
+              label: "Cloud entries"
+            )
+            Spacer()
+            cloudStatItem(
+              value: formatCount(localProjectCount),
+              label: "Projects"
+            )
+            Spacer()
+            cloudStatItem(
+              value: formatCount(localConversationCount),
+              label: "Conversations"
+            )
+            Spacer()
+            cloudStatItem(
+              value: "\(status.devices.count)",
+              label: status.devices.count == 1 ? "Device" : "Devices"
+            )
+          }
+        }
       }
+    }
+  }
+
+  private func cloudStatItem(value: String, label: String) -> some View {
+    VStack(spacing: 2) {
+      Text(value)
+        .font(.title3.weight(.semibold).monospacedDigit())
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -392,31 +432,23 @@ struct CloudSettingsView: View {
 
   @ViewBuilder
   private var controlsSection: some View {
-    Section {
+    Section("Controls") {
       VStack(alignment: .leading, spacing: 12) {
-        Divider()
-
-        Text("Controls")
-          .font(.headline)
-          .accessibilityIdentifier("cloud-controls-heading")
-
         HStack(spacing: 12) {
-          Button(primaryActionLabel) {
+          Button {
             syncManager.triggerSync()
             Task { await syncManager.refreshStatusFromServer() }
+          } label: {
+            Label(primaryActionLabel, systemImage: "arrow.triangle.2.circlepath")
           }
           .buttonStyle(.bordered)
           .disabled(syncManager.syncState == .syncing)
           .accessibilityIdentifier("cloud-sync-now-button")
 
-          if syncManager.syncState == .syncing {
-            ProgressView()
-              .controlSize(.small)
-              .accessibilityIdentifier("cloud-sync-now-spinner")
-          }
-
-          Button("View Activity") {
+          Button {
             openCloudSyncPage()
+          } label: {
+            Label("View Activity", systemImage: "globe")
           }
           .buttonStyle(.bordered)
           .accessibilityIdentifier("cloud-view-activity-button")
@@ -437,6 +469,8 @@ struct CloudSettingsView: View {
   private enum SyncDisplayState {
     case healthy
     case syncing
+    case waitingForIngest
+    case deferred
     case offline
     case needsAttention
     case error
@@ -487,6 +521,8 @@ struct CloudSettingsView: View {
     }
 
     if syncManager.syncState == .syncing { return .syncing }
+    if syncManager.syncState == .waitingForIngest { return .waitingForIngest }
+    if syncManager.syncState == .deferred { return .deferred }
     if case .error = syncManager.syncState { return .error }
     return .healthy
   }
@@ -498,6 +534,10 @@ struct CloudSettingsView: View {
       statusBadge(text: "Healthy", systemImage: "checkmark.circle.fill", tint: .green)
     case .syncing:
       statusBadge(text: "Syncing", systemImage: "arrow.triangle.2.circlepath", tint: .blue)
+    case .waitingForIngest:
+      statusBadge(text: "Waiting", systemImage: "hourglass", tint: .secondary)
+    case .deferred:
+      statusBadge(text: "Deferred", systemImage: "clock.arrow.circlepath", tint: .secondary)
     case .offline:
       statusBadge(text: "Offline", systemImage: "wifi.slash", tint: .orange)
     case .needsAttention:
@@ -512,7 +552,7 @@ struct CloudSettingsView: View {
   private var stateHeadlineText: String {
     switch displayState {
     case .healthy:
-      return "Day-to-day sync is caught up."
+      return "Cloud up to date."
     case .syncing:
       if showsBulkCatchUpProgress,
          let session = visibleActivePushSession,
@@ -522,6 +562,10 @@ struct CloudSettingsView: View {
         return "Uploading catch-up batch (\(formatPercent(resolved: min(max(resolved, 0), total), total: total)))."
       }
       return "Uploading recent changes."
+    case .waitingForIngest:
+      return "Waiting for transcript ingestion to complete before syncing."
+    case .deferred:
+      return "Sync paused while transcript ingestion is active."
     case .offline:
       return "Cloud sync is offline."
     case .needsAttention:
@@ -542,6 +586,10 @@ struct CloudSettingsView: View {
         return "This is a bounded catch-up upload, so progress and ETA are shown."
       }
       return nil
+    case .waitingForIngest:
+      return "Sync will begin automatically as soon as ingestion finishes."
+    case .deferred:
+      return "Sync will retry on the next scheduled cycle, or you can sync manually."
     case .offline:
       return "Changes are saved locally and queued for upload. Upload resumes automatically when connection returns."
     case .needsAttention:
@@ -602,6 +650,18 @@ struct CloudSettingsView: View {
   }
 
   // MARK: - Actions
+
+  private func loadLocalStats() {
+    do {
+      let dbURL = try DatabaseManager.shared.databasePath()
+      let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: true)
+      let dbCounts = try service.counts()
+      localConversationCount = dbCounts.transcriptCount
+      localProjectCount = dbCounts.projectCount
+    } catch {
+      localConversationCount = 0
+    }
+  }
 
   private func loadConfiguration() {
     if let config = syncManager.loadConfig() {

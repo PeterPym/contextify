@@ -63,7 +63,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 520, height: 520)
+      .frame(width: 520, height: 480)
     } else {
       // DMG build: General + Database + CLI + Cloud (no permissions needed)
       TabView(selection: $selectedTab) {
@@ -100,7 +100,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 520, height: 520)
+      .frame(width: 520, height: 480)
     }
   }
 }
@@ -127,7 +127,7 @@ struct DatabaseSettingsTab: View {
 
   var body: some View {
     Form {
-      Section {
+      Section("Current Location") {
         // Conflict warning (if present)
         if let warning = conflictWarning {
           HStack(spacing: 8) {
@@ -137,83 +137,54 @@ struct DatabaseSettingsTab: View {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
-          .padding(8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(Color.orange.opacity(0.1))
-          .cornerRadius(4)
-
-          Divider()
-            .padding(.vertical, 4)
         }
 
-        // Current location display
-        VStack(alignment: .leading, spacing: 8) {
-          HStack {
-            Text("Current Location:")
-              .font(.subheadline)
-            Spacer()
-            Button(action: { openDatabaseFolder() }) {
-              Label("Reveal in Finder", systemImage: "folder")
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-          }
-
+        HStack {
           Text(currentLocation)
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
-            .padding(6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(4)
+          Spacer()
+          Button(action: { openDatabaseFolder() }) {
+            Label("Reveal in Finder", systemImage: "folder")
+          }
+          .buttonStyle(.borderless)
+          .controlSize(.small)
         }
-        .padding(.top, 4)
 
         if isDropboxLocation {
           DropboxBadge()
-            .padding(.top, 4)
+        }
+      }
+
+      Section("Storage Location") {
+        HStack(spacing: 6) {
+          Text("Choose where Contextify stores its database.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer()
+          InfoButton(isPresented: $showLocationInfo)
+            .popover(isPresented: $showLocationInfo) {
+              InfoPopoverContent(
+                title: "Custom Database Location",
+                message: locationExplanation
+              )
+            }
         }
 
-        Divider()
-          .padding(.vertical, 8)
+        Picker("Location", selection: $isCustomLocation) {
+          Text("Default").tag(false)
+          Text("Custom").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .disabled(isMigrating)
 
-        // Location selection
-        VStack(alignment: .leading, spacing: 12) {
-          HStack(spacing: 6) {
-            Text("Storage Location:")
-              .font(.subheadline)
-
-            InfoButton(isPresented: $showLocationInfo)
-              .popover(isPresented: $showLocationInfo) {
-                InfoPopoverContent(
-                  title: "Custom Database Location",
-                  message: locationExplanation
-                )
-              }
+        if isCustomLocation {
+          Button(action: { showingFilePicker = true }) {
+            Label("Choose Custom Location...", systemImage: "folder")
           }
-
-          Picker("", selection: $isCustomLocation) {
-            Text("Default Location").tag(false)
-            Text("Custom Location").tag(true)
-          }
-          .pickerStyle(.radioGroup)
+          .buttonStyle(.bordered)
           .disabled(isMigrating)
-
-          if isCustomLocation {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Selecting a new location will move your database from its current location.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-              Button(action: { showingFilePicker = true }) {
-                Label("Choose Custom Location...", systemImage: "folder")
-              }
-              .buttonStyle(.bordered)
-              .disabled(isMigrating)
-            }
-            .padding(.top, 4)
-          }
         }
 
         // Migration status
@@ -292,7 +263,7 @@ struct DatabaseSettingsTab: View {
         }
       }
     }
-    .padding()
+    .formStyle(.grouped)
     .fileImporter(
       isPresented: $showingFilePicker,
       allowedContentTypes: [.folder],

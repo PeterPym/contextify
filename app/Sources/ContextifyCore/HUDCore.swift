@@ -30,6 +30,8 @@ public enum HUDPreferences {
 
   // Window behavior
   public static let windowAlwaysOnTopKey = "dev.contextify.windowAlwaysOnTop"
+  public static let menuBarExtraEnabledKey = "dev.contextify.menuBarExtraEnabled"
+  public static let backgroundUtilityModeEnabledKey = "dev.contextify.backgroundUtilityModeEnabled"
 
   // Launch at login
   public static let hasOfferedLaunchAtLoginKey = "dev.contextify.hasOfferedLaunchAtLogin"
@@ -228,6 +230,33 @@ public enum HUDPreferences {
   /// Set whether the window should float above other windows.
   public static func setWindowAlwaysOnTop(_ enabled: Bool) {
     sharedDefaults.set(enabled, forKey: windowAlwaysOnTopKey)
+  }
+
+  /// Returns true if the user explicitly enabled the menu bar extra.
+  public static func isMenuBarExtraEnabled() -> Bool {
+    sharedDefaults.bool(forKey: menuBarExtraEnabledKey)
+  }
+
+  /// Set whether the menu bar extra should be shown.
+  ///
+  /// This stores the user's explicit preference only. Background utility mode
+  /// can still force effective visibility at runtime via
+  /// `AppPresentationPreferences.resolvedMenuBarExtraEnabled(...)`.
+  public static func setMenuBarExtraEnabled(_ enabled: Bool) {
+    sharedDefaults.set(enabled, forKey: menuBarExtraEnabledKey)
+  }
+
+  /// Returns true if Contextify should run without Dock / Command-Tab presence.
+  public static func isBackgroundUtilityModeEnabled() -> Bool {
+    sharedDefaults.bool(forKey: backgroundUtilityModeEnabledKey)
+  }
+
+  /// Set whether Contextify should run as a background utility.
+  ///
+  /// The explicit menu bar extra preference is preserved; effective visibility
+  /// is derived at runtime so disabling utility mode restores the prior choice.
+  public static func setBackgroundUtilityModeEnabled(_ enabled: Bool) {
+    sharedDefaults.set(enabled, forKey: backgroundUtilityModeEnabledKey)
   }
 
   // MARK: - CLI Install Location (App Store)

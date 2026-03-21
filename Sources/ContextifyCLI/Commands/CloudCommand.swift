@@ -58,7 +58,12 @@ struct CLICloudConfig: Codable {
   static func load() throws -> CLICloudConfig {
     let data = try Data(contentsOf: configFile)
     // Try current format first
-    if let cfg = try? JSONDecoder().decode(CLICloudConfig.self, from: data) {
+    if var cfg = try? JSONDecoder().decode(CLICloudConfig.self, from: data) {
+      let normalizedDeviceID = normalizedCLICloudDeviceID(cfg.deviceId)
+      if normalizedDeviceID != cfg.deviceId {
+        cfg.deviceId = normalizedDeviceID
+        try? cfg.save()
+      }
       return cfg
     }
     // Fall back to legacy format and migrate
@@ -818,7 +823,11 @@ struct CloudPushCommand: ParsableCommand {
     #else
     let osName = "linux"
     #endif
-    let machineId = config.deviceId.isEmpty ? getStableMachineId() : config.deviceId
+    let machineId = normalizedCLICloudDeviceID(config.deviceId)
+    if machineId != config.deviceId {
+      config.deviceId = machineId
+      try config.save()
+    }
 
     // Keyset pagination: resume from saved cursor for incremental push
     var afterTimestamp: Int? = config.lastPushTimestamp
@@ -1261,23 +1270,7 @@ struct CloudSearchCommand: ParsableCommand {
 /// Stable machine identifier for device registration
 private func getStableMachineId() -> String {
   #if os(macOS)
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
-  process.arguments = ["-rd1", "-c", "IOPlatformExpertDevice"]
-  let pipe = Pipe()
-  process.standardOutput = pipe
-  process.standardError = FileHandle.nullDevice
-  try? process.run()
-  process.waitUntilExit()
-  let output = String(
-    data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-  if let range = output.range(of: "IOPlatformUUID\" = \"") {
-    let start = range.upperBound
-    if let end = output[start...].firstIndex(of: "\"") {
-      return String(output[start..<end])
-    }
-  }
-  return ProcessInfo.processInfo.hostName
+  return MachineID.current()
   #else
   if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
     .trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -1293,6 +1286,17 @@ private func getLocalMachineName() -> String {
   return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
   #else
   return ProcessInfo.processInfo.hostName
+  #endif
+}
+
+private func normalizedCLICloudDeviceID(_ storedID: String?) -> String {
+  #if os(macOS)
+  return MachineID.normalizedCloudDeviceID(storedID)
+  #else
+  guard let storedID, !storedID.isEmpty else {
+    return getStableMachineId()
+  }
+  return storedID
   #endif
 }
 
