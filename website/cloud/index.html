@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Contextify Cloud - Sync AI Conversations Across Machines</title>
+  <meta name="description" content="Contextify Cloud syncs your Claude Code and Codex conversation history across machines. Search from anywhere, collaborate with your team, keep everything backed up.">
+  <link rel="canonical" href="https://contextify.sh/cloud/">
+
+  <!-- Favicon -->
+  <link rel="icon" href="../favicon.ico">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:url" content="https://contextify.sh/cloud/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Contextify Cloud - Sync AI Conversations Across Machines">
+  <meta property="og:description" content="Your Claude Code history, searchable from any device. Cloud sync for individuals and teams.">
+  <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Custom styles -->
+  <link href="../styles.css?v=0b64c91b" rel="stylesheet">
+
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+
+  <!-- Page-specific styles -->
+  <style>
+    /* Cloud Hero */
+    .cloud-hero {
+      background-color: var(--slate-900);
+      background-image:
+        radial-gradient(ellipse 70% 50% at 75% 50%, rgba(74, 123, 167, 0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 25% 70%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+      padding: 5rem 0 4rem;
+    }
+
+    .cloud-hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      color: var(--slate-50);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .cloud-hero .lead {
+      font-size: 1.25rem;
+      color: var(--slate-300);
+      line-height: 1.7;
+      max-width: 520px;
+    }
+
+    .cloud-hero .badge-cloud {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--contextify-primary);
+      background: var(--contextify-primary-light);
+      padding: 0.35rem 0.85rem;
+      border-radius: 20px;
+      margin-bottom: 1.25rem;
+    }
+
+    /* How It Works section */
+    .how-section {
+      padding: 5rem 0;
+      background-color: var(--bg-page);
+    }
+
+    [data-bs-theme="dark"] .how-section {
+      background-color: var(--slate-900);
+    }
+
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--contextify-primary);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+      line-height: 1.2;
+    }
+
+    [data-bs-theme="dark"] .section-title {
+      color: var(--slate-50);
+    }
+
+    .section-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin-bottom: 3rem;
+    }
+
+    [data-bs-theme="dark"] .section-subtitle {
+      color: var(--slate-400);
+    }
+
+    /* Architecture Diagram */
+    .arch-diagram {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      margin: 2rem 0;
+    }
+
+    [data-bs-theme="dark"] .arch-diagram {
+      background: var(--slate-800);
+      border-color: var(--slate-700);
+    }
+
+    .arch-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+    }
+
+    .arch-node {
+      text-align: center;
+      padding: 1.25rem 1rem;
+      flex: 0 0 auto;
+      min-width: 140px;
+    }
+
+    .arch-node-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 0.75rem;
+      font-size: 1.5rem;
+    }
+
+    .arch-node-icon.local {
+      background: var(--contextify-primary-light);
+      color: var(--contextify-primary);
+    }
+
+    .arch-node-icon.cloud {
+      background: var(--contextify-info-light);
+      color: var(--contextify-info);
+    }
+
+    .arch-node-icon.device {
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
+    }
+
+    .arch-node-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    [data-bs-theme="dark"] .arch-node-label {
+      color: var(--slate-200);
+    }
+
+    .arch-node-desc {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    [data-bs-theme="dark"] .arch-node-desc {
+      color: var(--slate-400);
+    }
+
+    .arch-arrow {
+      font-size: 1.5rem;
+      color: var(--text-tertiary);
+      padding: 0 0.5rem;
+      flex-shrink: 0;
+    }
+
+    /* What Syncs / What Stays */
+    .sync-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+
+    [data-bs-theme="dark"] .sync-section {
+      background: var(--slate-800);
+    }
+
+    .sync-card {
+      background: var(--bg-page);
+      border: 1px solid var(--border-default);
+      border-radius: 14px;
+      padding: 2rem;
+      height: 100%;
+    }
+
+    [data-bs-theme="dark"] .sync-card {
+      background: var(--slate-900);
+      border-color: var(--slate-700);
+    }
+
+    .sync-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .sync-card .icon-synced {
+      color: var(--contextify-primary);
+    }
+
+    .sync-card .icon-local {
+      color: var(--contextify-secondary);
+    }
+
+    .sync-card ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .sync-card li {
+      padding: 0.5rem 0 0.5rem 1.5rem;
+      position: relative;
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    [data-bs-theme="dark"] .sync-card li {
+      color: var(--slate-300);
+    }
+
+    .sync-card li::before {
+      position: absolute;
+      left: 0;
+      top: 0.65rem;
+      font-size: 0.8rem;
+    }
+
+    .sync-card.synced li::before {
+      content: "\2713";
+      color: var(--contextify-primary);
+      font-weight: 700;
+    }
+
+    .sync-card.local li::before {
+      content: "\25CF";
+      color: var(--contextify-secondary);
+      font-size: 0.5rem;
+      top: 0.85rem;
+    }
+
+    /* Capabilities Grid */
+    .capabilities-section {
+      padding: 5rem 0;
+      background-color: var(--bg-page);
+    }
+
+    [data-bs-theme="dark"] .capabilities-section {
+      background-color: var(--slate-900);
+    }
+
+    .cap-card {
+      padding: 1.75rem;
+      border-radius: 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      height: 100%;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .cap-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.1);
+    }
+
+    [data-bs-theme="dark"] .cap-card {
+      background: var(--slate-800);
+      border-color: var(--slate-700);
+    }
+
+    [data-bs-theme="dark"] .cap-card:hover {
+      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
+    }
+
+    .cap-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+      background: var(--contextify-primary-light);
+      color: var(--contextify-primary);
+    }
+
+    .cap-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    [data-bs-theme="dark"] .cap-card h3 {
+      color: var(--slate-100);
+    }
+
+    .cap-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.6;
+    }
+
+    [data-bs-theme="dark"] .cap-card p {
+      color: var(--slate-400);
+    }
+
+    /* Comparison Section */
+    .comparison-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+
+    [data-bs-theme="dark"] .comparison-section {
+      background: var(--slate-800);
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+    }
+
+    [data-bs-theme="dark"] .comparison-table {
+      border-color: var(--slate-700);
+    }
+
+    .comparison-table th {
+      background: var(--bg-muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      padding: 1rem 1.25rem;
+      text-align: left;
+    }
+
+    [data-bs-theme="dark"] .comparison-table th {
+      background: var(--slate-700);
+      color: var(--slate-300);
+    }
+
+    .comparison-table th:not(:first-child) {
+      text-align: center;
+    }
+
+    .comparison-table td {
+      padding: 0.85rem 1.25rem;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    [data-bs-theme="dark"] .comparison-table td {
+      color: var(--slate-200);
+      border-top-color: var(--slate-700);
+    }
+
+    .comparison-table td:not(:first-child) {
+      text-align: center;
+    }
+
+    .comparison-table .check {
+      color: var(--contextify-primary);
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    .comparison-table .dash {
+      color: var(--text-tertiary);
+    }
+
+    /* Privacy Section */
+    .privacy-section {
+      padding: 5rem 0;
+      background-color: var(--bg-page);
+    }
+
+    [data-bs-theme="dark"] .privacy-section {
+      background-color: var(--slate-900);
+    }
+
+    .privacy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .privacy-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.85rem;
+    }
+
+    .privacy-icon {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
+    }
+
+    .privacy-item h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    [data-bs-theme="dark"] .privacy-item h4 {
+      color: var(--slate-100);
+    }
+
+    .privacy-item p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.5;
+    }
+
+    [data-bs-theme="dark"] .privacy-item p {
+      color: var(--slate-400);
+    }
+
+    /* CTA Section */
+    .cta-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+
+    [data-bs-theme="dark"] .cta-section {
+      background: var(--slate-800);
+    }
+
+    .cta-card {
+      background: var(--slate-900);
+      border-radius: 16px;
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      background-image:
+        radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74, 123, 167, 0.12) 0%, transparent 70%);
+    }
+
+    .cta-card h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--slate-50);
+      margin-bottom: 0.75rem;
+    }
+
+    .cta-card p {
+      font-size: 1.1rem;
+      color: var(--slate-300);
+      margin-bottom: 2rem;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .cta-btn-group {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .cta-btn-primary {
+      display: inline-block;
+      background: var(--contextify-primary);
+      color: #fff;
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .cta-btn-primary:hover {
+      background: var(--contextify-primary-hover);
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .cta-btn-secondary {
+      display: inline-block;
+      color: var(--slate-300);
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      border: 1px solid var(--slate-600);
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .cta-btn-secondary:hover {
+      border-color: var(--contextify-primary);
+      color: var(--contextify-primary);
+      text-decoration: none;
+    }
+
+    /* FAQ Section */
+    .faq-section {
+      padding: 5rem 0;
+      background-color: var(--bg-page);
+    }
+
+    [data-bs-theme="dark"] .faq-section {
+      background-color: var(--slate-900);
+    }
+
+    .faq-item {
+      border-bottom: 1px solid var(--border-default);
+      padding: 1.5rem 0;
+    }
+
+    [data-bs-theme="dark"] .faq-item {
+      border-bottom-color: var(--slate-700);
+    }
+
+    .faq-item:last-child {
+      border-bottom: none;
+    }
+
+    .faq-item h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    [data-bs-theme="dark"] .faq-item h3 {
+      color: var(--slate-100);
+    }
+
+    .faq-item p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.6;
+    }
+
+    [data-bs-theme="dark"] .faq-item p {
+      color: var(--slate-400);
+    }
+
+    /* Responsive */
+    @media (max-width: 767.98px) {
+      .cloud-hero h1 {
+        font-size: 2.25rem;
+      }
+
+      .section-title {
+        font-size: 1.75rem;
+      }
+
+      .arch-flow {
+        flex-direction: column;
+      }
+
+      .arch-arrow {
+        transform: rotate(90deg);
+        padding: 0.25rem 0;
+      }
+
+      .cta-card {
+        padding: 2.5rem 1.5rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="../">
+        <img src="../assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+      <a href="../download/" class="btn btn-primary d-none d-md-inline-block">Download</a>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="cloud-hero">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <span class="badge-cloud">Contextify Cloud</span>
+          <h1>Your AI conversation history, on every machine.</h1>
+          <p class="lead">
+            Contextify Cloud syncs your Claude Code and Codex sessions across devices. Search from your laptop, your desktop, or the web. Collaborate with your team. Never lose a conversation again.
+          </p>
+          <div class="d-flex flex-wrap gap-3 mt-4">
+            <a href="../download/" class="cta-btn-primary">Get Started Free</a>
+            <a href="../pricing/" class="cta-btn-secondary">View Plans</a>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <!-- Architecture overview diagram -->
+          <div class="arch-diagram" style="border-color: var(--slate-700);">
+            <div class="arch-flow">
+              <div class="arch-node">
+                <div class="arch-node-icon local">&#9000;</div>
+                <div class="arch-node-label">Your Mac</div>
+                <div class="arch-node-desc">Local database<br>with full history</div>
+              </div>
+              <div class="arch-arrow">&harr;</div>
+              <div class="arch-node">
+                <div class="arch-node-icon cloud">&#9729;</div>
+                <div class="arch-node-label">Contextify Cloud</div>
+                <div class="arch-node-desc">Encrypted sync<br>team search, dashboard</div>
+              </div>
+              <div class="arch-arrow">&harr;</div>
+              <div class="arch-node">
+                <div class="arch-node-icon device">&#9998;</div>
+                <div class="arch-node-label">Other Devices</div>
+                <div class="arch-node-desc">Linux CLI, second Mac,<br>web dashboard</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Brand Divider -->
+  <div class="brand-divider"></div>
+
+  <!-- How Cloud Sync Works -->
+  <section class="how-section">
+    <div class="container">
+      <p class="section-label">How It Works</p>
+      <h2 class="section-title">Local-first, cloud-optional</h2>
+      <p class="section-subtitle">
+        Contextify works entirely offline. Cloud sync is opt-in, and your local database is always the primary copy. The cloud adds backup, cross-device access, and team features on top.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="cap-card">
+            <div class="cap-icon">1</div>
+            <h3>Contextify watches locally</h3>
+            <p>The macOS app and Linux CLI monitor your Claude Code and Codex sessions in real-time. Everything goes into your local SQLite database first.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="cap-card">
+            <div class="cap-icon">2</div>
+            <h3>Cloud sync pushes changes</h3>
+            <p>When cloud sync is enabled, new entries are pushed to Contextify Cloud in small batches. The sync is incremental, cursor-based, and idempotent.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="cap-card">
+            <div class="cap-icon">3</div>
+            <h3>Access from anywhere</h3>
+            <p>Pull your history to a second Mac, search from the web dashboard, or use the Linux CLI to query from a remote server. It all stays in sync.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- What Syncs / What Stays Local -->
+  <section class="sync-section">
+    <div class="container">
+      <p class="section-label">Data Model</p>
+      <h2 class="section-title">What syncs. What stays local.</h2>
+      <p class="section-subtitle">
+        You control what goes to the cloud. Here is exactly what crosses the wire and what stays on your machine.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-md-6">
+          <div class="sync-card synced">
+            <h3><span class="icon-synced">&#9729;</span> Synced to Cloud</h3>
+            <ul>
+              <li>Conversation entries (user prompts, assistant responses)</li>
+              <li>Project names and identifiers</li>
+              <li>Transcript metadata (session IDs, timestamps, provider)</li>
+              <li>LLM-generated summaries</li>
+              <li>Entry timestamps and ordering</li>
+            </ul>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="sync-card local">
+            <h3><span class="icon-local">&#9000;</span> Stays on Your Machine</h3>
+            <ul>
+              <li>File paths and directory structures</li>
+              <li>Local UI preferences (tab groups, window positions)</li>
+              <li>Security-scoped bookmarks (App Store builds)</li>
+              <li>Apple Intelligence processing state</li>
+              <li>Local-only database indexes and caches</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Capabilities -->
+  <section class="capabilities-section">
+    <div class="container">
+      <p class="section-label">What You Get</p>
+      <h2 class="section-title">More than backup</h2>
+      <p class="section-subtitle">
+        Cloud sync unlocks features that a local-only database cannot provide.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128269;</div>
+            <h3>Cross-Device Search</h3>
+            <p>Full-text search across every conversation, from any machine with Contextify installed or from the web dashboard.</p>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128101;</div>
+            <h3>Team Collaboration</h3>
+            <p>Invite team members to a shared workspace. See who worked on what, search across the team's AI history, and share context.</p>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128202;</div>
+            <h3>Usage Analytics</h3>
+            <p>Dashboard with daily volume charts, per-project breakdowns, and per-user activity. Understand how your team uses AI tools.</p>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128737;</div>
+            <h3>Automatic Backup</h3>
+            <p>Your conversation history is backed up to the cloud continuously. If your laptop dies, your history survives.</p>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128279;</div>
+            <h3>Web Dashboard</h3>
+            <p>Browse your synced data from any browser at cloud.contextify.sh. No app installation needed for quick lookups.</p>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="cap-card">
+            <div class="cap-icon">&#128039;</div>
+            <h3>Linux CLI Sync</h3>
+            <p>The Linux CLI pushes and pulls data to the same cloud backend. Work on a remote server, search from your Mac.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Local vs Cloud Comparison -->
+  <section class="comparison-section">
+    <div class="container">
+      <p class="section-label">Compare</p>
+      <h2 class="section-title">Local-only vs. Cloud Sync</h2>
+      <p class="section-subtitle">
+        Contextify works great locally. Cloud sync adds reach.
+      </p>
+
+      <div class="table-responsive">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Local Only</th>
+              <th>With Cloud Sync</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Real-time timeline monitoring</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Full-text search</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>LLM summaries (Apple Intelligence)</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Access from second Mac</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Search from web browser</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Linux CLI sync</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Team workspace</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Usage analytics dashboard</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Automatic cloud backup</td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Works offline</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Privacy & Security -->
+  <section class="privacy-section">
+    <div class="container">
+      <p class="section-label">Security</p>
+      <h2 class="section-title">Your data, your control</h2>
+      <p class="section-subtitle">
+        Cloud sync does not change Contextify's privacy model. You are always in control.
+      </p>
+
+      <div class="privacy-grid">
+        <div class="privacy-item">
+          <div class="privacy-icon">&#128274;</div>
+          <div>
+            <h4>Opt-in only</h4>
+            <p>Cloud sync is off by default. Enable it in Settings when you are ready. Disable it at any time.</p>
+          </div>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">&#128451;</div>
+          <div>
+            <h4>Tenant isolation</h4>
+            <p>Each workspace gets its own isolated database schema. Your data is never mixed with other customers.</p>
+          </div>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">&#127760;</div>
+          <div>
+            <h4>TLS in transit</h4>
+            <p>All data is encrypted in transit over HTTPS. The cloud API runs behind Nginx with Let's Encrypt certificates.</p>
+          </div>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">&#128100;</div>
+          <div>
+            <h4>API key auth</h4>
+            <p>Your sync connection is authenticated with a unique API key. No passwords stored, no third-party OAuth required.</p>
+          </div>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">&#128190;</div>
+          <div>
+            <h4>Local-first always</h4>
+            <p>Your local database is the primary copy. If the cloud goes away, you still have everything.</p>
+          </div>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">&#128465;</div>
+          <div>
+            <h4>Delete anytime</h4>
+            <p>Request full deletion of your cloud data at any time. We comply promptly and completely.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <p class="section-label">FAQ</p>
+          <h2 class="section-title">Common questions</h2>
+
+          <div class="faq-item">
+            <h3>How is this different from Dropbox or iCloud Drive sync?</h3>
+            <p>Dropbox and iCloud Drive sync the raw database file. That works for single-machine backup, but it cannot handle concurrent access from multiple devices, does not support team workspaces, and provides no search or analytics UI. Contextify Cloud uses a proper sync protocol with cursor-based push/pull, conflict handling, and server-side indexing.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Can I use Contextify without Cloud?</h3>
+            <p>Yes. The macOS app and Linux CLI work fully offline. Cloud sync is an optional layer for cross-device access and team features. Many users run Contextify in local-only mode permanently.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>What happens if I disable cloud sync?</h3>
+            <p>Your local database is unaffected. New entries stop syncing to the cloud. Existing cloud data remains until you explicitly request deletion. You can re-enable sync at any time and it picks up where it left off.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Does the cloud process my conversations with AI?</h3>
+            <p>No. LLM summaries are generated locally on your Mac using Apple Intelligence. The cloud stores the summaries you sync, but it does not run any AI processing on your data.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>How does team search work?</h3>
+            <p>Team members who sync to the same workspace can search across everyone's conversation history from the web dashboard. Role-based access controls determine what each member can see.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Is there a self-hosted option?</h3>
+            <p>The cloud backend runs on Docker Compose (FastAPI + PostgreSQL). Self-hosted deployment documentation is available for teams that need to keep data on their own infrastructure.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <div class="cta-card">
+            <h2>Start syncing in under a minute</h2>
+            <p>Download Contextify, open Settings, and enable Cloud Sync. Your history starts backing up immediately.</p>
+            <div class="cta-btn-group">
+              <a href="../download/" class="cta-btn-primary">Download Contextify</a>
+              <a href="../pricing/" class="cta-btn-secondary">See Pricing</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="../download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="../platforms/linux/" class="mx-2">Linux</a>
+        <span class="text-secondary">|</span>
+        <a href="../pricing/" class="mx-2">Pricing</a>
+        <span class="text-secondary">|</span>
+        <a href="../blog/" class="mx-2">Blog</a>
+        <span class="text-secondary">|</span>
+        <a href="../privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="../terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="../support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+</body>
+</html>
