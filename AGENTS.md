@@ -469,7 +469,7 @@ When files under `Contextify/` are staged, the pre-commit hook runs a headless b
 
 This project uses git worktrees with shared tooling from cli-ai-setup.
 
-**Note:** The `contextify-cloud` repo (`~/code/projects/contextify-cloud/`) does NOT have worktrees yet. It uses a single checkout with feature branches merged to main. If cross-repo parallel work becomes common (e.g., CLI + server changes in the same session), mirrored worktrees may be added (see ct-406).
+**Paired repo:** The `contextify-cloud` repo has mirrored worktrees (wb1-wb4) at `~/code/projects/contextify-cloud-wbN/`. **When working cross-repo, always use the matching worktree number.** If you are in `contextify-wb3`, you must use `contextify-cloud-wb3` for any cloud repo changes. Never reach across to a different-numbered worktree. See `paired_repo` in `project-config.yaml`.
 
 **Session Start:**
 1. Run `wt-context.sh` to confirm which worktree you're in
