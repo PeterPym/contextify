@@ -766,43 +766,43 @@
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128269;</div>
-            <h3>Cross-Device Search</h3>
-            <p>Full-text search across every conversation, from any machine with Contextify installed or from the web dashboard.</p>
+            <h3>Lost a fix you made on another machine?</h3>
+            <p>Cloud sync means every conversation is searchable from any device. Find that one command from your work laptop while sitting at your personal Mac.</p>
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128101;</div>
-            <h3>Team Collaboration</h3>
-            <p>Invite team members to a shared workspace. See who worked on what, search across the team's AI history, and share context.</p>
+            <h3>Your team uses AI tools. Nobody shares context.</h3>
+            <p>Invite team members to a shared workspace. See who worked on what, search across the team's AI history, and build on each other's sessions.</p>
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128202;</div>
-            <h3>Usage Analytics</h3>
-            <p>Dashboard with daily volume charts, per-project breakdowns, and per-user activity. Understand how your team uses AI tools.</p>
+            <h3>How much is your team actually using AI?</h3>
+            <p>Usage analytics with daily volume charts, per-project breakdowns, and per-user activity. Real data instead of guesses.</p>
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128737;</div>
-            <h3>Automatic Backup</h3>
-            <p>Your conversation history is backed up to the cloud continuously. If your laptop dies, your history survives.</p>
+            <h3>Laptop dies. Two months of AI history gone.</h3>
+            <p>Cloud sync backs up your conversation history continuously. Your sessions survive hardware failures, OS reinstalls, and accidental deletions.</p>
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128279;</div>
-            <h3>Web Dashboard</h3>
-            <p>Browse your synced data from any browser at cloud.contextify.sh. No app installation needed for quick lookups.</p>
+            <h3>Need to look something up from your phone?</h3>
+            <p>The web dashboard at cloud.contextify.sh lets you search and browse from any browser. No app installation required.</p>
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
           <div class="cap-card">
             <div class="cap-icon">&#128039;</div>
-            <h3>Linux CLI Sync</h3>
-            <p>The Linux CLI pushes and pulls data to the same cloud backend. Work on a remote server, search from your Mac.</p>
+            <h3>Working on a remote Linux server?</h3>
+            <p>The Linux CLI pushes sessions to the same cloud backend. Work in SSH, search from your Mac. One history across all your environments.</p>
           </div>
         </div>
       </div>
@@ -888,52 +888,52 @@
   <section class="privacy-section">
     <div class="container">
       <p class="section-label">Security</p>
-      <h2 class="section-title">Your data, your control</h2>
+      <h2 class="section-title">Built so we can't misuse your data, not just promising we won't</h2>
       <p class="section-subtitle">
-        Cloud sync does not change Contextify's privacy model. You are always in control.
+        Security is an architectural property of Contextify Cloud, not a policy checkbox.
       </p>
 
       <div class="privacy-grid">
         <div class="privacy-item">
           <div class="privacy-icon">&#128274;</div>
           <div>
-            <h4>Opt-in only</h4>
-            <p>Cloud sync is off by default. Enable it in Settings when you are ready. Disable it at any time.</p>
+            <h4>Off by default</h4>
+            <p>Cloud sync ships disabled. You explicitly enable it per machine. Disable it at any time and your local database keeps working exactly as before.</p>
           </div>
         </div>
         <div class="privacy-item">
           <div class="privacy-icon">&#128451;</div>
           <div>
-            <h4>Tenant isolation</h4>
-            <p>Each workspace gets its own isolated database schema. Your data is never mixed with other customers.</p>
+            <h4>Schema-per-tenant isolation</h4>
+            <p>Each workspace gets its own PostgreSQL schema. Your queries physically cannot touch another customer's data. This is a database-level guarantee, not an application-level filter.</p>
           </div>
         </div>
         <div class="privacy-item">
           <div class="privacy-icon">&#127760;</div>
           <div>
-            <h4>TLS in transit</h4>
-            <p>All data is encrypted in transit over HTTPS. The cloud API runs behind Nginx with Let's Encrypt certificates.</p>
+            <h4>Encrypted in transit</h4>
+            <p>All sync traffic uses TLS 1.2+ over HTTPS. Certificate management is automated via Let's Encrypt.</p>
           </div>
         </div>
         <div class="privacy-item">
           <div class="privacy-icon">&#128100;</div>
           <div>
-            <h4>API key auth</h4>
-            <p>Your sync connection is authenticated with a unique API key. No passwords stored, no third-party OAuth required.</p>
+            <h4>API key authentication</h4>
+            <p>Your sync connection uses a unique API key generated during setup. No passwords stored on the server, no third-party OAuth dependency.</p>
           </div>
         </div>
         <div class="privacy-item">
           <div class="privacy-icon">&#128190;</div>
           <div>
-            <h4>Local-first always</h4>
-            <p>Your local database is the primary copy. If the cloud goes away, you still have everything.</p>
+            <h4>No cloud lock-in</h4>
+            <p>Your local SQLite database is always the primary copy. If the cloud disappears tomorrow, you still have everything. Cloud is additive, not required.</p>
           </div>
         </div>
         <div class="privacy-item">
           <div class="privacy-icon">&#128465;</div>
           <div>
-            <h4>Delete anytime</h4>
-            <p>Request full deletion of your cloud data at any time. We comply promptly and completely.</p>
+            <h4>Full deletion on request</h4>
+            <p>Ask us to delete your cloud data and we drop the schema. No "30-day retention," no "anonymized analytics" carve-outs. Gone is gone.</p>
           </div>
         </div>
       </div>
