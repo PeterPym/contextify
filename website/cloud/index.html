@@ -596,6 +596,149 @@
       color: var(--slate-400);
     }
 
+    /* Sync Detail Table */
+    .sync-detail-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+      font-size: 0.9rem;
+      margin-top: 1.5rem;
+    }
+
+    [data-bs-theme="dark"] .sync-detail-table {
+      border-color: var(--slate-700);
+    }
+
+    .sync-detail-table th {
+      background: var(--bg-muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+
+    [data-bs-theme="dark"] .sync-detail-table th {
+      background: var(--slate-700);
+      color: var(--slate-300);
+    }
+
+    .sync-detail-table td {
+      padding: 0.65rem 1rem;
+      color: var(--text-primary);
+      border-top: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+
+    [data-bs-theme="dark"] .sync-detail-table td {
+      color: var(--slate-200);
+      border-top-color: var(--slate-700);
+    }
+
+    .sync-detail-table td:last-child {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    [data-bs-theme="dark"] .sync-detail-table td:last-child {
+      color: var(--slate-400);
+    }
+
+    /* Getting Started */
+    .start-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+
+    [data-bs-theme="dark"] .start-section {
+      background: var(--slate-800);
+    }
+
+    .start-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .start-step-num {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--contextify-primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .start-step h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.2rem;
+    }
+
+    [data-bs-theme="dark"] .start-step h4 {
+      color: var(--slate-100);
+    }
+
+    .start-step p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+    }
+
+    [data-bs-theme="dark"] .start-step p {
+      color: var(--slate-400);
+    }
+
+    .code-inline {
+      background: var(--bg-muted);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+      font-size: 0.85em;
+    }
+
+    [data-bs-theme="dark"] .code-inline {
+      background: var(--slate-700);
+    }
+
+    /* Not-do list */
+    .not-do-list {
+      list-style: none;
+      padding: 0;
+      margin: 1.5rem 0 0;
+    }
+
+    .not-do-list li {
+      padding: 0.4rem 0 0.4rem 1.5rem;
+      position: relative;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    [data-bs-theme="dark"] .not-do-list li {
+      color: var(--slate-400);
+    }
+
+    .not-do-list li::before {
+      content: "\2717";
+      position: absolute;
+      left: 0;
+      color: var(--contextify-error);
+      font-weight: 700;
+    }
+
     /* Responsive */
     @media (max-width: 767.98px) {
       .cloud-hero h1 {
@@ -728,28 +871,38 @@
         <div class="col-md-6">
           <div class="sync-card synced">
             <h3><span class="icon-synced">&#9729;</span> Synced to Cloud</h3>
-            <ul>
-              <li>Conversation entries (user prompts, assistant responses)</li>
-              <li>Project names and identifiers</li>
-              <li>Transcript metadata (session IDs, timestamps, provider)</li>
-              <li>LLM-generated summaries</li>
-              <li>Entry timestamps and ordering</li>
-            </ul>
+            <table class="sync-detail-table">
+              <thead><tr><th>Data</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td>Conversation entries</td><td>User prompts and assistant responses from your timeline</td></tr>
+                <tr><td>LLM summaries</td><td>One-line summaries generated locally by Apple Intelligence</td></tr>
+                <tr><td>Project metadata</td><td>Names, paths, git repo identity</td></tr>
+                <tr><td>Transcript metadata</td><td>Session IDs, timestamps, provider (Claude/Codex)</td></tr>
+                <tr><td>Tool invocations</td><td>Which tools were called and when</td></tr>
+                <tr><td>Usage statistics</td><td>Token counts, model usage per session</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
         <div class="col-md-6">
           <div class="sync-card local">
             <h3><span class="icon-local">&#9000;</span> Stays on Your Machine</h3>
-            <ul>
-              <li>File paths and directory structures</li>
-              <li>Local UI preferences (tab groups, window positions)</li>
-              <li>Security-scoped bookmarks (App Store builds)</li>
-              <li>Apple Intelligence processing state</li>
-              <li>Local-only database indexes and caches</li>
-            </ul>
+            <table class="sync-detail-table">
+              <thead><tr><th>Data</th><th>Why</th></tr></thead>
+              <tbody>
+                <tr><td>Raw JSONL transcript files</td><td>Too large; the parsed entries above cover the content</td></tr>
+                <tr><td>App settings and preferences</td><td>Per-machine configuration</td></tr>
+                <tr><td>Security-scoped bookmarks</td><td>macOS sandbox artifacts, meaningless elsewhere</td></tr>
+                <tr><td>Apple Intelligence state</td><td>Local processing pipeline, not transferable</td></tr>
+                <tr><td>Database indexes and caches</td><td>Rebuilt automatically from synced data</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
+      <p class="text-center mt-3" style="font-size: 0.85rem; color: var(--text-tertiary);">
+        The sync payload is parsed, structured data. Not raw files. This keeps sync fast and the cloud footprint small.
+      </p>
     </div>
   </section>
 
@@ -937,6 +1090,53 @@
           </div>
         </div>
       </div>
+
+      <ul class="not-do-list mt-4">
+        <li>We do not read your conversation content for training, analytics, or any purpose other than serving it back to you.</li>
+        <li>We do not share data across tenants.</li>
+        <li>We do not retain data after you delete your account.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Getting Started -->
+  <section class="start-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-7 mx-auto">
+          <p class="section-label">Setup</p>
+          <h2 class="section-title">Up and running in under a minute</h2>
+
+          <div class="start-step">
+            <div class="start-step-num">1</div>
+            <div>
+              <h4>Download Contextify</h4>
+              <p>From <a href="../download/">contextify.sh/download</a> (macOS) or install the <a href="../platforms/linux/">Linux CLI</a>.</p>
+            </div>
+          </div>
+          <div class="start-step">
+            <div class="start-step-num">2</div>
+            <div>
+              <h4>Create a cloud account</h4>
+              <p>Sign up at <a href="https://cloud.contextify.sh">cloud.contextify.sh</a>. You get an API key immediately.</p>
+            </div>
+          </div>
+          <div class="start-step">
+            <div class="start-step-num">3</div>
+            <div>
+              <h4>Enable cloud sync</h4>
+              <p>Open <strong>Settings > Cloud</strong> in the macOS app, or run <span class="code-inline">contextify cloud setup</span> on Linux. Paste your API key.</p>
+            </div>
+          </div>
+          <div class="start-step">
+            <div class="start-step-num">4</div>
+            <div>
+              <h4>Sync starts automatically</h4>
+              <p>Your existing history uploads first. After that, new entries sync incrementally every few minutes. Typical sync is a few KB.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -950,17 +1150,17 @@
 
           <div class="faq-item">
             <h3>How is this different from Dropbox or iCloud Drive sync?</h3>
-            <p>Dropbox and iCloud Drive sync the raw database file. That works for single-machine backup, but it cannot handle concurrent access from multiple devices, does not support team workspaces, and provides no search or analytics UI. Contextify Cloud uses a proper sync protocol with cursor-based push/pull, conflict handling, and server-side indexing.</p>
+            <p>Dropbox syncs files. Contextify Cloud syncs structured, parsed data (entries, summaries, metadata). It understands the content, so you can search by conversation text, filter by project, and see analytics. It also uses incremental cursor-based sync with server-side deduplication, so it handles the append-only nature of conversation logs efficiently. Dropbox cannot handle concurrent database access from multiple devices.</p>
           </div>
 
           <div class="faq-item">
             <h3>Can I use Contextify without Cloud?</h3>
-            <p>Yes. The macOS app and Linux CLI work fully offline. Cloud sync is an optional layer for cross-device access and team features. Many users run Contextify in local-only mode permanently.</p>
+            <p>Yes. Cloud sync is off by default. The macOS app and Linux CLI work fully offline with all core features: timeline monitoring, search, LLM summaries. Many users run Contextify in local-only mode permanently.</p>
           </div>
 
           <div class="faq-item">
-            <h3>What happens if I disable cloud sync?</h3>
-            <p>Your local database is unaffected. New entries stop syncing to the cloud. Existing cloud data remains until you explicitly request deletion. You can re-enable sync at any time and it picks up where it left off.</p>
+            <h3>Does it work offline?</h3>
+            <p>Yes. The local database is the primary copy. Cloud sync happens in the background when you have connectivity. If you are offline, the app works normally and syncs when the connection returns.</p>
           </div>
 
           <div class="faq-item">
@@ -969,13 +1169,18 @@
           </div>
 
           <div class="faq-item">
-            <h3>How does team search work?</h3>
-            <p>Team members who sync to the same workspace can search across everyone's conversation history from the web dashboard. Role-based access controls determine what each member can see.</p>
+            <h3>Can I exclude specific projects from syncing?</h3>
+            <p>Per-project sync controls are coming soon. For now, cloud sync operates at the account level. You can disable sync entirely at any time.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>What happens if I stop paying?</h3>
+            <p>Your local database is unaffected. Cloud data is retained for a grace period after cancellation, then deleted. You can export or pull your data before deletion.</p>
           </div>
 
           <div class="faq-item">
             <h3>Is there a self-hosted option?</h3>
-            <p>The cloud backend runs on Docker Compose (FastAPI + PostgreSQL). Self-hosted deployment documentation is available for teams that need to keep data on their own infrastructure.</p>
+            <p>The cloud backend is FastAPI + PostgreSQL, deployed via Docker Compose. Self-hosted documentation is planned for Enterprise plans. The managed service at cloud.contextify.sh is the current option.</p>
           </div>
         </div>
       </div>
