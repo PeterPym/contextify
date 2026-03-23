@@ -96,3 +96,13 @@ worktrees:
     meta:
       archived_date: "2026-01-02"
       note: "Replaced by wb1/wb2 naming convention"
+
+# ─────────────────────────────────────────────────────────────────
+# Paired Repository
+# When working cross-repo, AI agents must use the matching worktree
+# number (e.g. contextify-wb3 <-> contextify-cloud-wb3).
+# ─────────────────────────────────────────────────────────────────
+paired_repo:
+  name: contextify-cloud
+  config: ~/code/projects/contextify-cloud/project-config.yaml
+  worktree_prefix: contextify-cloud
