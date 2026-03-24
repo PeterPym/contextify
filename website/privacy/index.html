@@ -141,8 +141,8 @@
             <h2>5. Data Retention</h2>
             <ul>
               <li><strong>Active accounts:</strong> Your cloud data is retained for as long as your subscription is active.</li>
-              <li><strong>Cancelled accounts:</strong> After cancellation, your data is retained for 90 days to allow you to export it or resubscribe. After 90 days, all cloud data is permanently deleted.</li>
-              <li><strong>Backups:</strong> Encrypted backups are retained for 30 days after data deletion for disaster recovery purposes, then permanently destroyed.</li>
+              <li><strong>Cancelled accounts:</strong> After cancellation, your data is retained for a reasonable period to allow you to resubscribe or export your data, then permanently deleted.</li>
+              <li><strong>Backups:</strong> Database backups are retained for disaster recovery purposes and destroyed when no longer needed.</li>
               <li><strong>Account records:</strong> Basic account records (email, subscription history) may be retained for up to 12 months after deletion for legal and accounting purposes.</li>
               <li><strong>Local data:</strong> Local data is never affected by subscription changes. It remains on your device under your control indefinitely.</li>
             </ul>
@@ -150,20 +150,21 @@
             <h2>6. Your Rights</h2>
             <p>You have the following rights regarding your data:</p>
             <ul>
-              <li><strong>Export:</strong> Download all of your cloud data at any time in JSON or SQLite format through the application or API.</li>
-              <li><strong>Delete:</strong> Request deletion of your account and all associated cloud data. Deletion is processed within 30 days.</li>
+              <li><strong>Export:</strong> Download your account metadata at any time through the application or API. We are working on expanding export to include full conversation data.</li>
+              <li><strong>Delete:</strong> Request deletion of your account and all associated cloud data.</li>
               <li><strong>Opt out of cloud:</strong> Disable cloud sync at any time. The local application always works without cloud features. Local-only mode collects no data whatsoever.</li>
               <li><strong>Access:</strong> View all data we hold about you through your account dashboard.</li>
               <li><strong>Correction:</strong> Update your account information at any time through your account settings.</li>
-              <li><strong>Portability:</strong> Export your data in standard formats (JSON, SQLite) for use with other tools.</li>
+              <li><strong>Portability:</strong> Export your data for use with other tools. Export format options are being expanded.</li>
             </ul>
 
             <h2>7. Third-Party Services</h2>
             <p>We use the following third-party services:</p>
             <ul>
               <li><strong><a href="https://stripe.com/privacy">Stripe</a>:</strong> Payment processing. Stripe receives your payment information directly. See Stripe's privacy policy for details on how they handle your data.</li>
+              <li><strong><a href="https://sentry.io/privacy/">Sentry</a>:</strong> Error monitoring. Sentry receives error reports and diagnostic data when server errors occur. No conversation content is included in error reports.</li>
             </ul>
-            <p>We do not currently use any analytics, advertising, or tracking services. If this changes, we will update this policy and notify you.</p>
+            <p>We do not use analytics, advertising, or tracking services. If this changes, we will update this policy and notify you.</p>
 
             <h2>8. Cookies and Tracking</h2>
             <p>The Contextify application does not use cookies or web tracking. Our website (contextify.sh) does not use analytics cookies or third-party tracking scripts.</p>
