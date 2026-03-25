@@ -81,11 +81,6 @@ struct CloudSettingsView: View {
   @State private var showSyncExplainer: Bool = false
   @AppStorage("cloudSyncExplainerShown") private var explainerShown: Bool = false
 
-  /// Logical project count: groups count as 1 each, matching the web dashboard.
-  private var logicalProjectCount: Int {
-    projectSyncGroups.count + projectSyncUngrouped.count + projectSyncIncidental.count
-  }
-
   private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
@@ -341,11 +336,6 @@ struct CloudSettingsView: View {
             )
             Spacer()
             cloudStatItem(
-              value: formatCount(logicalProjectCount),
-              label: "Projects"
-            )
-            Spacer()
-            cloudStatItem(
               value: formatCount(localConversationCount),
               label: "Conversations"
             )
@@ -490,32 +480,38 @@ struct CloudSettingsView: View {
 
   // MARK: - Project Sync Section
 
-  // MARK: - Project Sync Section
-
   @ViewBuilder
   private var projectSyncSection: some View {
-    // Count logical projects (groups count as 1 each) to approximate the web dashboard count
-    let logicalCount = projectSyncGroups.count + projectSyncUngrouped.count
-    let mainInfos = projectSyncGroups.flatMap(\.projects) + projectSyncUngrouped
-    let allInfos = mainInfos + projectSyncIncidental
+    let mainCount = projectSyncGroups.count + projectSyncUngrouped.count
+    let incidentalCount = projectSyncIncidental.count
+    let allInfos = projectSyncGroups.flatMap(\.projects) + projectSyncUngrouped + projectSyncIncidental
     let excludedCount = allInfos.filter { !$0.project.cloudSyncEnabled }.count
 
     Section("Project Sync") {
       VStack(alignment: .leading, spacing: 8) {
-        if logicalCount == 0 {
+        if mainCount == 0 && incidentalCount == 0 {
           Text("No projects with entries found.")
             .font(.caption)
             .foregroundStyle(.tertiary)
-        } else if excludedCount == 0 {
-          Text("All \(logicalCount) projects enabled for sync on this device.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("cloud-project-sync-summary")
         } else {
-          Text("\(excludedCount) project\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
-            .font(.caption)
-            .foregroundStyle(.orange)
-            .accessibilityIdentifier("cloud-project-sync-summary")
+          VStack(alignment: .leading, spacing: 2) {
+            if excludedCount == 0 {
+              if incidentalCount > 0 {
+                Text("\(mainCount) projects on this device, plus \(incidentalCount) incidental.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("\(mainCount) projects on this device.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            } else {
+              Text("\(excludedCount) individual project\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+          }
+          .accessibilityIdentifier("cloud-project-sync-summary")
         }
 
         VStack(alignment: .leading, spacing: 2) {
