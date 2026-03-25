@@ -773,6 +773,205 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.setHidden(id: projectId, hidden: hidden)
   }
 
+  public func setProjectCloudSyncEnabled(projectId: String, enabled: Bool) throws {
+    try projectRepo.setCloudSyncEnabled(id: projectId, enabled: enabled)
+  }
+
+  /// Bulk update cloud sync for all projects in a tab group.
+  public func setCloudSyncEnabledForGroup(groupId: String, enabled: Bool) throws {
+    let now = Int(Date().timeIntervalSince1970)
+    try dbManager.pool.write { db in
+      try db.execute(
+        sql: "UPDATE projects SET cloud_sync_enabled = ?, updated_at = ? WHERE group_id = ?",
+        arguments: [enabled, now, groupId]
+      )
+    }
+  }
+
+  /// Project with entry count, for the cloud sync settings UI.
+  public struct ProjectSyncInfo: Sendable {
+    public let project: Project
+    public let entryCount: Int
+  }
+
+  /// Result of fetching projects for cloud sync settings.
+  /// - `groups`: Worktree groups with member projects
+  /// - `ungrouped`: Standalone projects (not in a group, >= 5 entries, not a parent dir)
+  /// - `incidental`: Low-entry, parent-dir, temp, or other noise projects
+  public struct CloudSyncProjectList: Sendable {
+    public let groups: [(group: TabGroup, projects: [ProjectSyncInfo])]
+    public let ungrouped: [ProjectSyncInfo]
+    public let incidental: [ProjectSyncInfo]
+  }
+
+  /// Populate repo_group_key for any projects that don't have it yet.
+  /// Called before loading cloud sync settings so grouping is accurate.
+  public func backfillRepoGroupKeys() throws {
+    let projects = try dbManager.pool.read { db in
+      try Project
+        .filter(Column("repo_group_key") == nil && Column("hidden") == false && Column("is_orphaned") == false)
+        .fetchAll(db)
+    }
+
+    guard !projects.isEmpty else { return }
+
+    let now = Int(Date().timeIntervalSince1970)
+    try dbManager.pool.write { db in
+      for project in projects {
+        guard let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath),
+              let key = identity.repoGroupKey else { continue }
+        try db.execute(
+          sql: "UPDATE projects SET repo_group_key = ?, updated_at = ? WHERE id = ?",
+          arguments: [key, now, project.id]
+        )
+      }
+    }
+  }
+
+  /// Fetch projects for the cloud sync privacy UI, split into main and incidental tiers.
+  /// Groups by repo_group_key first, then falls back to tab_group, then name-based
+  /// worktree pattern matching (strip -wb\d+ suffix).
+  public func projectsForCloudSyncSettings() throws -> CloudSyncProjectList {
+    // Ensure repo_group_key is populated for projects whose paths exist on disk
+    try backfillRepoGroupKeys()
+
+    return try dbManager.pool.read { db in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT p.*, COUNT(e.id) AS entry_count
+        FROM projects p
+        LEFT JOIN transcript_entries e ON e.project_id = p.id AND e.display_in_timeline = 1
+        WHERE p.hidden = 0
+          AND p.is_orphaned = 0
+        GROUP BY p.id
+        HAVING entry_count > 0
+        ORDER BY p.display_order ASC
+      """)
+
+      let allInfos: [ProjectSyncInfo] = try rows.map { row in
+        let project = try Project(row: row)
+        let entryCount: Int = row["entry_count"]
+        return ProjectSyncInfo(project: project, entryCount: entryCount)
+      }
+
+      // Build set of all root paths for parent-directory detection
+      let allPaths = Set(allInfos.map(\.project.rootPath))
+
+      func isIncidental(_ info: ProjectSyncInfo) -> Bool {
+        let path = info.project.rootPath
+        // Always incidental: temp paths
+        if path.hasPrefix("/tmp/") || path.hasPrefix("/private/tmp/") { return true }
+        if path == "/test" { return true }
+        if path.hasSuffix("/tmp") { return true }
+        // Parent directory of another project, BUT only if low-entry (real projects
+        // like ~/code/consulting/openai contain sub-repos but are still real projects)
+        if info.entryCount < 100 {
+          let prefix = path + "/"
+          if allPaths.contains(where: { $0 != path && $0.hasPrefix(prefix) }) { return true }
+        }
+        // Very few entries
+        if info.entryCount < 5 { return true }
+        return false
+      }
+
+      // Assign each project to a group key using a cascade of strategies:
+      // 1. repo_group_key (git remote origin hash - best, matches server)
+      // 2. tab group_id (existing worktree grouping in the app)
+      // 3. Name pattern: strip -wb\d+ suffix to group worktrees by base name
+      func groupKey(for info: ProjectSyncInfo) -> String? {
+        if let key = info.project.repoGroupKey { return key }
+        if let gid = info.project.groupId { return "tab-group-\(gid)" }
+        let name = info.project.name ?? URL(fileURLWithPath: info.project.rootPath).lastPathComponent
+        // Match worktree naming pattern: "foo-wb1", "foo-wb2", etc.
+        if let range = name.range(of: #"-wb\d+$"#, options: .regularExpression) {
+          return "name-group-\(name[..<range.lowerBound])"
+        }
+        return nil
+      }
+
+      // Also need to map base names to group keys so the base project groups with its worktrees
+      // e.g., "openai" should group with "openai-wb1" even if openai itself doesn't match -wb\d+
+      var nameToGroupKey: [String: String] = [:]
+      for info in allInfos {
+        let name = info.project.name ?? URL(fileURLWithPath: info.project.rootPath).lastPathComponent
+        if let range = name.range(of: #"-wb\d+$"#, options: .regularExpression) {
+          let baseName = String(name[..<range.lowerBound])
+          let key = groupKey(for: info) ?? "name-group-\(baseName)"
+          nameToGroupKey[baseName] = key
+        }
+      }
+
+      var groups: [String: [ProjectSyncInfo]] = [:]
+      var ungroupedAll: [ProjectSyncInfo] = []
+
+      for info in allInfos {
+        if let key = groupKey(for: info) {
+          groups[key, default: []].append(info)
+        } else {
+          // Check if this project's name is a base name for a worktree pattern
+          let name = info.project.name ?? URL(fileURLWithPath: info.project.rootPath).lastPathComponent
+          if let key = nameToGroupKey[name] {
+            groups[key, default: []].append(info)
+          } else {
+            ungroupedAll.append(info)
+          }
+        }
+      }
+
+      // Resolve tab group names for tab-group-based keys
+      let allTabGroups = try TabGroup.fetchAll(db)
+      let tabGroupNames = Dictionary(uniqueKeysWithValues: allTabGroups.map { ($0.id, $0.name) })
+
+      var grouped: [(group: TabGroup, projects: [ProjectSyncInfo])] = []
+      var ungroupedMain: [ProjectSyncInfo] = []
+      var incidental: [ProjectSyncInfo] = []
+
+      for (key, members) in groups.sorted(by: { $0.value.reduce(0) { $0 + $1.entryCount } > $1.value.reduce(0) { $0 + $1.entryCount } }) {
+        if members.count > 1 {
+          // Pick display name: tab group name, or shortest project name
+          let displayName: String
+          let tabId = String(key.dropFirst("tab-group-".count))
+          if key.hasPrefix("tab-group-"), let name = tabGroupNames[tabId] {
+            displayName = name ?? tabId
+          } else {
+            displayName = members
+              .map { $0.project.name ?? URL(fileURLWithPath: $0.project.rootPath).lastPathComponent }
+              .sorted(by: { $0.count < $1.count })
+              .first ?? key
+          }
+
+          let syntheticGroup = TabGroup(
+            id: "sync-group-\(key)",
+            name: displayName,
+            colorHex: nil,
+            colorSource: .auto,
+            gitRoot: nil,
+            isWorktreeGroup: true,
+            displayOrder: 0,
+            createdAt: 0,
+            updatedAt: 0
+          )
+          grouped.append((group: syntheticGroup, projects: members))
+        } else if let single = members.first {
+          if isIncidental(single) {
+            incidental.append(single)
+          } else {
+            ungroupedMain.append(single)
+          }
+        }
+      }
+
+      for info in ungroupedAll {
+        if isIncidental(info) {
+          incidental.append(info)
+        } else {
+          ungroupedMain.append(info)
+        }
+      }
+
+      return CloudSyncProjectList(groups: grouped, ungrouped: ungroupedMain, incidental: incidental)
+    }
+  }
+
   /// Restore all hidden projects (set hidden=false for all projects)
   public func restoreAllHiddenProjects() throws {
     let now = Int(Date().timeIntervalSince1970)

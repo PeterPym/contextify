@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v36 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance)
+/// Current version: v37 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 36
+  public static let version = 37
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -1053,6 +1053,32 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v36] Device provenance migration complete")
     }
 
+    // v37: Project-level cloud sync privacy
+    migrator.registerMigration("v37_project_cloud_sync_privacy") { db in
+      logger.info("[MIGRATION-v37] Adding cloud_sync_enabled column to projects")
+
+      if try !db.columnExists("cloud_sync_enabled", in: "projects") {
+        try db.execute(sql: """
+          ALTER TABLE projects ADD COLUMN cloud_sync_enabled INTEGER NOT NULL DEFAULT 1
+        """)
+      }
+
+      logger.info("[MIGRATION-v37] Project cloud sync privacy migration complete")
+    }
+
+    // v37b: Repo group key for project consolidation (matches server-side grouping)
+    migrator.registerMigration("v37b_repo_group_key") { db in
+      logger.info("[MIGRATION-v37b] Adding repo_group_key column to projects")
+
+      if try !db.columnExists("repo_group_key", in: "projects") {
+        try db.execute(sql: """
+          ALTER TABLE projects ADD COLUMN repo_group_key TEXT
+        """)
+      }
+
+      logger.info("[MIGRATION-v37b] Repo group key migration complete")
+    }
+
     return migrator
   }
 
@@ -1107,6 +1133,8 @@ public enum DatabaseSchema {
       t.column("orphaned_since", .integer)  // v20: when directory went missing
       t.column("group_id", .text).references("tab_groups", onDelete: .setNull)  // v33: tab group membership
       t.column("group_display_order", .integer)  // v33: order within group
+      t.column("cloud_sync_enabled", .integer).notNull().defaults(to: 1)  // v37: per-project cloud sync opt-out
+      t.column("repo_group_key", .text)  // v37: git remote origin hash for project consolidation
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
     }

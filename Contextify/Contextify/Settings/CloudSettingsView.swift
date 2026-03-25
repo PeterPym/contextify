@@ -71,6 +71,21 @@ struct CloudSettingsView: View {
   @State private var localProjectCount: Int = 0
   @State private var reconnectBannerTask: Task<Void, Never>?
 
+  // Project sync privacy state
+  private typealias ProjectSyncInfo = TranscriptOrchestrator.ProjectSyncInfo
+  @State private var projectSyncGroups: [(group: TabGroup, projects: [ProjectSyncInfo])] = []
+  @State private var projectSyncUngrouped: [ProjectSyncInfo] = []
+  @State private var projectSyncIncidental: [ProjectSyncInfo] = []
+  @State private var expandedGroupIds: Set<String> = []
+  @State private var showIncidentalProjects: Bool = false
+  @State private var showSyncExplainer: Bool = false
+  @AppStorage("cloudSyncExplainerShown") private var explainerShown: Bool = false
+
+  /// Logical project count: groups count as 1 each, matching the web dashboard.
+  private var logicalProjectCount: Int {
+    projectSyncGroups.count + projectSyncUngrouped.count + projectSyncIncidental.count
+  }
+
   private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
@@ -79,6 +94,7 @@ struct CloudSettingsView: View {
 
       if isConfigured {
         syncStatusSection
+        projectSyncSection
         controlsSection
       }
     }
@@ -87,6 +103,7 @@ struct CloudSettingsView: View {
       loadConfiguration()
       wasOffline = syncManager.cloudOffline
       loadLocalStats()
+      loadProjectSyncSettings()
       Task {
         await syncManager.refreshStatusFromServer()
         await syncManager.refreshAccountProfileFromServer()
@@ -128,6 +145,13 @@ struct CloudSettingsView: View {
       if connectionSheetError != nil {
         connectionSheetError = nil
       }
+    }
+    .alert("Project Excluded", isPresented: $showSyncExplainer) {
+      Button("OK") {
+        explainerShown = true
+      }
+    } message: {
+      Text("Stops future uploads and downloads for this project on this device. Data already uploaded to Contextify Cloud remains there until removed separately.")
     }
     .alert("Disconnect Cloud Sync?", isPresented: $showDisconnectConfirmation) {
       Button("Cancel", role: .cancel) {}
@@ -317,7 +341,7 @@ struct CloudSettingsView: View {
             )
             Spacer()
             cloudStatItem(
-              value: formatCount(localProjectCount),
+              value: formatCount(logicalProjectCount),
               label: "Projects"
             )
             Spacer()
@@ -461,6 +485,253 @@ struct CloudSettingsView: View {
         ))
         .accessibilityIdentifier("cloud-auto-sync-toggle")
       }
+    }
+  }
+
+  // MARK: - Project Sync Section
+
+  // MARK: - Project Sync Section
+
+  @ViewBuilder
+  private var projectSyncSection: some View {
+    // Count logical projects (groups count as 1 each) to approximate the web dashboard count
+    let logicalCount = projectSyncGroups.count + projectSyncUngrouped.count
+    let mainInfos = projectSyncGroups.flatMap(\.projects) + projectSyncUngrouped
+    let allInfos = mainInfos + projectSyncIncidental
+    let excludedCount = allInfos.filter { !$0.project.cloudSyncEnabled }.count
+
+    Section("Project Sync") {
+      VStack(alignment: .leading, spacing: 8) {
+        if logicalCount == 0 {
+          Text("No projects with entries found.")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        } else if excludedCount == 0 {
+          Text("All \(logicalCount) projects enabled for sync on this device.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("cloud-project-sync-summary")
+        } else {
+          Text("\(excludedCount) project\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("cloud-project-sync-summary")
+        }
+
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(projectSyncGroups, id: \.group.id) { entry in
+            projectGroupRow(group: entry.group, infos: entry.projects)
+          }
+          ForEach(projectSyncUngrouped, id: \.project.id) { info in
+            projectSyncRow(info: info)
+          }
+        }
+
+        // Incidental projects (low-entry, parent dirs, temp dirs)
+        if !projectSyncIncidental.isEmpty {
+          Divider()
+
+          VStack(alignment: .leading, spacing: 2) {
+            Button {
+              withAnimation(.easeInOut(duration: 0.15)) {
+                showIncidentalProjects.toggle()
+              }
+            } label: {
+              HStack(spacing: 4) {
+                Image(systemName: showIncidentalProjects ? "chevron.down" : "chevron.right")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                  .frame(width: 10)
+                Text("Incidental (\(projectSyncIncidental.count))")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showIncidentalProjects ? "Collapse incidental projects" : "Expand incidental projects")
+            .accessibilityHint("Parent directories, temp paths, and projects with fewer than 5 entries")
+
+            if showIncidentalProjects {
+              ForEach(projectSyncIncidental, id: \.project.id) { info in
+                projectSyncRow(info: info)
+                  .padding(.leading, 16)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func projectGroupRow(group: TabGroup, infos: [ProjectSyncInfo]) -> some View {
+    let allEnabled = infos.allSatisfy(\.project.cloudSyncEnabled)
+    let noneEnabled = infos.allSatisfy { !$0.project.cloudSyncEnabled }
+    let isExpanded = expandedGroupIds.contains(group.id)
+    let groupName = group.name ?? "Unnamed Group"
+    let totalEntries = infos.reduce(0) { $0 + $1.entryCount }
+
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 6) {
+        Button {
+          withAnimation(.easeInOut(duration: 0.15)) {
+            if isExpanded {
+              expandedGroupIds.remove(group.id)
+            } else {
+              expandedGroupIds.insert(group.id)
+            }
+          }
+        } label: {
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(width: 10)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isExpanded ? "Collapse \(groupName)" : "Expand \(groupName)")
+
+        Toggle(isOn: Binding(
+          get: { allEnabled },
+          set: { newValue in
+            toggleGroup(projectIds: infos.map(\.project.id), enabled: newValue)
+          }
+        )) {
+          HStack(spacing: 4) {
+            if group.isWorktreeGroup {
+              Image(systemName: "arrow.triangle.branch")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            Text(groupName)
+              .font(.caption)
+            Text("\(infos.count) worktrees")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+            if !allEnabled && !noneEnabled {
+              Text("mixed")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+            }
+            Spacer()
+            Text(formatEntryCount(totalEntries))
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .accessibilityIdentifier("cloud-sync-group-toggle-\(group.id)")
+      }
+      .padding(.vertical, 3)
+
+      if isExpanded {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(infos, id: \.project.id) { info in
+            projectSyncRow(info: info)
+              .padding(.leading, 16)
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func projectSyncRow(info: ProjectSyncInfo) -> some View {
+    let project = info.project
+    let displayName = project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
+
+    HStack(spacing: 6) {
+      Toggle(isOn: Binding(
+        get: { project.cloudSyncEnabled },
+        set: { newValue in
+          toggleProject(projectId: project.id, enabled: newValue)
+        }
+      )) {
+        HStack(spacing: 4) {
+          Text(displayName)
+            .font(.caption)
+            .lineLimit(1)
+          Text(abbreviatedPath(project.rootPath))
+            .font(.caption2)
+            .foregroundStyle(.quaternary)
+            .lineLimit(1)
+            .truncationMode(.head)
+          Spacer()
+          Text(formatEntryCount(info.entryCount))
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .toggleStyle(.switch)
+      .controlSize(.mini)
+      .accessibilityIdentifier("cloud-sync-project-toggle-\(project.id)")
+
+      Button {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.rootPath)
+      } label: {
+        Image(systemName: "folder")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .buttonStyle(.plain)
+      .help("Reveal in Finder")
+      .accessibilityLabel("Reveal \(displayName) in Finder")
+    }
+    .padding(.vertical, 2)
+  }
+
+  private func abbreviatedPath(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    if path.hasPrefix(home) {
+      return "~" + path.dropFirst(home.count)
+    }
+    return path
+  }
+
+  private func formatEntryCount(_ count: Int) -> String {
+    if count >= 1000 {
+      return String(format: "%.1fk", Double(count) / 1000.0)
+    }
+    return "\(count)"
+  }
+
+  private func loadProjectSyncSettings() {
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      let result = try orchestrator.projectsForCloudSyncSettings()
+      projectSyncGroups = result.groups
+      projectSyncUngrouped = result.ungrouped
+      projectSyncIncidental = result.incidental
+    } catch {
+      log.error("[CLOUD-SETTINGS] Failed to load project sync settings: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  private func toggleProject(projectId: String, enabled: Bool) {
+    if !enabled && !explainerShown {
+      showSyncExplainer = true
+    }
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      try orchestrator.setProjectCloudSyncEnabled(projectId: projectId, enabled: enabled)
+      loadProjectSyncSettings()
+    } catch {
+      log.error("[CLOUD-SETTINGS] Failed to toggle project sync: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  private func toggleGroup(projectIds: [String], enabled: Bool) {
+    if !enabled && !explainerShown {
+      showSyncExplainer = true
+    }
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      for id in projectIds {
+        try orchestrator.setProjectCloudSyncEnabled(projectId: id, enabled: enabled)
+      }
+      loadProjectSyncSettings()
+    } catch {
+      log.error("[CLOUD-SETTINGS] Failed to toggle group sync: \(error.localizedDescription, privacy: .public)")
     }
   }
 
