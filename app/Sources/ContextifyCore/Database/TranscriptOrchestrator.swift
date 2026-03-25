@@ -815,14 +815,22 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     guard !projects.isEmpty else { return }
 
+    // Resolve git identities outside the write transaction to avoid holding
+    // the DB write lock during slow filesystem/git operations
+    let updates: [(projectId: String, key: String)] = projects.compactMap { project in
+      guard let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath),
+            let key = identity.repoGroupKey else { return nil }
+      return (project.id, key)
+    }
+
+    guard !updates.isEmpty else { return }
+
     let now = Int(Date().timeIntervalSince1970)
     try dbManager.pool.write { db in
-      for project in projects {
-        guard let identity = GitProjectIdentity.resolve(forProjectRootPath: project.rootPath),
-              let key = identity.repoGroupKey else { continue }
+      for update in updates {
         try db.execute(
           sql: "UPDATE projects SET repo_group_key = ?, updated_at = ? WHERE id = ?",
-          arguments: [key, now, project.id]
+          arguments: [update.key, now, update.projectId]
         )
       }
     }
