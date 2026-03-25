@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Contextify Cloud - Sync AI Conversations Across Machines</title>
-  <meta name="description" content="Contextify Cloud syncs your Claude Code and Codex conversation history across machines. Search from anywhere, collaborate with your team, keep everything backed up.">
+  <title>Contextify Cloud - Your AI History, Searchable Everywhere</title>
+  <meta name="description" content="Claude Code and Codex conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on.">
   <link rel="canonical" href="https://contextify.sh/cloud/">
 
   <!-- Favicon -->
@@ -15,8 +15,8 @@
   <!-- Open Graph -->
   <meta property="og:url" content="https://contextify.sh/cloud/">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Contextify Cloud - Sync AI Conversations Across Machines">
-  <meta property="og:description" content="Your Claude Code history, searchable from any device. Cloud sync for individuals and teams.">
+  <meta property="og:title" content="Contextify Cloud - Your AI History, Searchable Everywhere">
+  <meta property="og:description" content="Claude Code conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on.">
   <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
 
   <!-- Bootstrap 5.3 CSS -->
@@ -36,32 +36,29 @@
     })();
   </script>
 
-  <!-- Page-specific styles -->
   <style>
-    /* Cloud Hero */
+    /* ── Hero ─────────────────────────────────────────────── */
     .cloud-hero {
       background-color: var(--slate-900);
       background-image:
         radial-gradient(ellipse 70% 50% at 75% 50%, rgba(74, 123, 167, 0.15) 0%, transparent 60%),
         radial-gradient(ellipse 50% 40% at 25% 70%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
-      padding: 5rem 0 4rem;
+      padding: 5rem 0 4.5rem;
     }
-
     .cloud-hero h1 {
       font-size: 3rem;
       font-weight: 800;
       color: var(--slate-50);
       line-height: 1.15;
       letter-spacing: -0.02em;
+      max-width: 560px;
     }
-
     .cloud-hero .lead {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       color: var(--slate-300);
-      line-height: 1.7;
-      max-width: 520px;
+      line-height: 1.75;
+      max-width: 500px;
     }
-
     .cloud-hero .badge-cloud {
       display: inline-block;
       font-size: 0.75rem;
@@ -74,448 +71,14 @@
       border-radius: 20px;
       margin-bottom: 1.25rem;
     }
-
-    /* How It Works section */
-    .how-section {
-      padding: 5rem 0;
-      background-color: var(--bg-page);
-    }
-
-    [data-bs-theme="dark"] .how-section {
-      background-color: var(--slate-900);
-    }
-
-    .section-label {
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--contextify-primary);
-      margin-bottom: 0.75rem;
-    }
-
-    .section-title {
-      font-size: 2.25rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 1rem;
-      line-height: 1.2;
-    }
-
-    [data-bs-theme="dark"] .section-title {
-      color: var(--slate-50);
-    }
-
-    .section-subtitle {
-      font-size: 1.1rem;
-      color: var(--text-secondary);
-      max-width: 640px;
-      margin-bottom: 3rem;
-    }
-
-    [data-bs-theme="dark"] .section-subtitle {
-      color: var(--slate-400);
-    }
-
-    /* Architecture Diagram */
-    .arch-diagram {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-default);
-      border-radius: 16px;
-      padding: 2.5rem 2rem;
-      margin: 2rem 0;
-    }
-
-    [data-bs-theme="dark"] .arch-diagram {
-      background: var(--slate-800);
-      border-color: var(--slate-700);
-    }
-
-    .arch-flow {
+    .hero-cta-row {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0;
-      flex-wrap: wrap;
-    }
-
-    .arch-node {
-      text-align: center;
-      padding: 1.25rem 1rem;
-      flex: 0 0 auto;
-      min-width: 140px;
-    }
-
-    .arch-node-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 0.75rem;
-      font-size: 1.5rem;
-    }
-
-    .arch-node-icon.local {
-      background: var(--contextify-primary-light);
-      color: var(--contextify-primary);
-    }
-
-    .arch-node-icon.cloud {
-      background: var(--contextify-info-light);
-      color: var(--contextify-info);
-    }
-
-    .arch-node-icon.device {
-      background: var(--contextify-success-light);
-      color: var(--contextify-success);
-    }
-
-    .arch-node-label {
-      font-weight: 600;
-      font-size: 0.9rem;
-      color: var(--text-primary);
-      margin-bottom: 0.25rem;
-    }
-
-    [data-bs-theme="dark"] .arch-node-label {
-      color: var(--slate-200);
-    }
-
-    .arch-node-desc {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      line-height: 1.4;
-    }
-
-    [data-bs-theme="dark"] .arch-node-desc {
-      color: var(--slate-400);
-    }
-
-    .arch-arrow {
-      font-size: 1.5rem;
-      color: var(--text-tertiary);
-      padding: 0 0.5rem;
-      flex-shrink: 0;
-    }
-
-    /* What Syncs / What Stays */
-    .sync-section {
-      padding: 5rem 0;
-      background: var(--bg-surface);
-    }
-
-    [data-bs-theme="dark"] .sync-section {
-      background: var(--slate-800);
-    }
-
-    .sync-card {
-      background: var(--bg-page);
-      border: 1px solid var(--border-default);
-      border-radius: 14px;
-      padding: 2rem;
-      height: 100%;
-    }
-
-    [data-bs-theme="dark"] .sync-card {
-      background: var(--slate-900);
-      border-color: var(--slate-700);
-    }
-
-    .sync-card h3 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      margin-bottom: 1.25rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .sync-card .icon-synced {
-      color: var(--contextify-primary);
-    }
-
-    .sync-card .icon-local {
-      color: var(--contextify-secondary);
-    }
-
-    .sync-card ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .sync-card li {
-      padding: 0.5rem 0 0.5rem 1.5rem;
-      position: relative;
-      font-size: 0.95rem;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    [data-bs-theme="dark"] .sync-card li {
-      color: var(--slate-300);
-    }
-
-    .sync-card li::before {
-      position: absolute;
-      left: 0;
-      top: 0.65rem;
-      font-size: 0.8rem;
-    }
-
-    .sync-card.synced li::before {
-      content: "\2713";
-      color: var(--contextify-primary);
-      font-weight: 700;
-    }
-
-    .sync-card.local li::before {
-      content: "\25CF";
-      color: var(--contextify-secondary);
-      font-size: 0.5rem;
-      top: 0.85rem;
-    }
-
-    /* Capabilities Grid */
-    .capabilities-section {
-      padding: 5rem 0;
-      background-color: var(--bg-page);
-    }
-
-    [data-bs-theme="dark"] .capabilities-section {
-      background-color: var(--slate-900);
-    }
-
-    .cap-card {
-      padding: 1.75rem;
-      border-radius: 14px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-default);
-      height: 100%;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .cap-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.1);
-    }
-
-    [data-bs-theme="dark"] .cap-card {
-      background: var(--slate-800);
-      border-color: var(--slate-700);
-    }
-
-    [data-bs-theme="dark"] .cap-card:hover {
-      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
-    }
-
-    .cap-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      margin-bottom: 1rem;
-      background: var(--contextify-primary-light);
-      color: var(--contextify-primary);
-    }
-
-    .cap-card h3 {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 0.5rem;
-    }
-
-    [data-bs-theme="dark"] .cap-card h3 {
-      color: var(--slate-100);
-    }
-
-    .cap-card p {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      margin-bottom: 0;
-      line-height: 1.6;
-    }
-
-    [data-bs-theme="dark"] .cap-card p {
-      color: var(--slate-400);
-    }
-
-    /* Comparison Section */
-    .comparison-section {
-      padding: 5rem 0;
-      background: var(--bg-surface);
-    }
-
-    [data-bs-theme="dark"] .comparison-section {
-      background: var(--slate-800);
-    }
-
-    .comparison-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid var(--border-default);
-    }
-
-    [data-bs-theme="dark"] .comparison-table {
-      border-color: var(--slate-700);
-    }
-
-    .comparison-table th {
-      background: var(--bg-muted);
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-      padding: 1rem 1.25rem;
-      text-align: left;
-    }
-
-    [data-bs-theme="dark"] .comparison-table th {
-      background: var(--slate-700);
-      color: var(--slate-300);
-    }
-
-    .comparison-table th:not(:first-child) {
-      text-align: center;
-    }
-
-    .comparison-table td {
-      padding: 0.85rem 1.25rem;
-      font-size: 0.9rem;
-      color: var(--text-primary);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    [data-bs-theme="dark"] .comparison-table td {
-      color: var(--slate-200);
-      border-top-color: var(--slate-700);
-    }
-
-    .comparison-table td:not(:first-child) {
-      text-align: center;
-    }
-
-    .comparison-table .check {
-      color: var(--contextify-primary);
-      font-weight: 700;
-      font-size: 1.1rem;
-    }
-
-    .comparison-table .dash {
-      color: var(--text-tertiary);
-    }
-
-    /* Privacy Section */
-    .privacy-section {
-      padding: 5rem 0;
-      background-color: var(--bg-page);
-    }
-
-    [data-bs-theme="dark"] .privacy-section {
-      background-color: var(--slate-900);
-    }
-
-    .privacy-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .privacy-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.85rem;
-    }
-
-    .privacy-icon {
-      flex-shrink: 0;
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1rem;
-      background: var(--contextify-success-light);
-      color: var(--contextify-success);
-    }
-
-    .privacy-item h4 {
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 0.25rem;
-    }
-
-    [data-bs-theme="dark"] .privacy-item h4 {
-      color: var(--slate-100);
-    }
-
-    .privacy-item p {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      margin-bottom: 0;
-      line-height: 1.5;
-    }
-
-    [data-bs-theme="dark"] .privacy-item p {
-      color: var(--slate-400);
-    }
-
-    /* CTA Section */
-    .cta-section {
-      padding: 5rem 0;
-      background: var(--bg-surface);
-    }
-
-    [data-bs-theme="dark"] .cta-section {
-      background: var(--slate-800);
-    }
-
-    .cta-card {
-      background: var(--slate-900);
-      border-radius: 16px;
-      padding: 3.5rem 2.5rem;
-      text-align: center;
-      background-image:
-        radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74, 123, 167, 0.12) 0%, transparent 70%);
-    }
-
-    .cta-card h2 {
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--slate-50);
-      margin-bottom: 0.75rem;
-    }
-
-    .cta-card p {
-      font-size: 1.1rem;
-      color: var(--slate-300);
-      margin-bottom: 2rem;
-      max-width: 480px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .cta-btn-group {
-      display: flex;
-      justify-content: center;
       align-items: center;
       gap: 1rem;
       flex-wrap: wrap;
+      margin-top: 2rem;
     }
-
-    .cta-btn-primary {
+    .hero-cta-primary {
       display: inline-block;
       background: var(--contextify-primary);
       color: #fff;
@@ -526,241 +89,270 @@
       text-decoration: none;
       transition: background 0.15s;
     }
-
-    .cta-btn-primary:hover {
-      background: var(--contextify-primary-hover);
-      color: #fff;
-      text-decoration: none;
+    .hero-cta-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .hero-cta-note {
+      font-size: 0.85rem;
+      color: var(--slate-400);
     }
 
-    .cta-btn-secondary {
-      display: inline-block;
-      color: var(--slate-300);
-      padding: 0.85rem 2rem;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 1rem;
-      text-decoration: none;
-      border: 1px solid var(--slate-600);
-      transition: border-color 0.15s, color 0.15s;
+    /* ── Architecture SVG ────────────────────────────────── */
+    .arch-svg-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 280px;
     }
+    .arch-svg-wrap svg { max-width: 100%; height: auto; }
+    .arch-svg-wrap text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
-    .cta-btn-secondary:hover {
-      border-color: var(--contextify-primary);
+    /* ── Shared section styles ───────────────────────────── */
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
       color: var(--contextify-primary);
-      text-decoration: none;
+      margin-bottom: 0.75rem;
     }
-
-    /* FAQ Section */
-    .faq-section {
-      padding: 5rem 0;
-      background-color: var(--bg-page);
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+      line-height: 1.2;
     }
-
-    [data-bs-theme="dark"] .faq-section {
-      background-color: var(--slate-900);
-    }
-
-    .faq-item {
-      border-bottom: 1px solid var(--border-default);
-      padding: 1.5rem 0;
-    }
-
-    [data-bs-theme="dark"] .faq-item {
-      border-bottom-color: var(--slate-700);
-    }
-
-    .faq-item:last-child {
-      border-bottom: none;
-    }
-
-    .faq-item h3 {
+    [data-bs-theme="dark"] .section-title { color: var(--slate-50); }
+    .section-subtitle {
       font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+      line-height: 1.65;
+    }
+    [data-bs-theme="dark"] .section-subtitle { color: var(--slate-400); }
+
+    /* ── Problem section ─────────────────────────────────── */
+    .problem-section {
+      padding: 4.5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .problem-section { background: var(--slate-800); }
+    .problem-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+    .problem-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      background: var(--contextify-error-light);
+      color: var(--contextify-error);
+    }
+    .problem-item h3 {
+      font-size: 1rem;
       font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.15rem;
+    }
+    [data-bs-theme="dark"] .problem-item h3 { color: var(--slate-100); }
+    .problem-item p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.55;
+    }
+    [data-bs-theme="dark"] .problem-item p { color: var(--slate-400); }
+
+    /* ── Value cards ─────────────────────────────────────── */
+    .value-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .value-section { background: var(--slate-900); }
+    .value-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 14px;
+      padding: 1.75rem;
+      height: 100%;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .value-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -4px rgba(0,0,0,0.1); }
+    [data-bs-theme="dark"] .value-card { background: var(--slate-800); border-color: var(--slate-700); }
+    [data-bs-theme="dark"] .value-card:hover { box-shadow: 0 8px 24px -4px rgba(0,0,0,0.3); }
+    .value-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
       color: var(--text-primary);
       margin-bottom: 0.5rem;
     }
-
-    [data-bs-theme="dark"] .faq-item h3 {
-      color: var(--slate-100);
-    }
-
-    .faq-item p {
-      font-size: 0.95rem;
+    [data-bs-theme="dark"] .value-card h3 { color: var(--slate-100); }
+    .value-card p {
+      font-size: 0.9rem;
       color: var(--text-secondary);
       margin-bottom: 0;
       line-height: 1.6;
     }
+    [data-bs-theme="dark"] .value-card p { color: var(--slate-400); }
 
-    [data-bs-theme="dark"] .faq-item p {
-      color: var(--slate-400);
-    }
-
-    /* Sync Detail Table */
-    .sync-detail-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid var(--border-default);
-      font-size: 0.9rem;
-      margin-top: 1.5rem;
-    }
-
-    [data-bs-theme="dark"] .sync-detail-table {
-      border-color: var(--slate-700);
-    }
-
-    .sync-detail-table th {
-      background: var(--bg-muted);
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-      padding: 0.75rem 1rem;
-      text-align: left;
-    }
-
-    [data-bs-theme="dark"] .sync-detail-table th {
-      background: var(--slate-700);
-      color: var(--slate-300);
-    }
-
-    .sync-detail-table td {
-      padding: 0.65rem 1rem;
-      color: var(--text-primary);
-      border-top: 1px solid var(--border-subtle);
-      vertical-align: top;
-    }
-
-    [data-bs-theme="dark"] .sync-detail-table td {
-      color: var(--slate-200);
-      border-top-color: var(--slate-700);
-    }
-
-    .sync-detail-table td:last-child {
-      color: var(--text-secondary);
-      font-size: 0.85rem;
-    }
-
-    [data-bs-theme="dark"] .sync-detail-table td:last-child {
-      color: var(--slate-400);
-    }
-
-    /* Getting Started */
-    .start-section {
+    /* ── Total Recall section ────────────────────────────── */
+    .recall-section {
       padding: 5rem 0;
       background: var(--bg-surface);
     }
-
-    [data-bs-theme="dark"] .start-section {
-      background: var(--slate-800);
+    [data-bs-theme="dark"] .recall-section { background: var(--slate-800); }
+    .recall-example {
+      background: var(--bg-page);
+      border: 1px solid var(--border-default);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    [data-bs-theme="dark"] .recall-example { background: var(--slate-900); border-color: var(--slate-700); }
+    .recall-example .prompt {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--contextify-primary);
+      margin-bottom: 0.5rem;
+    }
+    .recall-example .result {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 0;
+    }
+    [data-bs-theme="dark"] .recall-example .result { color: var(--slate-300); }
+    .recall-example .pattern {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--contextify-accent);
+      background: rgba(124, 104, 168, 0.1);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.75rem;
     }
 
-    .start-step {
+    /* ── Teams section ───────────────────────────────────── */
+    .teams-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .teams-section { background: var(--slate-900); }
+
+    /* ── Trust section ───────────────────────────────────── */
+    .trust-section {
+      padding: 4.5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .trust-section { background: var(--slate-800); }
+    .trust-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+    }
+    .trust-item {
       display: flex;
       align-items: flex-start;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
+      gap: 0.75rem;
     }
-
-    .start-step-num {
+    .trust-icon {
       flex-shrink: 0;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: var(--contextify-primary);
-      color: #fff;
-      font-weight: 700;
-      font-size: 0.85rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 0.9rem;
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
     }
-
-    .start-step h4 {
-      font-size: 1rem;
+    .trust-item h4 {
+      font-size: 0.9rem;
       font-weight: 600;
       color: var(--text-primary);
       margin-bottom: 0.2rem;
     }
-
-    [data-bs-theme="dark"] .start-step h4 {
-      color: var(--slate-100);
+    [data-bs-theme="dark"] .trust-item h4 { color: var(--slate-100); }
+    .trust-item p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.5;
     }
+    [data-bs-theme="dark"] .trust-item p { color: var(--slate-400); }
 
-    .start-step p {
+    /* ── FAQ ──────────────────────────────────────────────── */
+    .faq-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .faq-section { background: var(--slate-900); }
+    .faq-item {
+      border-bottom: 1px solid var(--border-default);
+      padding: 1.25rem 0;
+    }
+    [data-bs-theme="dark"] .faq-item { border-bottom-color: var(--slate-700); }
+    .faq-item:last-child { border-bottom: none; }
+    .faq-item h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.4rem;
+    }
+    [data-bs-theme="dark"] .faq-item h3 { color: var(--slate-100); }
+    .faq-item p {
       font-size: 0.9rem;
       color: var(--text-secondary);
       margin-bottom: 0;
+      line-height: 1.6;
     }
+    [data-bs-theme="dark"] .faq-item p { color: var(--slate-400); }
 
-    [data-bs-theme="dark"] .start-step p {
-      color: var(--slate-400);
+    /* ── CTA ──────────────────────────────────────────────── */
+    .cta-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
     }
-
-    .code-inline {
-      background: var(--bg-muted);
-      padding: 0.15em 0.4em;
-      border-radius: 4px;
-      font-family: "SF Mono", Monaco, Consolas, monospace;
-      font-size: 0.85em;
+    [data-bs-theme="dark"] .cta-section { background: var(--slate-800); }
+    .cta-card {
+      background: var(--slate-900);
+      border-radius: 16px;
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      background-image: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74, 123, 167, 0.12) 0%, transparent 70%);
     }
-
-    [data-bs-theme="dark"] .code-inline {
-      background: var(--slate-700);
+    .cta-card h2 { font-size: 1.75rem; font-weight: 700; color: var(--slate-50); margin-bottom: 0.75rem; }
+    .cta-card p { font-size: 1rem; color: var(--slate-300); margin-bottom: 2rem; max-width: 460px; margin-left: auto; margin-right: auto; }
+    .cta-btn-group { display: flex; justify-content: center; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .cta-btn-primary {
+      display: inline-block; background: var(--contextify-primary); color: #fff;
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; transition: background 0.15s;
     }
-
-    /* Not-do list */
-    .not-do-list {
-      list-style: none;
-      padding: 0;
-      margin: 1.5rem 0 0;
+    .cta-btn-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .cta-btn-secondary {
+      display: inline-block; color: var(--slate-300);
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; border: 1px solid var(--slate-600); transition: border-color 0.15s, color 0.15s;
     }
+    .cta-btn-secondary:hover { border-color: var(--contextify-primary); color: var(--contextify-primary); text-decoration: none; }
 
-    .not-do-list li {
-      padding: 0.4rem 0 0.4rem 1.5rem;
-      position: relative;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-    }
-
-    [data-bs-theme="dark"] .not-do-list li {
-      color: var(--slate-400);
-    }
-
-    .not-do-list li::before {
-      content: "\2717";
-      position: absolute;
-      left: 0;
-      color: var(--contextify-error);
-      font-weight: 700;
-    }
-
-    /* Responsive */
+    /* ── Responsive ──────────────────────────────────────── */
     @media (max-width: 767.98px) {
-      .cloud-hero h1 {
-        font-size: 2.25rem;
-      }
-
-      .section-title {
-        font-size: 1.75rem;
-      }
-
-      .arch-flow {
-        flex-direction: column;
-      }
-
-      .arch-arrow {
-        transform: rotate(90deg);
-        padding: 0.25rem 0;
-      }
-
-      .cta-card {
-        padding: 2.5rem 1.5rem;
-      }
+      .cloud-hero h1 { font-size: 2.25rem; }
+      .section-title { font-size: 1.75rem; }
+      .cta-card { padding: 2.5rem 1.5rem; }
     }
   </style>
 </head>
@@ -777,362 +369,109 @@
     </div>
   </nav>
 
-  <!-- Hero Section -->
+  <!-- ═══════════════════════════════════════════════════════
+       HERO
+       ═══════════════════════════════════════════════════════ -->
   <section class="cloud-hero">
     <div class="container">
       <div class="row align-items-center g-5">
         <div class="col-lg-6">
           <span class="badge-cloud">Contextify Cloud</span>
-          <h1>Your AI conversation history, on every machine.</h1>
+          <h1>Your AI work stops being ephemeral.</h1>
           <p class="lead">
-            Contextify Cloud syncs your Claude Code and Codex sessions across devices. Search from your laptop, your desktop, or the web. Collaborate with your team. Never lose a conversation again.
+            Claude Code and Codex conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on. Then Total Recall lets your current AI session search past ones.
           </p>
-          <div class="d-flex flex-wrap gap-3 mt-4">
-            <a href="../download/" class="cta-btn-primary">Get Started Free</a>
-            <a href="../pricing/" class="cta-btn-secondary">View Plans</a>
+          <div class="hero-cta-row">
+            <a href="../download/" class="hero-cta-primary">Download Contextify</a>
+            <span class="hero-cta-note">Free tier includes 1 device, 90 days of history</span>
           </div>
         </div>
         <div class="col-lg-6">
-          <!-- Architecture overview diagram -->
-          <div class="arch-diagram" style="border-color: var(--slate-700);">
-            <div class="arch-flow">
-              <div class="arch-node">
-                <div class="arch-node-icon local">&#9000;</div>
-                <div class="arch-node-label">Your Mac</div>
-                <div class="arch-node-desc">Local database<br>with full history</div>
-              </div>
-              <div class="arch-arrow">&harr;</div>
-              <div class="arch-node">
-                <div class="arch-node-icon cloud">&#9729;</div>
-                <div class="arch-node-label">Contextify Cloud</div>
-                <div class="arch-node-desc">Encrypted sync<br>team search, dashboard</div>
-              </div>
-              <div class="arch-arrow">&harr;</div>
-              <div class="arch-node">
-                <div class="arch-node-icon device">&#9998;</div>
-                <div class="arch-node-label">Other Devices</div>
-                <div class="arch-node-desc">Linux CLI, second Mac,<br>web dashboard</div>
-              </div>
-            </div>
+          <!-- Hand-authored SVG diagram -->
+          <div class="arch-svg-wrap">
+            <svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture: local database syncs to cloud, accessible from other devices">
+              <!-- Nodes -->
+              <rect x="10" y="90" width="120" height="120" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+              <text x="70" y="130" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Your Mac</text>
+              <text x="70" y="152" text-anchor="middle" fill="#64748B" font-size="9.5">SQLite database</text>
+              <text x="70" y="167" text-anchor="middle" fill="#64748B" font-size="9.5">Full history + search</text>
+              <text x="70" y="182" text-anchor="middle" fill="#64748B" font-size="9.5">LLM summaries</text>
+              <rect x="70" y="194" width="1" height="0" fill="none"/>
+
+              <rect x="180" y="70" width="120" height="160" rx="12" fill="#1E293B" stroke="#4A7BA7" stroke-width="2"/>
+              <text x="240" y="110" text-anchor="middle" fill="#6A9BC7" font-size="11" font-weight="700">Contextify Cloud</text>
+              <text x="240" y="132" text-anchor="middle" fill="#64748B" font-size="9.5">Encrypted sync</text>
+              <text x="240" y="147" text-anchor="middle" fill="#64748B" font-size="9.5">Full-text search</text>
+              <text x="240" y="162" text-anchor="middle" fill="#64748B" font-size="9.5">Web dashboard</text>
+              <text x="240" y="177" text-anchor="middle" fill="#64748B" font-size="9.5">Team analytics</text>
+              <text x="240" y="192" text-anchor="middle" fill="#64748B" font-size="9.5">Usage visibility</text>
+
+              <rect x="350" y="60" width="120" height="80" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+              <text x="410" y="92" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Second Mac</text>
+              <text x="410" y="112" text-anchor="middle" fill="#64748B" font-size="9.5">Pull + local search</text>
+
+              <rect x="350" y="160" width="120" height="80" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+              <text x="410" y="192" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Linux CLI</text>
+              <text x="410" y="212" text-anchor="middle" fill="#64748B" font-size="9.5">Push + pull via SSH</text>
+
+              <!-- Arrows -->
+              <line x1="130" y1="140" x2="180" y2="140" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
+              <line x1="180" y1="155" x2="130" y2="155" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
+              <text x="155" y="135" text-anchor="middle" fill="#4A7BA7" font-size="8" font-weight="600">push</text>
+              <text x="155" y="170" text-anchor="middle" fill="#4A7BA7" font-size="8" font-weight="600">pull</text>
+
+              <line x1="300" y1="105" x2="350" y2="100" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
+              <line x1="300" y1="185" x2="350" y2="195" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+              <!-- Browser -->
+              <rect x="350" y="252" width="120" height="40" rx="8" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+              <text x="410" y="276" text-anchor="middle" fill="#64748B" font-size="10">Any browser</text>
+              <line x1="280" y1="230" x2="390" y2="256" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+
+              <!-- Arrow marker -->
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#4A7BA7"/>
+                </marker>
+              </defs>
+            </svg>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Brand Divider -->
   <div class="brand-divider"></div>
 
-  <!-- How Cloud Sync Works -->
-  <section class="how-section">
-    <div class="container">
-      <p class="section-label">How It Works</p>
-      <h2 class="section-title">Local-first, cloud-optional</h2>
-      <p class="section-subtitle">
-        Contextify works entirely offline. Cloud sync is opt-in, and your local database is always the primary copy. The cloud adds backup, cross-device access, and team features on top.
-      </p>
-
-      <div class="row g-4">
-        <div class="col-md-4">
-          <div class="cap-card">
-            <div class="cap-icon">1</div>
-            <h3>Contextify watches locally</h3>
-            <p>The macOS app and Linux CLI monitor your Claude Code and Codex sessions in real-time. Everything goes into your local SQLite database first.</p>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="cap-card">
-            <div class="cap-icon">2</div>
-            <h3>Cloud sync pushes changes</h3>
-            <p>When cloud sync is enabled, new entries are pushed to Contextify Cloud in small batches. The sync is incremental, cursor-based, and idempotent.</p>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="cap-card">
-            <div class="cap-icon">3</div>
-            <h3>Access from anywhere</h3>
-            <p>Pull your history to a second Mac, search from the web dashboard, or use the Linux CLI to query from a remote server. It all stays in sync.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- What Syncs / What Stays Local -->
-  <section class="sync-section">
-    <div class="container">
-      <p class="section-label">Data Model</p>
-      <h2 class="section-title">What syncs. What stays local.</h2>
-      <p class="section-subtitle">
-        You control what goes to the cloud. Here is exactly what crosses the wire and what stays on your machine.
-      </p>
-
-      <div class="row g-4">
-        <div class="col-md-6">
-          <div class="sync-card synced">
-            <h3><span class="icon-synced">&#9729;</span> Synced to Cloud</h3>
-            <table class="sync-detail-table">
-              <thead><tr><th>Data</th><th>Notes</th></tr></thead>
-              <tbody>
-                <tr><td>Conversation entries</td><td>User prompts and assistant responses from your timeline</td></tr>
-                <tr><td>LLM summaries</td><td>One-line summaries generated locally by Apple Intelligence</td></tr>
-                <tr><td>Project metadata</td><td>Names, paths, git repo identity</td></tr>
-                <tr><td>Transcript metadata</td><td>Session IDs, timestamps, provider (Claude/Codex)</td></tr>
-                <tr><td>Tool invocations</td><td>Which tools were called and when</td></tr>
-                <tr><td>Usage statistics</td><td>Token counts, model usage per session</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="sync-card local">
-            <h3><span class="icon-local">&#9000;</span> Stays on Your Machine</h3>
-            <table class="sync-detail-table">
-              <thead><tr><th>Data</th><th>Why</th></tr></thead>
-              <tbody>
-                <tr><td>Raw JSONL transcript files</td><td>Too large; the parsed entries above cover the content</td></tr>
-                <tr><td>App settings and preferences</td><td>Per-machine configuration</td></tr>
-                <tr><td>Security-scoped bookmarks</td><td>macOS sandbox artifacts, meaningless elsewhere</td></tr>
-                <tr><td>Apple Intelligence state</td><td>Local processing pipeline, not transferable</td></tr>
-                <tr><td>Database indexes and caches</td><td>Rebuilt automatically from synced data</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <p class="text-center mt-3" style="font-size: 0.85rem; color: var(--text-tertiary);">
-        The sync payload is parsed, structured data. Not raw files. This keeps sync fast and the cloud footprint small.
-      </p>
-    </div>
-  </section>
-
-  <!-- Capabilities -->
-  <section class="capabilities-section">
-    <div class="container">
-      <p class="section-label">What You Get</p>
-      <h2 class="section-title">More than backup</h2>
-      <p class="section-subtitle">
-        Cloud sync unlocks features that a local-only database cannot provide.
-      </p>
-
-      <div class="row g-4">
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128269;</div>
-            <h3>Lost a fix you made on another machine?</h3>
-            <p>Cloud sync means every conversation is searchable from any device. Find that one command from your work laptop while sitting at your personal Mac.</p>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128101;</div>
-            <h3>Your team uses AI tools. Nobody shares context.</h3>
-            <p>Invite team members to a shared workspace. See who worked on what, search across the team's AI history, and build on each other's sessions.</p>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128202;</div>
-            <h3>How much is your team actually using AI?</h3>
-            <p>Usage analytics with daily volume charts, per-project breakdowns, and per-user activity. Real data instead of guesses.</p>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128737;</div>
-            <h3>Laptop dies. Two months of AI history gone.</h3>
-            <p>Cloud sync backs up your conversation history continuously. Your sessions survive hardware failures, OS reinstalls, and accidental deletions.</p>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128279;</div>
-            <h3>Need to look something up from your phone?</h3>
-            <p>The web dashboard at cloud.contextify.sh lets you search and browse from any browser. No app installation required.</p>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-          <div class="cap-card">
-            <div class="cap-icon">&#128039;</div>
-            <h3>Working on a remote Linux server?</h3>
-            <p>The Linux CLI pushes sessions to the same cloud backend. Work in SSH, search from your Mac. One history across all your environments.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Local vs Cloud Comparison -->
-  <section class="comparison-section">
-    <div class="container">
-      <p class="section-label">Compare</p>
-      <h2 class="section-title">Local-only vs. Cloud Sync</h2>
-      <p class="section-subtitle">
-        Contextify works great locally. Cloud sync adds reach.
-      </p>
-
-      <div class="table-responsive">
-        <table class="comparison-table">
-          <thead>
-            <tr>
-              <th>Feature</th>
-              <th>Local Only</th>
-              <th>With Cloud Sync</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Real-time timeline monitoring</td>
-              <td><span class="check">&#10003;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Full-text search</td>
-              <td><span class="check">&#10003;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>LLM summaries (Apple Intelligence)</td>
-              <td><span class="check">&#10003;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Access from second Mac</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Search from web browser</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Linux CLI sync</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Team workspace</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Usage analytics dashboard</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Automatic cloud backup</td>
-              <td><span class="dash">&mdash;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-            <tr>
-              <td>Works offline</td>
-              <td><span class="check">&#10003;</span></td>
-              <td><span class="check">&#10003;</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- Privacy & Security -->
-  <section class="privacy-section">
-    <div class="container">
-      <p class="section-label">Security</p>
-      <h2 class="section-title">Built so we can't misuse your data, not just promising we won't</h2>
-      <p class="section-subtitle">
-        Security is an architectural property of Contextify Cloud, not a policy checkbox.
-      </p>
-
-      <div class="privacy-grid">
-        <div class="privacy-item">
-          <div class="privacy-icon">&#128274;</div>
-          <div>
-            <h4>Off by default</h4>
-            <p>Cloud sync ships disabled. You explicitly enable it per machine. Disable it at any time and your local database keeps working exactly as before.</p>
-          </div>
-        </div>
-        <div class="privacy-item">
-          <div class="privacy-icon">&#128451;</div>
-          <div>
-            <h4>Schema-per-tenant isolation</h4>
-            <p>Each workspace gets its own PostgreSQL schema. Your queries physically cannot touch another customer's data. This is a database-level guarantee, not an application-level filter.</p>
-          </div>
-        </div>
-        <div class="privacy-item">
-          <div class="privacy-icon">&#127760;</div>
-          <div>
-            <h4>Encrypted in transit</h4>
-            <p>All sync traffic uses TLS 1.2+ over HTTPS. Certificate management is automated via Let's Encrypt.</p>
-          </div>
-        </div>
-        <div class="privacy-item">
-          <div class="privacy-icon">&#128100;</div>
-          <div>
-            <h4>API key authentication</h4>
-            <p>Your sync connection uses a unique API key generated during setup. No passwords stored on the server, no third-party OAuth dependency.</p>
-          </div>
-        </div>
-        <div class="privacy-item">
-          <div class="privacy-icon">&#128190;</div>
-          <div>
-            <h4>No cloud lock-in</h4>
-            <p>Your local SQLite database is always the primary copy. If the cloud disappears tomorrow, you still have everything. Cloud is additive, not required.</p>
-          </div>
-        </div>
-        <div class="privacy-item">
-          <div class="privacy-icon">&#128465;</div>
-          <div>
-            <h4>Full deletion on request</h4>
-            <p>Ask us to delete your cloud data and we drop the schema. No "30-day retention," no "anonymized analytics" carve-outs. Gone is gone.</p>
-          </div>
-        </div>
-      </div>
-
-      <ul class="not-do-list mt-4">
-        <li>We do not read your conversation content for training, analytics, or any purpose other than serving it back to you.</li>
-        <li>We do not share data across tenants.</li>
-        <li>We do not retain data after you delete your account.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- Getting Started -->
-  <section class="start-section">
+  <!-- ═══════════════════════════════════════════════════════
+       PROBLEM
+       ═══════════════════════════════════════════════════════ -->
+  <section class="problem-section">
     <div class="container">
       <div class="row">
-        <div class="col-lg-7 mx-auto">
-          <p class="section-label">Setup</p>
-          <h2 class="section-title">Up and running in under a minute</h2>
+        <div class="col-lg-7">
+          <p class="section-label">The problem</p>
+          <h2 class="section-title">Your AI conversations are trapped on one machine</h2>
 
-          <div class="start-step">
-            <div class="start-step-num">1</div>
+          <div class="problem-item">
+            <div class="problem-icon">&#215;</div>
             <div>
-              <h4>Download Contextify</h4>
-              <p>From <a href="../download/">contextify.sh/download</a> (macOS) or install the <a href="../platforms/linux/">Linux CLI</a>.</p>
+              <h3>History auto-deletes</h3>
+              <p>Claude Code removes transcripts after 30 days. A month of context, decisions, and solutions disappears silently.</p>
             </div>
           </div>
-          <div class="start-step">
-            <div class="start-step-num">2</div>
+          <div class="problem-item">
+            <div class="problem-icon">&#215;</div>
             <div>
-              <h4>Create a cloud account</h4>
-              <p>Sign up at <a href="https://cloud.contextify.sh">cloud.contextify.sh</a>. You get an API key immediately.</p>
+              <h3>Stuck on one device</h3>
+              <p>You solved a problem on your work laptop. Now you are on your personal Mac and cannot find it. Or you SSH into a Linux server and the history is somewhere else entirely.</p>
             </div>
           </div>
-          <div class="start-step">
-            <div class="start-step-num">3</div>
+          <div class="problem-item">
+            <div class="problem-icon">&#215;</div>
             <div>
-              <h4>Enable cloud sync</h4>
-              <p>Open <strong>Settings > Cloud</strong> in the macOS app, or run <span class="code-inline">contextify cloud setup</span> on Linux. Paste your API key.</p>
-            </div>
-          </div>
-          <div class="start-step">
-            <div class="start-step-num">4</div>
-            <div>
-              <h4>Sync starts automatically</h4>
-              <p>Your existing history uploads first. After that, new entries sync incrementally every few minutes. Typical sync is a few KB.</p>
+              <h3>"I figured this out already"</h3>
+              <p>You know you solved this exact problem two weeks ago. You remember the conversation. You just cannot find it.</p>
             </div>
           </div>
         </div>
@@ -1140,7 +479,169 @@
     </div>
   </section>
 
-  <!-- FAQ -->
+  <!-- ═══════════════════════════════════════════════════════
+       INDIVIDUAL VALUE
+       ═══════════════════════════════════════════════════════ -->
+  <section class="value-section">
+    <div class="container">
+      <p class="section-label">For individuals</p>
+      <h2 class="section-title">Your history follows you</h2>
+      <p class="section-subtitle">
+        Cloud sync runs in the background. Your local database stays primary. The cloud adds backup, cross-device search, and a web dashboard on top.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Survives everything</h3>
+            <p>Disk failures, OS reinstalls, new laptops. Your AI conversation history is backed up continuously. Claude Code's 30-day deletion becomes irrelevant.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Search from any machine</h3>
+            <p>Full-text search across every past session, from whichever device you are on. Or open cloud.contextify.sh in a browser and search there.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Mac + Linux, one history</h3>
+            <p>The Linux CLI pushes sessions to the same cloud. Work on a remote server via SSH, search from your Mac later. Everything ends up in the same index.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOTAL RECALL
+       ═══════════════════════════════════════════════════════ -->
+  <section class="recall-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-5 mb-4 mb-lg-0">
+          <p class="section-label">Total Recall</p>
+          <h2 class="section-title">Search past AI sessions from your current one</h2>
+          <p class="section-subtitle" style="margin-bottom: 1.5rem;">
+            The Contextify CLI lets your current AI session look up what happened in previous ones. Past decisions, code patterns, and solutions become context you can retrieve instead of knowledge you have to re-derive.
+          </p>
+          <p class="section-subtitle" style="margin-bottom: 0;">
+            With cloud sync, Total Recall searches across all your machines. Not just the one you are sitting at.
+          </p>
+        </div>
+        <div class="col-lg-7">
+          <div class="recall-example">
+            <div class="prompt">"Why did we decide against adding analytics to the website?"</div>
+            <div class="result">Total Recall found the original conversation from months earlier with the exact quote: "no analytics, I think for now. I would want to do this on the server side to avoid any user facing visibility." Decision recovered, question settled, no re-litigation needed.</div>
+            <div class="pattern">Decision archaeology</div>
+          </div>
+          <div class="recall-example">
+            <div class="prompt">"We're seeing the same corrupted summaries again. Did we investigate this before?"</div>
+            <div class="result">Found a full root-cause analysis from two days earlier covering 21+ affected entries. The prior session had already identified the validation bypass and proposed fixes. Skipped the entire re-investigation.</div>
+            <div class="pattern">Bug pattern recognition</div>
+          </div>
+          <div class="recall-example">
+            <div class="prompt">"What command caused the branch reset that destroyed our PR?"</div>
+            <div class="result">Traced across multiple sessions to find that a sync script was running <code>git reset --hard</code> unconditionally regardless of which branch was active. Identified a systemic automation bug that would have caused repeated incidents.</div>
+            <div class="pattern">Incident forensics</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       TEAMS
+       ═══════════════════════════════════════════════════════ -->
+  <section class="teams-section">
+    <div class="container">
+      <p class="section-label">For teams</p>
+      <h2 class="section-title">The same synced history becomes shared context</h2>
+      <p class="section-subtitle">
+        On Team plans, your engineers' AI sessions are searchable across the group. No extra work required, it is the same sync.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Search past AI sessions across your team</h3>
+            <p>Someone solved this problem three months ago using Claude Code. Now anyone on the team can find that conversation through the web dashboard.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Onboard with context</h3>
+            <p>New hires can search past AI conversations to understand how things were built, what was considered and rejected, and why the code looks the way it does.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>See which people and projects are using AI</h3>
+            <p>Usage analytics show conversations per day, active projects, and per-user activity. Real data for understanding adoption, not surveys.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       TRUST
+       ═══════════════════════════════════════════════════════ -->
+  <section class="trust-section">
+    <div class="container">
+      <p class="section-label">Privacy</p>
+      <h2 class="section-title">Cloud is opt-in. Local is always primary.</h2>
+
+      <div class="trust-grid">
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>Off by default</h4>
+            <p>Cloud sync ships disabled. You enable it in Settings and can disable it at any time. Nothing changes locally.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>Tenant isolation</h4>
+            <p>Each workspace uses its own PostgreSQL schema. No cross-tenant queries in the application.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>TLS in transit</h4>
+            <p>All sync traffic uses HTTPS with TLS 1.2+. No plaintext fallback.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>No cloud lock-in</h4>
+            <p>Your local SQLite database is the primary copy. If the cloud goes away, you still have everything.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>Delete on request</h4>
+            <p>Request deletion of your cloud data at any time. Your local database is not affected.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon">&#10003;</div>
+          <div>
+            <h4>No AI processing server-side</h4>
+            <p>LLM summaries are generated locally on your Mac using Apple Intelligence. The cloud stores them, it does not run AI on your data.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       FAQ
+       ═══════════════════════════════════════════════════════ -->
   <section class="faq-section">
     <div class="container">
       <div class="row">
@@ -1149,54 +650,46 @@
           <h2 class="section-title">Common questions</h2>
 
           <div class="faq-item">
-            <h3>How is this different from Dropbox or iCloud Drive sync?</h3>
-            <p>Dropbox syncs files. Contextify Cloud syncs structured, parsed data (entries, summaries, metadata). It understands the content, so you can search by conversation text, filter by project, and see analytics. It also uses incremental cursor-based sync with server-side deduplication, so it handles the append-only nature of conversation logs efficiently. Dropbox cannot handle concurrent database access from multiple devices.</p>
+            <h3>How is this different from Dropbox or iCloud sync?</h3>
+            <p>Dropbox syncs files. Contextify Cloud syncs structured, parsed data: conversation entries, summaries, project metadata. It uses incremental cursor-based sync with server-side deduplication, handles the append-only nature of conversation logs efficiently, and provides search and analytics on top. Dropbox cannot do concurrent multi-device database access.</p>
           </div>
-
           <div class="faq-item">
             <h3>Can I use Contextify without Cloud?</h3>
-            <p>Yes. Cloud sync is off by default. The macOS app and Linux CLI work fully offline with all core features: timeline monitoring, search, LLM summaries. Many users run Contextify in local-only mode permanently.</p>
+            <p>Yes. Cloud sync is off by default. The macOS app and Linux CLI work fully offline with all core features: real-time timeline, search, LLM summaries. Many users run local-only permanently.</p>
           </div>
-
           <div class="faq-item">
-            <h3>Does it work offline?</h3>
-            <p>Yes. The local database is the primary copy. Cloud sync happens in the background when you have connectivity. If you are offline, the app works normally and syncs when the connection returns.</p>
+            <h3>What data gets synced?</h3>
+            <p>Conversation entries (prompts and responses), LLM summaries, project metadata, transcript metadata, tool invocations, and usage statistics. Raw JSONL transcript files, app settings, and Apple Intelligence processing state stay local. The sync payload is parsed structured data, not raw files.</p>
           </div>
-
-          <div class="faq-item">
-            <h3>Does the cloud process my conversations with AI?</h3>
-            <p>No. LLM summaries are generated locally on your Mac using Apple Intelligence. The cloud stores the summaries you sync, but it does not run any AI processing on your data.</p>
-          </div>
-
           <div class="faq-item">
             <h3>Can I exclude specific projects from syncing?</h3>
-            <p>Per-project sync controls are coming soon. For now, cloud sync operates at the account level. You can disable sync entirely at any time.</p>
+            <p>Per-project sync controls are coming soon. Today, cloud sync operates at the account level. You can disable sync entirely at any time.</p>
           </div>
-
           <div class="faq-item">
             <h3>What happens if I stop paying?</h3>
-            <p>Your local database is unaffected. Cloud data is retained for a grace period after cancellation, then deleted. You can export or pull your data before deletion.</p>
+            <p>Your local database is unaffected. Cloud data is retained for a grace period, then deleted. You can pull your data before that.</p>
           </div>
-
           <div class="faq-item">
             <h3>Is there a self-hosted option?</h3>
-            <p>The cloud backend is FastAPI + PostgreSQL, deployed via Docker Compose. Self-hosted documentation is planned for Enterprise plans. The managed service at cloud.contextify.sh is the current option.</p>
+            <p>The cloud backend is FastAPI + PostgreSQL deployed via Docker Compose. Self-hosted documentation is planned for advanced and enterprise users. The managed service at cloud.contextify.sh is the supported path today.</p>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- CTA -->
+  <!-- ═══════════════════════════════════════════════════════
+       CTA
+       ═══════════════════════════════════════════════════════ -->
   <section class="cta-section">
     <div class="container">
       <div class="row">
         <div class="col-lg-8 mx-auto">
           <div class="cta-card">
-            <h2>Start syncing in under a minute</h2>
-            <p>Download Contextify, open Settings, and enable Cloud Sync. Your history starts backing up immediately.</p>
+            <h2>Stop losing your AI work</h2>
+            <p>Download Contextify, enable Cloud Sync in Settings, and your history starts backing up immediately. Setup takes under a minute.</p>
             <div class="cta-btn-group">
-              <a href="../download/" class="cta-btn-primary">Download Contextify</a>
+              <a href="../download/" class="cta-btn-primary">Download for Mac</a>
               <a href="../pricing/" class="cta-btn-secondary">See Pricing</a>
             </div>
           </div>
