@@ -94,8 +94,8 @@ struct CloudSettingsView: View {
 
       if isConfigured {
         syncStatusSection
-        projectSyncSection
         controlsSection
+        projectSyncSection
       }
     }
     .formStyle(.grouped)
