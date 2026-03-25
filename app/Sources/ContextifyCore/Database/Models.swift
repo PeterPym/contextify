@@ -15,6 +15,8 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var orphanedSince: Int?  // When directory went missing (v20)
   public var groupId: String?  // Tab group membership (v33)
   public var groupDisplayOrder: Int?  // Order within group (v33)
+  public var cloudSyncEnabled: Bool = true  // Per-project cloud sync opt-out (v37)
+  public var repoGroupKey: String?  // Git remote origin hash for project consolidation (v37)
   public var lastActivityDetectedAt: Int?
   public var createdAt: Int
   public var updatedAt: Int
@@ -33,6 +35,8 @@ public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
     case orphanedSince = "orphaned_since"
     case groupId = "group_id"
     case groupDisplayOrder = "group_display_order"
+    case cloudSyncEnabled = "cloud_sync_enabled"
+    case repoGroupKey = "repo_group_key"
     case lastActivityDetectedAt = "last_activity_detected_at"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
