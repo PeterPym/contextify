@@ -636,43 +636,40 @@ struct CloudSettingsView: View {
     let project = info.project
     let displayName = project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
 
-    HStack(spacing: 6) {
-      Toggle(isOn: Binding(
-        get: { project.cloudSyncEnabled },
-        set: { newValue in
-          toggleProject(projectId: project.id, enabled: newValue)
-        }
-      )) {
-        HStack(spacing: 4) {
-          Text(displayName)
-            .font(.caption)
-            .lineLimit(1)
-          Text(abbreviatedPath(project.rootPath))
-            .font(.caption2)
-            .foregroundStyle(.quaternary)
-            .lineLimit(1)
-            .truncationMode(.head)
-          Spacer()
-          Text(formatEntryCount(info.entryCount))
+    Toggle(isOn: Binding(
+      get: { project.cloudSyncEnabled },
+      set: { newValue in
+        toggleProject(projectId: project.id, enabled: newValue)
+      }
+    )) {
+      HStack(spacing: 4) {
+        Text(displayName)
+          .font(.caption)
+          .lineLimit(1)
+        Text(abbreviatedPath(project.rootPath))
+          .font(.caption2)
+          .foregroundStyle(.quaternary)
+          .lineLimit(1)
+          .truncationMode(.head)
+        Spacer()
+        Button {
+          NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.rootPath)
+        } label: {
+          Image(systemName: "folder")
             .font(.caption2)
             .foregroundStyle(.tertiary)
         }
-      }
-      .toggleStyle(.switch)
-      .controlSize(.mini)
-      .accessibilityIdentifier("cloud-sync-project-toggle-\(project.id)")
-
-      Button {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.rootPath)
-      } label: {
-        Image(systemName: "folder")
+        .buttonStyle(.plain)
+        .help("Reveal in Finder")
+        .accessibilityLabel("Reveal \(displayName) in Finder")
+        Text(formatEntryCount(info.entryCount))
           .font(.caption2)
           .foregroundStyle(.tertiary)
       }
-      .buttonStyle(.plain)
-      .help("Reveal in Finder")
-      .accessibilityLabel("Reveal \(displayName) in Finder")
     }
+    .toggleStyle(.switch)
+    .controlSize(.mini)
+    .accessibilityIdentifier("cloud-sync-project-toggle-\(project.id)")
     .padding(.vertical, 2)
   }
 

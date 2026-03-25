@@ -976,6 +976,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         }
       }
 
+      // Sort ungrouped and incidental by entry count descending
+      ungroupedMain.sort { $0.entryCount > $1.entryCount }
+      incidental.sort { $0.entryCount > $1.entryCount }
+
       return CloudSyncProjectList(groups: grouped, ungrouped: ungroupedMain, incidental: incidental)
     }
   }
