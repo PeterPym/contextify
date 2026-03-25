@@ -1,11 +1,11 @@
 ---
 name: wt-sync
-description: Bidirectional worktree sync - pull from main AND push to main, plus companion repo health check. Project-level override that wraps the global wt-sync skill and adds contextify-cloud repo status verification.
+description: Bidirectional worktree sync - pull from main AND push to main, plus paired repo health check. Project-level override that wraps the global wt-sync skill and checks the matching contextify-cloud worktree status.
 ---
 
 # Worktree Sync (Contextify Project Override)
 
-This is a project-level override of the global `/wt-sync` skill. It adds a companion repo health check for the `contextify-cloud` repository after the standard worktree sync.
+This is a project-level override of the global `/wt-sync` skill. It adds a paired repo health check for the **matching** `contextify-cloud` worktree after the standard worktree sync.
 
 ## Behavior
 
@@ -13,16 +13,28 @@ This is a project-level override of the global `/wt-sync` skill. It adds a compa
 
 Follow the global `~/.claude/skills/wt-sync/SKILL.md` instructions exactly (validate environment, check preconditions, execute sync, report results, surface untracked warnings).
 
-**Step 2: Companion repo health check**
+**Step 2: Determine the matching cloud worktree**
 
-After the standard sync completes (whether syncing current or all worktrees), check the `contextify-cloud` companion repo:
+The contextify and contextify-cloud repos have mirrored worktrees (wb1-wb4). Always check the **matching** cloud worktree based on the current contextify worktree name.
 
 ```bash
-CLOUD_REPO="$HOME/code/projects/contextify-cloud"
+# Determine current worktree name from project-config.yaml
+CURRENT_WT=$(wt-context.sh --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)
 
+# Map to the matching cloud worktree
+case "$CURRENT_WT" in
+  primary) CLOUD_REPO="$HOME/code/projects/contextify-cloud" ;;
+  wb*)     CLOUD_REPO="$HOME/code/projects/contextify-cloud-${CURRENT_WT}" ;;
+  *)       CLOUD_REPO="$HOME/code/projects/contextify-cloud" ;;
+esac
+```
+
+**Step 3: Check paired repo health**
+
+```bash
 # 1. Check if repo exists
-if [ ! -d "$CLOUD_REPO/.git" ]; then
-  echo "WARNING: contextify-cloud repo not found at $CLOUD_REPO"
+if [ ! -d "$CLOUD_REPO" ]; then
+  echo "WARNING: paired cloud worktree not found at $CLOUD_REPO"
   # Skip remaining checks
 fi
 
@@ -38,16 +50,16 @@ CLOUD_BEHIND=$(git -C "$CLOUD_REPO" rev-list --count HEAD..origin/main 2>/dev/nu
 CLOUD_AHEAD=$(git -C "$CLOUD_REPO" rev-list --count origin/main..HEAD 2>/dev/null || echo "?")
 ```
 
-**Step 3: Report companion status**
+**Step 4: Report paired repo status**
 
 Append a section to the sync report:
 
 ```markdown
-### Companion Repo: contextify-cloud
+### Paired Repo: contextify-cloud ({CURRENT_WT})
 
 | Property | Value |
 |----------|-------|
-| Path | ~/code/projects/contextify-cloud |
+| Path | {CLOUD_REPO} |
 | Branch | {CLOUD_BRANCH} |
 | Status | {clean / dirty} |
 | vs origin/main | {behind N / ahead N / in sync} |
@@ -55,17 +67,17 @@ Append a section to the sync report:
 
 **Warning conditions** (surface prominently):
 
-- **Not on main:** "contextify-cloud is on branch `{branch}`, not `main`. This may be leftover from a feature branch."
-- **Dirty working tree:** "contextify-cloud has uncommitted changes ({N} files modified)."
-- **Behind origin/main:** "contextify-cloud is {N} commits behind origin/main. Run `git -C ~/code/projects/contextify-cloud pull` to update."
-- **Ahead of origin/main:** "contextify-cloud is {N} commits ahead of origin/main. These changes have not been pushed."
+- **Not on landing branch:** "contextify-cloud-{wt} is on branch `{branch}`, not its landing branch. This may be leftover from a feature branch."
+- **Dirty working tree:** "contextify-cloud-{wt} has uncommitted changes ({N} files modified)."
+- **Behind origin/main:** "contextify-cloud-{wt} is {N} commits behind origin/main. Consider running `cd {CLOUD_REPO} && wt-sync.sh` to update."
+- **Ahead of origin/main:** "contextify-cloud-{wt} is {N} commits ahead of origin/main. These changes have not been pushed."
 
 **Clean state** (brief, non-alarming):
-- "contextify-cloud: on main, in sync, clean."
+- "contextify-cloud-{wt}: on landing branch, in sync, clean."
 
 ## Why This Override Exists
 
-The contextify-cloud repo does not have worktrees (see ct-406). When working on cross-repo features (e.g., device flow auth touches both CLI and server), the cloud repo can drift out of sync or be left on a feature branch. This check ensures agents and users are aware of the companion repo's state during routine sync operations.
+The contextify and contextify-cloud repos are paired with mirrored worktrees (wb1-wb4). When working on cross-repo features (e.g., CLI + server changes), the cloud repo can drift out of sync or be left on a feature branch. This check ensures agents and users are aware of the paired worktree's state during routine sync operations. See `paired_repo` in `project-config.yaml`.
 
 ## Trigger Phrases
 

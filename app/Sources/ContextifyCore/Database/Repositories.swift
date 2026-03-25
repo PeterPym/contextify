@@ -19,6 +19,7 @@ public protocol ProjectRepository {
   func update(id: String, name: String?, bookmark: Data?) throws
   func setDisplayOrder(id: String, displayOrder: Int) throws
   func setHidden(id: String, hidden: Bool) throws
+  func setCloudSyncEnabled(id: String, enabled: Bool) throws
   func markOrphaned(id: String, orphanedSince: Int) throws
   func markRestored(id: String) throws
   func delete(id: String) throws
@@ -52,6 +53,7 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         displayOrder: nextOrder,  // Append to end (v19)
         isOrphaned: false,  // Not orphaned (v20)
         orphanedSince: nil,  // No orphan timestamp (v20)
+        cloudSyncEnabled: true,  // Sync by default (v37)
         createdAt: now,
         updatedAt: now
       )
@@ -108,6 +110,19 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         throw RepositoryError.notFound
       }
       project.hidden = hidden
+      project.updatedAt = now
+      try project.update(db)
+    }
+  }
+
+  public func setCloudSyncEnabled(id: String, enabled: Bool) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.cloudSyncEnabled = enabled
       project.updatedAt = now
       try project.update(db)
     }

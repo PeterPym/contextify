@@ -433,6 +433,7 @@ struct CloudCommand: ParsableCommand {
       CloudPullCommand.self,
       CloudSyncCommand.self,
       CloudSearchCommand.self,
+      CloudProjectSyncCommand.self,
     ]
   )
 }
@@ -1335,4 +1336,116 @@ private func buildPushPayload(
     "tool_invocations": [] as [Any],
     "transcript_metadata": [] as [Any],
   ]
+}
+
+// MARK: - Project Sync Command
+
+struct CloudProjectSyncCommand: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "projects",
+    abstract: "Manage per-project cloud sync settings",
+    discussion: """
+      Control which projects sync to the cloud. Projects excluded from
+      sync never leave this device during push operations.
+
+      EXAMPLES:
+        contextify cloud projects                     # List projects and sync status
+        contextify cloud projects --exclude myproject  # Exclude from cloud sync
+        contextify cloud projects --include myproject  # Re-include in cloud sync
+      """
+  )
+
+  @Option(name: .long, help: "Path to the SQLite database file")
+  var db: String?
+
+  @Option(name: .long, help: "Exclude a project from cloud sync (by name or path)")
+  var exclude: String?
+
+  @Option(name: .long, help: "Include a project in cloud sync (by name or path)")
+  var include: String?
+
+  @Flag(name: .long, help: "Output as JSON")
+  var json: Bool = false
+
+  func run() throws {
+    let dbPath = resolveDbPath()
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+      throw ValidationError("Database not found at \(dbPath)")
+    }
+
+    let dbURL = URL(fileURLWithPath: dbPath)
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    if let projectName = exclude {
+      guard let matched = try service.setProjectCloudSyncEnabled(projectMatch: projectName, enabled: false) else {
+        if json {
+          print(#"{"error":"no_match","project":"\#(projectName)"}"#)
+        } else {
+          print(CLIStyle.redText("No project matching \"\(projectName)\" found."))
+        }
+        throw ExitCode(1)
+      }
+      if json {
+        print(#"{"action":"excluded","project":"\#(matched)"}"#)
+      } else {
+        print("Excluded \(CLIStyle.boldText(matched)) from cloud sync.")
+      }
+      return
+    }
+
+    if let projectName = include {
+      guard let matched = try service.setProjectCloudSyncEnabled(projectMatch: projectName, enabled: true) else {
+        if json {
+          print(#"{"error":"no_match","project":"\#(projectName)"}"#)
+        } else {
+          print(CLIStyle.redText("No project matching \"\(projectName)\" found."))
+        }
+        throw ExitCode(1)
+      }
+      if json {
+        print(#"{"action":"included","project":"\#(matched)"}"#)
+      } else {
+        print("Included \(CLIStyle.boldText(matched)) in cloud sync.")
+      }
+      return
+    }
+
+    // List mode
+    let projects = try service.listProjectsCloudSyncStatus()
+
+    if json {
+      let jsonArray = projects.map { p -> [String: Any] in
+        [
+          "id": p.id,
+          "name": p.name ?? "",
+          "root_path": p.rootPath,
+          "cloud_sync_enabled": p.cloudSyncEnabled,
+        ]
+      }
+      let data = try JSONSerialization.data(withJSONObject: jsonArray)
+      print(String(data: data, encoding: .utf8) ?? "[]")
+      return
+    }
+
+    if projects.isEmpty {
+      print(CLIStyle.dimText("No projects found."))
+      return
+    }
+
+    let syncCount = projects.filter(\.cloudSyncEnabled).count
+    print("\(CLIStyle.boldText("\(syncCount) of \(projects.count)")) projects syncing to cloud\n")
+
+    for project in projects {
+      let name = project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent
+      let status = project.cloudSyncEnabled
+        ? CLIStyle.greenText("syncing")
+        : CLIStyle.dimText("excluded")
+      print("  \(status)  \(name)")
+    }
+  }
+
+  private func resolveDbPath() -> String {
+    if let dbFlag = db { return XDGPaths.expandTilde(dbFlag) }
+    return XDGPaths.databasePath.path
+  }
 }
