@@ -160,6 +160,9 @@ struct ContextifyQueryCLI {
     var termCounts: Bool = false
     var anchorGit: Bool = false
 
+    // Device filter
+    var device: String?
+
     // Worktree options
     var thisWorktreeOnly: Bool = false
     var exclude: String?
@@ -342,6 +345,10 @@ struct ContextifyQueryCLI {
           options.termCounts = true
         case "--anchor-git":
           options.anchorGit = true
+        case "--device":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --device", exitCode: .invalidArgs) }
+          options.device = args[index]
         case "--this-worktree":
           options.thisWorktreeOnly = true
         case "--exclude":
@@ -440,7 +447,8 @@ struct ContextifyQueryCLI {
             includeHidden: options.includeHidden,
             timeRange: timeRange,
             kinds: kinds,
-            treatAsFTS: true
+            treatAsFTS: true,
+            device: options.device
           )
 
           var metadataDict: [String: JSONValue] = [
@@ -454,7 +462,8 @@ struct ContextifyQueryCLI {
               transcriptId: options.transcriptId,
               includeHidden: options.includeHidden,
               timeRange: timeRange,
-              kinds: kinds
+              kinds: kinds,
+              device: options.device
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -510,7 +519,8 @@ struct ContextifyQueryCLI {
             timeRange: timeRange,
             kinds: kinds,
             snippetTokens: options.snippetTokens ?? 10,
-            treatAsFTS: true
+            treatAsFTS: true,
+            device: options.device
           )
           let anchorResult = anchorPlan.map {
             GitAnchorSearch.rerank(hits: results, using: $0, requestedLimit: requestedLimit)
@@ -536,7 +546,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              treatAsFTS: true
+              treatAsFTS: true,
+              device: options.device
             )
           } else {
             totalCount = trimmedResults.count
@@ -558,7 +569,8 @@ struct ContextifyQueryCLI {
               transcriptId: options.transcriptId,
               includeHidden: options.includeHidden,
               timeRange: timeRange,
-              kinds: kinds
+              kinds: kinds,
+              device: options.device
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -644,7 +656,8 @@ struct ContextifyQueryCLI {
           timeRange: timeRange,
           includeContent: !options.noContent,
           fullContent: options.fullContent,
-          maxContentBytes: 2048
+          maxContentBytes: 2048,
+          device: options.device
         )
         try printResponse(type: "activity", data: results, json: options.jsonOutput) {
           printActivity(results)
@@ -1010,6 +1023,7 @@ struct ContextifyQueryCLI {
         --after <n>          Context: entries after anchor (default 20)
         --max-window <n>     Context: cap before+after (default 200)
         --kinds <csv>        Filter by kinds (e.g. user,assistant,system)
+        --device <name>      Filter by originating device (case-insensitive substring)
         --no-content         Emit content as null (metadata only)
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)

@@ -2,6 +2,7 @@
 // CloudSyncManager.swift - Orchestrator for cloud push/pull sync operations
 
 import Foundation
+import GRDB
 
 #if canImport(OSLog)
 import OSLog
@@ -16,12 +17,14 @@ private let log = CrossPlatformLogger(subsystem: "dev.contextify", category: "Cl
 public enum SyncState: Sendable, Equatable {
   case idle
   case syncing
+  case waitingForIngest
+  case deferred
   case error(String)
   case disabled
 
   public static func == (lhs: SyncState, rhs: SyncState) -> Bool {
     switch (lhs, rhs) {
-    case (.idle, .idle), (.syncing, .syncing), (.disabled, .disabled):
+    case (.idle, .idle), (.syncing, .syncing), (.waitingForIngest, .waitingForIngest), (.deferred, .deferred), (.disabled, .disabled):
       return true
     case (.error(let a), .error(let b)):
       return a == b
@@ -57,31 +60,6 @@ public struct PullResult: Sendable {
   public let pagesFetched: Int
 }
 
-/// Process-wide cached machine ID. Computed once on first access to avoid
-/// spawning ioreg on every push. Thread-safe via NSLock.
-private final class CachedMachineId: @unchecked Sendable {
-  static let shared = CachedMachineId()
-  private var _value: String?
-  private let _lock = NSLock()
-
-  func get(compute: () -> String) -> String {
-    // Fast path: return cached value without computing
-    _lock.lock()
-    if let v = _value { _lock.unlock(); return v }
-    _lock.unlock()
-
-    // Compute outside lock (may spawn ioreg)
-    let v = compute()
-
-    // Double-checked: another thread may have computed while we were unlocked
-    _lock.lock()
-    defer { _lock.unlock() }
-    if let existing = _value { return existing }
-    _value = v
-    return v
-  }
-}
-
 // MARK: - CloudSyncManager
 
 /// Orchestrator for cloud sync push and pull operations.
@@ -107,6 +85,10 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   /// Current sync state for UI display.
   @MainActor public private(set) var syncState: SyncState = .disabled
+
+  /// Mailto URL for reporting the most recent sync error to support.
+  /// Non-nil only when syncState is .error and the error was a structured import error.
+  @MainActor public private(set) var syncErrorReportURL: URL?
 
   /// Result from the most recent push operation.
   @MainActor public private(set) var lastPushResult: PushResult?
@@ -182,6 +164,10 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
+
+  /// The configured cloud server base URL (e.g. "https://cloud.contextify.sh").
+  /// Nil when cloud sync is not configured.
+  @MainActor public var configuredServerURL: String? { config?.serverURL }
   @MainActor private var connectionRevision: UInt64 = 0
   @MainActor var clientFactory: @Sendable (URL, String) -> CloudSyncClient = {
     CloudSyncClient(serverURL: $0, apiKey: $1)
@@ -289,6 +275,15 @@ public final class CloudSyncManager: @unchecked Sendable {
   ///
   /// - Parameter queryService: The query service for database export/import.
   public func sync(using queryService: ContextifyQueryService) async {
+    // Pre-flight: if ingest is active, don't even start. No network calls,
+    // no payload assembly. Show a neutral waiting state and return.
+    let ingestActive = await DatabaseWriteCoordinator.shared.isIngestActive
+    if ingestActive {
+      await MainActor.run { self.syncState = .waitingForIngest }
+      log.info("Sync skipped: ingest is active, waiting for completion")
+      return
+    }
+
     // Atomic check-and-set: skip if already syncing or disabled
     let shouldStart = await MainActor.run { () -> Bool in
       switch self.syncState {
@@ -319,11 +314,26 @@ public final class CloudSyncManager: @unchecked Sendable {
       let pushResult = try await push(using: queryService)
       await MainActor.run { self.lastPushResult = pushResult }
 
-      let pullResult = try await pull(using: queryService)
+      // Gate the pull through the write coordinator so it never overlaps
+      // with active bulk ingest. On timeout, defer instead of blocking.
+      let pullResult: PullResult
+      if let result = try await DatabaseWriteCoordinator.shared.withSyncScope(timeout: .seconds(30), {
+        try await self.pull(using: queryService)
+      }) {
+        pullResult = result
+      } else {
+        // Ingest is active and did not finish within the timeout window
+        await MainActor.run { self.syncState = .deferred }
+        log.info("Sync deferred: ingest is active, will retry next cycle")
+        await refreshStatusFromServer()
+        return
+      }
+
       await MainActor.run {
         self.lastPullResult = pullResult
         self.lastSyncDate = Date()
         self.syncState = .idle
+        self.syncErrorReportURL = nil
       }
       await refreshStatusFromServer()
 
@@ -331,10 +341,22 @@ public final class CloudSyncManager: @unchecked Sendable {
       let pulled = pullResult.entriesImported
       log.info("Sync complete: pushed \(pushed, privacy: .public), pulled \(pulled, privacy: .public)")
     } catch {
-      let message = userFriendlyMessage(for: error)
-      await MainActor.run { self.syncState = .error(message) }
+      if isTransientDatabaseError(error) {
+        await MainActor.run { self.syncState = .deferred }
+        log.info("Sync deferred due to transient database contention")
+      } else {
+        let message = userFriendlyMessage(for: error)
+        let importError = error as? ContextifyQueryService.CloudPullImportError
+        await MainActor.run {
+          let reportURL = importError?.supportMailtoURL(
+            deviceName: self.config?.deviceName
+          )
+          self.syncState = .error(message)
+          self.syncErrorReportURL = reportURL
+        }
+        log.error("Sync failed: \(message, privacy: .public)")
+      }
       await refreshStatusFromServer()
-      log.error("Sync failed: \(message, privacy: .public)")
     }
   }
 
@@ -429,10 +451,14 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     log.info("Starting push")
 
-    // Build device info once (cached machine ID avoids repeated ioreg calls)
-    let machineId = config.deviceId.isEmpty
-      ? CachedMachineId.shared.get(compute: computeMachineId)
-      : config.deviceId
+    // macOS cloud sync uses the shared app-level machine ID so app, CLI, and
+    // persisted cloud config converge on one stable device identity.
+    let machineId = MachineID.normalizedCloudDeviceID(config.deviceId)
+    if machineId != config.deviceId {
+      config.deviceId = machineId
+      await MainActor.run { self.config = config }
+      saveConfig(config)
+    }
     let machineName = config.deviceName.isEmpty
       ? (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
       : config.deviceName
@@ -544,6 +570,8 @@ public final class CloudSyncManager: @unchecked Sendable {
             gitBranch: entry.gitBranch,
             gitCommit: entry.gitCommit,
             cwd: entry.cwd,
+            sourceDeviceId: entry.sourceDeviceId,
+            sourceDeviceName: entry.sourceDeviceName,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt
           )
@@ -740,6 +768,8 @@ public final class CloudSyncManager: @unchecked Sendable {
           if let b = entry.gitBranch { d["git_branch"] = b }
           if let c = entry.gitCommit { d["git_commit"] = c }
           if let c = entry.cwd { d["cwd"] = c }
+          if let deviceId = entry.uploadedByDeviceId { d["source_device_id"] = deviceId }
+          if let deviceName = entry.uploadedByDeviceName { d["source_device_name"] = deviceName }
           return d
         }
 
@@ -753,12 +783,29 @@ public final class CloudSyncManager: @unchecked Sendable {
           return d
         }
 
-        let importResult = try queryService.importFromCloudPull(
-          projects: projectDicts,
-          transcripts: transcriptDicts,
-          entries: entryDicts,
-          summaries: summaryDicts
-        )
+        // Retry on transient SQLITE_BUSY within the same sync cycle rather than
+        // deferring the entire cycle. The write coordinator prevents overlap in
+        // most cases, but TranscriptOrchestrator lightweight writes can still
+        // briefly contend.
+        var importResult: CloudPullImportResult
+        var importAttempt = 0
+        let maxImportRetries = 3
+        while true {
+          do {
+            importResult = try queryService.importFromCloudPull(
+              projects: projectDicts,
+              transcripts: transcriptDicts,
+              entries: entryDicts,
+              summaries: summaryDicts
+            )
+            break
+          } catch let error as DatabaseError where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
+            importAttempt += 1
+            guard importAttempt < maxImportRetries else { throw error }
+            log.warning("Pull import retry \(importAttempt, privacy: .public)/\(maxImportRetries, privacy: .public) after SQLITE_BUSY")
+            try await Task.sleep(for: .milliseconds(100 * (1 << (importAttempt - 1))))
+          }
+        }
 
         totalImported += importResult.entriesImported
         totalSkipped += importResult.entriesSkipped
@@ -792,68 +839,6 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   // MARK: - Private Helpers
 
-  /// Stable machine identifier using IOPlatformUUID on macOS, /etc/machine-id on Linux.
-  /// If ioreg fails (e.g. in a sandboxed app), falls back to a persisted UUID stored
-  /// in Application Support to ensure stability across reboots and hostname changes.
-  /// Called once via `cachedMachineId` lazy property; do not call directly.
-  private func computeMachineId() -> String {
-    #if os(macOS)
-    // Try IOPlatformUUID first (works outside sandbox)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
-    process.arguments = ["-rd1", "-c", "IOPlatformExpertDevice"]
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-    try? process.run()
-    process.waitUntilExit()
-    let output = String(
-      data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    if let range = output.range(of: "IOPlatformUUID\" = \"") {
-      let start = range.upperBound
-      if let end = output[start...].firstIndex(of: "\"") {
-        return String(output[start..<end])
-      }
-    }
-    // Fallback: persisted UUID in Application Support (sandbox-safe)
-    return getOrCreatePersistedDeviceId()
-    #else
-    if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
-      .trimmingCharacters(in: .whitespacesAndNewlines) {
-      return id
-    }
-    return ProcessInfo.processInfo.hostName
-    #endif
-  }
-
-  /// Returns a stable device ID persisted in Application Support.
-  /// Creates and stores a new UUID if one doesn't exist yet.
-  private func getOrCreatePersistedDeviceId() -> String {
-    let appSupport = FileManager.default.urls(
-      for: .applicationSupportDirectory, in: .userDomainMask).first!
-    let contextifyDir = appSupport.appendingPathComponent("Contextify")
-    let deviceIdFile = contextifyDir.appendingPathComponent("device_id.txt")
-
-    // Try to read existing
-    if let existing = try? String(contentsOf: deviceIdFile, encoding: .utf8)
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !existing.isEmpty {
-      return existing
-    }
-
-    // Generate and persist a new UUID
-    let newId = UUID().uuidString
-    do {
-      try FileManager.default.createDirectory(
-        at: contextifyDir, withIntermediateDirectories: true)
-      try newId.write(to: deviceIdFile, atomically: true, encoding: .utf8)
-      log.info("Generated and persisted new device ID")
-    } catch {
-      log.warning("Failed to persist device ID: \(error.localizedDescription, privacy: .public)")
-    }
-    return newId
-  }
-
   /// Map CloudSyncError to a user-friendly message string.
   private func userFriendlyMessage(for error: Error) -> String {
     if let syncError = error as? CloudSyncError {
@@ -874,6 +859,9 @@ public final class CloudSyncManager: @unchecked Sendable {
         return "Push partially failed: \(accepted) entries synced, \(errors.count) failed. Will retry on next sync."
       }
     }
+    if let importError = error as? ContextifyQueryService.CloudPullImportError {
+      return "Sync import error [\(importError.errorCode)]. Use 'Report Issue' in Cloud settings to report this."
+    }
     return error.localizedDescription
   }
 
@@ -883,6 +871,16 @@ public final class CloudSyncManager: @unchecked Sendable {
       if case .networkError = syncError {
         return true
       }
+    }
+    return false
+  }
+
+  /// Returns true when the error is a transient SQLite lock contention that
+  /// should result in a deferred sync rather than a user-visible error badge.
+  private func isTransientDatabaseError(_ error: Error) -> Bool {
+    if let dbError = error as? DatabaseError {
+      return dbError.resultCode == .SQLITE_BUSY
+          || dbError.resultCode == .SQLITE_LOCKED
     }
     return false
   }
@@ -944,7 +942,39 @@ public final class CloudSyncManager: @unchecked Sendable {
         } catch {
           await self.setErrorForUI("Auto-sync failed to open local database.")
         }
-        try? await Task.sleep(for: .seconds(300))
+
+        // Wait for the 5-minute timer OR for ingest to complete (whichever
+        // comes first). This triggers an immediate sync after ingest finishes
+        // rather than waiting up to 5 minutes for the next cycle.
+        //
+        // We always listen for ingest completion, not just when state is
+        // .waitingForIngest. Ingest can start mid-sleep (after a successful
+        // sync), and we want to sync again as soon as it produces new data.
+        await withTaskGroup(of: Void.self) { group in
+          group.addTask {
+            try? await Task.sleep(for: .seconds(300))
+          }
+          group.addTask {
+            // Wait for ingest to finish. If no ingest is active right now,
+            // this returns immediately -- so we also sleep to avoid a tight
+            // loop. The key: if ingest starts and finishes during our sleep,
+            // waitForIngestComplete won't catch it (already done). We poll
+            // periodically to cover that gap.
+            while !Task.isCancelled {
+              let ingestActive = await DatabaseWriteCoordinator.shared.isIngestActive
+              if ingestActive {
+                // Ingest is running -- wait for it to finish, then break
+                await DatabaseWriteCoordinator.shared.waitForIngestComplete()
+                break
+              }
+              // No ingest right now. Check again in 10 seconds.
+              try? await Task.sleep(for: .seconds(10))
+            }
+          }
+          // First task to finish wins; cancel the other
+          await group.next()
+          group.cancelAll()
+        }
       }
     }
   }

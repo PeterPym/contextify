@@ -27,7 +27,13 @@ struct WindowCommands: Commands {
         get: { windowAlwaysOnTop },
         set: { newValue in
           windowAlwaysOnTop = newValue
-          if let window = MainWindowTracker.shared.window {
+          let window = MainWindowTracker.shared.window
+            ?? NSApp.windows.first(where: {
+              ($0.level == .normal || $0.level == .floating)
+                && $0.styleMask.contains(.titled)
+                && $0.title.contains("Contextify")
+            })
+          if let window {
             applyKeepOnTop(window, enabled: newValue)
           }
         }
@@ -360,6 +366,13 @@ struct ContextifyApp: App {
     }
     #endif
 
+    // Start the NSStatusItem controller. This evaluates the current menu bar
+    // preference and creates the status item if enabled. Must run after
+    // NSApp is available (hence the Task).
+    Task { @MainActor in
+      StatusItemController.shared.start()
+    }
+
   }
 
   var body: some Scene {
@@ -534,6 +547,7 @@ struct ContextifyApp: App {
       }
       // NOTE: Permission notification observer is in AppLifecycleState (not tied to window).
       // NOTE: Database reset in App Store builds requires restart.
+      .background(StatusItemWindowBridge())
     }
     // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
     // Height minimum: 360 (ContentView.minHeight) + ~25 (titlebar)
@@ -566,20 +580,22 @@ struct ContextifyApp: App {
     .defaultSize(width: 1000, height: 700)
 
     Window("Projects", id: "projects") {
-      if let viewModel = projectsViewModel {
-        ProjectsWindow()
-          .environment(viewModel)
-          .environment(ConversationMonitor.shared)
-      } else {
-        VStack(spacing: 12) {
-          ProgressView()
-          Text("Initializing projects...")
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task {
-          // Initialize projects system (single source of truth with accessProvider)
-          await initializeProjectsSystem()
+      Group {
+        if let viewModel = projectsViewModel {
+          ProjectsWindow()
+            .environment(viewModel)
+            .environment(ConversationMonitor.shared)
+        } else {
+          VStack(spacing: 12) {
+            ProgressView()
+            Text("Initializing projects...")
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .task {
+            // Initialize projects system (single source of truth with accessProvider)
+            await initializeProjectsSystem()
+          }
         }
       }
     }

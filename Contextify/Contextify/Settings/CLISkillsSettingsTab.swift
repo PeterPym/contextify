@@ -83,10 +83,7 @@ private struct SetupStepCard<Content: View, Action: View>: View {
 
       content
     }
-    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(nsColor: .controlBackgroundColor))
-    .cornerRadius(8)
   }
 }
 
@@ -212,45 +209,8 @@ struct CLISkillsSettingsTab: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
       Form {
-        Section {
-          VStack(alignment: .leading, spacing: 12) {
-            SetupStepCard(title: "CLI Installation", state: statusState) {
-            // Action buttons - App Store has no buttons (Homebrew-managed)
-            if Sandbox.isSandboxed {
-              EmptyView()
-            } else if coordinator.isHandlingOperation {
-              ProgressView()
-                .controlSize(.small)
-            } else if coordinator.needsRepair {
-              Button("Repair") {
-                log.info("[CLI-REPAIR-START]")
-                Task {
-                  await coordinator.repair()
-                }
-              }
-              .buttonStyle(.borderedProminent)
-              .tint(Color.contextifyYellow)
-            } else if coordinator.isEnabled {
-              Button("Disable") {
-                log.info("[CLI-DISABLE-START]")
-                Task {
-                  await coordinator.disable()
-                }
-              }
-              .buttonStyle(.bordered)
-            } else {
-              Button("Enable") {
-                log.info("[CLI-ENABLE-START]")
-                Task {
-                  await coordinator.enable()
-                }
-              }
-              .buttonStyle(.borderedProminent)
-              .tint(Color.contextifyBlue)
-            }
-          } content: {
+        Section("CLI Installation") {
             VStack(alignment: .leading, spacing: 12) {
               // Status display
               switch coordinator.state {
@@ -396,13 +356,36 @@ struct CLISkillsSettingsTab: View {
                 }
               }
             }
+
+            // Action buttons below status
+            if !Sandbox.isSandboxed {
+              if coordinator.isHandlingOperation {
+                ProgressView()
+                  .controlSize(.small)
+              } else if coordinator.needsRepair {
+                Button("Repair") {
+                  log.info("[CLI-REPAIR-START]")
+                  Task { await coordinator.repair() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.contextifyYellow)
+              } else if coordinator.isEnabled {
+                Button("Disable") {
+                  log.info("[CLI-DISABLE-START]")
+                  Task { await coordinator.disable() }
+                }
+                .buttonStyle(.bordered)
+              } else {
+                Button("Enable") {
+                  log.info("[CLI-ENABLE-START]")
+                  Task { await coordinator.enable() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.contextifyBlue)
+              }
+            }
           }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
-        .listRowBackground(Color.clear)
-      }
-    }
     .onAppear {
       if !didLogAppear {
         didLogAppear = true
@@ -410,11 +393,7 @@ struct CLISkillsSettingsTab: View {
       }
       coordinator.refreshState()
     }
-
-    Spacer()
-  }
-  .padding()
-  .frame(maxWidth: .infinity, alignment: .leading)
+    .formStyle(.grouped)
   }
 
   /// Returns user-facing message for repair reason

@@ -7,11 +7,33 @@ import FoundationModels
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let log = Logger(subsystem: "dev.contextify", category: "AppDelegate")
+  private let quitKeepsWindowsKey = "NSQuitAlwaysKeepsWindows"
+  private let quitKeepsWindowsBackupKey = "dev.contextify.backup.NSQuitAlwaysKeepsWindows"
 
   /// Track if this is the first activation (avoid refresh on initial launch)
   private var hasLaunchedOnce = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Restore any previously backed-up window restoration preference before
+    // potentially overwriting it again. This handles the case where a previous
+    // utility-mode launch didn't get to clean up on termination.
+    restoreWindowRestorationPreferenceIfNeeded()
+
+    // Suppress window restoration when utility mode is active.
+    // This prevents restored windows from flashing on screen during background startup.
+    // Back up the current value first so it can be restored on termination.
+    if HUDPreferences.isBackgroundUtilityModeEnabled() {
+      let defaults = UserDefaults.standard
+      if defaults.object(forKey: quitKeepsWindowsBackupKey) == nil,
+         let current = defaults.object(forKey: quitKeepsWindowsKey) as? Bool {
+        defaults.set(current, forKey: quitKeepsWindowsBackupKey)
+      }
+      defaults.set(false, forKey: quitKeepsWindowsKey)
+      log.info("[LIFECYCLE] NSQuitAlwaysKeepsWindows set to false (utility mode active)")
+    }
+
+    AppPresentationController.shared.refreshActivationPolicy()
+
     // Log build stamp for debugging (critical for VM testing)
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
@@ -45,10 +67,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    Task { @MainActor in
-      // Cancel FSEvents monitoring task
-      AppLifecycleState.shared.projectMonitoringTask?.cancel()
-    }
+    restoreWindowRestorationPreferenceIfNeeded()
+    // Tear down the NSStatusItem and popover
+    StatusItemController.shared.tearDown()
+    // Cancel FSEvents monitoring task
+    AppLifecycleState.shared.projectMonitoringTask?.cancel()
+  }
+
+  private func restoreWindowRestorationPreferenceIfNeeded() {
+    let defaults = UserDefaults.standard
+    guard let previous = defaults.object(forKey: quitKeepsWindowsBackupKey) as? Bool else { return }
+    defaults.set(previous, forKey: quitKeepsWindowsKey)
+    defaults.removeObject(forKey: quitKeepsWindowsBackupKey)
+    log.info("[LIFECYCLE] NSQuitAlwaysKeepsWindows restored to \(previous, privacy: .public)")
   }
 
   func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
@@ -83,11 +114,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
   }
 
-  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    if let window = MainWindowTracker.shared.window {
-      window.makeKeyAndOrderFront(nil)
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    // When utility mode or menu bar extra is active, keep the app running
+    // after all windows are closed. Otherwise, allow normal termination.
+    let utilityMode = HUDPreferences.isBackgroundUtilityModeEnabled()
+    let menuBarExtra = HUDPreferences.isMenuBarExtraEnabled()
+    let shouldKeepRunning = utilityMode || menuBarExtra
+    if shouldKeepRunning {
+      log.debug("[LIFECYCLE] Last window closed - keeping alive (utility=\(utilityMode), menuBar=\(menuBarExtra))")
     }
+    return !shouldKeepRunning
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    // When the user clicks the Dock icon (or re-opens via Finder), show the main
+    // window and temporarily switch to .regular activation policy so the app
+    // appears in Dock and Command-Tab while the window is visible.
+    log.info("[LIFECYCLE] applicationShouldHandleReopen (hasVisibleWindows=\(flag))")
+    AppPresentationController.shared.showMainWindow()
     return false
+  }
+
+  // MARK: - Window Restoration Suppression
+
+  func application(_ application: NSApplication, willEncodeRestorableState coder: NSCoder) {
+    // Suppress window restoration when utility mode is active so restored
+    // windows don't break the hidden/background startup experience.
+    // In normal mode, allow default restoration behavior (window positions).
+    guard HUDPreferences.isBackgroundUtilityModeEnabled() else { return }
+    log.debug("[LIFECYCLE] Suppressing restorable state encoding (utility mode)")
+    // Encode nothing - coder is left empty, discarding window state.
+  }
+
+  func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+    // Return true for modern secure coding compliance, but willEncodeRestorableState
+    // is empty so nothing is actually persisted when utility mode is active.
+    return true
   }
 
 

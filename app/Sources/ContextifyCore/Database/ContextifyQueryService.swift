@@ -13,6 +13,46 @@ public struct ContextifyQueryService: Sendable {
   public enum QueryError: Error, Sendable, Equatable {
     case featureUnavailable(feature: String, message: String)
   }
+
+  /// Structured errors for cloud pull import failures.
+  /// Each case has a stable error code for support reporting.
+  public enum CloudPullImportError: Error, LocalizedError, Sendable {
+    /// Project root_path invariant failed: row expected but not found after insert-or-skip.
+    case projectRootPathInvariant(serverId: String, rootPath: String)
+
+    /// A stable error code string suitable for support reporting.
+    public var errorCode: String {
+      switch self {
+      case .projectRootPathInvariant: return "SYNC_PROJECT_ROOTPATH_INVARIANT"
+      }
+    }
+
+    /// Human-readable description via LocalizedError protocol.
+    public var errorDescription: String? {
+      switch self {
+      case .projectRootPathInvariant(let serverId, let rootPath):
+        return "[\(errorCode)] Project root_path invariant failed: no local row for root_path=\"\(rootPath)\" after insert (server id=\(serverId))"
+      }
+    }
+
+    /// Generates a mailto: URL for reporting this error to support.
+    public func supportMailtoURL(deviceName: String? = nil) -> URL? {
+      let subject = "Contextify Sync Error: \(errorCode)"
+      var body = "Error: \(errorDescription ?? errorCode)\n"
+      body += "Timestamp: \(ISO8601DateFormatter().string(from: Date()))\n"
+      if let deviceName { body += "Device: \(deviceName)\n" }
+      body += "\n--- Please describe what you were doing when this occurred ---\n"
+
+      var components = URLComponents()
+      components.scheme = "mailto"
+      components.path = "support@contextify.sh"
+      components.queryItems = [
+        URLQueryItem(name: "subject", value: subject),
+        URLQueryItem(name: "body", value: body),
+      ]
+      return components.url
+    }
+  }
   private let pool: DatabasePool
   private let entriesPKIndex: String?
 
@@ -511,7 +551,8 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String?,
     includeHidden: Bool,
     timeRange: QueryTimeRange,
-    kinds: [String]?
+    kinds: [String]?,
+    device: String? = nil
   ) -> FTSFilterClause {
     var whereParts: [String] = []
     var args: [DatabaseValueConvertible] = [query]
@@ -546,6 +587,21 @@ public struct ContextifyQueryService: Sendable {
       whereParts.append("e.timestamp <= ?")
       args.append(until)
     }
+    if let device {
+      // Match device name when present; fall back to device ID only when name is absent.
+      // This prevents a UUID substring coincidentally matching a different device's entries.
+      whereParts.append("""
+        (
+          (e.source_device_name IS NOT NULL AND e.source_device_name != ''
+            AND e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE)
+          OR
+          ((e.source_device_name IS NULL OR e.source_device_name = '')
+            AND e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)
+        )
+        """)
+      args.append(device)
+      args.append(device)
+    }
 
     let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
     return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
@@ -561,7 +617,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
     snippetTokens: Int = 10,
-    treatAsFTS: Bool = false
+    treatAsFTS: Bool = false,
+    device: String? = nil
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
@@ -572,7 +629,8 @@ public struct ContextifyQueryService: Sendable {
       transcriptId: transcriptId,
       includeHidden: includeHidden,
       timeRange: timeRange,
-      kinds: kinds
+      kinds: kinds,
+      device: device
     )
     guard !filter.emptyResult else { return [] }
 
@@ -679,7 +737,8 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String? = nil,
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
-    kinds: [String]? = nil
+    kinds: [String]? = nil,
+    device: String? = nil
   ) throws -> [String: Int]? {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
@@ -698,7 +757,8 @@ public struct ContextifyQueryService: Sendable {
         includeHidden: includeHidden,
         timeRange: timeRange,
         kinds: kinds,
-        treatAsFTS: true
+        treatAsFTS: true,
+        device: device
       )
       result[term] = count
     }
@@ -752,7 +812,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
-    treatAsFTS: Bool = false
+    treatAsFTS: Bool = false,
+    device: String? = nil
   ) throws -> Int {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
@@ -763,7 +824,8 @@ public struct ContextifyQueryService: Sendable {
       transcriptId: transcriptId,
       includeHidden: includeHidden,
       timeRange: timeRange,
-      kinds: kinds
+      kinds: kinds,
+      device: device
     )
     guard !filter.emptyResult else { return 0 }
 
@@ -1111,7 +1173,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
-    maxContentBytes: Int = 2048
+    maxContentBytes: Int = 2048,
+    device: String? = nil
   ) throws -> [ActivityItem] {
     let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
     return try activityImpl(
@@ -1122,7 +1185,8 @@ public struct ContextifyQueryService: Sendable {
       timeRange: timeRange,
       includeContent: includeContent,
       fullContent: fullContent,
-      maxContentBytes: maxContentBytes
+      maxContentBytes: maxContentBytes,
+      device: device
     )
   }
 
@@ -1163,7 +1227,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
-    maxContentBytes: Int = 2048
+    maxContentBytes: Int = 2048,
+    device: String? = nil
   ) throws -> [ActivityItem] {
     try pool.read { db in
       struct Row: FetchableRecord, Decodable {
@@ -1241,6 +1306,20 @@ public struct ContextifyQueryService: Sendable {
       if let until = timeRange.untilTimestamp {
         sql += " AND e.timestamp <= ?"
         args.append(until)
+      }
+      if let device {
+        // Match device name when present; fall back to device ID only when name is absent.
+        sql += """
+           AND (
+            (e.source_device_name IS NOT NULL AND e.source_device_name != ''
+              AND e.source_device_name LIKE '%' || ? || '%' COLLATE NOCASE)
+            OR
+            ((e.source_device_name IS NULL OR e.source_device_name = '')
+              AND e.source_device_id LIKE '%' || ? || '%' COLLATE NOCASE)
+          )
+          """
+        args.append(device)
+        args.append(device)
       }
 
       sql += " ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC LIMIT ?"
@@ -1526,6 +1605,8 @@ public struct ContextifyQueryService: Sendable {
           displayInTimeline: row["display_in_timeline"],
           gitBranch: row["git_branch"], gitCommit: row["git_commit"],
           cwd: row["cwd"],
+          sourceDeviceId: row["source_device_id"],
+          sourceDeviceName: row["source_device_name"],
           createdAt: row["created_at"], updatedAt: row["updated_at"]
         )
       }
@@ -1658,17 +1739,42 @@ public struct ContextifyQueryService: Sendable {
           continue
         }
 
-        do {
-          try db.execute(sql: """
-            INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
-              is_orphaned, created_at, updated_at)
-            VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
-            """, arguments: [id, name, rootPath, now, now])
-          projectsImported += 1
-          projectIdRemap[id] = id
-        } catch {
-          throw error
+        try db.execute(sql: """
+          INSERT INTO projects (id, name, root_path, last_viewed_ts, hidden,
+            is_orphaned, created_at, updated_at)
+          VALUES (?, ?, ?, 0.0, 0, 0, ?, ?)
+          ON CONFLICT(root_path) DO NOTHING
+          """, arguments: [id, name, rootPath, now, now])
+        // After insert-or-skip, look up the local owner of this root_path.
+        // This handles both the fresh-insert case and the conflict case where
+        // the local project has a different ID than the server's.
+        guard let localId = try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE root_path = ?",
+          arguments: [rootPath]) else {
+          throw CloudPullImportError.projectRootPathInvariant(serverId: id, rootPath: rootPath)
         }
+        if localId != id {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .info("Project ID remap: server=\(id, privacy: .public) -> local=\(localId, privacy: .public) (root_path=\(rootPath, privacy: .public))")
+          #endif
+        }
+        projectIdRemap[id] = localId
+        projectsImported += 1
+      }
+
+      // Resolve a server project ID to its local equivalent.
+      // Checks the remap dictionary first (covers cross-machine ID divergence),
+      // then falls back to a direct DB lookup (covers projects already present
+      // from a prior sync page or local ingest). Returns nil if no local
+      // project exists for this ID.
+      func resolveLocalProjectId(_ serverId: String) throws -> String? {
+        if let remapped = projectIdRemap[serverId] {
+          return remapped
+        }
+        return try String.fetchOne(db,
+          sql: "SELECT id FROM projects WHERE id = ?",
+          arguments: [serverId])
       }
 
       // Upsert transcripts
@@ -1677,7 +1783,13 @@ public struct ContextifyQueryService: Sendable {
               let rawProjectId = tx["project_id"] as? String,
               let filePath = tx["file_path"] as? String,
               let provider = tx["provider"] as? String else { continue }
-        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping transcript \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
+          #endif
+          continue
+        }
         let exists = try Int.fetchOne(db, sql:
           "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
         if exists == nil {
@@ -1710,7 +1822,27 @@ public struct ContextifyQueryService: Sendable {
               let timestamp = entry["timestamp"] as? Int,
               let content = entry["content"] as? String,
               let contentSha256 = entry["content_sha256"] as? String else { continue }
-        let projectId = projectIdRemap[rawProjectId] ?? rawProjectId
+        guard let projectId = try resolveLocalProjectId(rawProjectId) else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping entry \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
+          #endif
+          skipped += 1
+          continue
+        }
+
+        // Validate transcript exists locally before inserting entry
+        let transcriptExists = try Int.fetchOne(db,
+          sql: "SELECT 1 FROM transcripts WHERE id = ?",
+          arguments: [transcriptId])
+        guard transcriptExists != nil else {
+          #if canImport(OSLog)
+          Logger(subsystem: "dev.contextify", category: "CloudPullImport")
+            .warning("Skipping entry \(id, privacy: .public): no local transcript for transcript_id=\(transcriptId, privacy: .public)")
+          #endif
+          skipped += 1
+          continue
+        }
 
         // Skip 'summary' kind entries entirely - local schema only supports
         // user/assistant/system. Summaries are handled via the summaries table.
@@ -1733,8 +1865,8 @@ public struct ContextifyQueryService: Sendable {
           INSERT INTO transcript_entries (id, transcript_id, project_id,
             session_id, provider, kind, timestamp, content, content_sha256,
             display_in_timeline, git_branch, git_commit, cwd,
-            created_at, updated_at, created_ts)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, updated_at, created_ts, source_device_id, source_device_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             id, transcriptId, projectId,
             entry["session_id"] as? String,
@@ -1745,6 +1877,8 @@ public struct ContextifyQueryService: Sendable {
             entry["cwd"] as? String,
             createdAt, updatedAt,
             Double(timestamp),
+            entry["source_device_id"] as? String,
+            entry["source_device_name"] as? String,
           ])
         entriesImported += 1
       }
@@ -1893,6 +2027,8 @@ public struct CloudPushExport: Sendable {
     public let gitBranch: String?
     public let gitCommit: String?
     public let cwd: String?
+    public let sourceDeviceId: String?
+    public let sourceDeviceName: String?
     public let createdAt: Int
     public let updatedAt: Int
 
