@@ -665,6 +665,8 @@ struct CloudSettingsView: View {
         Text(formatEntryCount(info.entryCount))
           .font(.caption2)
           .foregroundStyle(.tertiary)
+          .monospacedDigit()
+          .frame(minWidth: 32, alignment: .trailing)
       }
     }
     .toggleStyle(.switch)
