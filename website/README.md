@@ -48,11 +48,25 @@ cd website/api && python3 subscribe.py
 |--------|------|---------|
 | Static | 8000 | HTML pages at http://localhost:8000 |
 | API | 8080 | Newsletter form submissions |
+| Cloud API | 8443 | Cloud backend (separate repo, see below) |
 
 **Static server only** (if not testing newsletter):
 ```bash
 cd website && python3 -m http.server 8000
 ```
+
+**Testing cloud-linked pages** (pricing, sign up, dashboard links):
+
+The cloud API lives in the `contextify-cloud` repo. Pages like `pricing/`, `cloud/`, and sign-up flows link to `cloud.contextify.sh`. To test these locally:
+
+```bash
+# In the matching worktree (e.g. contextify-cloud-wb1 if you're in contextify-wb1)
+cd ~/code/projects/contextify-cloud-wb1
+bash scripts/dev/setup.sh   # First time only
+uv run uvicorn contextify_cloud.main:app --reload --port 8443
+```
+
+Then the cloud API is at `http://localhost:8443`. You may need to temporarily update URLs in website HTML to point to localhost:8443 instead of cloud.contextify.sh when testing cross-boundary flows.
 
 ---
 
