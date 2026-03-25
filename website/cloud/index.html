@@ -114,15 +114,22 @@
       color: var(--slate-400);
     }
 
-    /* ── Architecture SVG ────────────────────────────────── */
-    .arch-svg-wrap {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 280px;
+    /* ── Terminal block ───────────────────────────────────── */
+    .terminal-block {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.65;
     }
-    .arch-svg-wrap svg { max-width: 100%; height: auto; }
-    .arch-svg-wrap text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .terminal-block code { color: #e0e0e0; }
+    .terminal-prompt { color: #4ec9b0; }
+    .terminal-output { color: #9cdcfe; }
+    .terminal-muted { color: #6a9955; }
+    .terminal-accent { color: #dcdcaa; }
+    .terminal-highlight { color: #ce9178; }
 
     /* ── Shared section styles ───────────────────────────── */
     .section-label {
@@ -398,9 +405,9 @@
       <div class="row align-items-center g-5">
         <div class="col-lg-6">
           <span class="badge-cloud">Contextify Cloud</span>
-          <h1>Your AI work stops being ephemeral.</h1>
+          <h1>"I know I figured this out already."</h1>
           <p class="lead">
-            Claude Code and Codex conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on. Then Total Recall lets your current AI session search past ones.
+            Contextify Cloud makes every Claude Code and Codex conversation findable, from any machine, weeks or months later.
           </p>
           <div class="hero-cta-row">
             <a href="../download/" class="hero-cta-primary">Download Contextify</a>
@@ -408,54 +415,20 @@
           </div>
         </div>
         <div class="col-lg-6">
-          <!-- Hand-authored SVG diagram -->
-          <div class="arch-svg-wrap">
-            <svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture: local database syncs to cloud, accessible from other devices">
-              <!-- Nodes -->
-              <rect x="10" y="90" width="120" height="120" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
-              <text x="70" y="130" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Your Mac</text>
-              <text x="70" y="152" text-anchor="middle" fill="#64748B" font-size="9.5">SQLite database</text>
-              <text x="70" y="167" text-anchor="middle" fill="#64748B" font-size="9.5">Full history + search</text>
-              <text x="70" y="182" text-anchor="middle" fill="#64748B" font-size="9.5">LLM summaries</text>
-              <rect x="70" y="194" width="1" height="0" fill="none"/>
-
-              <rect x="180" y="70" width="120" height="160" rx="12" fill="#1E293B" stroke="#4A7BA7" stroke-width="2"/>
-              <text x="240" y="110" text-anchor="middle" fill="#6A9BC7" font-size="11" font-weight="700">Contextify Cloud</text>
-              <text x="240" y="132" text-anchor="middle" fill="#64748B" font-size="9.5">Encrypted sync</text>
-              <text x="240" y="147" text-anchor="middle" fill="#64748B" font-size="9.5">Full-text search</text>
-              <text x="240" y="162" text-anchor="middle" fill="#64748B" font-size="9.5">Web dashboard</text>
-              <text x="240" y="177" text-anchor="middle" fill="#64748B" font-size="9.5">Team analytics</text>
-              <text x="240" y="192" text-anchor="middle" fill="#64748B" font-size="9.5">Usage visibility</text>
-
-              <rect x="350" y="60" width="120" height="80" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
-              <text x="410" y="92" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Second Mac</text>
-              <text x="410" y="112" text-anchor="middle" fill="#64748B" font-size="9.5">Pull + local search</text>
-
-              <rect x="350" y="160" width="120" height="80" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
-              <text x="410" y="192" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">Linux CLI</text>
-              <text x="410" y="212" text-anchor="middle" fill="#64748B" font-size="9.5">Push + pull via SSH</text>
-
-              <!-- Arrows -->
-              <line x1="130" y1="140" x2="180" y2="140" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <line x1="180" y1="155" x2="130" y2="155" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <text x="155" y="135" text-anchor="middle" fill="#4A7BA7" font-size="8" font-weight="600">push</text>
-              <text x="155" y="170" text-anchor="middle" fill="#4A7BA7" font-size="8" font-weight="600">pull</text>
-
-              <line x1="300" y1="105" x2="350" y2="100" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <line x1="300" y1="185" x2="350" y2="195" stroke="#4A7BA7" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-              <!-- Browser -->
-              <rect x="350" y="252" width="120" height="40" rx="8" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
-              <text x="410" y="276" text-anchor="middle" fill="#64748B" font-size="10">Any browser</text>
-              <line x1="280" y1="230" x2="390" y2="256" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
-
-              <!-- Arrow marker -->
-              <defs>
-                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#4A7BA7"/>
-                </marker>
-              </defs>
-            </svg>
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-prompt">$</span> /total-recall why did we reject the regex approach?<br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <span class="terminal-accent">Skill</span><span class="terminal-output">(total-recall)</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;&#9116; Searching all projects &middot; 3 devices</span><br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <strong style="color: #e0e0e0;">Contextify Total Recall</strong><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Found:</strong> Session from 2 weeks ago (contextify, wb2)</span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;User: "should we use regex or the AI classifier?"</span><br>
+              <span class="terminal-output">&nbsp;&nbsp;Assistant: <span class="terminal-highlight">"Regex breaks on edge cases in</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">3 of your 12 file types. The AI classifier handles</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">all of them and is easier to extend."</span></span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Decision:</strong> AI classifier chosen. Regex rejected.</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;Entry: a1b2c3d4 &middot; 2026-03-08 &middot; 14:32 UTC</span>
+            </code>
           </div>
         </div>
       </div>
@@ -469,32 +442,15 @@
        ═══════════════════════════════════════════════════════ -->
   <section class="problem-section">
     <div class="container">
-      <div class="row">
+      <div class="row align-items-center g-5">
         <div class="col-lg-7">
           <p class="section-label">The problem</p>
-          <h2 class="section-title">Your AI conversations are trapped on one machine</h2>
+          <h2 class="section-title">Your AI conversations are trapped on individual machines</h2>
 
-          <div class="problem-item">
-            <div class="problem-icon" aria-hidden="true">&#215;</div>
-            <div>
-              <h3>History auto-deletes</h3>
-              <p>Claude Code removes transcripts after 30 days. A month of context, decisions, and solutions disappears silently.</p>
-            </div>
-          </div>
-          <div class="problem-item">
-            <div class="problem-icon" aria-hidden="true">&#215;</div>
-            <div>
-              <h3>Stuck on one device</h3>
-              <p>You solved a problem on your work laptop. Now you are on your personal Mac and cannot find it. Or you SSH into a Linux server and the history is somewhere else entirely.</p>
-            </div>
-          </div>
-          <div class="problem-item">
-            <div class="problem-icon" aria-hidden="true">&#215;</div>
-            <div>
-              <h3>"I figured this out already"</h3>
-              <p>You know you solved this exact problem two weeks ago. You remember the conversation. You just cannot find it.</p>
-            </div>
-          </div>
+          <p class="section-subtitle" style="max-width: none;">Every machine has its own conversations, its own history, its own search index. Nothing connects them. Contextify Cloud syncs isolated Claude Code and Codex conversations into one unified context, a searchable record of every decision, solution, and pattern your AI sessions have ever produced.</p>
+        </div>
+        <div class="col-lg-5">
+          <img src="../assets/img/cloud-trapped-devices.png" alt="Three devices fenced off from each other, each with their own isolated conversation history" class="img-fluid">
         </div>
       </div>
     </div>
@@ -506,9 +462,9 @@
   <section class="value-section">
     <div class="container">
       <p class="section-label">For individuals</p>
-      <h2 class="section-title">Your history follows you</h2>
+      <h2 class="section-title">One unified context across every machine</h2>
       <p class="section-subtitle">
-        Cloud sync runs in the background. Your local database stays primary. The cloud adds backup, cross-device search, and a web dashboard on top.
+        Cloud sync runs in the background. Your local database stays primary. The cloud connects them into a single searchable history that avoids rework, preserves decisions, and keeps solved problems findable.
       </p>
 
       <div class="row g-4">
