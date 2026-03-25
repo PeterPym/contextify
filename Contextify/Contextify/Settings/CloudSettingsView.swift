@@ -506,7 +506,7 @@ struct CloudSettingsView: View {
                   .foregroundStyle(.secondary)
               }
             } else {
-              Text("\(excludedCount) individual project\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
+              Text("\(excludedCount) worktree\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
                 .font(.caption)
                 .foregroundStyle(.orange)
             }
