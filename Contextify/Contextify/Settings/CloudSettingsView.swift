@@ -484,8 +484,22 @@ struct CloudSettingsView: View {
   private var projectSyncSection: some View {
     let mainCount = projectSyncGroups.count + projectSyncUngrouped.count
     let incidentalCount = projectSyncIncidental.count
-    let allInfos = projectSyncGroups.flatMap(\.projects) + projectSyncUngrouped + projectSyncIncidental
-    let excludedCount = allInfos.filter { !$0.project.cloudSyncEnabled }.count
+
+    // Analyze exclusion state precisely for accurate copy
+    let fullyExcludedGroups = projectSyncGroups.filter { $0.projects.allSatisfy { !$0.project.cloudSyncEnabled } }.count
+    let fullyExcludedUngrouped = projectSyncUngrouped.filter { !$0.project.cloudSyncEnabled }.count
+    let fullyExcludedIncidental = projectSyncIncidental.filter { !$0.project.cloudSyncEnabled }.count
+    let fullyExcluded = fullyExcludedGroups + fullyExcludedUngrouped + fullyExcludedIncidental
+
+    let partialGroups = projectSyncGroups.filter { group in
+      let hasExcluded = group.projects.contains { !$0.project.cloudSyncEnabled }
+      let hasEnabled = group.projects.contains { $0.project.cloudSyncEnabled }
+      return hasExcluded && hasEnabled
+    }
+    let partialGroupCount = partialGroups.count
+    let partialWorktreeCount = partialGroups.reduce(0) { $0 + $1.projects.filter { !$0.project.cloudSyncEnabled }.count }
+
+    let hasExclusions = fullyExcluded > 0 || partialGroupCount > 0
 
     Section("Project Sync") {
       VStack(alignment: .leading, spacing: 8) {
@@ -495,7 +509,7 @@ struct CloudSettingsView: View {
             .foregroundStyle(.tertiary)
         } else {
           VStack(alignment: .leading, spacing: 2) {
-            if excludedCount == 0 {
+            if !hasExclusions {
               if incidentalCount > 0 {
                 Text("\(mainCount) projects on this device, plus \(incidentalCount) incidental.")
                   .font(.caption)
@@ -506,7 +520,11 @@ struct CloudSettingsView: View {
                   .foregroundStyle(.secondary)
               }
             } else {
-              Text("\(excludedCount) worktree\(excludedCount == 1 ? "" : "s") excluded from sync on this device.")
+              Text(exclusionSummary(
+                fullyExcluded: fullyExcluded,
+                partialGroupCount: partialGroupCount,
+                partialWorktreeCount: partialWorktreeCount
+              ))
                 .font(.caption)
                 .foregroundStyle(.orange)
             }
@@ -673,6 +691,33 @@ struct CloudSettingsView: View {
     .controlSize(.mini)
     .accessibilityIdentifier("cloud-sync-project-toggle-\(project.id)")
     .padding(.vertical, 2)
+  }
+
+  private func exclusionSummary(fullyExcluded: Int, partialGroupCount: Int, partialWorktreeCount: Int) -> String {
+    let suffix = " excluded from sync on this device."
+
+    // Only fully excluded projects
+    if partialGroupCount == 0 {
+      let noun = fullyExcluded == 1 ? "project" : "projects"
+      return "\(fullyExcluded) \(noun)\(suffix)"
+    }
+
+    // Only partial exclusions
+    if fullyExcluded == 0 {
+      let wtNoun = partialWorktreeCount == 1 ? "worktree" : "worktrees"
+      if partialGroupCount == 1 {
+        return "\(partialWorktreeCount) \(wtNoun) from 1 project\(suffix)"
+      }
+      return "\(partialWorktreeCount) \(wtNoun) across \(partialGroupCount) projects\(suffix)"
+    }
+
+    // Both fully excluded + partial
+    let projNoun = fullyExcluded == 1 ? "project" : "projects"
+    let wtNoun = partialWorktreeCount == 1 ? "worktree" : "worktrees"
+    if partialGroupCount == 1 {
+      return "\(fullyExcluded) \(projNoun) excluded, plus \(partialWorktreeCount) \(wtNoun) from another."
+    }
+    return "\(fullyExcluded) \(projNoun) excluded, plus \(partialWorktreeCount) \(wtNoun) across \(partialGroupCount) others."
   }
 
   private func abbreviatedPath(_ path: String) -> String {
