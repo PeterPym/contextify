@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Contextify Cloud - Your AI History, Searchable Everywhere</title>
-  <meta name="description" content="Claude Code and Codex conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on.">
+  <meta name="description" content="Contextify Cloud keeps your Claude Code and Codex history searchable across every machine you work on. Local-first with optional cloud sync.">
   <link rel="canonical" href="https://contextify.sh/cloud/">
 
   <!-- Favicon -->
@@ -16,7 +16,7 @@
   <meta property="og:url" content="https://contextify.sh/cloud/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Contextify Cloud - Your AI History, Searchable Everywhere">
-  <meta property="og:description" content="Claude Code conversations auto-delete after 30 days. Contextify Cloud keeps them searchable across every machine you work on.">
+  <meta property="og:description" content="Contextify Cloud keeps your Claude Code and Codex history searchable across every machine you work on. Local-first with optional cloud sync.">
   <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
 
   <!-- Bootstrap 5.3 CSS -->
@@ -37,6 +37,25 @@
   </script>
 
   <style>
+    /* ── Skip link & focus ─────────────────────────────────── */
+    .skip-link {
+      position: absolute; left: -9999px; top: auto;
+      width: 1px; height: 1px; overflow: hidden;
+    }
+    .skip-link:focus {
+      left: 1rem; top: 1rem; width: auto; height: auto;
+      padding: 0.75rem 1rem; background: var(--slate-900);
+      color: var(--slate-50); border-radius: 8px; z-index: 2000;
+    }
+    .hero-cta-primary:focus-visible,
+    .cta-btn-primary:focus-visible,
+    .cta-btn-secondary:focus-visible,
+    .navbar a:focus-visible,
+    footer a:focus-visible {
+      outline: 2px solid var(--contextify-primary);
+      outline-offset: 3px;
+    }
+
     /* ── Hero ─────────────────────────────────────────────── */
     .cloud-hero {
       background-color: var(--slate-900);
@@ -358,6 +377,7 @@
 </head>
 
 <body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
   <!-- Header -->
   <nav class="navbar navbar-expand-lg sticky-top">
     <div class="container">
@@ -369,6 +389,7 @@
     </div>
   </nav>
 
+  <main id="main-content">
   <!-- ═══════════════════════════════════════════════════════
        HERO
        ═══════════════════════════════════════════════════════ -->
@@ -383,7 +404,7 @@
           </p>
           <div class="hero-cta-row">
             <a href="../download/" class="hero-cta-primary">Download Contextify</a>
-            <span class="hero-cta-note">Free tier includes 1 device, 90 days of history</span>
+            <a href="../pricing/" class="hero-cta-note" style="text-decoration: none;">Free tier available. See plans &rarr;</a>
           </div>
         </div>
         <div class="col-lg-6">
@@ -454,21 +475,21 @@
           <h2 class="section-title">Your AI conversations are trapped on one machine</h2>
 
           <div class="problem-item">
-            <div class="problem-icon">&#215;</div>
+            <div class="problem-icon" aria-hidden="true">&#215;</div>
             <div>
               <h3>History auto-deletes</h3>
               <p>Claude Code removes transcripts after 30 days. A month of context, decisions, and solutions disappears silently.</p>
             </div>
           </div>
           <div class="problem-item">
-            <div class="problem-icon">&#215;</div>
+            <div class="problem-icon" aria-hidden="true">&#215;</div>
             <div>
               <h3>Stuck on one device</h3>
               <p>You solved a problem on your work laptop. Now you are on your personal Mac and cannot find it. Or you SSH into a Linux server and the history is somewhere else entirely.</p>
             </div>
           </div>
           <div class="problem-item">
-            <div class="problem-icon">&#215;</div>
+            <div class="problem-icon" aria-hidden="true">&#215;</div>
             <div>
               <h3>"I figured this out already"</h3>
               <p>You know you solved this exact problem two weeks ago. You remember the conversation. You just cannot find it.</p>
@@ -594,45 +615,45 @@
 
       <div class="trust-grid">
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
             <h4>Off by default</h4>
             <p>Cloud sync ships disabled. You enable it in Settings and can disable it at any time. Nothing changes locally.</p>
           </div>
         </div>
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
-            <h4>Tenant isolation</h4>
-            <p>Each workspace uses its own PostgreSQL schema. No cross-tenant queries in the application.</p>
+            <h4>Workspace isolation</h4>
+            <p>Cloud data is isolated per workspace. See the <a href="../privacy/">Privacy page</a> for current data-handling details.</p>
           </div>
         </div>
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
-            <h4>TLS in transit</h4>
-            <p>All sync traffic uses HTTPS with TLS 1.2+. No plaintext fallback.</p>
+            <h4>Encrypted in transit</h4>
+            <p>Sync traffic is encrypted over HTTPS. See the <a href="../privacy/">Privacy page</a> for transport details.</p>
           </div>
         </div>
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
             <h4>No cloud lock-in</h4>
             <p>Your local SQLite database is the primary copy. If the cloud goes away, you still have everything.</p>
           </div>
         </div>
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
-            <h4>Delete on request</h4>
-            <p>Request deletion of your cloud data at any time. Your local database is not affected.</p>
+            <h4>Cloud data can be removed</h4>
+            <p>You can request removal of cloud-stored data. Your local database is not affected.</p>
           </div>
         </div>
         <div class="trust-item">
-          <div class="trust-icon">&#10003;</div>
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
           <div>
-            <h4>No AI processing server-side</h4>
-            <p>LLM summaries are generated locally on your Mac using Apple Intelligence. The cloud stores them, it does not run AI on your data.</p>
+            <h4>Local-first processing</h4>
+            <p>LLM summaries and core workflows run locally on your Mac. The cloud stores synced data but does not process it with AI.</p>
           </div>
         </div>
       </div>
@@ -667,7 +688,7 @@
           </div>
           <div class="faq-item">
             <h3>What happens if I stop paying?</h3>
-            <p>Your local database is unaffected. Cloud data is retained for a grace period, then deleted. You can pull your data before that.</p>
+            <p>Your local database is unaffected. See <a href="../pricing/">Pricing</a> for current details on retention and account status after cancellation.</p>
           </div>
           <div class="faq-item">
             <h3>Is there a self-hosted option?</h3>
@@ -697,6 +718,7 @@
       </div>
     </div>
   </section>
+  </main>
 
   <!-- Footer -->
   <footer class="py-4 mt-5">
@@ -723,7 +745,6 @@
     </div>
   </footer>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  <!-- No Bootstrap JS needed: this page has no interactive components -->
 </body>
 </html>
