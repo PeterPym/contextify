@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Contextify Cloud - Long-Term Memory for Claude Code and Codex</title>
+  <meta name="description" content="Contextify Cloud gives Claude Code and Codex long-term memory across Mac and Linux. Total Recall pulls past decisions, root-cause analyses, and commands from any machine.">
+
+  <!-- Favicon -->
+  <link rel="icon" href="../../favicon.ico">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:url" content="https://contextify.sh/cloud/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Contextify Cloud - Long-Term Memory for Claude Code and Codex">
+  <meta property="og:description" content="Contextify Cloud gives Claude Code and Codex long-term memory across Mac and Linux. Total Recall pulls past decisions, root-cause analyses, and commands from any machine.">
+  <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Custom styles -->
+  <link href="../../styles.css?v=0b64c91b" rel="stylesheet">
+
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+
+  <style>
+    /* ── Skip link & focus ───────────────────────────────────── */
+    .skip-link {
+      position: absolute; left: -9999px; top: auto;
+      width: 1px; height: 1px; overflow: hidden;
+    }
+    .skip-link:focus {
+      left: 1rem; top: 1rem; width: auto; height: auto;
+      padding: 0.75rem 1rem; background: var(--slate-900);
+      color: var(--slate-50); border-radius: 8px; z-index: 2000;
+    }
+    .hero-cta-primary:focus-visible,
+    .hero-cta-secondary:focus-visible,
+    .cta-btn-primary:focus-visible,
+    .cta-btn-secondary:focus-visible,
+    .navbar a:focus-visible,
+    footer a:focus-visible {
+      outline: 2px solid var(--contextify-primary);
+      outline-offset: 3px;
+    }
+
+    /* ── Hero ─────────────────────────────────────────────────── */
+    .cloud-hero {
+      background-color: var(--slate-900);
+      background-image:
+        radial-gradient(ellipse 70% 50% at 75% 50%, rgba(74, 123, 167, 0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 25% 70%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+      padding: 5rem 0 4.5rem;
+    }
+    .cloud-hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      color: var(--slate-50);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      max-width: 560px;
+    }
+    .cloud-hero .lead {
+      font-size: 1.15rem;
+      color: var(--slate-300);
+      line-height: 1.75;
+      max-width: 520px;
+    }
+    .cloud-hero .badge-cloud {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--contextify-primary);
+      background: var(--contextify-primary-light);
+      padding: 0.35rem 0.85rem;
+      border-radius: 20px;
+      margin-bottom: 1.25rem;
+    }
+    .hero-cta-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 2rem;
+    }
+    .hero-cta-primary {
+      display: inline-block;
+      background: var(--contextify-primary);
+      color: #fff;
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .hero-cta-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .hero-cta-secondary {
+      display: inline-block;
+      color: var(--slate-300);
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      border: 1px solid var(--slate-600);
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .hero-cta-secondary:hover { border-color: var(--contextify-primary); color: var(--contextify-primary); text-decoration: none; }
+    .hero-reassurance {
+      width: 100%;
+      margin-top: 1rem;
+      font-size: 0.82rem;
+      color: var(--slate-500);
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Terminal block ───────────────────────────────────────── */
+    .terminal-block {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.65;
+    }
+    .terminal-block code { color: #e0e0e0; }
+    .terminal-prompt { color: #4ec9b0; }
+    .terminal-output { color: #9cdcfe; }
+    .terminal-muted { color: #6a9955; }
+    .terminal-accent { color: #dcdcaa; }
+    .terminal-highlight { color: #ce9178; }
+
+    /* ── Shared section styles ────────────────────────────────── */
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--contextify-primary);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+      line-height: 1.2;
+    }
+    [data-bs-theme="dark"] .section-title { color: var(--slate-50); }
+    .section-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+      line-height: 1.65;
+    }
+    [data-bs-theme="dark"] .section-subtitle { color: var(--slate-400); }
+
+    /* ── Before/After comparison grid ─────────────────────────── */
+    .comparison-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .comparison-section { background: var(--slate-800); }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+    }
+    [data-bs-theme="dark"] .comparison-grid { border-color: var(--slate-700); }
+
+    .comparison-header {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 1rem 1.5rem;
+    }
+    .comparison-header-without {
+      background: var(--contextify-error-light);
+      color: var(--contextify-error);
+      border-bottom: 2px solid var(--contextify-error);
+    }
+    .comparison-header-with {
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
+      border-bottom: 2px solid var(--contextify-success);
+    }
+
+    .comparison-cell {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      min-height: 72px;
+    }
+    [data-bs-theme="dark"] .comparison-cell { border-bottom-color: var(--slate-700); }
+
+    .comparison-row:last-child .comparison-cell { border-bottom: none; }
+
+    .comparison-cell-without { background: var(--bg-page); }
+    [data-bs-theme="dark"] .comparison-cell-without { background: var(--slate-900); }
+
+    .comparison-cell-with { background: var(--bg-page); }
+    [data-bs-theme="dark"] .comparison-cell-with { background: var(--slate-900); }
+
+    .comparison-icon {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      margin-top: 0.1rem;
+    }
+    .comparison-icon-without {
+      background: var(--contextify-error-light);
+      color: var(--contextify-error);
+    }
+    .comparison-icon-with {
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
+    }
+
+    .comparison-cell h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0;
+      line-height: 1.5;
+    }
+    [data-bs-theme="dark"] .comparison-cell h3 { color: var(--slate-100); }
+
+    .comparison-cell-without h3 {
+      color: var(--text-secondary);
+    }
+    [data-bs-theme="dark"] .comparison-cell-without h3 { color: var(--slate-400); }
+
+    /* ── Value cards ──────────────────────────────────────────── */
+    .value-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .value-section { background: var(--slate-900); }
+    .value-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 14px;
+      padding: 1.75rem;
+      height: 100%;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .value-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -4px rgba(0,0,0,0.1); }
+    [data-bs-theme="dark"] .value-card { background: var(--slate-800); border-color: var(--slate-700); }
+    [data-bs-theme="dark"] .value-card:hover { box-shadow: 0 8px 24px -4px rgba(0,0,0,0.3); }
+    .value-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    [data-bs-theme="dark"] .value-card h3 { color: var(--slate-100); }
+    .value-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.6;
+    }
+    [data-bs-theme="dark"] .value-card p { color: var(--slate-400); }
+
+    /* ── Production proof cases ───────────────────────────────── */
+    .proof-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .proof-section { background: var(--slate-800); }
+
+    .recall-example {
+      background: var(--bg-page);
+      border: 1px solid var(--border-default);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    [data-bs-theme="dark"] .recall-example { background: var(--slate-900); border-color: var(--slate-700); }
+    .recall-example .scenario-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    [data-bs-theme="dark"] .recall-example .scenario-title { color: var(--slate-100); }
+    .recall-example .before {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 0.65rem;
+    }
+    [data-bs-theme="dark"] .recall-example .before { color: var(--slate-400); }
+    .recall-example .after {
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      line-height: 1.6;
+      margin-bottom: 0;
+    }
+    [data-bs-theme="dark"] .recall-example .after { color: var(--slate-200); }
+    .recall-example .after strong {
+      color: var(--contextify-primary);
+    }
+    .recall-example .pattern {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--contextify-accent);
+      background: rgba(124, 104, 168, 0.1);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.75rem;
+    }
+
+    /* ── How it works ─────────────────────────────────────────── */
+    .how-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .how-section { background: var(--slate-900); }
+
+    .how-step {
+      text-align: center;
+      padding: 0 1rem;
+    }
+    .how-step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--contextify-primary-light);
+      color: var(--contextify-primary);
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+    .how-step h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.4rem;
+    }
+    [data-bs-theme="dark"] .how-step h3 { color: var(--slate-100); }
+    .how-step p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.55;
+    }
+    [data-bs-theme="dark"] .how-step p { color: var(--slate-400); }
+
+    /* ── Trust strip ──────────────────────────────────────────── */
+    .trust-section {
+      padding: 4.5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .trust-section { background: var(--slate-800); }
+    .trust-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+    }
+    .trust-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+    .trust-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      background: var(--contextify-success-light);
+      color: var(--contextify-success);
+    }
+    .trust-item h4 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.2rem;
+    }
+    [data-bs-theme="dark"] .trust-item h4 { color: var(--slate-100); }
+    .trust-item p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.5;
+    }
+    [data-bs-theme="dark"] .trust-item p { color: var(--slate-400); }
+
+    /* ── FAQ ──────────────────────────────────────────────────── */
+    .faq-section {
+      padding: 4rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .faq-section { background: var(--slate-800); }
+    .faq-item {
+      border-bottom: 1px solid var(--border-default);
+      padding: 1.25rem 0;
+    }
+    [data-bs-theme="dark"] .faq-item { border-bottom-color: var(--slate-700); }
+    .faq-item:last-child { border-bottom: none; }
+    .faq-item h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.4rem;
+    }
+    [data-bs-theme="dark"] .faq-item h3 { color: var(--slate-100); }
+    .faq-item p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0;
+      line-height: 1.6;
+    }
+    [data-bs-theme="dark"] .faq-item p { color: var(--slate-400); }
+
+    /* ── Teams teaser ─────────────────────────────────────────── */
+    .teams-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .teams-section { background: var(--slate-900); }
+
+    /* ── CTA ──────────────────────────────────────────────────── */
+    .cta-section {
+      padding: 5rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .cta-section { background: var(--slate-900); }
+    .cta-card {
+      background: var(--slate-900);
+      border-radius: 16px;
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      background-image: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74, 123, 167, 0.12) 0%, transparent 70%);
+    }
+    .cta-card h2 { font-size: 1.75rem; font-weight: 700; color: var(--slate-50); margin-bottom: 0.75rem; }
+    .cta-card p { font-size: 1rem; color: var(--slate-300); margin-bottom: 2rem; max-width: 480px; margin-left: auto; margin-right: auto; line-height: 1.65; }
+    .cta-btn-group { display: flex; justify-content: center; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .cta-btn-primary {
+      display: inline-block; background: var(--contextify-primary); color: #fff;
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; transition: background 0.15s;
+    }
+    .cta-btn-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .cta-btn-secondary {
+      display: inline-block; color: var(--slate-300);
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; border: 1px solid var(--slate-600); transition: border-color 0.15s, color 0.15s;
+    }
+    .cta-btn-secondary:hover { border-color: var(--contextify-primary); color: var(--contextify-primary); text-decoration: none; }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 767.98px) {
+      .cloud-hero h1 { font-size: 2.25rem; }
+      .section-title { font-size: 1.75rem; }
+      .cta-card { padding: 2.5rem 1.5rem; }
+
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+      .comparison-header-with {
+        border-top: 1px solid var(--border-default);
+      }
+      .comparison-row {
+        display: contents;
+      }
+      .comparison-cell {
+        min-height: auto;
+      }
+      .comparison-cell-without {
+        border-bottom: none;
+        padding-bottom: 0.5rem;
+      }
+      .comparison-cell-with {
+        padding-top: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="../../">
+        <img src="../../assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+      <a href="../../download/" class="btn btn-primary d-none d-md-inline-block">Download</a>
+    </div>
+  </nav>
+
+  <main id="main-content">
+  <!-- ═══════════════════════════════════════════════════════════
+       1. HERO
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="cloud-hero">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <span class="badge-cloud">Contextify Cloud</span>
+          <h1>"I know I figured this out already."</h1>
+          <p class="lead">
+            Contextify Cloud gives Claude Code and Codex long-term memory across Mac and Linux. Total Recall can pull past decisions, root-cause analyses, and commands from any machine, automatically, inside your current AI session.
+          </p>
+          <div class="hero-cta-row">
+            <a href="../../download/" class="hero-cta-primary">Download for Mac</a>
+            <a href="../../pricing/" class="hero-cta-secondary">See Plans</a>
+            <span class="hero-reassurance">Free tier available. Opt-in sync. Per-project control. Mac + Linux.</span>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="terminal-block" aria-label="Terminal showing a Total Recall query and result">
+            <code>
+              <span class="terminal-prompt">$</span> /total-recall why did we reject the regex approach?<br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <span class="terminal-accent">Skill</span><span class="terminal-output">(total-recall)</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;&#9116; Searching all projects &middot; 3 devices</span><br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <strong style="color: #e0e0e0;">Contextify Total Recall</strong><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Found:</strong> Session from 2 weeks ago (contextify, wb2)</span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;User: "should we use regex or the AI classifier?"</span><br>
+              <span class="terminal-output">&nbsp;&nbsp;Assistant: <span class="terminal-highlight">"Regex breaks on edge cases in</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">3 of your 12 file types. The AI classifier handles</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">all of them and is easier to extend."</span></span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Decision:</strong> AI classifier chosen. Regex rejected.</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;Entry: a1b2c3d4 &middot; 2026-03-08 &middot; 14:32 UTC</span>
+            </code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="brand-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       2. BEFORE/AFTER STRIP (3 rows)
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="comparison-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-10 mx-auto">
+          <p class="section-label" style="text-align: center;">The difference</p>
+          <h2 class="section-title" style="text-align: center; max-width: none;">What changes when your AI has memory</h2>
+
+          <div class="comparison-grid" role="table" aria-label="Comparison of workflow without and with Contextify Cloud">
+            <!-- Column headers -->
+            <div class="comparison-header comparison-header-without" role="columnheader">Without Contextify Cloud</div>
+            <div class="comparison-header comparison-header-with" role="columnheader">With Contextify Cloud</div>
+
+            <!-- Row 1 -->
+            <div class="comparison-row" role="row">
+              <div class="comparison-cell comparison-cell-without" role="cell">
+                <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
+                <h3>You solved this last week but can't find it</h3>
+              </div>
+              <div class="comparison-cell comparison-cell-with" role="cell">
+                <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
+                <h3>Total Recall finds it in seconds</h3>
+              </div>
+            </div>
+
+            <!-- Row 2 -->
+            <div class="comparison-row" role="row">
+              <div class="comparison-cell comparison-cell-without" role="cell">
+                <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
+                <h3>Bug comes back, re-investigate from scratch</h3>
+              </div>
+              <div class="comparison-cell comparison-cell-with" role="cell">
+                <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
+                <h3>Prior root-cause analysis found instantly</h3>
+              </div>
+            </div>
+
+            <!-- Row 3 -->
+            <div class="comparison-row" role="row">
+              <div class="comparison-cell comparison-cell-without" role="cell">
+                <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
+                <h3>New laptop, history gone</h3>
+              </div>
+              <div class="comparison-cell comparison-cell-with" role="cell">
+                <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
+                <h3>Every session backed up continuously</h3>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       3. VALUE CARDS
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="value-section">
+    <div class="container">
+      <p class="section-label">Cloud sync</p>
+      <h2 class="section-title">One unified context across every machine</h2>
+      <p class="section-subtitle">
+        Run the macOS or Linux Contextify app anywhere you use Claude Code or Codex. Cloud sync makes all of your conversations available on all of your computers.
+      </p>
+
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Survives everything</h3>
+            <p>Disk failures, OS reinstalls, new laptops. Your AI conversation history is backed up continuously. Claude Code's 30-day deletion becomes irrelevant.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Search from any machine</h3>
+            <p>Full-text search across every past session, from whichever device you are on. Or open cloud.contextify.sh in a browser and search there.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="value-card">
+            <h3>Mac + Linux, one history</h3>
+            <p>The Linux CLI pushes sessions to the same cloud. Work on a remote server via SSH, search from your Mac later. Everything ends up in the same index.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       4. PRODUCTION PROOF CASES
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="proof-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <p class="section-label">Real stories from production</p>
+          <h2 class="section-title">From 38 Total Recall queries analyzed. 89% returned actionable information.</h2>
+
+          <!-- Case 1: The bug that kept coming back (TR-3) -->
+          <div class="recall-example">
+            <div class="scenario-title">The bug that kept coming back</div>
+            <div class="before">
+              Corrupted AI-generated summaries appeared with identical wrong text across 21+ entries. The developer started debugging from scratch.
+            </div>
+            <div class="after">
+              <strong>Total Recall found it.</strong> The same bug had been investigated just two days earlier. A full root cause analysis already existed, with the validation bypass identified and a fix proposed. Instead of hours of re-investigation, the developer applied the fix immediately.
+            </div>
+            <div class="pattern">Bug pattern recognition</div>
+          </div>
+
+          <!-- Case 2: The schema work nobody could find (Case 9) -->
+          <div class="recall-example">
+            <div class="scenario-title">The schema work nobody could find</div>
+            <div class="before">
+              A developer lost track of schema work needed for a page redesign. They thought it was done but had totally lost it. No matching commits or branches came up in a search.
+            </div>
+            <div class="after">
+              <strong>Total Recall found it.</strong> The work was completed the previous day, in a different worktree, using a different AI tool. Two atomic commits on a specific branch, never merged. The developer reviewed the diffs and merged immediately.
+            </div>
+            <div class="pattern">Cross-tool continuity</div>
+          </div>
+
+          <!-- Case 3: The pricing decision that never happened (Case 8) -->
+          <div class="recall-example">
+            <div class="scenario-title">The pricing decision that never happened</div>
+            <div class="before">
+              A developer was planning a product launch and believed pricing had been decided in a prior session. They did not want to re-debate it.
+            </div>
+            <div class="after">
+              <strong>Total Recall ran 8 queries across 180 days.</strong> It found the full evolution of pricing thinking, from "Free. The whole thing." to discussions about paid tiers. The definitive finding: no final pricing decision was ever made. What the developer remembered as a "decision" was actually an ongoing discussion. They could now make the call with full historical context.
+            </div>
+            <div class="pattern">Negative proof</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       5. HOW IT WORKS
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="how-section">
+    <div class="container">
+      <p class="section-label" style="text-align: center;">How it works</p>
+      <h2 class="section-title" style="text-align: center; max-width: none;">Three steps, under a minute</h2>
+
+      <div class="row g-4 mt-2">
+        <div class="col-md-4">
+          <div class="how-step">
+            <div class="how-step-number" aria-hidden="true">1</div>
+            <h3>Install Contextify</h3>
+            <p>Mac app or Linux CLI. Monitors your Claude Code and Codex sessions automatically.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="how-step">
+            <div class="how-step-number" aria-hidden="true">2</div>
+            <h3>Enable Cloud Sync</h3>
+            <p>One toggle in Settings. Your conversation history starts backing up immediately.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="how-step">
+            <div class="how-step-number" aria-hidden="true">3</div>
+            <h3>Search from anywhere</h3>
+            <p>Any device running Contextify, or open cloud.contextify.sh in a browser.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       6. PRIVACY + FAQ (layered trust)
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="trust-section">
+    <div class="container">
+      <p class="section-label">Privacy</p>
+      <h2 class="section-title">Cloud is opt-in. Local is always primary.</h2>
+
+      <div class="trust-grid" style="margin-bottom: 3rem;">
+        <div class="trust-item">
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
+          <div>
+            <h4>Off by default</h4>
+            <p>Cloud sync ships disabled. You enable it in Settings and can disable it at any time.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
+          <div>
+            <h4>Per-project control</h4>
+            <p>Choose which projects sync on each device. Admins can also set a server-side allowlist.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
+          <div>
+            <h4>Encrypted in transit</h4>
+            <p>Sync traffic is encrypted over HTTPS. See the <a href="../../privacy/">Privacy page</a> for details.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
+          <div>
+            <h4>No cloud lock-in</h4>
+            <p>Your local SQLite database is the primary copy. If the cloud goes away, you still have everything.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ items -->
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <div class="faq-item">
+            <h3>How is this different from Dropbox or iCloud sync?</h3>
+            <p>Dropbox syncs files. Contextify Cloud syncs structured data: conversation entries, summaries, and project metadata. It deduplicates entries across devices, handles concurrent access from multiple machines, and provides search and analytics on top. File sync tools are not designed for this.</p>
+          </div>
+          <div class="faq-item">
+            <h3>Can I use Contextify without Cloud?</h3>
+            <p>Yes. Cloud sync is off by default. The macOS app and Linux CLI work fully offline with all core features: real-time timeline, search, LLM summaries. Many users run local-only permanently.</p>
+          </div>
+          <div class="faq-item">
+            <h3>What data gets synced?</h3>
+            <p>Conversation entries (prompts and responses), LLM summaries, project metadata, and usage statistics. Raw transcript files, app settings, and local processing state stay on your machine. The cloud stores parsed, structured data, not raw files.</p>
+          </div>
+          <div class="faq-item">
+            <h3>Can I exclude specific projects from syncing?</h3>
+            <p>Yes. In Settings &gt; Cloud &gt; Project Sync you can enable or disable sync for each project on that device. Excluded projects stop uploading and downloading on that machine. Other devices are not affected.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       7. TEAMS TEASER
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="teams-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-7">
+          <p class="section-label">For teams</p>
+          <h2 class="section-title">The same sync works across a team</h2>
+          <p class="section-subtitle" style="max-width: none;">
+            On Team plans, your engineers' AI sessions become searchable across the group. Someone solved this three months ago? Anyone on the team can find that conversation. New hires can see how things were built, what was considered and rejected. Usage analytics show which projects and people are using AI, with real data instead of surveys.
+          </p>
+          <p style="margin-top: 1.5rem;">
+            <a href="../../pricing/" style="color: var(--contextify-primary); font-weight: 600; text-decoration: none;">See Team pricing &rarr;</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       8. FINAL CTA
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <div class="cta-card">
+            <h2>Stop losing your AI work</h2>
+            <p>Download Contextify, enable Cloud Sync in Settings, and your history starts backing up immediately.</p>
+            <div class="cta-btn-group">
+              <a href="../../download/" class="cta-btn-primary">Download for Mac</a>
+              <a href="../../pricing/" class="cta-btn-secondary">See Pricing</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="../../download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="../../platforms/linux/" class="mx-2">Linux</a>
+        <span class="text-secondary">|</span>
+        <a href="../../pricing/" class="mx-2">Pricing</a>
+        <span class="text-secondary">|</span>
+        <a href="../../blog/" class="mx-2">Blog</a>
+        <span class="text-secondary">|</span>
+        <a href="../../privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="../../terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="../../support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- No Bootstrap JS needed: this page has no interactive components -->
+</body>
+</html>
