@@ -447,7 +447,7 @@
           <p class="section-label">The problem</p>
           <h2 class="section-title">Your AI conversations are trapped on individual machines</h2>
 
-          <p class="section-subtitle" style="max-width: none;">Every machine has its own conversations, its own history, its own search index. Nothing connects them. Contextify Cloud syncs isolated Claude Code and Codex conversations into one unified context, a searchable record of every decision, solution, and pattern your AI sessions have ever produced.</p>
+          <p class="section-subtitle" style="max-width: none;">Every machine has its own conversations, its own history, its own search index. Nothing connects them. Contextify Cloud syncs your Claude Code and Codex conversations into one searchable record: the decisions you made, the problems you solved, and the patterns you established.</p>
         </div>
         <div class="col-lg-5">
           <img src="../assets/img/cloud-trapped-devices.png" alt="Three devices fenced off from each other, each with their own isolated conversation history" class="img-fluid">
@@ -532,30 +532,16 @@
        ═══════════════════════════════════════════════════════ -->
   <section class="teams-section">
     <div class="container">
-      <p class="section-label">For teams</p>
-      <h2 class="section-title">The same synced history becomes shared context</h2>
-      <p class="section-subtitle">
-        On Team plans, your engineers' AI sessions are searchable across the group. No extra work required, it is the same sync.
-      </p>
-
-      <div class="row g-4">
-        <div class="col-md-4">
-          <div class="value-card">
-            <h3>Search past AI sessions across your team</h3>
-            <p>Someone solved this problem three months ago using Claude Code. Now anyone on the team can find that conversation through the web dashboard.</p>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="value-card">
-            <h3>Onboard with context</h3>
-            <p>New hires can search past AI conversations to understand how things were built, what was considered and rejected, and why the code looks the way it does.</p>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="value-card">
-            <h3>See which people and projects are using AI</h3>
-            <p>Usage analytics show conversations per day, active projects, and per-user activity. Real data for understanding adoption, not surveys.</p>
-          </div>
+      <div class="row align-items-center g-5">
+        <div class="col-lg-7">
+          <p class="section-label">For teams</p>
+          <h2 class="section-title">The same sync works across a team</h2>
+          <p class="section-subtitle" style="max-width: none;">
+            On Team plans, your engineers' AI sessions become searchable across the group. Someone solved this three months ago? Anyone on the team can find that conversation. New hires can see how things were built, what was considered and rejected. Usage analytics show which projects and people are using AI, with real data instead of surveys.
+          </p>
+          <p style="margin-top: 1.5rem;">
+            <a href="../pricing/" style="color: var(--contextify-primary); font-weight: 600; text-decoration: none;">See Team pricing &rarr;</a>
+          </p>
         </div>
       </div>
     </div>
@@ -589,6 +575,13 @@
           <div>
             <h4>Encrypted in transit</h4>
             <p>Sync traffic is encrypted over HTTPS. See the <a href="../privacy/">Privacy page</a> for transport details.</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-icon" aria-hidden="true">&#10003;</div>
+          <div>
+            <h4>Per-project sync control</h4>
+            <p>Choose which projects sync on each device. Admins can also set a server-side allowlist to restrict what the cloud accepts from any device. The two layers are independent.</p>
           </div>
         </div>
         <div class="trust-item">
@@ -628,7 +621,7 @@
 
           <div class="faq-item">
             <h3>How is this different from Dropbox or iCloud sync?</h3>
-            <p>Dropbox syncs files. Contextify Cloud syncs structured, parsed data: conversation entries, summaries, project metadata. It uses incremental cursor-based sync with server-side deduplication, handles the append-only nature of conversation logs efficiently, and provides search and analytics on top. Dropbox cannot do concurrent multi-device database access.</p>
+            <p>Dropbox syncs files. Contextify Cloud syncs structured data: conversation entries, summaries, and project metadata. It deduplicates entries across devices, handles concurrent access from multiple machines, and provides search and analytics on top. File sync tools are not designed for this.</p>
           </div>
           <div class="faq-item">
             <h3>Can I use Contextify without Cloud?</h3>
@@ -636,11 +629,11 @@
           </div>
           <div class="faq-item">
             <h3>What data gets synced?</h3>
-            <p>Conversation entries (prompts and responses), LLM summaries, project metadata, transcript metadata, tool invocations, and usage statistics. Raw JSONL transcript files, app settings, and Apple Intelligence processing state stay local. The sync payload is parsed structured data, not raw files.</p>
+            <p>Conversation entries (prompts and responses), LLM summaries, project metadata, and usage statistics. Raw transcript files, app settings, and local processing state stay on your machine. The cloud stores parsed, structured data, not raw files.</p>
           </div>
           <div class="faq-item">
             <h3>Can I exclude specific projects from syncing?</h3>
-            <p>Per-project sync controls are coming soon. Today, cloud sync operates at the account level. You can disable sync entirely at any time.</p>
+            <p>Yes. In Settings &gt; Cloud &gt; Project Sync you can enable or disable sync for each project on that device. Excluded projects stop uploading and downloading on that machine. Other devices are not affected. Workspace admins can also set a server-side allowlist that restricts which project names the cloud accepts from any device.</p>
           </div>
           <div class="faq-item">
             <h3>What happens if I stop paying?</h3>
