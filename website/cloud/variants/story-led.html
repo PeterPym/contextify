@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Contextify Cloud - Your AI History, Searchable Everywhere</title>
+  <meta name="description" content="Contextify Cloud keeps your Claude Code and Codex history searchable across every machine you work on. Local-first with optional cloud sync.">
+
+  <!-- Favicon -->
+  <link rel="icon" href="../../favicon.ico">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Custom styles -->
+  <link href="../../styles.css?v=0b64c91b" rel="stylesheet">
+
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+
+  <style>
+    /* -- Skip link & focus ---------------------------------------- */
+    .skip-link {
+      position: absolute; left: -9999px; top: auto;
+      width: 1px; height: 1px; overflow: hidden;
+    }
+    .skip-link:focus {
+      left: 1rem; top: 1rem; width: auto; height: auto;
+      padding: 0.75rem 1rem; background: var(--slate-900);
+      color: var(--slate-50); border-radius: 8px; z-index: 2000;
+    }
+    .hero-cta-primary:focus-visible,
+    .cta-btn-primary:focus-visible,
+    .cta-btn-secondary:focus-visible,
+    .navbar a:focus-visible,
+    footer a:focus-visible {
+      outline: 2px solid var(--contextify-primary);
+      outline-offset: 3px;
+    }
+
+    /* -- Hero ----------------------------------------------------- */
+    .cloud-hero {
+      background-color: var(--slate-900);
+      background-image:
+        radial-gradient(ellipse 70% 50% at 75% 50%, rgba(74, 123, 167, 0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 25% 70%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+      padding: 5rem 0 4.5rem;
+    }
+    .cloud-hero h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--slate-50);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      max-width: 560px;
+    }
+    .cloud-hero .lead {
+      font-size: 1.15rem;
+      color: var(--slate-300);
+      line-height: 1.75;
+      max-width: 500px;
+    }
+    .cloud-hero .hero-story {
+      font-size: 1.05rem;
+      color: var(--slate-200);
+      line-height: 1.7;
+      max-width: 520px;
+      margin-bottom: 1.5rem;
+    }
+    .cloud-hero .badge-cloud {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--contextify-primary);
+      background: var(--contextify-primary-light);
+      padding: 0.35rem 0.85rem;
+      border-radius: 20px;
+      margin-bottom: 1.25rem;
+    }
+    .hero-cta-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 2rem;
+    }
+    .hero-cta-primary {
+      display: inline-block;
+      background: var(--contextify-primary);
+      color: #fff;
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .hero-cta-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .hero-cta-note {
+      font-size: 0.85rem;
+      color: var(--slate-400);
+    }
+
+    /* -- Terminal block -------------------------------------------- */
+    .terminal-block {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.65;
+    }
+    .terminal-block code { color: #e0e0e0; }
+    .terminal-prompt { color: #4ec9b0; }
+    .terminal-output { color: #9cdcfe; }
+    .terminal-muted { color: #6a9955; }
+    .terminal-accent { color: #dcdcaa; }
+    .terminal-highlight { color: #ce9178; }
+
+    /* -- Shared section styles ------------------------------------ */
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--contextify-primary);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+      line-height: 1.2;
+    }
+    [data-bs-theme="dark"] .section-title { color: var(--slate-50); }
+    .section-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+      line-height: 1.65;
+    }
+    [data-bs-theme="dark"] .section-subtitle { color: var(--slate-400); }
+
+    /* -- Scenario section ----------------------------------------- */
+    .scenario-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .scenario-section { background: var(--slate-800); }
+
+    .recall-example {
+      background: var(--bg-page);
+      border: 1px solid var(--border-default);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    [data-bs-theme="dark"] .recall-example { background: var(--slate-900); border-color: var(--slate-700); }
+    .recall-example .scenario-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    [data-bs-theme="dark"] .recall-example .scenario-title { color: var(--slate-100); }
+    .recall-example .before {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 0.65rem;
+    }
+    [data-bs-theme="dark"] .recall-example .before { color: var(--slate-400); }
+    .recall-example .after {
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      line-height: 1.6;
+      margin-bottom: 0;
+    }
+    [data-bs-theme="dark"] .recall-example .after { color: var(--slate-200); }
+    .recall-example .after strong {
+      color: var(--contextify-primary);
+    }
+    .recall-example .pattern {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--contextify-accent);
+      background: rgba(124, 104, 168, 0.1);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.75rem;
+    }
+
+    /* -- What-is section ------------------------------------------ */
+    .whatis-section {
+      padding: 4rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .whatis-section { background: var(--slate-900); }
+    .whatis-section p {
+      font-size: 1.1rem;
+      color: var(--text-primary);
+      line-height: 1.7;
+      max-width: 680px;
+    }
+    [data-bs-theme="dark"] .whatis-section p { color: var(--slate-200); }
+
+    /* -- Numbers section ------------------------------------------ */
+    .numbers-section {
+      padding: 4rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .numbers-section { background: var(--slate-800); }
+    .numbers-grid {
+      display: flex;
+      justify-content: center;
+      align-items: baseline;
+      gap: 3rem;
+      flex-wrap: wrap;
+      text-align: center;
+    }
+    .number-item .big {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--contextify-primary);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+    .number-item .label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+    [data-bs-theme="dark"] .number-item .label { color: var(--slate-400); }
+    .numbers-tagline {
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    [data-bs-theme="dark"] .numbers-tagline { color: var(--slate-200); }
+
+    /* -- Privacy section ------------------------------------------ */
+    .privacy-section {
+      padding: 3rem 0;
+      background: var(--bg-page);
+    }
+    [data-bs-theme="dark"] .privacy-section { background: var(--slate-900); }
+    .privacy-section p {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.65;
+    }
+    [data-bs-theme="dark"] .privacy-section p { color: var(--slate-400); }
+    .privacy-section a {
+      color: var(--contextify-primary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .privacy-section a:hover { text-decoration: underline; }
+
+    /* -- CTA ------------------------------------------------------ */
+    .cta-section {
+      padding: 5rem 0;
+      background: var(--bg-surface);
+    }
+    [data-bs-theme="dark"] .cta-section { background: var(--slate-800); }
+    .cta-card {
+      background: var(--slate-900);
+      border-radius: 16px;
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      background-image: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74, 123, 167, 0.12) 0%, transparent 70%);
+    }
+    .cta-card h2 { font-size: 1.75rem; font-weight: 700; color: var(--slate-50); margin-bottom: 0.75rem; }
+    .cta-card p { font-size: 1rem; color: var(--slate-300); margin-bottom: 2rem; max-width: 460px; margin-left: auto; margin-right: auto; }
+    .cta-btn-group { display: flex; justify-content: center; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .cta-btn-primary {
+      display: inline-block; background: var(--contextify-primary); color: #fff;
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; transition: background 0.15s;
+    }
+    .cta-btn-primary:hover { background: var(--contextify-primary-hover); color: #fff; text-decoration: none; }
+    .cta-btn-secondary {
+      display: inline-block; color: var(--slate-300);
+      padding: 0.85rem 2rem; border-radius: 8px; font-weight: 600; font-size: 1rem;
+      text-decoration: none; border: 1px solid var(--slate-600); transition: border-color 0.15s, color 0.15s;
+    }
+    .cta-btn-secondary:hover { border-color: var(--contextify-primary); color: var(--contextify-primary); text-decoration: none; }
+
+    /* -- Responsive ----------------------------------------------- */
+    @media (max-width: 767.98px) {
+      .cloud-hero h1 { font-size: 2rem; }
+      .section-title { font-size: 1.75rem; }
+      .cta-card { padding: 2.5rem 1.5rem; }
+      .numbers-grid { gap: 2rem; }
+      .number-item .big { font-size: 2rem; }
+    }
+  </style>
+</head>
+
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="../../">
+        <img src="../../assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+      <a href="../../download/" class="btn btn-primary d-none d-md-inline-block">Download</a>
+    </div>
+  </nav>
+
+  <main id="main-content">
+  <!-- ============================================================
+       HERO: A REAL STORY
+       ============================================================ -->
+  <section class="cloud-hero">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <span class="badge-cloud">Contextify Cloud</span>
+          <p class="hero-story">
+            Last week, a developer was about to reintroduce a bug their team had already fixed. They typed two words into Total Recall, found the root cause analysis from two days earlier, and skipped the entire re-investigation.
+          </p>
+          <h1>Your AI conversations remember. Even when you don't.</h1>
+          <p class="lead">
+            Contextify Cloud makes every Claude Code and Codex conversation searchable from any machine, weeks or months later.
+          </p>
+          <div class="hero-cta-row">
+            <a href="../../download/" class="hero-cta-primary">Download Contextify</a>
+            <a href="../../pricing/" class="hero-cta-note" style="text-decoration: none;">Free tier available. See plans &rarr;</a>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="terminal-block">
+            <code>
+              <span class="terminal-prompt">$</span> /total-recall did we already investigate the corrupted summaries?<br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <span class="terminal-accent">Skill</span><span class="terminal-output">(total-recall)</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;&#9116; Searching all projects &middot; 3 devices</span><br><br>
+              <span style="color: #4ec9b0;">&#9210;</span> <strong style="color: #e0e0e0;">Contextify Total Recall</strong><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Found:</strong> Session from 2 days ago</span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;Root cause: <span class="terminal-highlight">validation bypass on empty</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">response fields. 21 entries affected.</span></span><br>
+              <span class="terminal-output">&nbsp;&nbsp;<span class="terminal-highlight">Fix proposed but not yet applied.</span></span><br><br>
+              <span class="terminal-output">&nbsp;&nbsp;<strong>Result:</strong> Skipped re-investigation. Applied fix.</span><br>
+              <span class="terminal-muted">&nbsp;&nbsp;Entry: 2a6e2a30 &middot; 2025-12-24 &middot; 09:41 UTC</span>
+            </code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="brand-divider"></div>
+
+  <!-- ============================================================
+       THREE SCENARIOS
+       ============================================================ -->
+  <section class="scenario-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <p class="section-label">Real stories from production</p>
+          <h2 class="section-title">This happens every week</h2>
+
+          <!-- Scenario 1: The decision nobody could remember -->
+          <div class="recall-example">
+            <div class="scenario-title">The decision nobody could remember</div>
+            <div class="before">
+              A developer was about to add commit #11142 to a cherry-picked release. The team thought it was a required dependency.
+            </div>
+            <div class="after">
+              <strong>Total Recall found it.</strong> A prior session had explicitly ruled that commit out. The exact exchange was right there: "We aren't including 11142, that was ruled out." The team avoided undoing a deliberate decision and introducing conflicts into the release.
+            </div>
+            <div class="pattern">Decision archaeology</div>
+          </div>
+
+          <!-- Scenario 2: The bug that kept coming back -->
+          <div class="recall-example">
+            <div class="scenario-title">The bug that kept coming back</div>
+            <div class="before">
+              Corrupted AI-generated summaries appeared with identical wrong text across 21+ entries. The developer started debugging from scratch.
+            </div>
+            <div class="after">
+              <strong>Total Recall found it.</strong> The same bug had been investigated just two days earlier. A full root cause analysis already existed, with the validation bypass identified and a fix proposed. Instead of hours of re-investigation, the developer applied the fix immediately.
+            </div>
+            <div class="pattern">Bug pattern recognition</div>
+          </div>
+
+          <!-- Scenario 3: The session that ran out of context -->
+          <div class="recall-example">
+            <div class="scenario-title">The session that ran out of context</div>
+            <div class="before">
+              A prior AI session had researched configuration files in detail, discovering undocumented fields, hardcoded path issues, and scripts that consume the config. Then it ran out of context window before writing the findings to the audit report.
+            </div>
+            <div class="after">
+              <strong>Total Recall found it.</strong> The lost research was recovered in full: specific scripts, undocumented fields, and hardcoded path problems. All of it was written into the report without redoing any of the original work.
+            </div>
+            <div class="pattern">Session continuity</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       WHAT CONTEXTIFY CLOUD IS
+       ============================================================ -->
+  <section class="whatis-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <p class="section-label">What it is</p>
+          <p>
+            Contextify is a macOS and Linux app that monitors your Claude Code and Codex sessions, indexing every conversation into a local database you can search. Cloud sync makes that database available on every machine you work on. Total Recall lets your current AI session search all of your past ones. Local-first, always. Cloud adds cross-device search, backup, and team features on top.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       THE NUMBERS
+       ============================================================ -->
+  <section class="numbers-section">
+    <div class="container">
+      <div class="numbers-grid">
+        <div class="number-item">
+          <div class="big">562K+</div>
+          <div class="label">entries indexed</div>
+        </div>
+        <div class="number-item">
+          <div class="big">80+</div>
+          <div class="label">projects</div>
+        </div>
+        <div class="number-item">
+          <div class="big">3</div>
+          <div class="label">devices</div>
+        </div>
+        <div class="number-item">
+          <div class="big">1</div>
+          <div class="label">search</div>
+        </div>
+      </div>
+      <div class="numbers-tagline">One query. Every conversation. Every machine.</div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       PRIVACY
+       ============================================================ -->
+  <section class="privacy-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <p class="section-label">Privacy</p>
+          <p>
+            Cloud sync is off by default. Your local database is always the primary copy. You choose which projects sync per device, and admins can restrict what the cloud accepts.
+            <a href="../../privacy/">Read the full privacy details &rarr;</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CTA
+       ============================================================ -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 mx-auto">
+          <div class="cta-card">
+            <h2>Stop losing your AI work</h2>
+            <p>Download Contextify, enable Cloud Sync in Settings, and your history starts backing up immediately. Setup takes under a minute.</p>
+            <div class="cta-btn-group">
+              <a href="../../download/" class="cta-btn-primary">Download for Mac</a>
+              <a href="../../pricing/" class="cta-btn-secondary">See Pricing</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="../../download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
+        <a href="../../platforms/linux/" class="mx-2">Linux</a>
+        <span class="text-secondary">|</span>
+        <a href="../../pricing/" class="mx-2">Pricing</a>
+        <span class="text-secondary">|</span>
+        <a href="../../blog/" class="mx-2">Blog</a>
+        <span class="text-secondary">|</span>
+        <a href="../../privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="../../terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="../../support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2026 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- No Bootstrap JS needed: this page has no interactive components -->
+</body>
+</html>
