@@ -1,19 +1,47 @@
 # Marketing
 
-Ongoing marketing, press coverage, and community engagement tracking.
+Marketing content, campaigns, press coverage, and community engagement.
 
 ## Directory Structure
 
 ```
 marketing/
-├── README.md           # This file
-├── press/              # Third-party coverage
-│   ├── README.md       # Press tracking + monitoring URLs
-│   └── articles/       # Saved article text
-├── feedback/           # User feedback collection
-├── strategy/           # Distribution plans, launch strategy
-└── launch/             # Launch campaign materials (HN, Reddit, etc.)
+├── README.md               # This file
+├── content/                # Core content library (write once, use everywhere)
+│   ├── README.md           # Content library guide
+│   ├── products/           # Feature content (proof points, value props, use cases)
+│   │   ├── total-recall/   # Total Recall: cross-session AI memory
+│   │   ├── cloud-sync/     # Cloud Sync: multi-device history
+│   │   └── timeline/       # Timeline: real-time conversation monitoring
+│   ├── clients/            # Platform/client content
+│   │   ├── macos-app/      # macOS app (DMG + App Store)
+│   │   └── linux-cli/      # Linux CLI
+│   └── audience-segments.md
+├── channels/               # Channel-specific adaptations
+│   ├── landing-pages/      # Content briefs for website pages
+│   ├── blog/               # Blog post drafts and ideas
+│   └── social/             # Social media content
+├── launch/                 # Launch campaign materials (HN, Reddit, etc.)
+├── announcements/          # Version-specific announcements
+├── press/                  # Third-party coverage
+├── feedback/               # User feedback collection
+└── strategy/               # Distribution plans, launch strategy
 ```
+
+## Content Flow
+
+Core content lives in `content/products/`. Channel adaptations in `channels/`. Campaigns in `launch/` and `announcements/`.
+
+```
+content/products/total-recall/proof-points.md    (source of truth)
+    |
+    +-> channels/landing-pages/total-recall.md   (website page brief)
+    +-> channels/blog/                           (blog post drafts)
+    +-> channels/social/                         (social adaptations)
+    +-> launch/ or announcements/                (campaign materials)
+```
+
+See `content/README.md` for the full content library guide.
 
 ## Monitoring Checklist
 
@@ -32,17 +60,11 @@ marketing/
 
 `~/code/projects/outposter/` - Local tool for discovering and monitoring Contextify mentions across HN, Reddit, Lobsters, and forums.
 
-**Two monitoring modes:**
-1. **Discovery** - Find new threads where Contextify could be mentioned
-2. **Known Surfaces** - Monitor places we've already posted/been covered (see `press/README.md`)
-
 ```bash
 cd ~/code/projects/outposter
 uv run outposter fetch      # Fetch new items
 uv run outposter list       # Show opportunities
 ```
-
-See Outposter README for full usage.
 
 ## Quick Links
 
