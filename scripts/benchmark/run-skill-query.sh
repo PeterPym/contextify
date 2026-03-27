@@ -22,6 +22,9 @@ else
   exit 1
 fi
 
+STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX.log)
+trap "rm -f '$STDERR_LOG'" EXIT
+
 PROMPT="You are a benchmark evaluator. You MUST search conversation history using the contextify CLI. Do NOT answer from memory or training data.
 
 Step 1: Construct a search query and run:
@@ -41,9 +44,13 @@ RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
   --no-session-persistence \
   --permission-mode bypassPermissions \
   --allowedTools "Bash(contextify*)" \
-  2>/dev/null) || {
+  2>"${STDERR_LOG}") || {
     EXIT_CODE=$?
     echo "ERROR: claude -p exited with code $EXIT_CODE" >&2
+    if [ -s "$STDERR_LOG" ]; then
+      echo "stderr:" >&2
+      head -20 "$STDERR_LOG" >&2
+    fi
     exit 1
 }
 
