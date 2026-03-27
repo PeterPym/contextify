@@ -86,6 +86,17 @@ Because there is no stemming, you must explicitly include morphological variants
 
 Before searching, analyze the user's request and build an effective query.
 
+### Priority rule: entities first
+
+Preserve rare names and identifiers exactly. Only expand common verbs and concepts.
+
+- **Proper nouns, people, companies, products**: use as-is or in quoted phrases (`"Perch Innovations"`, `"Fulton House"`)
+- **Task IDs, version numbers**: quote them (`"ct 389"`, `"v1.5.0"`)
+- **Hyphenated project names**: quote without hyphens (`"contextify cloud"`, `"cli ai setup"`)
+- **Common verbs**: expand with prefix matching (`deploy*`, `migrat*`)
+
+Start your search with the 2-3 most distinctive terms from the question. If the question mentions a specific name, number, or identifier, that should be your primary search term, not a generic concept.
+
 ### Step 1: Classify intent
 
 Determine the query type to set your strategy and starting `--days` window:
@@ -93,7 +104,7 @@ Determine the query type to set your strategy and starting `--days` window:
 | Intent | Signals | Starting `--days` | Strategy |
 |--------|---------|-------------------|----------|
 | **Counting** | "how many", "count", "every time", "frequency" | 365 | Use `--count-only`. Add `--term-counts` for OR queries. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | 90 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | 365 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
 | **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
 | **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
 | **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
@@ -196,13 +207,15 @@ If database not found, respond:
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --json
 ```
+
+For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 
 When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --anchor-git --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json
 ```
 
 Git anchoring is additive, not exclusive:
@@ -293,10 +306,14 @@ Anchor selection guidance:
 - Prefer older transcripts unless the user asked about the current chat session.
 - If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, down-rank hits from that transcript unless the user explicitly wants current session results.
 
-3) Retrieve context around the anchor:
+3) Decide whether to fetch context or use the snippet:
+
+**Use the snippet directly** if it already contains the specific answer: a name, number, date, decision, or quote. With `--snippet-tokens 100`, snippets often contain enough detail.
+
+**Fetch context** when: the snippet is truncated and you need the full text, the answer depends on surrounding discussion or rationale, or pronouns/references need resolution.
 
 ```bash
-contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
+contextify context "<entry-uuid>" --before 10 --after 20 --json
 ```
 
 Returns:
