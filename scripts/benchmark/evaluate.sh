@@ -76,12 +76,16 @@ if [[ -z "$SNAPSHOT" ]]; then
     echo "ERROR: No snapshot specified and snapshot-manifest.json not found at $MANIFEST" >&2
     exit 1
   fi
-  # Extract path from manifest, expand ~ to HOME
+  # Extract path from manifest, resolve relative to HOME
   SNAPSHOT=$(python3 -c "
 import json, os, sys
 with open('$MANIFEST') as f:
     m = json.load(f)
-print(os.path.expanduser(m['path']))
+# Support both old 'path' (with ~) and new 'path_relative_to_home' keys
+if 'path_relative_to_home' in m:
+    print(os.path.join(os.path.expanduser('~'), m['path_relative_to_home']))
+else:
+    print(os.path.expanduser(m['path']))
 ")
 fi
 

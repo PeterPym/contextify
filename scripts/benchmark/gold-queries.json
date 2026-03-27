@@ -1,7 +1,6 @@
 {
   "version": 1,
   "snapshot_version": 1,
-  "snapshot_hash_prefix": "231ac69bb113ac38",
   "query_count": 14,
   "queries": [
     {
@@ -127,7 +126,7 @@
     },
     {
       "id": "gq-13",
-      "category": "negative-proof",
+      "category": "decision-archaeology",
       "natural_question": "What decisions have been made on pricing? Did we ever decide how much to charge?",
       "search_terms": "Justin George personal license Noah Zoschke team cloud",
       "content_fingerprint": "Justin George (personal license), Noah Zoschke (team/cloud version)",
