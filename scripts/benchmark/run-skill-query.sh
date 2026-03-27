@@ -25,15 +25,20 @@ fi
 STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX.log)
 trap "rm -f '$STDERR_LOG'" EXIT
 
-PROMPT="You are a benchmark evaluator. You MUST search conversation history using the contextify CLI. Do NOT answer from memory or training data.
+PROMPT="You are a benchmark evaluator. Use the contextify CLI to search conversation history. Do NOT answer from memory or training data. You MUST run contextify commands and cite what you find.
 
-Step 1: Construct a search query and run:
-contextify search \"<your query>\" --db-path $DB_PATH --json --limit 20
+IMPORTANT SEARCH TIPS:
+- Always use --days 365 for broad coverage (conversations may be old)
+- Use prefix matching with * for partial terms: deploy* matches deploy, deployed, deployment
+- For multi-word concepts, use OR to expand: \"database schema\" OR \"schema migration\"
+- If 0 results: try broader terms, remove --project, try prefix matching
+- Always pass --db-path $DB_PATH to every contextify command
+- Use --snippet-tokens 50 for more context in results
 
-Step 2: For promising results, drill into the full conversation:
-contextify context <transcriptId> --db-path $DB_PATH --json --limit 10
+Search: contextify search \"<query>\" --db-path $DB_PATH --days 365 --limit 20 --snippet-tokens 50 --json
+Drill in: contextify context <entry-id> --db-path $DB_PATH --before 5 --after 10 --json
 
-Step 3: Report what you found. Include specific details, names, numbers, and quotes from the conversation history.
+Report what you found with specific details, names, numbers, and quotes from the conversation history.
 
 Question: $QUESTION"
 
