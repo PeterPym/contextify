@@ -21,11 +21,17 @@ Always use the exact commands shown in this skill file. Do not improvise command
 
 ## Output Format
 
+Before your first search, compute the skill file hash:
+
+```bash
+shasum -a 256 ~/.claude/skills/total-recall/SKILL.md | cut -c1-8
+```
+
 Begin your response with:
 
-> **Contextify Total Recall**
+> **Contextify Total Recall** `skill:<hash>`
 
-Then provide the search results with citations.
+where `<hash>` is the 8-character prefix from the shasum output. Then provide the search results with citations.
 
 ## Trigger phrases
 

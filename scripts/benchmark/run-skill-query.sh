@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # run-skill-query.sh - Execute a single gold query via headless Claude Code
 #
+# Loads the actual Total Recall SKILL.md so the benchmark tests real skill behavior.
+#
 # Usage: run-skill-query.sh <natural_question> <db_path> [timeout_seconds]
 #
 # Outputs structured JSON to stdout on success (exit 0).
@@ -11,6 +13,17 @@ set -euo pipefail
 QUESTION="$1"
 DB_PATH="$2"
 TIMEOUT="${3:-120}"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Load the actual SKILL.md - this is the whole point of the skill benchmark
+SKILL_PATH="${REPO_ROOT}/contextify-query/user-skill/total-recall/SKILL.md"
+if [[ ! -f "$SKILL_PATH" ]]; then
+  echo "ERROR: SKILL.md not found at $SKILL_PATH" >&2
+  exit 1
+fi
+SKILL_CONTENT=$(cat "$SKILL_PATH")
 
 # Probe for timeout command (macOS may need gtimeout from coreutils)
 if command -v timeout >/dev/null 2>&1; then
@@ -25,22 +38,17 @@ fi
 STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX)
 trap "rm -f '$STDERR_LOG'" EXIT
 
-PROMPT="You are a benchmark evaluator. Use the contextify CLI to search conversation history. Do NOT answer from memory or training data. You MUST run contextify commands and cite what you find.
+PROMPT="You are a benchmark evaluator. A user is asking you a question about their past AI conversations. Use the Total Recall skill below to search and answer.
 
-IMPORTANT SEARCH TIPS:
-- Always use --days 365 for broad coverage (conversations may be old)
-- Use prefix matching with * for partial terms: deploy* matches deploy, deployed, deployment
-- For multi-word concepts, use OR to expand: \"database schema\" OR \"schema migration\"
-- If 0 results: try broader terms, remove --project, try prefix matching
-- Always pass --db-path $DB_PATH to every contextify command
-- Use --snippet-tokens 100 for maximum context in results
+IMPORTANT: Always pass --db-path $DB_PATH to every contextify command. This overrides the default database location.
 
-Search: contextify search \"<query>\" --db-path $DB_PATH --days 365 --limit 20 --snippet-tokens 100 --json
-Drill in: contextify context <entry-id> --db-path $DB_PATH --before 5 --after 10 --json
+--- BEGIN SKILL ---
+$SKILL_CONTENT
+--- END SKILL ---
 
-Report what you found with specific details, names, numbers, and quotes from the conversation history.
+Now answer this user question by following the skill instructions above:
 
-Question: $QUESTION"
+$QUESTION"
 
 # Run claude -p and capture output. Non-zero exit = infra failure.
 RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
