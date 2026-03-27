@@ -1,6 +1,6 @@
 # CLI Tool Architecture
 
-**Last Updated:** 2026-01-11
+**Last Updated:** 2026-03-26
 **Status:** Active
 
 This document describes the architecture of `contextify-query`, the CLI tool that enables AI coding assistants to search Contextify's conversation database. It covers the component model, platform support, installation flows, state detection, and how to add support for new platforms.
@@ -64,18 +64,13 @@ Each AI CLI tool reads its own skill file, which tells it to invoke `contextify-
 - `/usr/local/bin/contextify-query` (Intel Homebrew)
 - `~/bin/contextify-query` (fallback for non-Homebrew installs)
 
-**Why:** The shim allows the CLI to be invoked from anywhere without knowing where Contextify.app is installed. For DMG builds, it's a shell script that locates the binary inside the app bundle. For Homebrew, it's a symlink to the installed binary.
+**Why:** The shim allows the CLI to be invoked from anywhere without knowing where Contextify.app is installed. It discovers all Contextify installs via Launch Services, selects the best candidate (running instance preferred, then highest version), and execs the bundled binary.
 
-**DMG Shim (shell script):**
-```bash
-#!/bin/bash
-# Finds contextify-query inside Contextify.app and runs it
-CLI="/Applications/Contextify.app/Contents/MacOS/contextify-query"
-[ -x "$CLI" ] && exec "$CLI" "$@"
-# ... fallback logic for dev builds
-```
+**Multi-install warning:** When multiple Contextify installs are found, the shim writes a warning to stderr listing the candidates. This warning is suppressed when stderr is not a TTY (e.g., when invoked by an AI coding assistant from a skill), preventing noisy output in automated contexts. It can also be suppressed with environment variables:
+- `CONTEXTIFY_NO_INSTALL_WARNING=1` - suppress the multi-install warning
+- `CONTEXTIFY_NO_DEPRECATIONS=1` - suppress all deprecation/advisory messages
 
-**Code location:** `CLICoordinator.swift:420-454`
+**Code location:** `ContextifyQueryShim/main.swift:174-180` (warning gating); `CLICoordinator.swift:420-454` (install logic)
 
 ### 2. Plugin Cache
 
@@ -403,12 +398,19 @@ let newToolSkillExists = fileManager.fileExists(atPath: newToolSkillPath)
 ### Database Commands
 ```bash
 contextify-query status              # Database status
-contextify-query search "query"      # Search entries
+contextify-query search "query"      # Search entries (FTS5; hyphenated terms auto-quoted)
 contextify-query projects            # List projects
 contextify-query transcripts         # List transcripts
 contextify-query entry <uuid>        # Get specific entry
 contextify-query context <uuid>      # Get context around entry
 ```
+
+**`--project` flag:** Most commands accept `--project <value>` to scope results to a project. The value can be:
+- A project name (e.g., `--project contextify`) - resolved via name-based lookup
+- `.` or `current` - resolves to the current working directory
+- A file path - matches by path prefix
+
+**FTS5 hyphen preprocessing:** The `search` command automatically rewrites hyphenated terms before passing them to FTS5. For example, `ct-708` becomes `"ct 708"` (quoted phrase) and `cli-ai-setup` becomes `"cli ai setup"`. This prevents FTS5 from misinterpreting hyphens as column references. Hints are written to stderr when ambiguous cases are detected.
 
 ### Plugin Commands
 ```bash
@@ -458,3 +460,4 @@ On Linux, doctor checks skills only (no shim/manifest - binary runs directly).
 |---------|------|---------|
 | 1.0.0 | 2025-Q4 | Initial release, Claude Code only |
 | 1.1.0 | 2026-01 | Added Codex CLI support, doctor command, Linux support |
+| 1.1.x | 2026-03 | FTS5 hyphen preprocessing, --project name-based lookup, shim TTY gating for multi-install warning |
