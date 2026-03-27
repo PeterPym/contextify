@@ -3,13 +3,24 @@
 #
 # Usage: run-skill-query.sh <natural_question> <db_path> [timeout_seconds]
 #
-# Outputs structured JSON to stdout. Exit 0 on success, 1 on timeout/error.
+# Outputs structured JSON to stdout on success (exit 0).
+# Exits non-zero on infra failure (timeout, auth, malformed output).
 
 set -euo pipefail
 
 QUESTION="$1"
 DB_PATH="$2"
 TIMEOUT="${3:-120}"
+
+# Probe for timeout command (macOS may need gtimeout from coreutils)
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="gtimeout"
+else
+  echo "ERROR: neither timeout nor gtimeout found in PATH" >&2
+  exit 1
+fi
 
 PROMPT="You are a benchmark evaluator. You MUST search conversation history using the contextify CLI. Do NOT answer from memory or training data.
 
@@ -23,8 +34,8 @@ Step 3: Report what you found. Include specific details, names, numbers, and quo
 
 Question: $QUESTION"
 
-# Capture raw output and handle both JSON and error cases
-RAW_OUTPUT=$(timeout "$TIMEOUT" claude -p "$PROMPT" \
+# Run claude -p and capture output. Non-zero exit = infra failure.
+RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
   --output-format json \
   --model sonnet \
   --no-session-persistence \
@@ -32,43 +43,34 @@ RAW_OUTPUT=$(timeout "$TIMEOUT" claude -p "$PROMPT" \
   --allowedTools "Bash(contextify*)" \
   2>/dev/null) || {
     EXIT_CODE=$?
-    # Timeout or other error - output a valid JSON error
-    python3 -c "
-import json
-print(json.dumps({
-    'response': '',
-    'turns': 0,
-    'cost_usd': 0,
-    'duration_s': 0,
-    'error': 'claude -p exited with code $EXIT_CODE'
-}))
-"
-    exit 0  # exit 0 so evaluator processes the error JSON
+    echo "ERROR: claude -p exited with code $EXIT_CODE" >&2
+    exit 1
 }
 
 # Parse the claude JSON output into our standard format
 echo "$RAW_OUTPUT" | python3 -c "
 import sys, json
+
+raw = sys.stdin.read()
 try:
-    raw = sys.stdin.read()
     d = json.loads(raw)
-    result = d.get('result', '')
-    turns = d.get('num_turns', 0)
-    cost = d.get('costUSD', 0)
-    duration = d.get('duration_ms', 0) / 1000
-    print(json.dumps({
-        'response': result,
-        'turns': turns,
-        'cost_usd': cost,
-        'duration_s': duration
-    }))
-except (json.JSONDecodeError, KeyError) as e:
-    # If claude returned plain text instead of JSON, use it as the response
-    print(json.dumps({
-        'response': raw.strip() if 'raw' in dir() else '',
-        'turns': 0,
-        'cost_usd': 0,
-        'duration_s': 0,
-        'error': str(e)
-    }))
+except json.JSONDecodeError:
+    print('ERROR: claude returned invalid JSON', file=sys.stderr)
+    sys.exit(1)
+
+result = d.get('result', '')
+if not result:
+    print('ERROR: claude returned empty result', file=sys.stderr)
+    sys.exit(1)
+
+turns = d.get('num_turns', 0)
+cost = d.get('costUSD', 0)
+duration = d.get('duration_ms', 0) / 1000
+
+print(json.dumps({
+    'response': result,
+    'turns': turns,
+    'cost_usd': cost,
+    'duration_s': duration
+}))
 "

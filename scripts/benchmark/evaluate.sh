@@ -94,6 +94,24 @@ if [[ ! -f "$SNAPSHOT" ]]; then
   exit 1
 fi
 
+# Validate snapshot hash against manifest (if manifest exists)
+if [[ -f "${SCRIPT_DIR}/snapshot-manifest.json" ]]; then
+  EXPECTED_HASH=$(python3 -c "
+import json
+with open('${SCRIPT_DIR}/snapshot-manifest.json') as f:
+    print(json.load(f).get('hash_prefix', ''))
+")
+  if [[ -n "$EXPECTED_HASH" ]]; then
+    ACTUAL_HASH=$(shasum -a 256 "$SNAPSHOT" | awk '{print substr($1, 1, 16)}')
+    if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
+      echo "ERROR: Snapshot hash mismatch. Expected $EXPECTED_HASH, got $ACTUAL_HASH" >&2
+      echo "Run scripts/benchmark/prepare-snapshot.sh to refresh." >&2
+      exit 1
+    fi
+    echo "Snapshot hash verified: $ACTUAL_HASH" >&2
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Validate gold queries file
 # ---------------------------------------------------------------------------
@@ -200,25 +218,17 @@ for q in queries:
             )
 
             if proc.returncode != 0:
-                result = {
-                    "id": qid,
-                    "found": False,
-                    "error": proc.stderr.strip()[:200] or "skill runner failed",
-                    "searches_used": 0,
-                    "total_results": 0
-                }
-                results.append(result)
-                total_scorable += 1
-                efficiency_sum += 0
-                if verbose:
-                    print(f"  [{qid}] ERROR: skill runner failed", file=sys.stderr)
-                continue
+                err = proc.stderr.strip() or "skill runner failed"
+                print(f"INFRA ERROR: [{qid}] {err[:500]}", file=sys.stderr)
+                print(f"Aborting benchmark - infra failures invalidate scores.", file=sys.stderr)
+                sys.exit(2)
 
             # Parse structured output from run-skill-query.sh
             try:
                 skill_output = json.loads(proc.stdout)
             except json.JSONDecodeError:
-                skill_output = {"response": proc.stdout, "turns": 0, "cost_usd": 0, "duration_s": 0}
+                print(f"INFRA ERROR: [{qid}] skill runner returned invalid JSON", file=sys.stderr)
+                sys.exit(2)
 
             ai_response = skill_output.get("response", "")
             searches_used = skill_output.get("turns", 1)  # turns approximates searches

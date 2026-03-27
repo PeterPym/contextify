@@ -33,15 +33,21 @@ if [ -f "$SNAPSHOT_PATH" ]; then
 fi
 
 mkdir -p "$SNAPSHOT_DIR"
-echo "Copying production DB to snapshot..."
-cp "$PROD_DB" "$SNAPSHOT_PATH"
-chmod 444 "$SNAPSHOT_PATH"  # read-only to prevent accidental writes
+TMP_SNAPSHOT="${SNAPSHOT_PATH}.tmp"
+
+# Use sqlite3 .backup for WAL-safe consistent snapshot
+echo "Creating consistent SQLite backup..."
+rm -f "$TMP_SNAPSHOT"
+sqlite3 "$PROD_DB" ".timeout 5000" ".backup '$TMP_SNAPSHOT'"
+chmod 444 "$TMP_SNAPSHOT"
+mv -f "$TMP_SNAPSHOT" "$SNAPSHOT_PATH"
 
 # Print manifest info
 ENTRIES=$(sqlite3 "$SNAPSHOT_PATH" "SELECT COUNT(*) FROM transcript_entries")
 PROJECTS=$(sqlite3 "$SNAPSHOT_PATH" "SELECT COUNT(*) FROM projects")
 TRANSCRIPTS=$(sqlite3 "$SNAPSHOT_PATH" "SELECT COUNT(*) FROM transcripts")
 SIZE=$(du -h "$SNAPSHOT_PATH" | cut -f1)
+HASH_PREFIX=$(shasum -a 256 "$SNAPSHOT_PATH" | awk '{print substr($1, 1, 16)}')
 
 echo ""
 echo "Snapshot created:"
@@ -50,5 +56,6 @@ echo "  Size: $SIZE"
 echo "  Entries: $ENTRIES"
 echo "  Projects: $PROJECTS"
 echo "  Transcripts: $TRANSCRIPTS"
+echo "  Hash prefix: $HASH_PREFIX"
 echo ""
-echo "Update scripts/benchmark/snapshot-manifest.json if version changed."
+echo "Update scripts/benchmark/snapshot-manifest.json with hash_prefix: $HASH_PREFIX"
