@@ -1864,7 +1864,17 @@ private func resolveProjectId(
   if project == "." || project == "current" {
     path = FileManager.default.currentDirectoryPath
   } else {
-    path = project
+    // F-03: Try name-based lookup first for non-path values
+    let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+    if !looksLikePath {
+      // Try exact/normalized name match
+      if let id = try? service.resolveProjectByName(project) {
+        return id
+      }
+    }
+    // If name lookup didn't match, treat as a path (existing behavior)
+    // If it's not a valid path either, the path resolution will error with suggestions
+    path = looksLikePath ? project : project
   }
 
   do {
@@ -1912,12 +1922,22 @@ private func resolveProjectScope(
   options: ContextifyQueryCLI.Options,
   service: ContextifyQueryService
 ) throws -> ProjectScope {
-  // 1. Resolve base path
+  // 1. Resolve base path (with F-03 name-based lookup for non-path values)
   let basePath: String
   if let project = options.project {
-    basePath = (project == "." || project == "current")
-      ? FileManager.default.currentDirectoryPath
-      : project
+    if project == "." || project == "current" {
+      basePath = FileManager.default.currentDirectoryPath
+    } else {
+      let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+      if !looksLikePath, let id = try? service.resolveProjectByName(project) {
+        // Name-based match found - return single-project scope (no worktree expansion)
+        return ProjectScope(projectIds: [id], displayNames: [project],
+                           unresolvedSiblings: [], excluded: [],
+                           worktreeGroupDetected: false, worktreesConsidered: [],
+                           expansionApplied: false)
+      }
+      basePath = project
+    }
   } else {
     return ProjectScope(projectIds: [], displayNames: [],
                        unresolvedSiblings: [], excluded: [],
