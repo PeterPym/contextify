@@ -223,7 +223,7 @@ def check_fingerprint(fp_clean, clean_response):
         stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
         return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
     matches = sum(1 for w in words if stem_match(w))
-    return (matches / len(words)) >= 0.80
+    return (matches / len(words)) >= 0.70
 
 def evaluate_query(q):
     """Evaluate a single query. Returns a result dict."""

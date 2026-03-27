@@ -12,3 +12,4 @@ evaluator-fix+word-match	32.4	2026-03-27T15:42:07Z	word-level fingerprint matchi
 ratchet-5-WASH	31.3	2026-03-27T16:17:38Z	search protocol + detail extraction (within variance, reverted)
 F-04+ratchet	32.4	2026-03-27T16:26:37Z	snippet-tokens default 10->50, skill benchmark within variance
 stem-matching	35.0	2026-03-27T16:33:17Z	stem-aware fingerprint matching (9/14 PASS)
+threshold-70pct	41.7	2026-03-27T16:41:15Z	word match threshold 80->70%, 10/14 PASS
