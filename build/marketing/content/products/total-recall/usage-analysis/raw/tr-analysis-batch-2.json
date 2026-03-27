@@ -1,0 +1,428 @@
+{
+  "meta": {
+    "session_id": "7167f5f7-2eb0-47d9-92b7-3cd37532bdf5",
+    "date": "2026-03-25",
+    "project": "contextify-wb4",
+    "branch": "main-wb4",
+    "status": "ready-for-review",
+    "description": "Total Recall skill invocation analysis across 6 JSONL transcript files from two Claude Code project directories",
+    "source_directories": [
+      "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/",
+      "/Users/rob/.claude/projects/-Users-rob-code-projects-bloon/"
+    ],
+    "total_invocations": 7,
+    "total_files_analyzed": 6
+  },
+  "invocations": [
+    {
+      "id": "tr-001",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/1c360b52-1934-47b6-a53b-3002d1cac3cb.jsonl",
+      "session_id": "1c360b52-1934-47b6-a53b-3002d1cac3cb",
+      "project": "personal/misc (cwd: /Users/rob/code/personal/misc)",
+      "timestamp": "2026-03-15T17:20:14Z",
+      "slug": "unified-booping-lemon",
+      "invocation_line": 31,
+      "trigger": {
+        "type": "queue_injection",
+        "line": 18,
+        "description": "User injected a queue message mid-session while AI was already searching the filesystem for media files",
+        "underlying_need": "Confirm location of personal media collection (classic cartoons) using cross-session memory",
+        "user_message_summary": "use /total-recall to find where they are"
+      },
+      "query": {
+        "skill_args": "looney tunes warner brothers cartoons golden collection ranked videos",
+        "cli_commands": [],
+        "notes": "AI had already found ~/Desktop/Video/Golden Collection/ranked via direct filesystem traversal before TR search completed. No CLI commands recorded in the excerpt - skill may have executed but the filesystem discovery preempted it."
+      },
+      "results": {
+        "success": null,
+        "count": null,
+        "drilled_into_context": false,
+        "notes": "AI explicitly noted it had found the directory ~/Desktop/Video/Golden Collection/ranked before the skill concluded. The TR results (if any) were redundant. Outcome was filesystem-driven, not TR-driven."
+      },
+      "delivery": {
+        "format": "inline_chat",
+        "written_to_file": false,
+        "description": "AI confirmed the media directory location via direct filesystem listing; TR was a secondary confirmation that was superseded"
+      },
+      "aftermath": {
+        "action_taken": "AI continued with the original task (browsing/ranking the media files) using the already-found directory path",
+        "spec_updated": false,
+        "task_updated": false
+      },
+      "classification": ["knowledge_search"],
+      "notes": "Interesting case where the AI found the answer before TR completed. The queue injection pattern caused TR to run in parallel with filesystem exploration rather than as a primary lookup."
+    },
+    {
+      "id": "tr-002",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/804be59a-7492-40a2-b766-4e982a09d0dd.jsonl",
+      "session_id": "804be59a-7492-40a2-b766-4e982a09d0dd",
+      "project": "personal/misc (cwd: /Users/rob/code/personal/misc)",
+      "timestamp": "2026-03-24T20:23:46Z",
+      "entrypoint": "cli",
+      "invocation_line": 6,
+      "trigger": {
+        "type": "explicit_slash_command",
+        "line": 5,
+        "description": "User opened session with a direct TR request as the primary task",
+        "underlying_need": "Locate prior work and repo for a personal creative side project (bootleg novelty hats based on a fiction franchise)",
+        "user_message_summary": "I had previously been working on some [franchise] hats but i don't know where i had all the information / repo can you find it /total-recall?"
+      },
+      "query": {
+        "skill_args": "dungeon crawler carl hats",
+        "cli_commands": [
+          {
+            "line": 14,
+            "command": "contextify search '\"[franchise] [character]\" AND (hat OR hats OR cap OR caps OR headgear)' --days 365 --limit 20 --snippet-tokens 50 --json",
+            "description": "First search: exact phrase for franchise + headgear synonyms"
+          },
+          {
+            "line": 19,
+            "command": "contextify search '\"[franchise]\" OR \"[abbreviation]\" OR \"bootleg hats\" OR \"[character] hats\"' --days 365 --limit 20 --snippet-tokens 50 --json",
+            "description": "Second search: broader OR query after first returned only passing references"
+          }
+        ]
+      },
+      "results": {
+        "success": "partial",
+        "count": 2,
+        "drilled_into_context": true,
+        "notes": "First query returned 2 results, both from an administration-type project referencing the creative project only in passing (describing it as a personal side-project to be archived). AI correctly characterized these as insufficient and ran a broader second query."
+      },
+      "delivery": {
+        "format": "inline_chat",
+        "written_to_file": false,
+        "description": "AI reported search results inline and escalated to broader search strategy"
+      },
+      "aftermath": {
+        "action_taken": "Broader follow-up search executed; transcript excerpt ends before final resolution - unclear if the project/repo was ultimately located",
+        "spec_updated": false,
+        "task_updated": false
+      },
+      "classification": ["cross_session_continuity", "knowledge_search"],
+      "notes": "Classic cross-session continuity use case. The creative project predated or existed outside the indexed transcript window. The initial search found administrative context about the project but not the actual project work."
+    },
+    {
+      "id": "tr-003a",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/a56c55f8-0fe9-4732-828f-5ec97235de4a.jsonl",
+      "session_id": "a56c55f8-0fe9-4732-828f-5ec97235de4a",
+      "project": "personal/misc (cwd: /Users/rob/code/personal/misc)",
+      "timestamp": "2026-03-16T06:35:07Z",
+      "invocation_line": 6,
+      "trigger": {
+        "type": "explicit_slash_command",
+        "line": 6,
+        "description": "User opened session requesting a TR-driven audit of recent work in a personal tooling project and cross-machine cloud sync verification",
+        "underlying_need": "Verify what work had been done in a personal CLI tooling project and whether changes had synced across machines",
+        "user_message_summary": "Read the recent work in [personal tooling project] and verify cross-machine cloud sync"
+      },
+      "query": {
+        "skill_args": "recent work in cli-ai-setup project",
+        "db_stats": {
+          "total_entries": 542159,
+          "total_projects": 77,
+          "total_transcripts": 6856
+        },
+        "cli_commands": [
+          {
+            "line": 34,
+            "command": "contextify search '\"cli-ai-setup\" OR skill* OR hook* OR agent*' --days 7 --limit 10 --snippet-tokens 50 --json",
+            "description": "Initial FTS search - FAILED with FTS5 hyphen tokenization error",
+            "error": "no such column: ai (FTS5 tokenized 'cli-ai-setup' on hyphens, 'ai' interpreted as column name)"
+          },
+          {
+            "line": null,
+            "command": "contextify projects --json",
+            "description": "List projects to get UUID for the personal tooling project"
+          },
+          {
+            "line": null,
+            "command": "contextify activity --project-id 8797448B-C496-4DDA-A16D-867FB13BD846",
+            "description": "Project-scoped activity query using explicit UUID (workaround for FTS error and --project name flag bug)"
+          }
+        ]
+      },
+      "results": {
+        "success": "partial",
+        "count": null,
+        "drilled_into_context": true,
+        "notes": "Found 2 recent sessions from 2026-03-15: a personal tooling migration session and a utility implementation session. Machine provenance could not be determined - no hostname or device_id field in the CLI data model. Also hit two bugs: FTS5 hyphen tokenization error and --project flag defaulting to cwd project rather than looking up by name."
+      },
+      "delivery": {
+        "format": "written_to_file",
+        "written_to_file": true,
+        "file_path": "/tmp/total-recall-cli-ai-setup-report.md",
+        "line": 119,
+        "description": "Full audit report written to /tmp/ with frank assessment that machine provenance is indeterminate. AI explicitly stated 'the honest answer is I can't tell which machine produced any entry'."
+      },
+      "aftermath": {
+        "action_taken": "Report delivered with honest capability limitation documented. Session continued with other tasks.",
+        "spec_updated": false,
+        "task_updated": false,
+        "limitation_documented": "No hostname or device_id field in CLI data model; cross-machine attribution is not possible with current schema"
+      },
+      "classification": ["cross_session_continuity", "cross_project_search"],
+      "bugs_encountered": [
+        {
+          "type": "fts5_hyphen_tokenization",
+          "description": "FTS5 splits hyphenated terms on hyphens; 'cli-ai-setup' becomes tokens [cli, ai, setup], and 'ai' is interpreted as a column reference",
+          "error_message": "no such column: ai",
+          "workaround": "Switched from FTS search to project-scoped contextify activity with explicit UUID"
+        },
+        {
+          "type": "project_flag_cwd_default",
+          "description": "contextify activity --project [name] defaulted to cwd project (misc) instead of looking up by name",
+          "workaround": "Used --project-id with explicit UUID from contextify projects --json output"
+        }
+      ],
+      "notes": "First of two invocations in this session. Notable for exposing two CLI bugs and for the AI's honest provenance limitation assessment rather than fabricating machine attribution."
+    },
+    {
+      "id": "tr-003b",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/a56c55f8-0fe9-4732-828f-5ec97235de4a.jsonl",
+      "session_id": "a56c55f8-0fe9-4732-828f-5ec97235de4a",
+      "project": "personal/misc (cwd: /Users/rob/code/personal/misc)",
+      "timestamp": "2026-03-16T06:35:07Z",
+      "invocation_line": 111,
+      "trigger": {
+        "type": "inline_suggestion",
+        "line": 111,
+        "description": "Mid-session, while discussing how a macOS Finder toolbar app with a custom icon was originally built, user suggested the methodology might be in /total-recall",
+        "underlying_need": "Recover original build methodology for a macOS Finder toolbar app with custom icon from prior session history",
+        "user_message_summary": "the methodology may actually be in /total-recall"
+      },
+      "query": {
+        "skill_args": null,
+        "cli_commands": [],
+        "notes": "Specific CLI commands not recorded in available excerpt. AI reported negative result."
+      },
+      "results": {
+        "success": false,
+        "count": 0,
+        "drilled_into_context": false,
+        "notes": "No results found. AI concluded: 'No luck finding the original methodology in Total Recall. The creation predates the indexed history.' Negative proof - the work predated the transcript indexing window."
+      },
+      "delivery": {
+        "format": "inline_chat",
+        "written_to_file": false,
+        "description": "Brief inline report of negative result with explanation that the work predates indexed history"
+      },
+      "aftermath": {
+        "action_taken": "Session continued without the original methodology; presumably reconstructed or approached differently",
+        "spec_updated": false,
+        "task_updated": false
+      },
+      "classification": ["knowledge_search", "negative_proof"],
+      "notes": "Second invocation in this session. A clean negative-proof case: TR correctly reported no results rather than returning false positives. The creation predated the indexed transcript window."
+    },
+    {
+      "id": "tr-004",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-misc/ac151dab-42c3-4644-b497-7024150d6d6b.jsonl",
+      "session_id": "ac151dab-42c3-4644-b497-7024150d6d6b",
+      "project": "personal/misc (cwd: /Users/rob/code/personal/misc)",
+      "timestamp": "2026-03-16T04:36:16Z",
+      "invocation_line": 116,
+      "trigger": {
+        "type": "queue_injection",
+        "line": 107,
+        "description": "User injected TR request mid-session while AI was examining a large backup directory (393GB). User described a prior cleanup script that had become a runaway memory hog.",
+        "underlying_need": "Locate prior implementation of a deduplication/cleanup script for a large backup directory that had grown out of control",
+        "user_message_summary": "use /total-recall to look for [the prior cleanup script]"
+      },
+      "query": {
+        "skill_args": "tmp-md-backups deduplication cleanup memory hog runaway script",
+        "db_stats": {
+          "total_entries": 542152,
+          "total_projects": 77,
+          "confirmed_at_line": 123
+        },
+        "cli_commands": []
+      },
+      "results": {
+        "success": null,
+        "count": null,
+        "drilled_into_context": null,
+        "notes": "DB confirmed available with 542,152 entries. Specific search results and CLI commands not captured in available excerpt. AI confirmed it was searching for the prior cleanup work."
+      },
+      "delivery": {
+        "format": "inline_chat",
+        "written_to_file": false,
+        "description": "Results delivered inline; specific outcome not captured in available transcript excerpt"
+      },
+      "aftermath": {
+        "action_taken": "Session continued with cleanup/deduplication work; whether the prior script was found is not captured in available excerpt",
+        "spec_updated": false,
+        "task_updated": false
+      },
+      "classification": ["implementation_reference", "debugging_history"],
+      "notes": "Implementation reference use case: searching for a prior script that had a known failure mode (memory hog) to avoid repeating the mistake or to recover the implementation. Context: the backup directory had grown to 393GB."
+    },
+    {
+      "id": "tr-005",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-bloon/5298c35f-79a4-478d-b9aa-a04306451114.jsonl",
+      "session_id": "5298c35f-79a4-478d-b9aa-a04306451114",
+      "project": "bloon (cwd: /Users/rob/code/projects/bloon, branch: bl-333-per-worktree-queues)",
+      "timestamp": "2026-03-11T07:05:07Z",
+      "invocation_line": 733,
+      "context_compaction_line": 1143,
+      "trigger": {
+        "type": "explicit_slash_command",
+        "line": 730,
+        "description": "User asked whether the spec for a task (bl-331) had been derived from TR. When AI said no, user requested TR be run to recover prior design discussions before finalizing the spec.",
+        "underlying_need": "Recover prior user design discussions about an AI-evaluated focus feature to ensure valuable prior thinking was incorporated into the task spec",
+        "user_message_summary": "was the spec for 331 partly derived from using /total-recall to look for past discussion about this? i want to make sure any valuable information from my pining for this previously makes its way into whatever you're planning"
+      },
+      "query": {
+        "skill_args": "AI-evaluated focus changes, focus should be intelligent, auto-advance focus wrong project",
+        "cli_commands": [
+          {
+            "line": 736,
+            "command": "contextify search 'focus AND (intelligent OR smart OR AI OR evaluate* OR reason* OR context*)' --project . --days 365 --limit 20 --snippet-tokens 50 --json",
+            "description": "Primary search for AI-evaluated focus discussions in the bloon project"
+          },
+          {
+            "line": 740,
+            "command": "contextify context 45c84f41-a866-4366-8644-db5e06cad963",
+            "description": "Fetched surrounding context for a high-value Feb 11 entry about AI-driven task transitions"
+          }
+        ]
+      },
+      "results": {
+        "success": true,
+        "count": 298,
+        "drilled_into_context": true,
+        "high_value_hits": [
+          {
+            "date": "2026-02-02",
+            "description": "Prior discussion specifically about AI-evaluated focus transitions"
+          },
+          {
+            "date": "2026-02-11",
+            "description": "Rich discussion about AI-driven task transitions with interactive confirmation, candidate presentation with reasoning, hierarchy-aware rules"
+          },
+          {
+            "date": "2026-03-11",
+            "description": "Current session discussions (expected)"
+          }
+        ],
+        "notes": "298 total results. AI correctly identified the Feb 11 discussion as the most valuable hit and fetched context around entry 45c84f41 to recover the full prior design discussion."
+      },
+      "delivery": {
+        "format": "inline_chat_with_spec_update",
+        "written_to_file": false,
+        "description": "AI summarized the recovered design discussion and immediately applied it to update the bl-331 task spec"
+      },
+      "aftermath": {
+        "action_taken": "bl-331 task spec updated with 4 key elements recovered from prior discussions",
+        "spec_updated": true,
+        "task_id": "bl-331",
+        "spec_additions": [
+          "Interactive confirmation before closing a focus item (not silent auto-advance)",
+          "Candidate presentation with reasoning (AI shows options and explains why)",
+          "Hierarchy-aware rules (leaf/atomic steps auto-advance; substantial work prompts user)",
+          "Clarification that this is primarily an AI behavior change, not CLI plumbing"
+        ],
+        "user_confirmed": true,
+        "user_followup_line": 760,
+        "compact_summary_reference": "Context compaction summary at line 1144 explicitly noted 'prior Feb 11 discussion found via Total Recall'"
+      },
+      "classification": ["decision_recall", "implementation_reference", "cross_session_continuity"],
+      "notes": "Highest-impact invocation in the batch. TR recovered a design discussion from 5+ weeks prior that materially changed a task spec. The user's explicit goal ('make sure valuable information makes its way in') was fully satisfied. The compact summary itself referenced TR as a key source, confirming the AI internalized the findings."
+    },
+    {
+      "id": "tr-006",
+      "session_file_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-bloon/fd66f959-ab96-4145-a83e-7fbfd79f0cec.jsonl",
+      "session_id": "fd66f959-ab96-4145-a83e-7fbfd79f0cec",
+      "project": "bloon (cwd: /Users/rob/code/projects/bloon, branch: main)",
+      "timestamp": "2026-03-01T23:00:56Z",
+      "invocation_line": 65,
+      "trigger": {
+        "type": "explicit_slash_command",
+        "line": 64,
+        "description": "During debugging of a spurious project created with a 'cc-' prefix in the task manager, user asked TR to find when the incident occurred and what commands had been run",
+        "underlying_need": "Incident forensics: determine when and how an AI session created a spurious prefixed project entry in the task management tool",
+        "user_message_summary": "can you use /total-recall to look for when this happened, look for 'cc-' and see how we might be able to add context somewhere or maybe a command's output like deleting a project, might get a hint toward it"
+      },
+      "query": {
+        "skill_args": "search for \"cc-\" bloon project creation contextify-cloud, when did an AI create or attempt to create a cc- prefixed project in bloon, and what commands were run",
+        "cli_commands": [
+          {
+            "line": 93,
+            "command": "contextify search '\"cc-\" AND (bloon OR prefix OR task)' --days 365 --limit 15 --snippet-tokens 80 --json",
+            "description": "Primary incident forensics search"
+          },
+          {
+            "line": 100,
+            "command": "contextify context 1cc57716...",
+            "description": "Attempted context fetch around a result entry - FAILED with sibling tool call error",
+            "error": "Sibling tool call errored"
+          }
+        ]
+      },
+      "results": {
+        "success": "partial",
+        "count": 80,
+        "drilled_into_context": true,
+        "notes": "80 total results but none specifically about the cc- project creation event. Results contained 'cc' as abbreviation for Claude Code, entry IDs starting with 'cc', filenames with 'cc' prefix, and tangential cloud repo setup references - none pinpointed the specific spurious project creation incident."
+      },
+      "delivery": {
+        "format": "inline_chat",
+        "written_to_file": false,
+        "description": "AI reported the search results and their limitations inline; pivoted to checking bloon project list directly"
+      },
+      "aftermath": {
+        "action_taken": "AI attempted bloon project list to check if cc- project still exists; Python parsing errored. Context fetch of a result also errored. Investigation concluded without finding the specific creation event.",
+        "spec_updated": false,
+        "task_updated": false,
+        "bugs_encountered": [
+          {
+            "type": "python_parsing_error",
+            "description": "bloon project list --json | python3 filter raised AttributeError: 'dict' object has no attribute 'lower' because data was list of dicts not strings",
+            "line": 98
+          },
+          {
+            "type": "sibling_tool_call_error",
+            "description": "contextify context call returned sibling tool call errored",
+            "line": 100
+          }
+        ]
+      },
+      "classification": ["incident_forensics", "debugging_history"],
+      "notes": "Earliest session in the batch (2026-03-01). A true incident forensics use case that returned high volume (80 results) but low signal - the specific event was not indexed or occurred in a session predating the index window. The 'cc-' prefix was too common a substring to isolate the creation event. Illustrates a precision limitation when searching for short or common token patterns."
+    }
+  ],
+  "summary_statistics": {
+    "total_invocations": 7,
+    "by_trigger_type": {
+      "explicit_slash_command": 4,
+      "queue_injection": 2,
+      "inline_suggestion": 1
+    },
+    "by_classification": {
+      "knowledge_search": 3,
+      "cross_session_continuity": 4,
+      "cross_project_search": 1,
+      "implementation_reference": 2,
+      "debugging_history": 2,
+      "incident_forensics": 1,
+      "decision_recall": 1,
+      "negative_proof": 1
+    },
+    "success_outcomes": {
+      "full_success": 1,
+      "partial_success": 3,
+      "negative_proof": 1,
+      "indeterminate": 2
+    },
+    "bugs_surfaced": [
+      "FTS5 hyphen tokenization: hyphenated terms split on hyphens causing column-not-found errors",
+      "--project flag defaulting to cwd project instead of looking up by name",
+      "Python parsing error in bloon project list filter (dict vs string)",
+      "Sibling tool call error on contextify context fetch"
+    ],
+    "files_with_multiple_invocations": [
+      "a56c55f8-0fe9-4732-828f-5ec97235de4a.jsonl (2 invocations)"
+    ],
+    "highest_impact_invocation": "tr-005 (5298c35f): recovered 5-week-old design discussions that materially updated bl-331 spec; confirmed by user and referenced in context compaction summary"
+  }
+}
