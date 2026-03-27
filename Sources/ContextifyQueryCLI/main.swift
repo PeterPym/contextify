@@ -518,7 +518,7 @@ struct ContextifyQueryCLI {
             includeHidden: options.includeHidden,
             timeRange: timeRange,
             kinds: kinds,
-            snippetTokens: options.snippetTokens ?? 10,
+            snippetTokens: options.snippetTokens ?? 50,
             treatAsFTS: true,
             device: options.device
           )
@@ -1028,7 +1028,7 @@ struct ContextifyQueryCLI {
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
-        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
+        --snippet-tokens <n> Search snippet length in tokens (default 50, max 100)
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
