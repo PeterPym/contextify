@@ -14,4 +14,3 @@ F-04+ratchet	32.4	2026-03-27T16:26:37Z	snippet-tokens default 10->50, skill benc
 stem-matching	35.0	2026-03-27T16:33:17Z	stem-aware fingerprint matching (9/14 PASS)
 threshold-70pct	41.7	2026-03-27T16:41:15Z	word match threshold 80->70%, 10/14 PASS
 post-review-fixes	45.8	2026-03-27T17:32:04Z	TR-01/TR-02/TR-03 fixes, 11/14 PASS
-skill-rewrite	40.2	2026-03-27T17:44:58Z	SKILL.md rewrite: entity-first, 61% shorter, progressive disclosure (10/14 PASS)
