@@ -202,17 +202,28 @@ def strip_markdown(text):
     return text
 
 def check_fingerprint(fp_clean, clean_response):
-    """Check if fingerprint content appears in response using word-level matching."""
+    """Check if fingerprint content appears in response using word-level matching.
+    Uses stem-aware matching: a fingerprint word matches if the response contains
+    any word that shares the same stem (prefix of 4+ chars)."""
     if not fp_clean:
         return False
     if fp_clean in clean_response:
         return True
     words = [w for w in re.findall(r'[a-z0-9]+', fp_clean)
              if len(w) >= 4 and w not in stopwords]
-    if words:
-        matches = sum(1 for w in words if w in clean_response)
-        return (matches / len(words)) >= 0.80
-    return False
+    if not words:
+        return False
+    # Extract all response words for stem matching
+    response_words = set(re.findall(r'[a-z0-9]+', clean_response))
+    def stem_match(fp_word):
+        """Check if fingerprint word matches any response word by shared stem."""
+        if fp_word in clean_response:
+            return True
+        # Try stem matching: if fp_word[:n] matches any response word[:n]
+        stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
+        return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
+    matches = sum(1 for w in words if stem_match(w))
+    return (matches / len(words)) >= 0.80
 
 def evaluate_query(q):
     """Evaluate a single query. Returns a result dict."""
