@@ -22,7 +22,7 @@ else
   exit 1
 fi
 
-STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX.log)
+STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX)
 trap "rm -f '$STDERR_LOG'" EXIT
 
 PROMPT="You are a benchmark evaluator. Use the contextify CLI to search conversation history. Do NOT answer from memory or training data. You MUST run contextify commands and cite what you find.

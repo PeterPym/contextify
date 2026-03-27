@@ -168,7 +168,7 @@ export TEMP_DB_PATH="$TEMP_DB"
 export VERBOSE="$VERBOSE"
 export EVAL_MODE="$MODE"
 export SKILL_RUNNER="${SCRIPT_DIR}/run-skill-query.sh"
-export PARALLEL_WORKERS="${PARALLEL_WORKERS:-1}"
+export PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
 
 # Use Python to drive the evaluation loop for reliable JSON handling
 python3 << 'PYEOF'
