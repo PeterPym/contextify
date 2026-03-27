@@ -189,13 +189,15 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 
 **Description:** Usability issues that create noise or confusion without blocking functionality.
 
-**Severity:** Medium | **Frequency:** 6 of 38 invocations
+**Severity:** Low (noise items) to High (silent wrong results) | **Frequency:** 6 of 38 invocations
+
+**Note:** The multi-install warning is low severity but high frequency. The silent wrong-scope resolution (2:tr-003a) is high severity, a correctness bug that now drives F-03 to P0. Cost opacity is low-medium unless agent economics are explicitly productized.
 
 | Invocation | Issue | Impact |
 |------------|-------|--------|
-| All batches | "Multiple Contextify installs detected" warning appeared in every invocation across all sessions in all 5 batches | Constant noise; trains users/AIs to ignore warnings |
+| All batches | "Multiple Contextify installs detected" warning appeared in every invocation across all sessions in all 5 batches | Low severity, high frequency noise; trains users/AIs to ignore warnings |
 | 2:tr-006 | Sibling tool call error on `contextify context` fetch. Error message was opaque: "Sibling tool call errored" with no actionable detail | Investigation dead-ended |
-| 2:tr-003a | `--project` flag defaulted to cwd project instead of looking up by project name. Error was silent; returned wrong project results | Silent wrong results |
+| 2:tr-003a | `--project` flag defaulted to cwd project instead of looking up by project name. Error was silent; returned wrong project results | **High severity**: silent wrong results (correctness bug) |
 | 3:batch3-5 | AI delegation bypassed Skill layer when user explicitly requested it. User had to call this out to get proper agent-delegated search | User trust erosion |
 | 4:B4-003 | 80,896 token subagent for a 1.5.0 release plan search. Token cost of agent delegation was not visible to user | Cost opacity |
 | 4:B4-004 | 90,049 token subagent for pricing history search across 8 queries. High cost for an ultimately negative proof | Cost opacity |
@@ -229,26 +231,24 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 |----|-------|----------|--------|------|
 | F-01 | Suppress "Multiple Contextify installs detected" warning | P0 | XS | CLI |
 | F-02 | FTS5 hyphen pre-processing in CLI | P0 | S | CLI |
-| F-07 | --days escalation rule in SKILL.md | P0 | XS | Skill |
+| F-03 | --project flag name-based lookup | P0 | S | CLI |
+| F-07 | Unified zero-result protocol in SKILL.md (merges F-07/F-11/F-13) | P0 | XS | Skill |
 | F-08 | Pre-search hyphen detection checklist | P0 | XS | Skill |
-| F-03 | --project flag name-based lookup | P1 | S | CLI |
 | F-04 | Raise --snippet-tokens default to 50 | P1 | XS | CLI |
 | F-05 | Better FTS5 error messages | P1 | XS | CLI |
-| F-09 | Negative proof guidance | P1 | S | Skill |
-| F-10 | Agent delegation trigger criteria | P1 | XS | Skill |
-| F-11 | Default --days per query type | P1 | XS | Skill |
-| F-13 | Retry/widening mandatory before failure | P1 | XS | Skill |
+| F-09 | Negative proof guidance (simplified) | P1 | S | Skill |
+| F-10 | Skill invocation vs agent delegation (separated) | P1 | XS | Skill |
 | F-14 | Query broadening strategy (synonyms, prefix) | P1 | XS | Skill |
 | F-15 | --snippet-tokens default guidance | P1 | XS | Skill |
-| F-16 | Indexing window transparency in status | P1 | S | New Capability |
 | F-06 | --exclude-session flag for self-hit filtering | P2 | S | CLI |
 | F-12 | Self-referential hit awareness | P2 | XS | Skill |
+| F-16 | Indexing window transparency in status | P2 | S | New Capability |
 | F-17 | Search scope summary in output | P2 | S | New Capability |
 | F-18 | Session-opener digest mode | P2 | M | New Capability |
 | F-19 | Negative proof formatting mode | P2 | M | New Capability |
 | F-20 | Auto-widening search (0-result retry) | P2 | M | New Capability |
 | F-21 | Cross-project search improvements | P3 | M | New Capability |
-| F-22 | Machine/device provenance | P3 | M | New Capability |
+| F-22 | Machine/device provenance | P3 | M-L | New Capability |
 | F-23 | Agent-optimized compact output mode | P3 | M | New Capability |
 | F-24 | Result deduplication (--unique-sessions) | P3 | S | New Capability |
 | F-25 | Batch task verification | P4 | L | New Capability |
@@ -262,21 +262,29 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 - **Priority:** P0 | **Effort:** XS (~10 lines changed)
 - **Evidence:** All 5 batches, every single invocation. The most consistent UX friction point across the entire 38-invocation dataset.
 - **Impact:** Eliminates constant visual noise from every TR invocation. Prevents training users and AIs to ignore warnings. Improves perceived tool reliability.
-- **Approach:** In `Contextify/ContextifyQueryShim/main.swift:174-177`, add suppression when running in non-interactive/agent context. Options: (1) extend `CONTEXTIFY_NO_DEPRECATIONS=1` env var to cover shim warnings, (2) only emit when stderr is a TTY, (3) add `--quiet` flag. The simplest path: suppress when `CONTEXTIFY_NO_DEPRECATIONS=1` is set, and update SKILL.md to set this env var before invocations.
+- **Approach:** In `Contextify/ContextifyQueryShim/main.swift:174-177`, bring the shim's warning behavior into parity with the CLI's existing deprecation warning model: (1) only emit when stderr is a TTY (matching the CLI's `isStderrTTY()` pattern), (2) suppress when `CONTEXTIFY_NO_DEPRECATIONS=1` is set. This is more robust than relying on SKILL.md to export an env var, since it catches all callers including direct CLI usage and non-skill invocations.
 
 #### F-02: FTS5 Hyphen Pre-processing in CLI
 
 - **Priority:** P0 | **Effort:** S (~50 lines)
 - **Evidence:** 2:tr-003a (hard error from "cli-ai-setup"), 5:tr-batch5-004 (4 search variations for "review-loop"), 3:batch3-2 ("auto-compact" required careful quoting), 2:tr-006 ("cc-" prefix noise).
 - **Impact:** Eliminates the most common hard failure mode. Hyphenated identifiers are ubiquitous in software development (project names, branch names, task IDs like ct-361).
-- **Approach:** In `Sources/ContextifyQueryCLI/main.swift`, add a query pre-processing step before the FTS5 query reaches the database: (1) detect bare hyphenated tokens matching `\w+-\w+`, (2) auto-quote as phrases with hyphens removed (`cli-ai-setup` becomes `"cli ai setup"`), (3) emit a stderr notice, (4) preserve explicitly quoted terms. This is complementary to the SKILL.md guidance (F-08) but catches cases where the AI forgets.
+- **Approach:** In `Sources/ContextifyQueryCLI/main.swift`, add a query pre-processing step before the FTS5 query reaches the database. Rewrite rules: (1) bare unquoted hyphenated alnum tokens like `cli-ai-setup` become `"cli ai setup"` (quoted phrase, hyphens removed), (2) task ID patterns like `ct-361` become `ct AND 361` (better precision than phrase quoting), (3) trailing-hyphen fragments like `cc-` are ambiguous and should NOT be auto-rewritten; instead emit a targeted hint to stderr suggesting the user quote or expand the term, (4) preserve already-quoted terms, wildcard suffixes, and FTS5 operators exactly as written. This is complementary to the SKILL.md guidance (F-08) but catches cases where the AI forgets.
 
-#### F-07: --days Escalation Rule in SKILL.md
+#### F-03: --project Flag Name-based Lookup
 
-- **Priority:** P0 | **Effort:** XS (~20 lines of SKILL.md text)
+- **Priority:** P0 | **Effort:** S (~30 lines)
+- **Evidence:** 2:tr-003a (`--project` defaulted to cwd instead of looking up by name; required UUID workaround via `contextify projects --json`). Silent wrong-scope results are a correctness problem, more damaging than guidance-only fixes.
+- **Impact:** Eliminates silent wrong results. A two-step lookup (list projects, copy UUID, re-run) is a poor fallback for a correctness bug.
+- **Approach:** When `--project <value>` is provided and value is not ".": (1) try exact/normalized name match against project `displayName` (case-insensitive, trimmed); (2) if the argument is an existing filesystem path, resolve it as a path; (3) if neither matches, error loudly with fuzzy suggestions from `contextify projects` (but never auto-select a fuzzy match silently, as that would replace one silent wrong-scope failure with another); (4) if multiple exact matches exist (unlikely but possible with worktrees), error listing all candidates. The key constraint: fuzzy matching is for suggestions only, never for silent auto-selection.
+
+#### F-07: Unified Zero-Result Protocol in SKILL.md (merges F-07/F-11/F-13)
+
+- **Priority:** P0 | **Effort:** XS (~30 lines of SKILL.md text)
 - **Evidence:** 3:batch3-4 (`--days 30/60`, never widened to 365, 0 results), 3:batch3-6 (single attempt at `--days 120`, immediate pivot to git log), 4:B4-013 (`--days 30` could have missed older work), 5:tr-batch5-003 (`--days 14` for cross-worktree audit).
 - **Impact:** Would have prevented 3-4 failures in the dataset. The mismatch between query window and actual history window is the primary cause of false negatives.
-- **Approach:** Replace the current soft guidance ("Widen --days (try 90, then 365)") with a mandatory checklist: if 0 results at current `--days`, double the window (30 to 60 to 120); if still 0 at 120, jump to 365; if still 0 at 365, try without `--project`; only declare "not found" after that final step.
+- **Note:** This proposal consolidates the previously separate F-07 (days escalation), F-11 (default days per query type), and F-13 (mandatory retry before failure) into a single coherent decision tree. The skill should have one zero-result protocol, not three overlapping rules.
+- **Approach:** Replace the current soft guidance with a single mandatory decision tree: (1) classify intent (lookup, exploratory, negative-proof, debugging), (2) choose starting `--days` from a table (lookup: 90, exploratory: 365, negative-proof: 365, debugging: 30), (3) run search, (4) if 0 results, follow zero-result protocol: widen days (30->90->365), try prefix matching, try without `--project` (for exploratory/negative-proof only, not for clearly repo-scoped debugging), (5) only declare "not found" after completing the protocol. Skipping these steps is a skill violation.
 
 #### F-08: Pre-search Hyphen Detection Checklist
 
@@ -288,13 +296,6 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 ---
 
 ### P1: High Priority
-
-#### F-03: --project Flag Name-based Lookup
-
-- **Priority:** P1 | **Effort:** S (~30 lines)
-- **Evidence:** 2:tr-003a (`--project` defaulted to cwd instead of looking up by name; required UUID workaround via `contextify projects --json`).
-- **Impact:** Eliminates a two-step lookup (list projects, copy UUID, re-run). Silent wrong results are worse than errors.
-- **Approach:** When `--project <value>` is provided and value is not ".", try name lookup first (fuzzy match against project `displayName`). If exactly one match, use it. If zero matches, error with suggestions. If multiple matches, error listing all. Fall back to path lookup only after name lookup fails.
 
 #### F-04: Raise --snippet-tokens Default to 50
 
@@ -310,43 +311,19 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 - **Impact:** When the CLI pre-processor (F-02) misses a case, the error message guides the AI to fix it immediately rather than floundering.
 - **Approach:** Catch GRDB/SQLite FTS5 errors containing "no such column" and wrap with a helpful message: `Search error: FTS5 interpreted 'ai' as a column name (from hyphenated term 'cli-ai-setup'). Try quoting: "cli ai setup" or use: cli AND ai AND setup`.
 
-#### F-09: Negative Proof Guidance
+#### F-09: Negative Proof Guidance (Simplified)
 
-- **Priority:** P1 | **Effort:** S (~40 lines skill + ~30 lines CLI)
+- **Priority:** P1 | **Effort:** S (~25 lines skill text)
 - **Evidence:** 9 of 38 invocations (24%) were negative proof: 1:inv-001, 2:tr-003b, 3:batch3-4, 4:B4-004, 4:B4-013, 4:B4-014, 4:B4-015, 5:tr-batch5-004, and others. Each required 2-4 searches to confirm absence.
 - **Impact:** Standardizes the most common non-lookup use case. Reduces false negatives from premature abandonment.
-- **Approach:** Add a "Negative proof protocol" section to SKILL.md: classify intent, use `--days 365`, run at least 3 query variations (original, synonym expansion, prefix matching), report confidence level (high: 365 days + all projects + 3 variations + 0 results; medium: limited scope), and always report earliest indexed date and total entries searched.
+- **Approach:** Add a "Negative proof" section to SKILL.md with lightweight guidance: (1) classify as negative-proof intent, (2) use `--days 365` and broad scope by default, (3) run 2-3 materially different query variations (original terms, synonym expansion, prefix matching), (4) only declare absence after at least one broad retry, (5) explicitly state the scope searched and any caveats (e.g., "searched 365 days across all projects; earlier history not indexed"). Formal confidence levels and structured metadata (like `--assert-absent`) are reserved for a future CLI mode (F-19), not skill guidance.
 
-#### F-10: Agent Delegation Trigger Criteria
+#### F-10: Skill Invocation vs Agent Delegation (Separated)
 
 - **Priority:** P1 | **Effort:** XS (~15 lines)
 - **Evidence:** 3:batch3-5 (AI substituted inline search for user-requested agent delegation), 4:B4-002 (AI bypassed skill entirely), 3:batch3-4 (failed inline search that should have been delegated). Agent delegation had 100% success rate (9/9) vs approximately 65% for direct invocations.
-- **Impact:** Clarifies when to delegate vs. run inline. Reduces the 13% skill-bypass rate.
-- **Approach:** Add explicit criteria to SKILL.md: delegate when user explicitly requests it, when cross-project search is needed, when query is exploratory with vague terms, when first inline search returned 0 results and systematic widening is needed, or when negative proof requires multiple query variations. Search inline only for simple lookups, specific entry IDs, or narrow time-bounded questions. Never bypass when user explicitly invokes Total Recall.
-
-#### F-11: Default --days Per Query Type
-
-- **Priority:** P1 | **Effort:** XS (~10 lines)
-- **Evidence:** Wide variance in `--days` choices: 365 (12 uses), 90 (7), 30 (7), 180 (6), 7 (4), 60 (4), 14 (3). Narrow windows caused failures in 3:batch3-4 and 3:batch3-6. Wide windows succeeded in most batch 1 and batch 4 invocations.
-- **Impact:** Standardizes the most impactful parameter choice.
-- **Approach:** Add a default `--days` table to SKILL.md:
-
-| Intent | Default --days | Rationale |
-|--------|---------------|-----------|
-| Decision archaeology | 365 | Decisions may be months old |
-| Negative proof | 365 | Must search full history |
-| Session opener | 14 | Recent activity focus |
-| Implementation reference | 90 | Recent work context |
-| Debugging | 30 | Usually recent sessions |
-| Cross-session continuity | 90 | May span multiple sessions |
-| Counting | 365 | Need complete picture |
-
-#### F-13: Retry/Widening Mandatory Before Failure Declaration
-
-- **Priority:** P1 | **Effort:** XS (~10 lines)
-- **Evidence:** 3:batch3-3 (gave up after 2 searches), 3:batch3-4 (gave up after 3 with narrow windows), 3:batch3-6 (single attempt, immediate git pivot).
-- **Impact:** Prevents the "single attempt, no retry" pattern that caused 3 failures.
-- **Approach:** Strengthen the SKILL.md "Zero results" section from advisory to mandatory. Before reporting "not found," the AI must complete: (1) at least one search with `--days 365`, (2) at least one search without `--project` (all projects), (3) at least one search with prefix matching (`term*`), (4) at least one search with synonym expansion. Skipping these steps is a skill violation. Report which steps were completed.
+- **Impact:** Clarifies two separate decisions that the current skill conflates.
+- **Approach:** The skill must distinguish two independent decisions: (a) **Use the Contextify CLI**: mandatory whenever the user invokes `/total-recall`. Never bypass to bloon, git log, or filesystem tools when the user explicitly requests TR. (b) **Delegate to researcher agent vs search inline**: delegate when the query is exploratory with vague terms, when cross-project search is needed, when first inline search returned 0 results and systematic widening is needed, or when negative proof requires multiple query variations. Search inline for simple lookups, specific entry IDs, or narrow time-bounded questions. These are orthogonal: a simple lookup should use the CLI inline; a complex search should use the CLI via agent delegation. Neither should bypass the CLI entirely.
 
 #### F-14: Query Broadening Strategy
 
@@ -362,16 +339,16 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 - **Impact:** Aligns skill guidance with the new CLI default (F-04).
 - **Approach:** Update SKILL.md to reflect the new 50-token default. Add guidance: use 80-100 for complex searches where more context helps, use 10-20 only for high-volume counting/triage.
 
-#### F-16: Indexing Window Transparency in Status
-
-- **Priority:** P1 | **Effort:** S (~40 lines)
-- **Evidence:** 2:tr-003b (content predated indexing window; AI correctly reported this but had no way to know programmatically), 3:batch3-4 (0 results could have been "too old" or "never discussed").
-- **Impact:** Enables the AI to distinguish "not discussed" from "predates indexed history." Currently impossible.
-- **Approach:** Add `earliestEntryDate` and `latestEntryDate` to `contextify status --json` output. Add per-project dates to `contextify projects --json`. When search returns 0 results, check if the `--days` window predates the project's earliest entry and emit a warning.
-
 ---
 
 ### P2: Medium Priority
+
+#### F-16: Indexing Window Transparency in Status
+
+- **Priority:** P2 | **Effort:** S (~40 lines, possibly optimistic for per-project earliest/latest dates plus zero-result warnings)
+- **Evidence:** 2:tr-003b (content predated indexing window; AI correctly reported this but had no way to know programmatically), 3:batch3-4 (0 results could have been "too old" or "never discussed").
+- **Impact:** Enables the AI to distinguish "not discussed" from "predates indexed history." Useful for negative-proof confidence but not critical unless negative-proof confidence is a flagship product promise.
+- **Approach:** Add `earliestEntryDate` and `latestEntryDate` to `contextify status --json` output. Add per-project dates to `contextify projects --json`. When search returns 0 results, check if the `--days` window predates the project's earliest entry and emit a warning.
 
 #### F-06: --exclude-session Flag for Self-hit Filtering
 
@@ -428,10 +405,10 @@ Every friction point observed during the 38 invocations, categorized by type. Ea
 
 #### F-22: Machine/Device Provenance
 
-- **Priority:** P3 | **Effort:** M (~100 lines, schema migration)
+- **Priority:** P3 | **Effort:** M-L (schema migration + ingest-path population + null/backfill behavior for existing entries + output/filter integration across search, context, and entry commands)
 - **Evidence:** 2:tr-003a (AI reported "I can't tell which machine produced any entry").
 - **Impact:** Enables cross-machine attribution for multi-device users. Growing use case with cloud sync.
-- **Approach:** Add `deviceId` column (populated from hostname at ingestion time) to entry table via schema migration v34. Expose in search, context, and entry output. Wire up the existing `--device` filter flag in CLI Options (already defined at line 164 but not fully connected).
+- **Approach:** Add `deviceId` column (populated from hostname at ingestion time) to entry table via schema migration v34. Expose in search, context, and entry output. Wire up the existing `--device` filter flag in CLI Options (already defined at line 164 but not fully connected). Handle null/backfill for existing entries that predate the migration (either backfill from hostname or leave null with explicit "unknown device" in output).
 
 #### F-23: Agent-optimized Compact Output Mode
 
@@ -741,6 +718,24 @@ Features that do not exist in the current CLI or skill and require new code or n
 
 Summary statistics from the 38-invocation dataset.
 
+### Cross-Document Reconciliation (Working)
+
+The analysis package contains three documents that report slightly different figures. This table is a working reconciliation; some rows represent best-guess explanations rather than verified filtration rules.
+
+**Inclusion criteria for the 38-invocation set:** Each invocation represents a distinct user-facing Total Recall request (user said "use /total-recall" or equivalent) that triggered at least one `contextify` CLI call. The 54 raw `Skill` tool_use events in the README include duplicates, sub-invocations within agent delegations, and retry attempts. The exact filtration from 54 to 38 was performed by the original analysis agents; the criteria are inferred from the batch files, not formally documented.
+
+| Metric | This document | case-studies.md | README.md | Notes |
+|--------|---------------|-----------------|-----------|-------|
+| Total invocations | 38 | 38 | 54 skill invocations found, 38 analyzed | Best explanation: 54 raw events filtered to 38 distinct user-facing invocations. Exact filtration criteria not formally documented. |
+| Sessions | 29 | 23 | 29 | 29 unique session files processed. Discrepancy with case-studies' 23 likely reflects counting methodology (some sessions had multiple invocations). |
+| Success | 24 | 22 | n/a | Likely: this document counts "success" strictly; case-studies may classify some differently. |
+| Partial success | 4 | 5 | n/a | Minor classification boundary difference. |
+| Failure | 5 | 4 | n/a | This document counts one additional indeterminate case as failure. |
+| Context drilldown | 29/33 (87.9%) | 28/38 (74%) | n/a | Different denominators: this doc uses result-bearing invocations (33); case-studies uses all invocations (38). |
+| Batch 3 invocation count | 6 IDs (batch3-1 through batch3-6) | n/a | "5 invocations" | Raw file contains 6 entries. README counted 5 "actual skill tool_use" events; batch3-5 appears to be an agent continuation of batch3-4. |
+
+**Note:** Category percentages exceed 100% because invocations are multi-labeled (an invocation can be both "decision archaeology" and "negative proof").
+
 ### Outcome Distribution
 
 | Outcome | Count | Rate |
@@ -833,14 +828,41 @@ Note: Percentages exceed 100% because some invocations overlap categories.
 
 ### Implementation Ordering
 
-Recommended implementation sequence based on dependency analysis:
+Recommended implementation sequence. Batches A and B can run in parallel. Batch C is a single coherent SKILL.md rewrite (not piecemeal).
 
-1. **Batch 1 (P0, all XS/S):** F-01, F-02, F-07, F-08
-2. **Batch 2 (P1 CLI):** F-03, F-04, F-05
-3. **Batch 3 (P1 Skill):** F-09, F-10, F-11, F-13, F-14, F-15
-4. **Batch 4 (P1-P2 New):** F-16, F-06, F-12
-5. **Batch 5 (P2 New):** F-17, F-18, F-19, F-20
-6. **Batch 6 (P3):** F-21, F-22, F-23, F-24
-7. **Batch 7 (P4):** F-25
+**Batch A: Correctness and noise (P0 CLI)**
+- F-01 (install warning suppression)
+- F-02 (FTS5 hyphen pre-processing)
+- F-03 (--project name lookup)
+- F-05 (better FTS5 error messages)
 
-Key dependency chain: F-04 (snippet default) before F-15 (skill guidance update). F-06 (--exclude-transcript flag) before F-12 (skill awareness). F-16 (indexing window) before F-17 (scope summary) and F-19 (negative proof confidence). F-07 (skill escalation) before F-20 (CLI auto-widening).
+**Batch B: Output-quality defaults (P1 CLI, parallel with A)**
+- F-04 (--snippet-tokens default to 50)
+- F-23 (compact output mode, optional quick win)
+
+**Batch C: Unified SKILL.md rewrite (P0+P1 Skill, after A ships)**
+- F-07 (unified zero-result protocol, merging F-07/F-11/F-13)
+- F-08 (hyphen detection checklist)
+- F-09 (negative proof guidance)
+- F-10 (skill invocation vs agent delegation)
+- F-14 (query broadening strategy)
+- F-15 (snippet-tokens guidance update)
+
+**Batch D: Scope and self-hit transparency (P2)**
+- F-06 (--exclude-session flag)
+- F-12 (self-hit awareness in skill)
+- F-17 (search scope summary)
+
+**Batch E: Selective product extensions (P2)**
+- F-16 (indexing window transparency)
+- F-18 (session-opener digest)
+- F-19 (negative proof formatting)
+- F-20 (auto-widening search)
+
+**Later (P3-P4):**
+- F-21 (cross-project search)
+- F-22 (device provenance)
+- F-24 (result deduplication)
+- F-25 (batch verification)
+
+Key dependency: F-04 before F-15 (align skill guidance with new CLI default). F-07 skill protocol complements F-20 CLI auto-widening (both are valuable, not redundant: F-07 improves model behavior, F-20 makes the CLI safer for all callers including imperfect skill usage).
