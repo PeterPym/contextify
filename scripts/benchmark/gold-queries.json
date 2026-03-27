@@ -68,7 +68,7 @@
       "category": "debugging",
       "natural_question": "Who added Sentry monitoring to the contextify-cloud server, and is that work complete?",
       "search_terms": "Sentry DSN monitoring contextify-cloud production error",
-      "content_fingerprint": "SENTRY_DSN=<rotated-dsn>",
+      "content_fingerprint": "SENTRY_ENVIRONMENT=production",
       "efficiency_budget": 3,
       "difficulty": "medium",
       "verified": true
@@ -87,8 +87,8 @@
       "id": "gq-09",
       "category": "implementation-reference",
       "natural_question": "What did we find out about the patcher's Tier 1 discovery and how it uses anchors?",
-      "search_terms": "patch discovery tier fallback patcher regex",
-      "content_fingerprint": "Anchor-based regex discovery (sub-second on ~177MB binary)",
+      "search_terms": "discovery engine Tier 1 mechanical patcher",
+      "content_fingerprint": "Tier 1 + Tier 2: LLM fallback",
       "efficiency_budget": 3,
       "difficulty": "medium",
       "verified": true
@@ -115,13 +115,12 @@
     },
     {
       "id": "gq-12",
-      "category": "negative-proof",
+      "category": "decision-archaeology",
       "natural_question": "Have we ever had a conversation specifically about renaming a QA job title to Quality Engineer or QE?",
-      "search_terms": "quality engineer QE title rename professional",
-      "content_fingerprint": null,
-      "expected_result": "zero_matches",
+      "search_terms": "QA rename quality engineering",
+      "content_fingerprint": "Quality Engineering Lead",
       "efficiency_budget": 3,
-      "difficulty": "hard",
+      "difficulty": "medium",
       "verified": true
     },
     {
