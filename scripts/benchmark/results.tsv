@@ -5,3 +5,4 @@ F-03	100.0	2026-03-27T06:52:44Z	--project name-based lookup
 F-07+F-08	100.0	2026-03-27T06:52:44Z	SKILL.md zero-result protocol + hyphen checklist
 skill-baseline	10.6	2026-03-27T07:12:51Z	unmodified post-ct-708 SKILL.md + CLI, skill mode
 ratchet-1	15.8	2026-03-27T07:29:09Z	improved skill runner prompt: days 365, snippet-tokens 50, search tips
+ratchet-2-REVERTED	11.6	2026-03-27T07:45:29Z	SKILL.md Step 0 distinctive terms (reverted - regression)

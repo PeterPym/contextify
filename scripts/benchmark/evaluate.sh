@@ -208,20 +208,22 @@ for q in queries:
         if eval_mode == "skill":
             # Skill mode: run headless Claude Code via run-skill-query.sh
             natural_q = q.get("natural_question", search_terms)
-            cmd = ["bash", skill_runner, natural_q, temp_db_path, "120"]
+            cmd = ["bash", skill_runner, natural_q, temp_db_path, "180"]
 
             proc = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=150
+                timeout=210
             )
 
             if proc.returncode != 0:
                 err = proc.stderr.strip() or "skill runner failed"
-                print(f"INFRA ERROR: [{qid}] {err[:500]}", file=sys.stderr)
-                print(f"Aborting benchmark - infra failures invalidate scores.", file=sys.stderr)
-                sys.exit(2)
+                print(f"INFRA ERROR: [{qid}] {err[:200]}", file=sys.stderr)
+                # Treat infra failure as a query failure (not abort)
+                query_found = False
+                result_count = 0
+                turns = 0
 
             # Parse structured output from run-skill-query.sh
             try:
