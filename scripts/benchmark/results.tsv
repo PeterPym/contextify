@@ -9,3 +9,4 @@ ratchet-2-REVERTED	11.6	2026-03-27T07:45:29Z	SKILL.md Step 0 distinctive terms (
 ratchet-3-REVERTED	11.9	2026-03-27T14:24:03Z	verbatim quote emphasis (reverted)
 ratchet-4-REVERTED	11.9	2026-03-27T14:24:03Z	iter1 + full-content + quote emphasis (reverted)
 evaluator-fix+word-match	32.4	2026-03-27T15:42:07Z	word-level fingerprint matching + infra resilience + snippet-tokens 100
+ratchet-5-WASH	31.3	2026-03-27T16:17:38Z	search protocol + detail extraction (within variance, reverted)
