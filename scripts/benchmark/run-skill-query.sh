@@ -33,9 +33,9 @@ IMPORTANT SEARCH TIPS:
 - For multi-word concepts, use OR to expand: \"database schema\" OR \"schema migration\"
 - If 0 results: try broader terms, remove --project, try prefix matching
 - Always pass --db-path $DB_PATH to every contextify command
-- Use --snippet-tokens 50 for more context in results
+- Use --snippet-tokens 100 for maximum context in results
 
-Search: contextify search \"<query>\" --db-path $DB_PATH --days 365 --limit 20 --snippet-tokens 50 --json
+Search: contextify search \"<query>\" --db-path $DB_PATH --days 365 --limit 20 --snippet-tokens 100 --json
 Drill in: contextify context <entry-id> --db-path $DB_PATH --before 5 --after 10 --json
 
 Report what you found with specific details, names, numbers, and quotes from the conversation history.
