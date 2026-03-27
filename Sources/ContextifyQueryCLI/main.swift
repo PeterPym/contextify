@@ -1225,14 +1225,33 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
     )
   }
 
+  // Check the ORIGINAL query for operators/quotes before preprocessing
   let operatorPattern = "\\b(OR|AND|NOT)\\b"
-  let hasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
-  if hasOperators || trimmed.contains("\"") {
-    return trimmed
+  let originalHasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
+  let originalHasQuotes = trimmed.contains("\"")
+
+  // F-02: Pre-process hyphenated tokens before FTS5 query building
+  let hyphenResult = FTSQueryBuilder.preprocessHyphens(trimmed)
+  for hint in hyphenResult.hints {
+    fputs("Hint: \(hint)\n", stderr)
+  }
+  let processed = hyphenResult.query
+
+  // If original had operators/quotes, user knows FTS5 syntax - return preprocessed
+  if originalHasOperators || originalHasQuotes {
+    return processed
   }
 
-  return ConversationSearchService.buildSafeFTSQuery(trimmed)
+  // If preprocessing didn't change anything, use the standard safe wrapper
+  if processed == trimmed {
+    return ConversationSearchService.buildSafeFTSQuery(processed)
+  }
+
+  // Preprocessing introduced quotes (for hyphenated tokens). Use quote-aware
+  // safe wrapper that preserves those quotes while wrapping remaining bare tokens.
+  return FTSQueryBuilder.safeWrapPreservingQuotes(processed)
 }
+
 
 private func resolveAnchorBasePath(options: ContextifyQueryCLI.Options) -> String {
   if let project = options.project {
@@ -1845,7 +1864,17 @@ private func resolveProjectId(
   if project == "." || project == "current" {
     path = FileManager.default.currentDirectoryPath
   } else {
-    path = project
+    // F-03: Try name-based lookup first for non-path values
+    let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+    if !looksLikePath {
+      // Try exact/normalized name match
+      if let id = try? service.resolveProjectByName(project) {
+        return id
+      }
+    }
+    // If name lookup didn't match, treat as a path (existing behavior)
+    // If it's not a valid path either, the path resolution will error with suggestions
+    path = looksLikePath ? project : project
   }
 
   do {
@@ -1893,12 +1922,22 @@ private func resolveProjectScope(
   options: ContextifyQueryCLI.Options,
   service: ContextifyQueryService
 ) throws -> ProjectScope {
-  // 1. Resolve base path
+  // 1. Resolve base path (with F-03 name-based lookup for non-path values)
   let basePath: String
   if let project = options.project {
-    basePath = (project == "." || project == "current")
-      ? FileManager.default.currentDirectoryPath
-      : project
+    if project == "." || project == "current" {
+      basePath = FileManager.default.currentDirectoryPath
+    } else {
+      let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+      if !looksLikePath, let id = try? service.resolveProjectByName(project) {
+        // Name-based match found - return single-project scope (no worktree expansion)
+        return ProjectScope(projectIds: [id], displayNames: [project],
+                           unresolvedSiblings: [], excluded: [],
+                           worktreeGroupDetected: false, worktreesConsidered: [],
+                           expansionApplied: false)
+      }
+      basePath = project
+    }
   } else {
     return ProjectScope(projectIds: [], displayNames: [],
                        unresolvedSiblings: [], excluded: [],
@@ -2062,6 +2101,21 @@ private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   }
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
+  }
+  // F-05: Catch FTS5 column-reference errors from hyphenated tokens
+  if message.contains("no such column:") {
+    let marker = "no such column:"
+    if let range = message.range(of: marker) {
+      let columnName = String(message[range.upperBound...])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? "unknown"
+      return CLIError(
+        code: "invalidQuery",
+        message: "FTS5 interpreted '\(columnName)' as a column name (likely from a hyphenated term). Try quoting: \"<prefix> \(columnName)\" or use: <prefix> AND \(columnName)",
+        exitCode: .invalidArgs,
+        details: .object(["hint": .string("Hyphens in search terms cause FTS5 to split tokens. Use quoted phrases or AND operators instead."), "column": .string(columnName)])
+      )
+    }
   }
   if message.localizedCaseInsensitiveContains("fts5") &&
       (message.localizedCaseInsensitiveContains("syntax") || message.localizedCaseInsensitiveContains("parse")) {

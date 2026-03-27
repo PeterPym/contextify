@@ -1,0 +1,5 @@
+baseline	100.0	2026-03-27T06:26:44Z	unmodified CLI + SKILL.md
+F-01	100.0	2026-03-27T06:52:44Z	shim TTY gating
+F-02+F-05	100.0	2026-03-27T06:52:44Z	FTS5 hyphen preprocessing + error messages
+F-03	100.0	2026-03-27T06:52:44Z	--project name-based lookup
+F-07+F-08	100.0	2026-03-27T06:52:44Z	SKILL.md zero-result protocol + hyphen checklist

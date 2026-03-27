@@ -88,15 +88,32 @@ Before searching, analyze the user's request and build an effective query.
 
 ### Step 1: Classify intent
 
-Determine the query type to set your strategy:
+Determine the query type to set your strategy and starting `--days` window:
 
-| Intent | Signals | Strategy |
-|--------|---------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | Use `--count-only`. Add `--term-counts` for OR queries. No pagination needed. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
-| **Exploratory** | "what have we talked about", "find anything about" | Start broad, refine iteratively. Use `--limit 20`. |
+| Intent | Signals | Starting `--days` | Strategy |
+|--------|---------|-------------------|----------|
+| **Counting** | "how many", "count", "every time", "frequency" | 365 | Use `--count-only`. Add `--term-counts` for OR queries. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | 90 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
+| **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
+| **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
+
+### Step 1.5: Check for special characters
+
+Before building the query, scan each search term for characters that FTS5 treats as token separators. The CLI auto-handles common cases (F-02), but verify your query terms are clean:
+
+| Character | Example | Rewrite to |
+|-----------|---------|------------|
+| Hyphen `-` | `cli-ai-setup` | `"cli ai setup"` (quoted phrase without hyphens) |
+| Hyphen `-` in task ID | `ct-361`, `bl-42` | `"ct 361"` (quoted phrase) |
+| Underscore `_` | `UNREAD_COUNT` | `"UNREAD COUNT"` (quoted phrase without underscores) |
+| Dot `.` | `v1.5.0` | `"v1.5.0"` (quote the whole term) |
+
+**When to apply:** Always scan your query terms before Step 2. If any term contains hyphens, underscores, or dots, rewrite it using the table above. Note the reformulation in your response so the user knows what was searched.
+
+**The CLI now auto-rewrites bare hyphenated tokens** (e.g., `review-loop` becomes `"review loop"`), but this only works for simple queries without FTS5 operators. When you construct complex queries with OR/AND, you must handle special characters yourself.
 
 ### Step 2: Expand query terms
 
@@ -402,16 +419,32 @@ Branch on `code`:
 | `entryNotFound` | Re-search for a new anchor |
 | `cliNotFound` | "Contextify CLI not found. See https://contextify.sh/help for installation." |
 
-## Expanding search
+## Zero-result protocol (mandatory)
 
-### Zero results
+This protocol is **mandatory** before declaring "not found." Skipping steps is a skill violation.
 
-If search returns 0 results:
-1. Widen `--days` (try 90, then 365)
-2. If not clearly about current repo, retry without `--project .`
-3. Try prefix matching (`deploy*` instead of `deploy`)
-4. Use `contextify projects --json` to discover other projects
-5. Ask user to clarify what they're looking for
+When search returns 0 results, follow this escalation path in order. Stop as soon as you get results:
+
+**Step 1: Widen the time window.**
+- If `--days` was < 90, retry with `--days 90`
+- If `--days` was < 365, retry with `--days 365`
+- If already at 365 or no `--days` was set, proceed to Step 2
+
+**Step 2: Broaden query terms.**
+- Try prefix matching: `deploy*` instead of `deploy`
+- Simplify: reduce to the 1-2 most distinctive terms
+- Check for special characters (Step 1.5) that may need quoting
+
+**Step 3: Broaden project scope.**
+- If using `--project .`, retry without `--project` (search all projects)
+- Skip this step for clearly repo-scoped debugging queries
+
+**Step 4: Try alternative terms.**
+- Use synonyms or related phrasings
+- For hyphenated identifiers, try both the quoted phrase form and the individual tokens
+
+**Step 5: Only now declare "not found."**
+Report what you searched: "Searched [N] days across [scope] with queries: [list]. No results found."
 
 ### Partial or suspicious results
 
