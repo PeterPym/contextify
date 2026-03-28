@@ -402,6 +402,15 @@ If results seem incomplete, run additional searches with expanded terms before a
 >
 > **Entry ID:** `<uuid>` (for reference)
 
+**Response fidelity rules:**
+
+- **Quote distinctive terms verbatim.** When results contain technical identifiers (env vars like `SENTRY_ENVIRONMENT`, config values, error codes), exact job titles ("Quality Engineering Lead"), product names, or distinctive phrasing, reproduce them exactly from the source material rather than paraphrasing.
+- **Name every individual mentioned.** When a question asks about decisions, stakeholders, or participants, name ALL individuals found in relevant results with their specific roles or requests, not just the first or most prominent one.
+- **Verify implementation status.** When asked whether work was done or implemented, search for merge/commit evidence (commit hashes, PR numbers, "merged to main"), not just discussion. Clearly distinguish between "discussed and planned" vs "implemented and merged." If you find only discussion without merge evidence, say so.
+- **Include technical details.** When results contain specific values (version numbers, config settings, measurements, URLs), include them in your response. These details are often what the user actually needs.
+- **Fetch context for key results.** When a search snippet seems relevant but is truncated, always use `contextify context` to get the full surrounding conversation. Important details (names, status, outcomes) are often in adjacent entries, not the snippet itself.
+- **Use source language.** When the source material uses distinctive or colorful terms (e.g., "bootleg hats" instead of "novelty hats"), use the source's wording in your response. This preserves the user's original framing.
+
 For counting queries, also include:
 > **Search terms used:** [list the OR-expanded terms]
 > **Matched entries:** [totalCount from metadata] entries

@@ -492,7 +492,7 @@ struct ContextifyQueryCLI {
           let requestedLimit = options.limit
           let requestedOffset = options.offset
           let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
-          let anchorPlan = anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
+          let anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
 
           if options.anchorGit {
             if let anchorPlan {
@@ -1289,7 +1289,7 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
 private func resolveAnchorBasePath(
   options: ContextifyQueryCLI.Options,
   service: ContextifyQueryService? = nil
-) -> String {
+) throws -> String {
   guard let project = options.project else {
     return FileManager.default.currentDirectoryPath
   }
@@ -1297,12 +1297,17 @@ private func resolveAnchorBasePath(
     return FileManager.default.currentDirectoryPath
   }
 
-  // Use name-to-rootPath lookup for non-path values (R2: align with resolveProjectScope)
+  // Use name-to-rootPath lookup for non-path values (align with resolveProjectScope)
   let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
     || FileManager.default.fileExists(atPath: project)
-  if !looksLikePath, let service = service,
-     let result = try? service.resolveProjectByNameWithPath(project) {
-    return result.rootPath
+  if !looksLikePath, let service = service {
+    do {
+      if let result = try service.resolveProjectByNameWithPath(project) {
+        return result.rootPath
+      }
+    } catch let error as ContextifyQueryService.ProjectResolutionError {
+      throw mapProjectResolutionError(error)
+    }
   }
 
   return project
@@ -1312,10 +1317,10 @@ private func resolveGitAnchorPlan(
   cues: [GitAnchorCue],
   options: ContextifyQueryCLI.Options,
   service: ContextifyQueryService? = nil
-) -> GitAnchorPlan? {
+) throws -> GitAnchorPlan? {
   guard !cues.isEmpty else { return nil }
 
-  let basePath = resolveAnchorBasePath(options: options, service: service)
+  let basePath = try resolveAnchorBasePath(options: options, service: service)
   guard
     let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
       .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -2154,8 +2159,10 @@ private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
   }
-  // F-05: Catch FTS5 column-reference errors from hyphenated tokens
-  if message.contains("no such column:") {
+  // F-05: Catch FTS5 column-reference errors from hyphenated tokens.
+  // Only fire when the error is from the FTS table to avoid misclassifying
+  // real schema/code failures as user input mistakes (ct-736).
+  if message.contains("no such column:") && message.localizedCaseInsensitiveContains("fts") {
     let marker = "no such column:"
     if let range = message.range(of: marker) {
       let columnName = String(message[range.upperBound...])
