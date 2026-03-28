@@ -493,6 +493,58 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertEqual(single, [])
   }
 
+  // MARK: - ct-735 regression: resolveProjectByNameWithPath returns rootPath
+
+  func testResolveProjectByNameWithPath_returnsRootPath() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-name-path-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-abc",
+      name: "MyProject",
+      rootPath: "/Users/test/code/my-project",
+      rootBookmark: nil,
+      lastViewedTs: 0,
+      hidden: false,
+      displayOrder: nil,
+      isOrphaned: false,
+      orphanedSince: nil,
+      createdAt: 0,
+      updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Name-based lookup should return both id and rootPath
+    let result = try service.resolveProjectByNameWithPath("MyProject")
+    XCTAssertNotNil(result)
+    XCTAssertEqual(result?.id, "proj-abc")
+    XCTAssertEqual(result?.rootPath, "/Users/test/code/my-project")
+
+    // Case-insensitive match
+    let resultLower = try service.resolveProjectByNameWithPath("myproject")
+    XCTAssertNotNil(resultLower)
+    XCTAssertEqual(resultLower?.id, "proj-abc")
+
+    // Directory name match
+    let resultDir = try service.resolveProjectByNameWithPath("my-project")
+    XCTAssertNotNil(resultDir)
+    XCTAssertEqual(resultDir?.rootPath, "/Users/test/code/my-project")
+
+    // No match
+    let resultNone = try service.resolveProjectByNameWithPath("nonexistent")
+    XCTAssertNil(resultNone)
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).
