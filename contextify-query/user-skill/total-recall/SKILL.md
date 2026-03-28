@@ -81,7 +81,7 @@ The Contextify search backend uses FTS5 with **porter stemming**. The porter alg
 - Quoted phrases match exact sequences with stemming: `"memory leak"` requires both stems adjacent in order
 - **Quoted phrases still apply stemming** to each word within the phrase, but enforce adjacency
 
-**Stemming exceptions:** Porter stemming only applies to unquoted bare tokens. Tokens that contain special characters (dots, colons) are quoted automatically by the query builder and matched exactly. Irregular verb forms (e.g., "ran" from "run") are NOT matched by stemming -- use explicit OR for those.
+**Stemming limitations:** The query builder quotes tokens with special characters (dots, colons) to enforce exact matching for those tokens. Irregular verb forms (e.g., "ran" from "run") are NOT matched by stemming -- use explicit OR for those.
 
 **Tokenization and special characters:** Hyphens, underscores, and most punctuation act as token separators. For example, `CT-97` is tokenized as two separate tokens `CT` and `97`. To match hyphenated or snake_case identifiers, search for `CT AND 97` or try the quoted form `"CT 97"`. File paths and punctuation-heavy identifiers may need simplified forms.
 
