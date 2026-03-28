@@ -129,21 +129,25 @@ Before building the query, scan each search term for characters that FTS5 treats
 
 **The CLI now auto-rewrites bare hyphenated tokens** (e.g., `review-loop` becomes `"review loop"`), but this only works for simple queries without FTS5 operators. When you construct complex queries with OR/AND, you must handle special characters yourself.
 
-### Step 2: Build query terms
+### Step 2: Expand query terms
 
-Porter stemming handles regular morphological variants automatically. You do NOT need to expand `deploy` to `deploy OR deploys OR deployed OR deploying OR deployment`.
+Porter stemming automatically matches regular inflections: `deploy` finds "deployed", "deploying", "deployment". You do NOT need explicit OR for regular verb/noun forms.
 
-**What stemming handles:** Regular English inflections. `deploy` matches all its forms. `migrate` matches "migration", "migrating", etc.
+**Still expand with OR for:**
+- **Irregular verbs:** `run OR ran`, `break OR broke OR broken`
+- **Synonyms and related terms:** `error OR failure OR bug`, `hat OR cap OR headwear`
+- **Alternative phrasings:** `"pricing model" OR "pricing plan" OR "subscription"`, `rename OR rebrand OR retitle`
 
-**What you still need to handle manually:**
-- **Irregular verbs:** `run OR ran`, `break OR broke OR broken` (porter does not map irregular forms)
-- **Synonyms:** `error OR failure OR bug` (different words, not morphological variants)
-- **Prefix matching for partial stems:** `config*` to catch "config", "configure", "configuration" when the stem is ambiguous
+**Use prefix `*` when:**
+- The stem is short or ambiguous: `config*` catches "config", "configure", "configuration"
+- You want broad recall: `patcher*` catches "patcher", "patching", "patchers"
 
-**Compound queries:** Combine terms with AND when the user's query has multiple concepts:
+**Build multi-concept queries** by combining expanded terms with AND:
 ```
 (deploy OR release) AND (fail OR error OR broke)
 ```
+
+**Always try 2-3 query formulations** for non-trivial searches. A single query rarely covers all relevant phrasing. Vary your terms, try alternative angles, and broaden before concluding no results exist.
 
 ### Step 3: Consider synonyms and related terms
 
@@ -160,7 +164,7 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
 
-**Quick recipe:** Classify intent, pick the 2-3 most distinctive terms (porter stemming handles inflections), add synonyms/irregular forms if relevant, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations. If results look sparse, broaden with OR synonyms or prefix `*` before giving up.
+**Quick recipe:** Classify intent, pick 2-3 distinctive terms + OR synonyms (stemming handles inflections, you handle synonyms), choose limit (or `--count-only`), search, try 2-3 query variations, paginate if `hasMore`, answer with citations.
 
 ## Canonical loop
 
