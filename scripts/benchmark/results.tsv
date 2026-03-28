@@ -17,3 +17,4 @@ stem-matching-INVALID	35.0	2026-03-27T16:33:17Z	INVALID: evaluator improvement, 
 threshold-INVALID	41.7	2026-03-27T16:41:15Z	INVALID: evaluator improvement, not skill improvement
 post-review-INVALID	45.8	2026-03-27T17:32:04Z	INVALID: evaluator improvement, not skill improvement
 # --- VERIFIED skill-mode scores below (runner loads actual SKILL.md, hash + behavioral checks) ---
+verified-baseline	37.0	2026-03-28T03:07:16Z	VERIFIED: skill:72771ddf, hash=12/14, behavior=14/14, 11/14 found
