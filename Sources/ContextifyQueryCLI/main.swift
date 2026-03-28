@@ -2063,7 +2063,7 @@ private func throwIfFuzzyMatches(
 ) throws {
   let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
   guard !fuzzy.isEmpty else { return }
-  let totalCount = try service.listProjects().count
+  let totalCount = try service.projectCount()
   throw ContextifyQueryService.ProjectResolutionError.notFound(
     path: project,
     suggestions: fuzzy,

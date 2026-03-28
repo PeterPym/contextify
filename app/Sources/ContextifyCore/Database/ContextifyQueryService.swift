@@ -271,6 +271,14 @@ public struct ContextifyQueryService: Sendable {
     return "\(joinType) transcript_entries \(alias) ON \(alias).id = \(ftsAlias).entry_id"
   }
 
+  /// Fast project count (single COUNT query, no materialization).
+  public func projectCount(includeHidden: Bool = false) throws -> Int {
+    try pool.read { db in
+      let whereClause = includeHidden ? "" : " WHERE hidden = 0"
+      return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects\(whereClause)") ?? 0
+    }
+  }
+
   public func listProjects(includeHidden: Bool = false, limit: Int? = nil) throws -> [ProjectListItem] {
     try pool.read { db in
       var sql = """
