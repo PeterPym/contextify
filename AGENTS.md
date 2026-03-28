@@ -464,6 +464,9 @@ bash scripts/benchmark/evaluate.sh --mode skill --verbose
 bash scripts/benchmark/evaluate.sh --verbose --trace
 # Traces written to /tmp/benchmark-traces/{gq-01..gq-14}.json
 
+# Median-of-3 scoring to reduce stochastic variance (skill mode)
+bash scripts/benchmark/evaluate.sh --mode skill --runs 3
+
 # Ratchet loop: edit SKILL.md, run benchmark, keep if improved
 bash scripts/benchmark/ratchet.sh --iterations 5
 ```

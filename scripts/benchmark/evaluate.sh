@@ -9,7 +9,7 @@
 # All diagnostic output goes to stderr.
 #
 # Usage:
-#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace]
+#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]
 
 set -euo pipefail
 
@@ -24,6 +24,7 @@ SNAPSHOT=""
 MODE="cli"
 VERBOSE=false
 TRACE=false
+RUNS=1
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -40,8 +41,10 @@ while [[ $# -gt 0 ]]; do
       VERBOSE=true; shift ;;
     --trace)
       TRACE=true; shift ;;
+    --runs)
+      RUNS="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace]" >&2
+      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --gold-queries PATH  Path to gold queries JSON (default: scripts/benchmark/gold-queries.json)" >&2
@@ -49,6 +52,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --mode cli|skill     Execution mode (default: cli)" >&2
       echo "  --verbose            Show per-query results on stderr" >&2
       echo "  --trace              Write per-query trace files to /tmp/benchmark-traces/" >&2
+      echo "  --runs N             Run benchmark N times and report median score (default: 1)" >&2
       exit 0
       ;;
     *)
@@ -57,6 +61,43 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# Multi-run median mode (ct-727)
+# ---------------------------------------------------------------------------
+if [[ "$RUNS" -gt 1 ]]; then
+  echo "Running $RUNS iterations for median scoring..." >&2
+  SCORES=()
+  ARGS=()
+  [[ -n "$SNAPSHOT" ]] && ARGS+=(--snapshot "$SNAPSHOT")
+  ARGS+=(--gold-queries "$GOLD_QUERIES" --mode "$MODE" --runs 1)
+  [[ "$VERBOSE" == "true" ]] && ARGS+=(--verbose)
+  [[ "$TRACE" == "true" ]] && ARGS+=(--trace)
+
+  for i in $(seq 1 "$RUNS"); do
+    echo "--- Run $i/$RUNS ---" >&2
+    SCORE=$("${BASH_SOURCE[0]}" "${ARGS[@]}")
+    SCORES+=("$SCORE")
+    echo "  Score: $SCORE" >&2
+  done
+
+  # Compute median
+  MEDIAN=$(python3 -c "
+import sys
+scores = sorted([float(s) for s in sys.argv[1:]])
+n = len(scores)
+if n % 2 == 1:
+    print(f'{scores[n // 2]:.1f}')
+else:
+    print(f'{(scores[n // 2 - 1] + scores[n // 2]) / 2:.1f}')
+" "${SCORES[@]}")
+
+  echo "---" >&2
+  echo "Scores: ${SCORES[*]}" >&2
+  echo "Median: $MEDIAN" >&2
+  echo "$MEDIAN"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Mode validation
