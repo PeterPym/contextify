@@ -2159,8 +2159,10 @@ private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
   }
-  // F-05: Catch FTS5 column-reference errors from hyphenated tokens
-  if message.contains("no such column:") {
+  // F-05: Catch FTS5 column-reference errors from hyphenated tokens.
+  // Only fire when the error is from the FTS table to avoid misclassifying
+  // real schema/code failures as user input mistakes (ct-736).
+  if message.contains("no such column:") && message.localizedCaseInsensitiveContains("fts") {
     let marker = "no such column:"
     if let range = message.range(of: marker) {
       let columnName = String(message[range.upperBound...])
