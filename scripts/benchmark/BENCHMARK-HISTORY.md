@@ -178,25 +178,99 @@ Iterations 2-5 all tweaked the prompt or SKILL.md with marginal or negative resu
 A major SKILL.md rewrite scored comparably while deleting features real users need. The benchmark measures 14 specific queries, not the full surface area of user needs.
 
 ### 5. Stochastic evaluation requires care
-The AI constructs different queries each run. A single measurement has high variance. The verified baseline (37.0) is a point estimate, not a precise measurement. Median-of-3 scoring (ct-727, not yet implemented) would improve confidence.
+The AI constructs different queries each run. A single measurement has high variance. The verified baseline (37.0) is a point estimate, not a precise measurement. Median-of-3 scoring (ct-727) improves confidence.
+
+### 6. Targeted manual edits beat automated ratchet loops
+The ct-739 work proved that failure analysis followed by targeted SKILL.md edits (9 lines) produced a 47% improvement (31.7 -> 46.5), while 6 total ratchet loop iterations (3 in Phase 3, 3 in Phase 6) produced zero lasting changes. The key: read the traces, categorize failures, write specific instructions addressing each category.
 
 ---
 
-## Current State (2026-03-27)
+### Phase 6: Benchmark Infrastructure (2026-03-28, ct-727/ct-728)
+
+Two improvements to the evaluation workflow:
+
+| Date | Commit | Change |
+|------|--------|--------|
+| 2026-03-28 | `fe4e6372` | ct-728: `--trace` flag writes per-query JSON traces to `/tmp/benchmark-traces/` |
+| 2026-03-28 | `a40aad0e` | ct-727: `--runs N` for median-of-N scoring mode |
+
+The `--trace` flag proved essential for Phase 7's failure analysis, providing fingerprint match details (threshold, match ratio, matched/unmatched words, negation detection) for every query.
+
+### Phase 7: Targeted SKILL.md Improvements (2026-03-28, ct-738/ct-739)
+
+**Goal**: Actually improve search quality (the original purpose of ct-724).
+
+**Method**: Run skill benchmark with `--trace`, categorize failures, write targeted instructions.
+
+#### Failure analysis (ct-738)
+
+Skill benchmark: 31.7 (9/14 pass). Analyzed 5 failures into 3 categories:
+
+| Category | Queries | Root Cause |
+|----------|---------|------------|
+| A: Response lacks specific details | gq-07, gq-11, gq-12 | AI paraphrases instead of quoting technical identifiers, job titles, distinctive terms |
+| B: Incomplete actor coverage | gq-13 | AI mentions primary person but omits secondary actors |
+| C: Factually incorrect conclusion | gq-14 | AI says "implemented" when ground truth is "planned and scoped" |
+
+#### SKILL.md improvements (ct-739)
+
+Added 6 response fidelity instructions to SKILL.md (+9 lines):
+
+| Rule | Addresses | Impact |
+|------|-----------|--------|
+| Quote distinctive terms verbatim | Category A | gq-07 now passes (quotes env vars) |
+| Name every individual mentioned | Category B | gq-13 now passes (includes all stakeholders) |
+| Verify implementation status with merge evidence | Category C | Partial (gq-14 still fails intermittently) |
+| Include technical details | Category A | Reinforces quote-back for config values |
+| Fetch context for truncated snippets | Category B | gq-13 improvement (finds names in adjacent entries) |
+| Use source language | Category A | gq-11 now passes (uses "bootleg hats" from source) |
+
+**Score progression across benchmark runs:**
+
+| Run | Pass | Score | What Changed |
+|-----|------|-------|-------------|
+| Baseline | 9/14 | 31.7 | Before any SKILL.md changes |
+| After edit 1 | 10/14 | 37.0 | +quote-back, +name-all, +verify-status, +include-details |
+| After edit 2 | 12/14 | 45.9 | +fetch-context, +source-language |
+| Confirmation | 13/14 | 46.5 | Stable (only gq-14 fails) |
+
+**Review**: 3-iteration ChatGPT review loop. Also fixed two CLI issues surfaced by review:
+- `resolveAnchorBasePath` now throws (surfaces project resolution errors instead of silently degrading)
+- `mapDatabaseError` column remap narrowed to FTS context only (ct-736)
+
+#### Ratchet loop confirmation (ct-741)
+
+3 automated ratchet iterations in skill mode. All reverted (scores 46.0, 39.4, 44.9 vs 47.4 baseline). Confirms the SKILL.md is at a local maximum for instruction-only changes. The ±8 point variance across runs is inherent stochastic noise from LLM non-determinism.
+
+**The remaining gq-14 failure** (AI concludes work "was implemented" when it was only planned) appears to be a fundamental LLM reasoning issue not addressable through skill instructions alone.
+
+---
+
+## Current State (2026-03-28)
 
 | Component | Status | Score |
 |-----------|--------|-------|
 | CLI search quality | Stable | 100.0 (14/14) |
-| SKILL.md (skill:72771ddf) | Stable | 37.0 verified (11/14) |
-| Pre-ct-708 SKILL.md | Archived | 23.1 verified (8/14) |
+| SKILL.md (skill:5e3f2176) | **Improved** | ~46.5 verified (13/14) |
+| Previous SKILL.md (skill:72771ddf) | Superseded | 37.0 verified (11/14) |
+| Pre-ct-708 SKILL.md (skill:760873c0) | Archived | 23.1 verified (8/14) |
 | Evaluator | **Frozen** (ct-729) | F1=0.900 |
 | Gold queries | 14 verified | 6 high-risk fingerprints |
+| Stochastic variance | Measured | ±8 points per run |
+
+### Score evolution
+
+```
+23.1  (Phase 2, pre-ct-708)
+37.0  (Phase 4, post CLI fixes + 3 surgical edits)
+46.5  (Phase 7, response fidelity rules)
+```
 
 ### Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/benchmark/evaluate.sh` | Frozen evaluator (scoring logic) |
+| `scripts/benchmark/evaluate.sh` | Frozen evaluator (scoring logic, `--trace`, `--runs N`) |
 | `scripts/benchmark/gold-queries.json` | 14 gold queries with fingerprints |
 | `scripts/benchmark/results.tsv` | Score history (annotated) |
 | `scripts/benchmark/calibrate-fingerprint.py` | Calibration harness (36 labeled pairs) |
@@ -204,13 +278,14 @@ The AI constructs different queries each run. A single measurement has high vari
 | `scripts/benchmark/ratchet.sh` | AutoResearch ratchet loop |
 | `scripts/benchmark/prepare-snapshot.sh` | Snapshot creation |
 | `scripts/benchmark/snapshot-manifest.json` | Snapshot metadata + hash |
-| `contextify-query/user-skill/total-recall/SKILL.md` | The skill (602 lines) |
+| `scripts/benchmark/BENCHMARK-HISTORY.md` | This document |
+| `contextify-query/user-skill/total-recall/SKILL.md` | The skill (~610 lines) |
 
 ### Open work
 
 | Issue | Priority | Description |
 |-------|----------|-------------|
-| ct-727 | P2 | Median-of-3 scoring to reduce stochastic variance |
-| ct-728 | P1 | Per-query trace persistence for post-mortem diagnosis |
+| ct-725 | P2 | Fuzzy project name suggestions on --project no-match |
+| ct-726 | P2 | Evaluate FTS5 porter stemming tokenizer |
 | ct-732 | P2 | Skill output format polish |
-| ct-733 | P2 | Symlink SKILL.md for dev workflow |
+| gq-14 | - | Last failing query (factual accuracy, needs deeper investigation) |
