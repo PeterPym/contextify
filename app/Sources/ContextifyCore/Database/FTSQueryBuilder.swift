@@ -90,14 +90,16 @@ public enum FTSQueryBuilder {
           if !current.isEmpty {
             let bareTokens = current.split(separator: " ").map(String.init).filter { !$0.isEmpty }
             for token in bareTokens {
-              if ftsKeywords.contains(token.uppercased()) {
-                parts.append(token)
-              } else if isSimpleWord(token) {
-                parts.append(token)
+              let normalized = token
+                .replacingOccurrences(of: "(", with: "")
+                .replacingOccurrences(of: ")", with: "")
+              guard !normalized.isEmpty else { continue }
+              if ftsKeywords.contains(normalized.uppercased()) {
+                parts.append(normalized)
+              } else if isSimpleWord(normalized) {
+                parts.append(normalized)
               } else {
-                let clean = token
-                  .replacingOccurrences(of: "(", with: "")
-                  .replacingOccurrences(of: ")", with: "")
+                let clean = normalized.replacingOccurrences(of: "*", with: "")
                 if !clean.isEmpty { parts.append("\"\(clean)\"") }
               }
             }
