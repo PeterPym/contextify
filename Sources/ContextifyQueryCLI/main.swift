@@ -518,7 +518,7 @@ struct ContextifyQueryCLI {
             includeHidden: options.includeHidden,
             timeRange: timeRange,
             kinds: kinds,
-            snippetTokens: options.snippetTokens ?? 10,
+            snippetTokens: options.snippetTokens ?? 50,
             treatAsFTS: true,
             device: options.device
           )
@@ -1028,7 +1028,7 @@ struct ContextifyQueryCLI {
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
-        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
+        --snippet-tokens <n> Search snippet length in tokens (default 50, max 100)
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
@@ -1245,6 +1245,27 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
   // If preprocessing didn't change anything, use the standard safe wrapper
   if processed == trimmed {
     return ConversationSearchService.buildSafeFTSQuery(processed)
+  }
+
+  // Reject unbalanced quotes
+  let quoteCount = processed.filter { $0 == "\"" }.count
+  if quoteCount % 2 != 0 {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unbalanced quotes in search query.",
+      exitCode: .invalidArgs
+    )
+  }
+
+  // Complex FTS syntax bypasses the custom wrapper to avoid mis-handling
+  let hasComplexSyntax =
+    processed.contains("(") ||
+    processed.contains(")") ||
+    processed.contains(":") ||
+    processed.range(of: "\\bNEAR\\b", options: [.regularExpression, .caseInsensitive]) != nil
+
+  if hasComplexSyntax {
+    return processed
   }
 
   // Preprocessing introduced quotes (for hyphenated tokens). Use quote-aware
@@ -1867,54 +1888,21 @@ private func resolveProjectId(
     // F-03: Try name-based lookup first for non-path values
     let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
     if !looksLikePath {
-      // Try exact/normalized name match
-      if let id = try? service.resolveProjectByName(project) {
-        return id
+      do {
+        if let id = try service.resolveProjectByName(project) {
+          return id
+        }
+      } catch let error as ContextifyQueryService.ProjectResolutionError {
+        throw mapProjectResolutionError(error)
       }
     }
-    // If name lookup didn't match, treat as a path (existing behavior)
-    // If it's not a valid path either, the path resolution will error with suggestions
-    path = looksLikePath ? project : project
+    path = project
   }
 
   do {
     return try service.resolveProjectId(forPath: path)
   } catch let error as ContextifyQueryService.ProjectResolutionError {
-    switch error {
-    case let .notFound(path, suggestions, totalProjectCount):
-      let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let suggestionObjects: [JSONValue] = suggestions.map { project in
-        jsonProjectSuggestion(project)
-      }
-      let detailsObject: [String: JSONValue] = [
-        "path": .string(path),
-        "suggestions": .array(suggestionObjects),
-        "totalProjectCount": .number(Double(totalProjectCount)),
-      ]
-      let details: JSONValue = .object(detailsObject)
-      throw CLIError(
-        code: "dbProjectNotFound",
-        message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
-        exitCode: .dbNotFound,
-        details: details
-      )
-    case let .ambiguous(path, candidates):
-      let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let candidateObjects: [JSONValue] = candidates.map { project in
-        jsonProjectSuggestion(project)
-      }
-      let detailsObject: [String: JSONValue] = [
-        "path": .string(path),
-        "candidates": .array(candidateObjects),
-      ]
-      let details: JSONValue = .object(detailsObject)
-      throw CLIError(
-        code: "dbProjectNotFound",
-        message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
-        exitCode: .dbNotFound,
-        details: details
-      )
-    }
+    throw mapProjectResolutionError(error)
   }
 }
 
@@ -1929,12 +1917,17 @@ private func resolveProjectScope(
       basePath = FileManager.default.currentDirectoryPath
     } else {
       let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
-      if !looksLikePath, let id = try? service.resolveProjectByName(project) {
-        // Name-based match found - return single-project scope (no worktree expansion)
-        return ProjectScope(projectIds: [id], displayNames: [project],
-                           unresolvedSiblings: [], excluded: [],
-                           worktreeGroupDetected: false, worktreesConsidered: [],
-                           expansionApplied: false)
+      if !looksLikePath {
+        do {
+          if let id = try service.resolveProjectByName(project) {
+            return ProjectScope(projectIds: [id], displayNames: [project],
+                               unresolvedSiblings: [], excluded: [],
+                               worktreeGroupDetected: false, worktreesConsidered: [],
+                               expansionApplied: false)
+          }
+        } catch let error as ContextifyQueryService.ProjectResolutionError {
+          throw mapProjectResolutionError(error)
+        }
       }
       basePath = project
     }
@@ -2023,6 +2016,36 @@ private func resolveProjectScope(
     worktreesConsidered: worktreesConsidered,
     expansionApplied: projectIds.count > 1
   )
+}
+
+private func mapProjectResolutionError(
+  _ error: ContextifyQueryService.ProjectResolutionError
+) -> CLIError {
+  switch error {
+  case let .notFound(path, suggestions, totalProjectCount):
+    let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    return CLIError(
+      code: "dbProjectNotFound",
+      message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
+      exitCode: .dbNotFound,
+      details: .object([
+        "path": .string(path),
+        "suggestions": .array(suggestions.map(jsonProjectSuggestion)),
+        "totalProjectCount": .number(Double(totalProjectCount)),
+      ])
+    )
+  case let .ambiguous(path, candidates):
+    let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    return CLIError(
+      code: "dbProjectNotFound",
+      message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
+      exitCode: .dbNotFound,
+      details: .object([
+        "path": .string(path),
+        "candidates": .array(candidates.map(jsonProjectSuggestion)),
+      ])
+    )
+  }
 }
 
 private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSuggestion) -> JSONValue {

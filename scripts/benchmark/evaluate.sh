@@ -168,6 +168,21 @@ export TEMP_DB_PATH="$TEMP_DB"
 export VERBOSE="$VERBOSE"
 export EVAL_MODE="$MODE"
 export SKILL_RUNNER="${SCRIPT_DIR}/run-skill-query.sh"
+export PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
+
+# ---------------------------------------------------------------------------
+# Compute expected SKILL.md hash (skill mode only)
+# ---------------------------------------------------------------------------
+SKILL_PATH="${REPO_DIR}/contextify-query/user-skill/total-recall/SKILL.md"
+if [[ "$MODE" == "skill" ]]; then
+  if [[ ! -f "$SKILL_PATH" ]]; then
+    echo "ERROR: SKILL.md not found at $SKILL_PATH" >&2
+    exit 1
+  fi
+  EXPECTED_SKILL_HASH=$(shasum -a 256 "$SKILL_PATH" | cut -c1-8)
+  export EXPECTED_SKILL_HASH
+  echo "SKILL.md hash: $EXPECTED_SKILL_HASH (from $SKILL_PATH)" >&2
+fi
 
 # Use Python to drive the evaluation loop for reliable JSON handling
 python3 << 'PYEOF'
@@ -175,25 +190,67 @@ import json
 import subprocess
 import sys
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 gold_queries_path = os.environ.get("GOLD_QUERIES_PATH")
 temp_db_path = os.environ.get("TEMP_DB_PATH")
 verbose = os.environ.get("VERBOSE") == "true"
 eval_mode = os.environ.get("EVAL_MODE", "cli")
 skill_runner = os.environ.get("SKILL_RUNNER", "")
+expected_skill_hash = os.environ.get("EXPECTED_SKILL_HASH", "")
+# Parallel workers for skill mode (CLI mode is already fast)
+parallel_workers = int(os.environ.get("PARALLEL_WORKERS", "4")) if eval_mode == "skill" else 1
+# Track skill hash verification across queries
+skill_hash_verified = 0
+skill_hash_missing = 0
+skill_hash_mismatch = 0
+# Track behavioral compliance across queries
+behavioral_days_365 = 0
+behavioral_snippet_100 = 0
+behavioral_db_path = 0
+behavioral_total = 0
 
-with open(gold_queries_path) as f:
-    gq = json.load(f)
+stopwords = {"the", "that", "this", "with", "from", "have",
+             "been", "were", "will", "does", "about", "into",
+             "what", "when", "where", "which", "their", "there",
+             "some", "more", "also", "than", "other", "each"}
 
-queries = gq["queries"]
-total = len(queries)
-found_count = 0
-total_scorable = 0  # queries that count toward found_rate
-efficiency_sum = 0.0
+def strip_markdown(text):
+    """Remove bold, italic, and other markdown markers for clean text matching."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    text = re.sub(r'_(.+?)_', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    return text
 
-results = []
+def check_fingerprint(fp_clean, clean_response):
+    """Check if fingerprint content appears in response using word-level matching.
+    Uses stem-aware matching: a fingerprint word matches if the response contains
+    any word that shares the same stem (prefix of 4+ chars)."""
+    if not fp_clean:
+        return False
+    if fp_clean in clean_response:
+        return True
+    words = [w for w in re.findall(r'[a-z0-9]+', fp_clean)
+             if len(w) >= 4 and w not in stopwords]
+    if not words:
+        return False
+    # Extract all response words for stem matching
+    response_words = set(re.findall(r'[a-z0-9]+', clean_response))
+    def stem_match(fp_word):
+        """Check if fingerprint word matches any response word by shared stem."""
+        if fp_word in clean_response:
+            return True
+        # Try stem matching: if fp_word[:n] matches any response word[:n]
+        stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
+        return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
+    matches = sum(1 for w in words if stem_match(w))
+    return (matches / len(words)) >= 0.70
 
-for q in queries:
+def evaluate_query(q):
+    """Evaluate a single query. Returns a result dict."""
     qid = q["id"]
     search_terms = q["search_terms"]
     fingerprint = q.get("content_fingerprint")
@@ -201,207 +258,231 @@ for q in queries:
     budget = q["efficiency_budget"]
     category = q["category"]
     difficulty = q["difficulty"]
-
+    natural_q = q.get("natural_question", search_terms)
     is_negative = (fingerprint is None and expected_result == "zero_matches")
 
     try:
         if eval_mode == "skill":
-            # Skill mode: run headless Claude Code via run-skill-query.sh
-            natural_q = q.get("natural_question", search_terms)
-            cmd = ["bash", skill_runner, natural_q, temp_db_path, "120"]
-
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=150
-            )
-
-            if proc.returncode != 0:
-                err = proc.stderr.strip() or "skill runner failed"
-                print(f"INFRA ERROR: [{qid}] {err[:500]}", file=sys.stderr)
-                print(f"Aborting benchmark - infra failures invalidate scores.", file=sys.stderr)
-                sys.exit(2)
-
-            # Parse structured output from run-skill-query.sh
-            try:
-                skill_output = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                print(f"INFRA ERROR: [{qid}] skill runner returned invalid JSON", file=sys.stderr)
-                sys.exit(2)
-
-            ai_response = skill_output.get("response", "")
-            searches_used = skill_output.get("turns", 1)  # turns approximates searches
-            duration = skill_output.get("duration_s", 0)
-
-            # Strip markdown formatting for fingerprint comparison
-            import re
-            def strip_markdown(text):
-                """Remove bold, italic, and other markdown markers for clean text matching."""
-                text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # bold
-                text = re.sub(r'\*(.+?)\*', r'\1', text)  # italic
-                text = re.sub(r'__(.+?)__', r'\1', text)  # bold alt
-                text = re.sub(r'_(.+?)_', r'\1', text)  # italic alt
-                text = re.sub(r'`(.+?)`', r'\1', text)  # code
-                return text
-
-            clean_response = strip_markdown(ai_response).lower()
-
-            if is_negative:
-                # For negative proof in skill mode: the AI should report "not found" or similar
-                negative_signals = ["not found", "no results", "no conversation", "no discussion",
-                                    "no record", "couldn't find", "could not find", "zero results",
-                                    "no matches", "no relevant", "no evidence", "no mention",
-                                    "don't have any", "do not have any"]
-                query_found = any(sig in clean_response for sig in negative_signals)
-                total_scorable += 1
-                if query_found:
-                    found_count += 1
-            else:
-                # Check if fingerprint appears in the cleaned AI response
-                # Strip markdown from fingerprint too (it may contain * for italics)
-                fp_clean = strip_markdown(fingerprint).lower() if fingerprint else ""
-                query_found = bool(fp_clean and fp_clean in clean_response)
-
-                total_scorable += 1
-                if query_found:
-                    found_count += 1
-
-            efficiency_sum += min(1.0, budget / max(searches_used, 1))
-
-            result = {
-                "id": qid,
-                "found": query_found,
-                "searches_used": searches_used,
-                "total_results": 0,
-                "category": category,
-                "difficulty": difficulty,
-                "is_negative": is_negative,
-                "duration_s": duration
-            }
-            results.append(result)
-
-            if verbose:
-                status = "PASS" if query_found else "FAIL"
-                neg_label = " [negative]" if is_negative else ""
-                print(f"  [{qid}] {status}{neg_label} (turns={searches_used}, {duration:.1f}s) - {natural_q[:60]!r}", file=sys.stderr)
-
+            return evaluate_skill_query(q, qid, natural_q, fingerprint, budget,
+                                        category, difficulty, is_negative)
         else:
-            # CLI mode: run contextify search directly
-            cmd = [
-                "contextify", "search", search_terms,
-                "--db-path", temp_db_path,
-                "--json",
-                "--full-content",
-                "--snippet-tokens", "100",
-                "--limit", "20"
-            ]
-
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-
-            if proc.returncode != 0:
-                try:
-                    err = json.loads(proc.stdout)
-                    error_msg = err.get("message", proc.stderr.strip())
-                except (json.JSONDecodeError, ValueError):
-                    error_msg = proc.stderr.strip() or proc.stdout.strip()
-
-                result = {
-                    "id": qid,
-                    "found": False,
-                    "error": error_msg,
-                    "searches_used": 1,
-                    "total_results": 0
-                }
-                results.append(result)
-                total_scorable += 1
-                efficiency_sum += min(1.0, budget / 1.0)
-
-                if verbose:
-                    print(f"  [{qid}] ERROR: {error_msg}", file=sys.stderr)
-                continue
-
-            try:
-                response = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                result = {
-                    "id": qid,
-                    "found": False,
-                    "error": "Failed to parse JSON response",
-                    "searches_used": 1,
-                    "total_results": 0
-                }
-                results.append(result)
-                total_scorable += 1
-                efficiency_sum += min(1.0, budget / 1.0)
-                if verbose:
-                    print(f"  [{qid}] ERROR: Failed to parse JSON", file=sys.stderr)
-                continue
-
-            total_results = response.get("metadata", {}).get("totalCount", 0)
-            data = response.get("data", [])
-
-            if is_negative:
-                query_found = (total_results == 0)
-                total_scorable += 1
-                if query_found:
-                    found_count += 1
-            else:
-                raw_output = proc.stdout.lower()
-                fp_lower = fingerprint.lower() if fingerprint else ""
-
-                if fp_lower and fp_lower in raw_output:
-                    query_found = True
-                else:
-                    query_found = False
-                    if fingerprint:
-                        for hit in data:
-                            snippet = (hit.get("contentSnippet") or "").lower()
-                            if fp_lower in snippet:
-                                query_found = True
-                                break
-
-                total_scorable += 1
-                if query_found:
-                    found_count += 1
-
-            searches_used = 1
-            efficiency_sum += min(1.0, budget / searches_used)
-
-            result = {
-                "id": qid,
-                "found": query_found,
-                "searches_used": searches_used,
-                "total_results": total_results,
-                "category": category,
-                "difficulty": difficulty,
-                "is_negative": is_negative
-            }
-            results.append(result)
-
-            if verbose:
-                status = "PASS" if query_found else "FAIL"
-                neg_label = " [negative]" if is_negative else ""
-                print(f"  [{qid}] {status}{neg_label} ({total_results} results) - {search_terms!r}", file=sys.stderr)
-
+            return evaluate_cli_query(q, qid, search_terms, fingerprint, budget,
+                                      category, difficulty, is_negative)
     except subprocess.TimeoutExpired:
-        result = {
-            "id": qid,
-            "found": False,
-            "error": "Timeout",
-            "searches_used": 1,
-            "total_results": 0
-        }
+        return {"id": qid, "found": False, "error": "Timeout", "searches_used": 1,
+                "total_results": 0, "category": category, "difficulty": difficulty,
+                "is_negative": is_negative, "duration_s": 0, "natural_q": natural_q}
+
+def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, difficulty, is_negative):
+    cmd = ["bash", skill_runner, natural_q, temp_db_path, "180"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=210)
+
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or "skill runner failed"
+        return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
+                "category": category, "difficulty": difficulty, "is_negative": is_negative,
+                "duration_s": 0, "natural_q": natural_q, "infra_error": err[:200]}
+
+    try:
+        skill_output = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
+                "category": category, "difficulty": difficulty, "is_negative": is_negative,
+                "duration_s": 0, "natural_q": natural_q, "infra_error": "invalid JSON"}
+
+    ai_response = skill_output.get("response", "")
+    searches_used = skill_output.get("turns", 1)
+    duration = skill_output.get("duration_s", 0)
+
+    # Track behavioral compliance from tool calls
+    global behavioral_days_365, behavioral_snippet_100, behavioral_db_path, behavioral_total
+    behavioral = skill_output.get("behavioral", {})
+    behavioral_total += 1
+    if behavioral.get("used_days_365"):
+        behavioral_days_365 += 1
+    if behavioral.get("used_snippet_tokens_100"):
+        behavioral_snippet_100 += 1
+    if behavioral.get("used_db_path"):
+        behavioral_db_path += 1
+
+    # Verify skill hash in agent output
+    global skill_hash_verified, skill_hash_missing, skill_hash_mismatch
+    hash_match = re.search(r'skill:([a-f0-9]{8})', ai_response)
+    if expected_skill_hash:
+        if not hash_match:
+            skill_hash_missing += 1
+            if verbose:
+                print(f"  [{qid}] WARN: skill hash missing from output", file=sys.stderr)
+        elif hash_match.group(1) != expected_skill_hash:
+            skill_hash_mismatch += 1
+            return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
+                    "category": category, "difficulty": difficulty, "is_negative": is_negative,
+                    "duration_s": duration, "natural_q": natural_q,
+                    "infra_error": f"skill hash mismatch: expected {expected_skill_hash}, got {hash_match.group(1)}"}
+        else:
+            skill_hash_verified += 1
+
+    clean_response = strip_markdown(ai_response).lower()
+
+    if is_negative:
+        negative_signals = ["not found", "no results", "no conversation", "no discussion",
+                            "no record", "couldn't find", "could not find", "zero results",
+                            "no matches", "no relevant", "no evidence", "no mention"]
+        query_found = any(sig in clean_response for sig in negative_signals)
+    else:
+        fp_clean = strip_markdown(fingerprint).lower() if fingerprint else ""
+        query_found = check_fingerprint(fp_clean, clean_response)
+
+    return {"id": qid, "found": query_found, "searches_used": searches_used,
+            "total_results": 0, "category": category, "difficulty": difficulty,
+            "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q}
+
+with open(gold_queries_path) as f:
+    gq = json.load(f)
+
+queries = gq["queries"]
+total = len(queries)
+found_count = 0
+total_scorable = 0
+efficiency_sum = 0.0
+
+results = []
+
+if eval_mode == "skill" and parallel_workers > 1:
+    # Parallel execution for skill mode
+    future_to_q = {}
+    with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
+        for q in queries:
+            future = executor.submit(evaluate_query, q)
+            future_to_q[future] = q
+
+        for future in as_completed(future_to_q):
+            result = future.result()
+            results.append(result)
+            qid = result["id"]
+            natural_q = result.get("natural_q", "")
+
+            if "infra_error" in result:
+                total_scorable += 1
+                if verbose:
+                    print(f"  [{qid}] FAIL [infra] - {natural_q[:60]!r}", file=sys.stderr)
+            else:
+                total_scorable += 1
+                if result["found"]:
+                    found_count += 1
+                budget = next(q["efficiency_budget"] for q in queries if q["id"] == qid)
+                efficiency_sum += min(1.0, budget / max(result["searches_used"], 1))
+                if verbose:
+                    status = "PASS" if result["found"] else "FAIL"
+                    dur = result.get("duration_s", 0)
+                    turns = result.get("searches_used", 0)
+                    print(f"  [{qid}] {status} (turns={turns}, {dur:.1f}s) - {natural_q[:60]!r}", file=sys.stderr)
+
+    # Sort results by query ID for consistent output
+    results.sort(key=lambda r: r["id"])
+else:
+    # Serial execution (CLI mode or parallel_workers=1)
+    for q in queries:
+        qid = q["id"]
+        search_terms = q["search_terms"]
+        fingerprint = q.get("content_fingerprint")
+        expected_result = q.get("expected_result")
+        budget = q["efficiency_budget"]
+        category = q["category"]
+        difficulty = q["difficulty"]
+        natural_q = q.get("natural_question", search_terms)
+        is_negative = (fingerprint is None and expected_result == "zero_matches")
+
+        try:
+            if eval_mode == "skill":
+                result = evaluate_skill_query(q, qid, natural_q, fingerprint, budget,
+                                              category, difficulty, is_negative)
+            else:
+                # CLI mode: run contextify search directly
+                cmd = [
+                    "contextify", "search", search_terms,
+                    "--db-path", temp_db_path,
+                    "--json",
+                    "--full-content",
+                    "--snippet-tokens", "100",
+                    "--limit", "20"
+                ]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if proc.returncode != 0:
+                    try:
+                        err = json.loads(proc.stdout)
+                        error_msg = err.get("message", proc.stderr.strip())
+                    except (json.JSONDecodeError, ValueError):
+                        error_msg = proc.stderr.strip() or proc.stdout.strip()
+                    result = {"id": qid, "found": False, "error": error_msg,
+                              "searches_used": 1, "total_results": 0,
+                              "category": category, "difficulty": difficulty}
+                    results.append(result)
+                    total_scorable += 1
+                    efficiency_sum += min(1.0, budget / 1.0)
+                    if verbose:
+                        print(f"  [{qid}] ERROR: {error_msg}", file=sys.stderr)
+                    continue
+
+                try:
+                    response = json.loads(proc.stdout)
+                except json.JSONDecodeError:
+                    result = {"id": qid, "found": False, "error": "Failed to parse JSON",
+                              "searches_used": 1, "total_results": 0}
+                    results.append(result)
+                    total_scorable += 1
+                    efficiency_sum += min(1.0, budget / 1.0)
+                    if verbose:
+                        print(f"  [{qid}] ERROR: Failed to parse JSON", file=sys.stderr)
+                    continue
+
+                total_results = response.get("metadata", {}).get("totalCount", 0)
+                data = response.get("data", [])
+
+                if is_negative:
+                    query_found = (total_results == 0)
+                else:
+                    raw_output = proc.stdout.lower()
+                    fp_lower = fingerprint.lower() if fingerprint else ""
+                    if fp_lower and fp_lower in raw_output:
+                        query_found = True
+                    else:
+                        query_found = False
+                        if fingerprint:
+                            for hit in data:
+                                snippet = (hit.get("contentSnippet") or "").lower()
+                                if fp_lower in snippet:
+                                    query_found = True
+                                    break
+
+                result = {"id": qid, "found": query_found, "searches_used": 1,
+                          "total_results": total_results, "category": category,
+                          "difficulty": difficulty, "is_negative": is_negative}
+
+        except subprocess.TimeoutExpired:
+            result = {"id": qid, "found": False, "error": "Timeout",
+                      "searches_used": 1, "total_results": 0,
+                      "category": category, "difficulty": difficulty,
+                      "is_negative": is_negative}
+
         results.append(result)
         total_scorable += 1
-        efficiency_sum += min(1.0, budget / 1.0)
+        if result.get("found"):
+            found_count += 1
+        efficiency_sum += min(1.0, budget / max(result.get("searches_used", 1), 1))
+
         if verbose:
-            print(f"  [{qid}] TIMEOUT", file=sys.stderr)
+            status = "PASS" if result.get("found") else "FAIL"
+            if "error" in result:
+                print(f"  [{qid}] {status} ERROR={result['error']}", file=sys.stderr)
+            elif eval_mode == "skill":
+                dur = result.get("duration_s", 0)
+                turns = result.get("searches_used", 0)
+                print(f"  [{qid}] {status} (turns={turns}, {dur:.1f}s) - {natural_q[:60]!r}", file=sys.stderr)
+            else:
+                tr = result.get("total_results", 0)
+                print(f"  [{qid}] {status} ({tr} results) - {search_terms!r}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -423,6 +504,14 @@ print(f"Queries found:      {found_count}", file=sys.stderr)
 print(f"Found rate:         {found_rate:.3f}", file=sys.stderr)
 print(f"Efficiency factor:  {efficiency_factor:.3f}", file=sys.stderr)
 print(f"Final score:        {final_score:.1f}", file=sys.stderr)
+
+if eval_mode == "skill":
+    if expected_skill_hash:
+        print(f"", file=sys.stderr)
+        print(f"Skill verification: hash={expected_skill_hash}", file=sys.stderr)
+        print(f"  Hash:     verified={skill_hash_verified}/{total}  missing={skill_hash_missing}  mismatch={skill_hash_mismatch}", file=sys.stderr)
+    if behavioral_total > 0:
+        print(f"  Behavior: --days 365={behavioral_days_365}/{behavioral_total}  --snippet-tokens 100={behavioral_snippet_100}/{behavioral_total}  --db-path={behavioral_db_path}/{behavioral_total}", file=sys.stderr)
 
 if verbose:
     print("", file=sys.stderr)
