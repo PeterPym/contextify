@@ -492,7 +492,7 @@ struct ContextifyQueryCLI {
           let requestedLimit = options.limit
           let requestedOffset = options.offset
           let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
-          let anchorPlan = anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options)
+          let anchorPlan = anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
 
           if options.anchorGit {
             if let anchorPlan {
@@ -1225,6 +1225,18 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
     )
   }
 
+  // Reject unbalanced quotes on original input before preprocessing.
+  // preprocessHyphens auto-closes unclosed quotes, so checking only the
+  // processed string would miss genuinely malformed user input.
+  let originalQuoteCount = trimmed.filter { $0 == "\"" }.count
+  if originalQuoteCount % 2 != 0 {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unbalanced quotes in search query.",
+      exitCode: .invalidArgs
+    )
+  }
+
   // Check the ORIGINAL query for operators/quotes before preprocessing
   let operatorPattern = "\\b(OR|AND|NOT)\\b"
   let originalHasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
@@ -1237,9 +1249,9 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
   }
   let processed = hyphenResult.query
 
-  // Reject unbalanced quotes before any early returns
-  let quoteCount = processed.filter { $0 == "\"" }.count
-  if quoteCount % 2 != 0 {
+  // Defensive check: reject unbalanced quotes after preprocessing too
+  let processedQuoteCount = processed.filter { $0 == "\"" }.count
+  if processedQuoteCount % 2 != 0 {
     throw CLIError(
       code: "invalidQuery",
       message: "Unbalanced quotes in search query.",
@@ -1274,22 +1286,36 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
 }
 
 
-private func resolveAnchorBasePath(options: ContextifyQueryCLI.Options) -> String {
-  if let project = options.project {
-    return (project == "." || project == "current")
-      ? FileManager.default.currentDirectoryPath
-      : project
+private func resolveAnchorBasePath(
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
+) -> String {
+  guard let project = options.project else {
+    return FileManager.default.currentDirectoryPath
   }
-  return FileManager.default.currentDirectoryPath
+  if project == "." || project == "current" {
+    return FileManager.default.currentDirectoryPath
+  }
+
+  // Use name-to-rootPath lookup for non-path values (R2: align with resolveProjectScope)
+  let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+    || FileManager.default.fileExists(atPath: project)
+  if !looksLikePath, let service = service,
+     let result = try? service.resolveProjectByNameWithPath(project) {
+    return result.rootPath
+  }
+
+  return project
 }
 
 private func resolveGitAnchorPlan(
   cues: [GitAnchorCue],
-  options: ContextifyQueryCLI.Options
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
 ) -> GitAnchorPlan? {
   guard !cues.isEmpty else { return nil }
 
-  let basePath = resolveAnchorBasePath(options: options)
+  let basePath = resolveAnchorBasePath(options: options, service: service)
   guard
     let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
       .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1887,6 +1913,7 @@ private func resolveProjectId(
   } else {
     // F-03: Try name-based lookup first for non-path values
     let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+      || FileManager.default.fileExists(atPath: project)
     if !looksLikePath {
       do {
         if let id = try service.resolveProjectByName(project) {
@@ -1917,6 +1944,7 @@ private func resolveProjectScope(
       basePath = FileManager.default.currentDirectoryPath
     } else {
       let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+        || FileManager.default.fileExists(atPath: project)
       if !looksLikePath {
         do {
           if let result = try service.resolveProjectByNameWithPath(project) {
