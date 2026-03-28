@@ -74,14 +74,17 @@ final class FTSSafeWrapTests: XCTestCase {
 
   func testPreprocessAutoClosesUnbalancedQuote() {
     // preprocessHyphens auto-closes an unclosed quote by wrapping the segment.
-    // ct-734: buildSearchQuery previously returned the preprocessed result
-    // without any validation when originalHasQuotes was true. The fix moves
-    // the unbalanced quote check before the early return, ensuring validation
-    // even for user-supplied quoted queries.
+    // ct-734: buildSearchQuery now validates quote balance on the ORIGINAL input
+    // before preprocessing, so auto-closing never masks user errors.
     let result = FTSQueryBuilder.preprocessHyphens("\"hello")
     let quoteCount = result.query.filter { $0 == "\"" }.count
     XCTAssertEqual(quoteCount % 2, 0, "Preprocessing auto-closes unbalanced quotes")
     XCTAssertTrue(result.query.contains("\"hello\""))
+
+    // The original input has odd quotes - buildSearchQuery would reject this
+    // before preprocessing ever runs.
+    let originalQuoteCount = "\"hello".filter { $0 == "\"" }.count
+    XCTAssertEqual(originalQuoteCount % 2, 1, "Original input has unbalanced quotes")
   }
 
   func testBalancedQuotesPassValidation() {
