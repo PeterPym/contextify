@@ -244,6 +244,32 @@ Added 6 response fidelity instructions to SKILL.md (+9 lines):
 
 **The remaining gq-14 failure** (AI concludes work "was implemented" when it was only planned) appears to be a fundamental LLM reasoning issue not addressable through skill instructions alone.
 
+### Phase 8: gq-14 Deep Investigation & CLI Improvements (2026-03-28, ct-745/ct-725/ct-726)
+
+**Goal**: Investigate and fix gq-14, the last failing query.
+
+#### gq-14 Root Cause Analysis (ct-745)
+
+Deep investigation revealed the failure is a **benchmark limitation**, not a skill deficiency:
+
+1. The frozen snapshot contains TWO navigation UX work items:
+   - An earlier Total Recall response: "The work was planned and scoped but never implemented"
+   - Later evidence: ct-499 (Cloud dashboard navigation reflow) was fully implemented and merged
+2. The AI correctly identifies ct-499 as implemented (factually accurate)
+3. The fingerprint ("The work was planned and scoped") captures an intermediate assessment superseded by implementation within the same snapshot
+
+**SKILL.md trajectory rule tested**: Added "present full chronological trajectory" instruction. 4 individual gq-14 runs all failed. Full skill benchmark scored 43.6 (worse than 46.5 baseline). Change reverted.
+
+**Conclusion**: gq-14 is irreducible under current benchmark constraints. Fixing requires modifying the gold query or rebuilding the snapshot.
+
+#### CLI Improvements (ct-725)
+
+Fuzzy project name suggestions shipped: `--project contxtify` now suggests "contextify" using Levenshtein edit distance with bounded early exit. 2-iteration ChatGPT review loop, all P1-P3 items addressed.
+
+#### Porter Stemming Evaluation (ct-726)
+
+Research complete. FTS5 porter stemming (`tokenize = 'porter unicode61 ...'`) preserves all existing query patterns while adding automatic morphological expansion. Cannot be tested against frozen benchmark. Recommended as standalone product feature. See `/tmp/ct-726-porter-stemming-evaluation.md`.
+
 ---
 
 ## Current State (2026-03-28)
@@ -251,11 +277,11 @@ Added 6 response fidelity instructions to SKILL.md (+9 lines):
 | Component | Status | Score |
 |-----------|--------|-------|
 | CLI search quality | Stable | 100.0 (14/14) |
-| SKILL.md (skill:5e3f2176) | **Improved** | ~46.5 verified (13/14) |
+| SKILL.md (skill:5e3f2176) | Stable | ~46.5 verified (13/14) |
 | Previous SKILL.md (skill:72771ddf) | Superseded | 37.0 verified (11/14) |
 | Pre-ct-708 SKILL.md (skill:760873c0) | Archived | 23.1 verified (8/14) |
 | Evaluator | **Frozen** (ct-729) | F1=0.900 |
-| Gold queries | 14 verified | 6 high-risk fingerprints |
+| Gold queries | 14 verified | 1 ambiguous (gq-14) |
 | Stochastic variance | Measured | ±8 points per run |
 
 ### Score evolution
@@ -264,7 +290,15 @@ Added 6 response fidelity instructions to SKILL.md (+9 lines):
 23.1  (Phase 2, pre-ct-708)
 37.0  (Phase 4, post CLI fixes + 3 surgical edits)
 46.5  (Phase 7, response fidelity rules)
+46.5  (Phase 8, plateau confirmed - gq-14 is benchmark limitation)
 ```
+
+### gq-14 Status
+
+The last failing query is **not fixable** through SKILL.md or CLI changes alone. The frozen snapshot's ground truth is ambiguous: the work was planned, then subsequently implemented. The AI gives a factually correct answer about the implementation. To progress beyond 13/14, one of:
+- Gold query refinement (more specific question)
+- Fingerprint update (accept implementation answer)
+- Snapshot rebuild (exclude implementation evidence or add queries testing other weaknesses)
 
 ### Files
 
@@ -285,7 +319,6 @@ Added 6 response fidelity instructions to SKILL.md (+9 lines):
 
 | Issue | Priority | Description |
 |-------|----------|-------------|
-| ct-725 | P2 | Fuzzy project name suggestions on --project no-match |
-| ct-726 | P2 | Evaluate FTS5 porter stemming tokenizer |
+| ct-726 | Done | Porter stemming evaluated, recommended as product feature |
 | ct-732 | P2 | Skill output format polish |
-| gq-14 | - | Last failing query (factual accuracy, needs deeper investigation) |
+| gq-14 | Documented | Benchmark limitation, needs gold query or snapshot changes |
