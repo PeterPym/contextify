@@ -1079,6 +1079,102 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v37b] Repo group key migration complete")
     }
 
+    // ========================================================================
+    // v38: Porter stemming for FTS5 search index
+    // ========================================================================
+    // Adds porter stemmer to the FTS5 tokenizer chain. Requires dropping and
+    // recreating the FTS table because SQLite does not support ALTER on virtual
+    // tables. The porter wrapper enables morphological matching so that
+    // "deploy" matches "deployed", "deploying", "deployment", etc.
+    migrator.registerMigration("v38_porter_stemming") { db in
+      logger.info("[MIGRATION-v38] Rebuilding FTS index with porter stemmer")
+
+      // Drop existing FTS table and triggers
+      try db.execute(sql: "DROP TABLE IF EXISTS transcript_entries_fts")
+
+      // Recreate with porter tokenizer wrapping unicode61
+      try db.execute(sql: """
+        CREATE VIRTUAL TABLE transcript_entries_fts USING fts5(
+          content,
+          entry_id UNINDEXED,
+          project_id UNINDEXED,
+          role UNINDEXED,
+          created_at UNINDEXED,
+          tokenize = 'porter unicode61 remove_diacritics 2 separators _'
+        )
+      """)
+
+      // Repopulate from existing entries
+      try db.execute(sql: """
+        INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+        SELECT content, CAST(id AS TEXT), project_id, kind, created_at
+        FROM transcript_entries
+        WHERE display_in_timeline = 1
+          AND content IS NOT NULL
+          AND content != ''
+      """)
+
+      let backfillCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries_fts") ?? 0
+      logger.info("[MIGRATION-v38] Porter FTS index populated with \(backfillCount) entries")
+
+      // Recreate AFTER INSERT trigger with porter tokenizer
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_insert")
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_insert
+        AFTER INSERT ON transcript_entries
+        WHEN NEW.display_in_timeline = 1
+          AND NEW.content IS NOT NULL
+          AND NEW.content != ''
+        BEGIN
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          VALUES (NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at);
+        END
+      """)
+
+      // Recreate AFTER UPDATE trigger
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_update")
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_update
+        AFTER UPDATE ON transcript_entries
+        BEGIN
+          DELETE FROM transcript_entries_fts
+          WHERE entry_id = OLD.id
+            AND (NEW.display_in_timeline = 0
+                 OR NEW.content IS NULL
+                 OR NEW.content = '');
+
+          UPDATE transcript_entries_fts
+          SET content = NEW.content,
+              project_id = NEW.project_id,
+              role = NEW.kind,
+              created_at = NEW.created_at
+          WHERE entry_id = OLD.id
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != '';
+
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          SELECT NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at
+          WHERE NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != ''
+            AND NOT EXISTS (SELECT 1 FROM transcript_entries_fts WHERE entry_id = NEW.id);
+        END
+      """)
+
+      // Recreate AFTER DELETE trigger
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_delete")
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_delete
+        AFTER DELETE ON transcript_entries
+        BEGIN
+          DELETE FROM transcript_entries_fts WHERE entry_id = OLD.id;
+        END
+      """)
+
+      logger.info("[MIGRATION-v38] Porter stemming FTS index created successfully")
+    }
+
     return migrator
   }
 
