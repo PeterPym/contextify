@@ -205,6 +205,11 @@ parallel_workers = int(os.environ.get("PARALLEL_WORKERS", "4")) if eval_mode == 
 skill_hash_verified = 0
 skill_hash_missing = 0
 skill_hash_mismatch = 0
+# Track behavioral compliance across queries
+behavioral_days_365 = 0
+behavioral_snippet_100 = 0
+behavioral_db_path = 0
+behavioral_total = 0
 
 stopwords = {"the", "that", "this", "with", "from", "have",
              "been", "were", "will", "does", "about", "into",
@@ -288,6 +293,17 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
     ai_response = skill_output.get("response", "")
     searches_used = skill_output.get("turns", 1)
     duration = skill_output.get("duration_s", 0)
+
+    # Track behavioral compliance from tool calls
+    global behavioral_days_365, behavioral_snippet_100, behavioral_db_path, behavioral_total
+    behavioral = skill_output.get("behavioral", {})
+    behavioral_total += 1
+    if behavioral.get("used_days_365"):
+        behavioral_days_365 += 1
+    if behavioral.get("used_snippet_tokens_100"):
+        behavioral_snippet_100 += 1
+    if behavioral.get("used_db_path"):
+        behavioral_db_path += 1
 
     # Verify skill hash in agent output
     global skill_hash_verified, skill_hash_missing, skill_hash_mismatch
@@ -489,10 +505,13 @@ print(f"Found rate:         {found_rate:.3f}", file=sys.stderr)
 print(f"Efficiency factor:  {efficiency_factor:.3f}", file=sys.stderr)
 print(f"Final score:        {final_score:.1f}", file=sys.stderr)
 
-if eval_mode == "skill" and expected_skill_hash:
-    print(f"", file=sys.stderr)
-    print(f"Skill verification: hash={expected_skill_hash}", file=sys.stderr)
-    print(f"  Verified: {skill_hash_verified}/{total}  Missing: {skill_hash_missing}  Mismatch: {skill_hash_mismatch}", file=sys.stderr)
+if eval_mode == "skill":
+    if expected_skill_hash:
+        print(f"", file=sys.stderr)
+        print(f"Skill verification: hash={expected_skill_hash}", file=sys.stderr)
+        print(f"  Hash:     verified={skill_hash_verified}/{total}  missing={skill_hash_missing}  mismatch={skill_hash_mismatch}", file=sys.stderr)
+    if behavioral_total > 0:
+        print(f"  Behavior: --days 365={behavioral_days_365}/{behavioral_total}  --snippet-tokens 100={behavioral_snippet_100}/{behavioral_total}  --db-path={behavioral_db_path}/{behavioral_total}", file=sys.stderr)
 
 if verbose:
     print("", file=sys.stderr)

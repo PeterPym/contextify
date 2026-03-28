@@ -2,6 +2,7 @@
 # run-skill-query.sh - Execute a single gold query via headless Claude Code
 #
 # Loads the actual Total Recall SKILL.md so the benchmark tests real skill behavior.
+# Uses stream-json output to capture tool calls for behavioral verification.
 #
 # Usage: run-skill-query.sh <natural_question> <db_path> [timeout_seconds]
 #
@@ -37,7 +38,8 @@ else
 fi
 
 STDERR_LOG=$(mktemp /tmp/skill-runner-stderr-XXXXXX)
-trap "rm -f '$STDERR_LOG'" EXIT
+STREAM_OUTPUT=$(mktemp /tmp/skill-runner-stream-XXXXXX)
+trap "rm -f '$STDERR_LOG' '$STREAM_OUTPUT'" EXIT
 
 PROMPT="You are a benchmark evaluator. A user is asking you a question about their past AI conversations. Use the Total Recall skill below to search and answer.
 
@@ -55,14 +57,15 @@ Now answer this user question by following the skill instructions above:
 
 $QUESTION"
 
-# Run claude -p and capture output. Non-zero exit = infra failure.
-RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
-  --output-format json \
+# Run claude -p with stream-json to capture tool calls
+"$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
+  --output-format stream-json \
+  --verbose \
   --model sonnet \
   --no-session-persistence \
   --permission-mode bypassPermissions \
   --allowedTools "Bash(contextify*)" --allowedTools "Bash(shasum*)" \
-  2>"${STDERR_LOG}") || {
+  2>"${STDERR_LOG}" > "${STREAM_OUTPUT}" || {
     EXIT_CODE=$?
     echo "ERROR: claude -p exited with code $EXIT_CODE" >&2
     if [ -s "$STDERR_LOG" ]; then
@@ -72,30 +75,64 @@ RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
     exit 1
 }
 
-# Parse the claude JSON output into our standard format
-echo "$RAW_OUTPUT" | python3 -c "
+# Parse the stream-json output: extract result, tool calls, and behavioral signals
+python3 -c "
 import sys, json
 
-raw = sys.stdin.read()
-try:
-    d = json.loads(raw)
-except json.JSONDecodeError:
-    print('ERROR: claude returned invalid JSON', file=sys.stderr)
+stream_path = '${STREAM_OUTPUT}'
+lines = open(stream_path).readlines()
+
+result_text = ''
+num_turns = 0
+duration_ms = 0
+cost_usd = 0
+tool_commands = []
+
+for line in lines:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+
+    etype = event.get('type', '')
+
+    # Extract tool_use events (bash commands the agent ran)
+    if etype == 'assistant':
+        msg = event.get('message', {})
+        for block in msg.get('content', []):
+            if block.get('type') == 'tool_use' and block.get('name') == 'Bash':
+                cmd = block.get('input', {}).get('command', '')
+                if cmd:
+                    tool_commands.append(cmd)
+
+    # Extract final result
+    elif etype == 'result':
+        result_text = event.get('result', '')
+        num_turns = event.get('num_turns', 0)
+        duration_ms = event.get('duration_ms', 0)
+        cost_usd = event.get('total_cost_usd', 0)
+
+if not result_text:
+    print('ERROR: no result in stream output', file=sys.stderr)
     sys.exit(1)
 
-result = d.get('result', '')
-if not result:
-    print('ERROR: claude returned empty result', file=sys.stderr)
-    sys.exit(1)
-
-turns = d.get('num_turns', 0)
-cost = d.get('costUSD', 0)
-duration = d.get('duration_ms', 0) / 1000
+# Behavioral signals from tool calls
+behavioral = {
+    'used_days_365': any('--days 365' in cmd or '--days=365' in cmd for cmd in tool_commands),
+    'used_snippet_tokens_100': any('--snippet-tokens 100' in cmd for cmd in tool_commands),
+    'used_db_path': any('--db-path' in cmd for cmd in tool_commands),
+    'contextify_commands': [cmd for cmd in tool_commands if 'contextify' in cmd],
+}
 
 print(json.dumps({
-    'response': result,
-    'turns': turns,
-    'cost_usd': cost,
-    'duration_s': duration
+    'response': result_text,
+    'turns': num_turns,
+    'cost_usd': cost_usd,
+    'duration_s': duration_ms / 1000,
+    'tool_commands': tool_commands,
+    'behavioral': behavioral,
 }))
 "
