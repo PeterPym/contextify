@@ -170,6 +170,20 @@ export EVAL_MODE="$MODE"
 export SKILL_RUNNER="${SCRIPT_DIR}/run-skill-query.sh"
 export PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
 
+# ---------------------------------------------------------------------------
+# Compute expected SKILL.md hash (skill mode only)
+# ---------------------------------------------------------------------------
+SKILL_PATH="${REPO_DIR}/contextify-query/user-skill/total-recall/SKILL.md"
+if [[ "$MODE" == "skill" ]]; then
+  if [[ ! -f "$SKILL_PATH" ]]; then
+    echo "ERROR: SKILL.md not found at $SKILL_PATH" >&2
+    exit 1
+  fi
+  EXPECTED_SKILL_HASH=$(shasum -a 256 "$SKILL_PATH" | cut -c1-8)
+  export EXPECTED_SKILL_HASH
+  echo "SKILL.md hash: $EXPECTED_SKILL_HASH (from $SKILL_PATH)" >&2
+fi
+
 # Use Python to drive the evaluation loop for reliable JSON handling
 python3 << 'PYEOF'
 import json
@@ -184,8 +198,13 @@ temp_db_path = os.environ.get("TEMP_DB_PATH")
 verbose = os.environ.get("VERBOSE") == "true"
 eval_mode = os.environ.get("EVAL_MODE", "cli")
 skill_runner = os.environ.get("SKILL_RUNNER", "")
+expected_skill_hash = os.environ.get("EXPECTED_SKILL_HASH", "")
 # Parallel workers for skill mode (CLI mode is already fast)
 parallel_workers = int(os.environ.get("PARALLEL_WORKERS", "4")) if eval_mode == "skill" else 1
+# Track skill hash verification across queries
+skill_hash_verified = 0
+skill_hash_missing = 0
+skill_hash_mismatch = 0
 
 stopwords = {"the", "that", "this", "with", "from", "have",
              "been", "were", "will", "does", "about", "into",
@@ -269,6 +288,24 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
     ai_response = skill_output.get("response", "")
     searches_used = skill_output.get("turns", 1)
     duration = skill_output.get("duration_s", 0)
+
+    # Verify skill hash in agent output
+    global skill_hash_verified, skill_hash_missing, skill_hash_mismatch
+    hash_match = re.search(r'skill:([a-f0-9]{8})', ai_response)
+    if expected_skill_hash:
+        if not hash_match:
+            skill_hash_missing += 1
+            if verbose:
+                print(f"  [{qid}] WARN: skill hash missing from output", file=sys.stderr)
+        elif hash_match.group(1) != expected_skill_hash:
+            skill_hash_mismatch += 1
+            return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
+                    "category": category, "difficulty": difficulty, "is_negative": is_negative,
+                    "duration_s": duration, "natural_q": natural_q,
+                    "infra_error": f"skill hash mismatch: expected {expected_skill_hash}, got {hash_match.group(1)}"}
+        else:
+            skill_hash_verified += 1
+
     clean_response = strip_markdown(ai_response).lower()
 
     if is_negative:
@@ -451,6 +488,11 @@ print(f"Queries found:      {found_count}", file=sys.stderr)
 print(f"Found rate:         {found_rate:.3f}", file=sys.stderr)
 print(f"Efficiency factor:  {efficiency_factor:.3f}", file=sys.stderr)
 print(f"Final score:        {final_score:.1f}", file=sys.stderr)
+
+if eval_mode == "skill" and expected_skill_hash:
+    print(f"", file=sys.stderr)
+    print(f"Skill verification: hash={expected_skill_hash}", file=sys.stderr)
+    print(f"  Verified: {skill_hash_verified}/{total}  Missing: {skill_hash_missing}  Mismatch: {skill_hash_mismatch}", file=sys.stderr)
 
 if verbose:
     print("", file=sys.stderr)
