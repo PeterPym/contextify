@@ -18,3 +18,4 @@ threshold-INVALID	41.7	2026-03-27T16:41:15Z	INVALID: evaluator improvement, not 
 post-review-INVALID	45.8	2026-03-27T17:32:04Z	INVALID: evaluator improvement, not skill improvement
 # --- VERIFIED skill-mode scores below (runner loads actual SKILL.md, hash + behavioral checks) ---
 verified-baseline	37.0	2026-03-28T03:07:16Z	VERIFIED: skill:72771ddf, hash=12/14, behavior=14/14, 11/14 found
+pre-ct708-comparison	23.1	2026-03-28T04:14:32Z	VERIFIED: old SKILL.md (skill:760873c0, pre-ct-708), 8/14 found, --days 365=9/14, --snippet-tokens 100=0/14
