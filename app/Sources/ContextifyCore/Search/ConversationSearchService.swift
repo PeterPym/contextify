@@ -392,9 +392,30 @@ public actor ConversationSearchService {
 
   // MARK: - Query Building
 
+  /// FTS5 boolean keywords that must stay quoted when used as search terms.
+  private static let ftsKeywords: Set<String> = ["AND", "OR", "NOT", "NEAR"]
+
+  /// Returns true when a token is a simple word safe to leave unquoted in FTS5.
+  ///
+  /// A token is "simple" when it contains only word characters (`[a-zA-Z0-9_]`)
+  /// and optional trailing `*` (prefix wildcard), and is not an FTS5 keyword,
+  /// column filter (contains `:`), initial-token operator (contains `^`), or
+  /// dotted version number (contains `.`).
+  static func isSimpleWord(_ token: String) -> Bool {
+    guard !token.isEmpty else { return false }
+    if ftsKeywords.contains(token.uppercased()) { return false }
+    if token.hasSuffix("*") ? token.dropLast().uppercased() == "NOT" ||
+       token.dropLast().uppercased() == "AND" ||
+       token.dropLast().uppercased() == "OR" ||
+       token.dropLast().uppercased() == "NEAR" : false { return false }
+    if token.contains(":") || token.contains("^") || token.contains(".") { return false }
+    let pattern = #"^[\w]+([\w]*\*?)$"#
+    return token.range(of: pattern, options: .regularExpression) != nil
+  }
+
   /// Build a safe FTS5 query from user input.
-  /// Treats input as space-separated AND of quoted tokens.
-  /// E.g., "unread counts bug" -> "unread" AND "counts" AND "bug"
+  /// Leaves simple words unquoted so porter stemming applies.
+  /// E.g., "deploy refactoring" -> "deploy AND refactoring"
   public static func buildSafeFTSQuery(_ query: String) -> String {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return "" }
@@ -407,19 +428,24 @@ public actor ConversationSearchService {
       return "\"\(sanitized)\""
     }
 
-    // Split on whitespace, wrap each token in quotes, join with AND
+    // Split on whitespace, process each token, join with AND
     let tokens = trimmed.components(separatedBy: .whitespaces)
       .filter { !$0.isEmpty }
-      .map { token in
-        // Remove any quotes and special chars from individual tokens
-        let clean = token
-          .replacingOccurrences(of: "\"", with: "")
+      .map { token -> String in
+        // Remove quotes from individual tokens
+        let noQuotes = token.replacingOccurrences(of: "\"", with: "")
+        // For simple words, leave unquoted (enables porter stemming + prefix wildcards)
+        if isSimpleWord(noQuotes) {
+          return noQuotes
+        }
+        // Complex tokens: strip dangerous chars and quote
+        let clean = noQuotes
           .replacingOccurrences(of: "*", with: "")
           .replacingOccurrences(of: "(", with: "")
           .replacingOccurrences(of: ")", with: "")
         return "\"\(clean)\""
       }
-      .filter { $0 != "\"\"" }  // Filter out empty tokens
+      .filter { $0 != "\"\"" && !$0.isEmpty }  // Filter out empty tokens
 
     guard !tokens.isEmpty else { return "" }
     return tokens.joined(separator: " AND ")
