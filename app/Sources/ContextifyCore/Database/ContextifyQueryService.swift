@@ -571,9 +571,9 @@ public struct ContextifyQueryService: Sendable {
           return ScoredMatch(suggestion: candidate, distance: 0)
         }
 
-        // Edit distance match
-        let nameDist = Self.editDistance(normalized, name)
-        let dirDist = Self.editDistance(normalized, dirName)
+        // Edit distance match (bounded for performance)
+        let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
+        let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
         let bestDist = min(nameDist, dirDist)
         if bestDist <= maxDistance {
           return ScoredMatch(suggestion: candidate, distance: bestDist)
@@ -582,15 +582,21 @@ public struct ContextifyQueryService: Sendable {
         return nil
       }
 
+      // T3: Stable sort by distance, then alphabetically by name
       return matches
-        .sorted { $0.distance < $1.distance }
+        .sorted {
+          if $0.distance != $1.distance {
+            return $0.distance < $1.distance
+          }
+          return ($0.suggestion.name ?? "") < ($1.suggestion.name ?? "")
+        }
         .prefix(limit)
         .map { $0.suggestion }
     }
   }
 
-  /// Levenshtein edit distance between two strings.
-  private static func editDistance(_ a: String, _ b: String) -> Int {
+  /// Bounded Levenshtein edit distance. Returns maxDistance+1 early if threshold exceeded.
+  private static func editDistance(_ a: String, _ b: String, maxDistance: Int) -> Int {
     let aChars = Array(a)
     let bChars = Array(b)
     let m = aChars.count
@@ -599,11 +605,17 @@ public struct ContextifyQueryService: Sendable {
     if m == 0 { return n }
     if n == 0 { return m }
 
+    // Early length-based pruning
+    if abs(m - n) > maxDistance {
+      return maxDistance + 1
+    }
+
     var prev = Array(0...n)
     var curr = Array(repeating: 0, count: n + 1)
 
     for i in 1...m {
       curr[0] = i
+      var rowMin = curr[0]
       for j in 1...n {
         let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
         curr[j] = min(
@@ -611,6 +623,11 @@ public struct ContextifyQueryService: Sendable {
           curr[j - 1] + 1,   // insertion
           prev[j - 1] + cost  // substitution
         )
+        rowMin = min(rowMin, curr[j])
+      }
+      // Early exit if entire row exceeds threshold
+      if rowMin > maxDistance {
+        return maxDistance + 1
       }
       swap(&prev, &curr)
     }
