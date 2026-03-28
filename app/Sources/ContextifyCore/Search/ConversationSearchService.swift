@@ -403,13 +403,10 @@ public actor ConversationSearchService {
   /// dotted version number (contains `.`).
   static func isSimpleWord(_ token: String) -> Bool {
     guard !token.isEmpty else { return false }
-    if ftsKeywords.contains(token.uppercased()) { return false }
-    if token.hasSuffix("*") ? token.dropLast().uppercased() == "NOT" ||
-       token.dropLast().uppercased() == "AND" ||
-       token.dropLast().uppercased() == "OR" ||
-       token.dropLast().uppercased() == "NEAR" : false { return false }
+    let base = token.hasSuffix("*") ? String(token.dropLast()) : token
+    if ftsKeywords.contains(base.uppercased()) { return false }
     if token.contains(":") || token.contains("^") || token.contains(".") { return false }
-    let pattern = #"^[\w]+([\w]*\*?)$"#
+    let pattern = #"^\w+\*?$"#
     return token.range(of: pattern, options: .regularExpression) != nil
   }
 
@@ -432,17 +429,18 @@ public actor ConversationSearchService {
     let tokens = trimmed.components(separatedBy: .whitespaces)
       .filter { !$0.isEmpty }
       .map { token -> String in
-        // Remove quotes from individual tokens
-        let noQuotes = token.replacingOccurrences(of: "\"", with: "")
-        // For simple words, leave unquoted (enables porter stemming + prefix wildcards)
-        if isSimpleWord(noQuotes) {
-          return noQuotes
-        }
-        // Complex tokens: strip dangerous chars and quote
-        let clean = noQuotes
-          .replacingOccurrences(of: "*", with: "")
+        // Normalize: strip quotes and parentheses before classification
+        let normalized = token
+          .replacingOccurrences(of: "\"", with: "")
           .replacingOccurrences(of: "(", with: "")
           .replacingOccurrences(of: ")", with: "")
+        guard !normalized.isEmpty else { return "" }
+        // For simple words, leave unquoted (enables porter stemming + prefix wildcards)
+        if isSimpleWord(normalized) {
+          return normalized
+        }
+        // Complex tokens: strip wildcard and quote
+        let clean = normalized.replacingOccurrences(of: "*", with: "")
         return "\"\(clean)\""
       }
       .filter { $0 != "\"\"" && !$0.isEmpty }  // Filter out empty tokens

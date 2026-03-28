@@ -28,9 +28,9 @@ final class ConversationSearchServiceTests: XCTestCase {
   }
 
   func testBuildSafeFTSQuery_specialCharacters() {
-    // foo* is simple (wildcard on simple word) -> unquoted; (bar) has parens -> quoted; "baz" quotes stripped -> simple
+    // foo* is simple (wildcard on simple word) -> unquoted; (bar) parens stripped -> simple; "baz" quotes stripped -> simple
     let result = ConversationSearchService.buildSafeFTSQuery("foo* (bar) \"baz\"")
-    XCTAssertEqual(result, "foo* AND \"bar\" AND baz")
+    XCTAssertEqual(result, "foo* AND bar AND baz")
   }
 
   func testBuildSafeFTSQuery_emptyString() {
@@ -65,9 +65,9 @@ final class ConversationSearchServiceTests: XCTestCase {
   }
 
   func testBuildSafeFTSQuery_parenthesesRemoved() {
-    // function() has parens -> not simple, gets stripped and quoted
+    // function() has parens stripped -> "function" is simple -> unquoted
     let result = ConversationSearchService.buildSafeFTSQuery("function()")
-    XCTAssertEqual(result, "\"function\"")
+    XCTAssertEqual(result, "function")
   }
 
   func testBuildSafeFTSQuery_asterisksPreservedOnSimpleWord() {
