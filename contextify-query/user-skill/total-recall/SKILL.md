@@ -27,11 +27,7 @@ Before your first search, compute the skill file hash:
 shasum -a 256 ~/.claude/skills/total-recall/SKILL.md | cut -c1-8
 ```
 
-Begin your response with:
-
-> **Contextify Total Recall** `skill:<hash>`
-
-where `<hash>` is the 8-character prefix from the shasum output. Then provide the search results with citations.
+Use the templates below to format your response. Replace `<hash>` with the 8-character prefix from the shasum output.
 
 ## Trigger phrases
 
@@ -392,15 +388,70 @@ If results seem incomplete, run additional searches with expanded terms before a
 
 6) Format response:
 
-> **Contextify Total Recall**
+Use the template matching the query type. Adapt the structure to the number of results, but keep the header, citation format, and summary sections.
+
+### Lookup / exploratory template
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _Searched <totalCount> entries across <project(s)> | <time range, e.g. "last 90 days" or "all time">_
+
+[1-2 sentence summary: what was found, when, and the bottom line.]
+
+> "[Quoted excerpt from the most relevant result. Keep it concise but include the key fact, decision, or detail.]"
 >
-> **Found:** [brief summary of what was found]
+> -- <project name>, <date in "Mon DD, YYYY" format> `entry:<first-8-chars-of-uuid>`
+
+> "[Second excerpt if needed for a different facet or time period.]"
 >
-> **From:** [date/time and project context]
->
-> [Key excerpts with citations]
->
-> **Entry ID:** `<uuid>` (for reference)
+> -- <project name>, <date> `entry:<first-8-chars-of-uuid>`
+
+**Summary:** [What was decided or what the current status is, synthesized from the evidence above. Distinguish "discussed and planned" from "implemented and merged" when relevant. If the answer is uncertain or incomplete, say so.]
+```
+
+### Counting template
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _Searched <scope> | <time range>_
+
+**<totalCount>** entries match across <project(s)>.
+
+| Term | Matches |
+|------|---------|
+| deploy | 312 |
+| deployed | 201 |
+| ... | ... |
+
+**Search terms:** `<the OR-expanded query as sent to the CLI>`
+```
+
+### Negative result template
+
+After completing the zero-result protocol (section below), if still no results:
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _No results found._
+
+Searched <N> entries across <scope> over <time range>.
+
+**Queries tried:**
+1. `<first query>`
+2. `<second query>`
+3. `<broadened query>`
+
+[Brief note on what this means, e.g. "This topic does not appear in your indexed conversation history."]
+```
+
+### Formatting rules
+
+- **Header is mandatory.** Every response starts with the `Contextify Total Recall` header line and search scope line.
+- **Quote, don't paraphrase.** Use `> "..."` blockquotes for source excerpts. Trim for brevity but preserve the key fact.
+- **Cite every excerpt.** Each blockquote gets a `-- project, date entry:<uuid-prefix>` attribution line.
+- **One summary, at the end.** Synthesize across all cited results. Do not repeat what the quotes already say.
+- **Timestamps as dates.** Convert Unix timestamps to "Mon DD, YYYY" (or "Mon DD, YYYY HH:MM" when time matters). Never show raw Unix timestamps to the user.
+- **Multiple results.** Show 2-4 quoted excerpts for the most relevant hits. For exploratory queries with many results, briefly list additional hits by date and project after the key quotes.
 
 **Response fidelity rules:**
 
@@ -410,11 +461,6 @@ If results seem incomplete, run additional searches with expanded terms before a
 - **Include technical details.** When results contain specific values (version numbers, config settings, measurements, URLs), include them in your response. These details are often what the user actually needs.
 - **Fetch context for key results.** When a search snippet seems relevant but is truncated, always use `contextify context` to get the full surrounding conversation. Important details (names, status, outcomes) are often in adjacent entries, not the snippet itself.
 - **Use source language.** When the source material uses distinctive or colorful terms (e.g., "bootleg hats" instead of "novelty hats"), use the source's wording in your response. This preserves the user's original framing.
-
-For counting queries, also include:
-> **Search terms used:** [list the OR-expanded terms]
-> **Matched entries:** [totalCount from metadata] entries
-> **Per-term breakdown:** [if --term-counts was used, show each term's count]
 
 ## Working with the JSON output
 
