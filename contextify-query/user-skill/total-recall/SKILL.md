@@ -21,11 +21,17 @@ Always use the exact commands shown in this skill file. Do not improvise command
 
 ## Output Format
 
+Before your first search, compute the skill file hash:
+
+```bash
+shasum -a 256 ~/.claude/skills/total-recall/SKILL.md | cut -c1-8
+```
+
 Begin your response with:
 
-> **Contextify Total Recall**
+> **Contextify Total Recall** `skill:<hash>`
 
-Then provide the search results with citations.
+where `<hash>` is the 8-character prefix from the shasum output. Then provide the search results with citations.
 
 ## Trigger phrases
 
@@ -86,17 +92,45 @@ Because there is no stemming, you must explicitly include morphological variants
 
 Before searching, analyze the user's request and build an effective query.
 
+### Priority rule: entities first
+
+Preserve rare names and identifiers exactly. Only expand common verbs and concepts.
+
+- **Proper nouns, people, companies, products**: use as-is or in quoted phrases (`"Perch Innovations"`, `"Fulton House"`)
+- **Task IDs, version numbers**: quote them (`"ct 389"`, `"v1.5.0"`)
+- **Hyphenated project names**: quote without hyphens (`"contextify cloud"`, `"cli ai setup"`)
+- **Common verbs**: expand with prefix matching (`deploy*`, `migrat*`)
+
+Start your search with the 2-3 most distinctive terms from the question. If the question mentions a specific name, number, or identifier, that should be your primary search term, not a generic concept.
+
 ### Step 1: Classify intent
 
-Determine the query type to set your strategy:
+Determine the query type to set your strategy and starting `--days` window:
 
-| Intent | Signals | Strategy |
-|--------|---------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | Use `--count-only`. Add `--term-counts` for OR queries. No pagination needed. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
-| **Exploratory** | "what have we talked about", "find anything about" | Start broad, refine iteratively. Use `--limit 20`. |
+| Intent | Signals | Starting `--days` | Strategy |
+|--------|---------|-------------------|----------|
+| **Counting** | "how many", "count", "every time", "frequency" | 365 | Use `--count-only`. Add `--term-counts` for OR queries. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | 365 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
+| **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
+| **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
+
+### Step 1.5: Check for special characters
+
+Before building the query, scan each search term for characters that FTS5 treats as token separators. The CLI auto-handles common cases (F-02), but verify your query terms are clean:
+
+| Character | Example | Rewrite to |
+|-----------|---------|------------|
+| Hyphen `-` | `cli-ai-setup` | `"cli ai setup"` (quoted phrase without hyphens) |
+| Hyphen `-` in task ID | `ct-361`, `bl-42` | `"ct 361"` (quoted phrase) |
+| Underscore `_` | `UNREAD_COUNT` | `"UNREAD COUNT"` (quoted phrase without underscores) |
+| Dot `.` | `v1.5.0` | `"v1.5.0"` (quote the whole term) |
+
+**When to apply:** Always scan your query terms before Step 2. If any term contains hyphens, underscores, or dots, rewrite it using the table above. Note the reformulation in your response so the user knows what was searched.
+
+**The CLI now auto-rewrites bare hyphenated tokens** (e.g., `review-loop` becomes `"review loop"`), but this only works for simple queries without FTS5 operators. When you construct complex queries with OR/AND, you must handle special characters yourself.
 
 ### Step 2: Expand query terms
 
@@ -179,13 +213,15 @@ If database not found, respond:
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --json
 ```
+
+For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 
 When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --anchor-git --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json
 ```
 
 Git anchoring is additive, not exclusive:
@@ -276,10 +312,14 @@ Anchor selection guidance:
 - Prefer older transcripts unless the user asked about the current chat session.
 - If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, down-rank hits from that transcript unless the user explicitly wants current session results.
 
-3) Retrieve context around the anchor:
+3) Decide whether to fetch context or use the snippet:
+
+**Use the snippet directly** if it already contains the specific answer: a name, number, date, decision, or quote. With `--snippet-tokens 100`, snippets often contain enough detail.
+
+**Fetch context** when: the snippet is truncated and you need the full text, the answer depends on surrounding discussion or rationale, or pronouns/references need resolution.
 
 ```bash
-contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
+contextify context "<entry-uuid>" --before 10 --after 20 --json
 ```
 
 Returns:
@@ -362,6 +402,15 @@ If results seem incomplete, run additional searches with expanded terms before a
 >
 > **Entry ID:** `<uuid>` (for reference)
 
+**Response fidelity rules:**
+
+- **Quote distinctive terms verbatim.** When results contain technical identifiers (env vars like `SENTRY_ENVIRONMENT`, config values, error codes), exact job titles ("Quality Engineering Lead"), product names, or distinctive phrasing, reproduce them exactly from the source material rather than paraphrasing.
+- **Name every individual mentioned.** When a question asks about decisions, stakeholders, or participants, name ALL individuals found in relevant results with their specific roles or requests, not just the first or most prominent one.
+- **Verify implementation status.** When asked whether work was done or implemented, search for merge/commit evidence (commit hashes, PR numbers, "merged to main"), not just discussion. Clearly distinguish between "discussed and planned" vs "implemented and merged." If you find only discussion without merge evidence, say so.
+- **Include technical details.** When results contain specific values (version numbers, config settings, measurements, URLs), include them in your response. These details are often what the user actually needs.
+- **Fetch context for key results.** When a search snippet seems relevant but is truncated, always use `contextify context` to get the full surrounding conversation. Important details (names, status, outcomes) are often in adjacent entries, not the snippet itself.
+- **Use source language.** When the source material uses distinctive or colorful terms (e.g., "bootleg hats" instead of "novelty hats"), use the source's wording in your response. This preserves the user's original framing.
+
 For counting queries, also include:
 > **Search terms used:** [list the OR-expanded terms]
 > **Matched entries:** [totalCount from metadata] entries
@@ -402,16 +451,32 @@ Branch on `code`:
 | `entryNotFound` | Re-search for a new anchor |
 | `cliNotFound` | "Contextify CLI not found. See https://contextify.sh/help for installation." |
 
-## Expanding search
+## Zero-result protocol (mandatory)
 
-### Zero results
+This protocol is **mandatory** before declaring "not found." Skipping steps is a skill violation.
 
-If search returns 0 results:
-1. Widen `--days` (try 90, then 365)
-2. If not clearly about current repo, retry without `--project .`
-3. Try prefix matching (`deploy*` instead of `deploy`)
-4. Use `contextify projects --json` to discover other projects
-5. Ask user to clarify what they're looking for
+When search returns 0 results, follow this escalation path in order. Stop as soon as you get results:
+
+**Step 1: Widen the time window.**
+- If `--days` was < 90, retry with `--days 90`
+- If `--days` was < 365, retry with `--days 365`
+- If already at 365 or no `--days` was set, proceed to Step 2
+
+**Step 2: Broaden query terms.**
+- Try prefix matching: `deploy*` instead of `deploy`
+- Simplify: reduce to the 1-2 most distinctive terms
+- Check for special characters (Step 1.5) that may need quoting
+
+**Step 3: Broaden project scope.**
+- If using `--project .`, retry without `--project` (search all projects)
+- Skip this step for clearly repo-scoped debugging queries
+
+**Step 4: Try alternative terms.**
+- Use synonyms or related phrasings
+- For hyphenated identifiers, try both the quoted phrase form and the individual tokens
+
+**Step 5: Only now declare "not found."**
+Report what you searched: "Searched [N] days across [scope] with queries: [list]. No results found."
 
 ### Partial or suspicious results
 

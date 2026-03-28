@@ -171,7 +171,10 @@ private func run() -> Never {
     exit(ExitCode.notFound.rawValue)
   }
 
-  if candidates.count > 1 {
+  if candidates.count > 1,
+     isatty(STDERR_FILENO) != 0,
+     ProcessInfo.processInfo.environment["CONTEXTIFY_NO_INSTALL_WARNING"] != "1",
+     ProcessInfo.processInfo.environment["CONTEXTIFY_NO_DEPRECATIONS"] != "1" {
     let others = candidates.filter { $0.path != selected.path }.sorted { $0.path < $1.path }.map(\.path).joined(separator: "\n- ")
     fputs("Multiple Contextify installs detected; using:\n- \(selected.path)\nOther candidates:\n- \(others)\n", stderr)
   }

@@ -54,7 +54,7 @@ contextify search "error handling" --limit 10
 # List all projects
 contextify projects
 
-# List transcripts for a project
+# List transcripts for a project (by name, path, or "." for current directory)
 contextify transcripts --project myproject
 
 # Get a specific entry by UUID
@@ -229,6 +229,15 @@ echo $PATH | grep -o '/opt/homebrew/bin'
 If missing, add to your shell profile (~/.zshrc or ~/.bashrc):
 ```bash
 export PATH="/opt/homebrew/bin:$PATH"
+```
+
+### Multiple Contextify installs warning
+
+If more than one Contextify install is found (e.g., both a DMG and App Store build), the shim writes a warning to stderr. This warning only appears when stderr is a TTY (interactive terminal) and is silently suppressed when the CLI is invoked by an AI assistant skill.
+
+To suppress it manually, set an environment variable in your shell profile:
+```bash
+export CONTEXTIFY_NO_INSTALL_WARNING=1
 ```
 
 ### Upgrading

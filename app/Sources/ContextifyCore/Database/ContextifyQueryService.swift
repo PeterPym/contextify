@@ -423,6 +423,141 @@ public struct ContextifyQueryService: Sendable {
     return rows.map { ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath) }
   }
 
+  /// Resolve a project by display name (exact, case-insensitive match).
+  /// Returns the project ID on exact match. On ambiguity (multiple exact matches),
+  /// throws .ambiguous. On no match, returns nil (caller should try path resolution).
+  public func resolveProjectByName(_ name: String) throws -> String? {
+    let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedName.isEmpty else { return nil }
+
+    return try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let name: String?
+        let rootPath: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case name
+          case rootPath = "root_path"
+        }
+      }
+
+      let candidates = try Row.fetchAll(db, sql: "SELECT id, name, root_path FROM projects WHERE hidden = 0")
+
+      // Exact match (case-insensitive, trimmed) against project name
+      let exactMatches = candidates.filter { candidate in
+        guard let candidateName = candidate.name else { return false }
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+          .caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if exactMatches.count == 1 {
+        return exactMatches[0].id
+      }
+
+      if exactMatches.count > 1 {
+        let suggestions = exactMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      // Also try matching against the last path component (directory name)
+      let dirMatches = candidates.filter { candidate in
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent
+        return dirName.caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if dirMatches.count == 1 {
+        return dirMatches[0].id
+      }
+
+      if dirMatches.count > 1 {
+        let suggestions = dirMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      return nil
+    }
+  }
+
+  /// Resolve a project name to both its ID and root path.
+  /// Used when callers need the path for worktree expansion after name-based lookup.
+  public func resolveProjectByNameWithPath(_ name: String) throws -> (id: String, rootPath: String)? {
+    let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedName.isEmpty else { return nil }
+
+    return try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let name: String?
+        let rootPath: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case name
+          case rootPath = "root_path"
+        }
+      }
+
+      let candidates = try Row.fetchAll(db, sql: "SELECT id, name, root_path FROM projects WHERE hidden = 0")
+
+      let exactMatches = candidates.filter { candidate in
+        guard let candidateName = candidate.name else { return false }
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+          .caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if exactMatches.count == 1 {
+        return (id: exactMatches[0].id, rootPath: exactMatches[0].rootPath)
+      }
+
+      if exactMatches.count > 1 {
+        let suggestions = exactMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      let dirMatches = candidates.filter { candidate in
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent
+        return dirName.caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if dirMatches.count == 1 {
+        return (id: dirMatches[0].id, rootPath: dirMatches[0].rootPath)
+      }
+
+      if dirMatches.count > 1 {
+        let suggestions = dirMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      return nil
+    }
+  }
+
+  /// Find fuzzy project name suggestions for a given input.
+  /// Returns projects whose name or directory name contains the input as a substring.
+  public func fuzzyProjectSuggestions(_ input: String, limit: Int = 5) throws -> [ProjectSuggestion] {
+    let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalized.isEmpty else { return [] }
+
+    return try pool.read { db in
+      let candidates = try recentProjectSuggestions(db, limit: 100)
+      return candidates.filter { candidate in
+        let name = (candidate.name ?? "").lowercased()
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
+        return name.contains(normalized) || dirName.contains(normalized)
+      }.prefix(limit).map { $0 }
+    }
+  }
+
   private func foldPath(_ path: String) -> String {
     path.lowercased(with: Locale(identifier: "en_US_POSIX"))
   }

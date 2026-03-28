@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "snapshot_version": 1,
+  "query_count": 14,
+  "queries": [
+    {
+      "id": "gq-01",
+      "category": "cross-session-continuity",
+      "natural_question": "What do we know about the Fulton House property? Who runs it, what are the systems?",
+      "search_terms": "Fulton House booking systems Google",
+      "content_fingerprint": "Fulton House Business Operations, Booking Systems, Google Workspace",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-02",
+      "category": "decision-archaeology",
+      "natural_question": "What did we find out about Perch Innovations and the Delaware franchise tax situation?",
+      "search_terms": "franchise tax Delaware Perch Innovations",
+      "content_fingerprint": "A Delaware C-corp (Perch Innovations Inc) has its own",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-03",
+      "category": "decision-archaeology",
+      "natural_question": "What tree replacement species did we settle on for the exception request? Something about a maple?",
+      "search_terms": "Paperbark Maple Acer griseum",
+      "content_fingerprint": "Paperbark Maple (*Acer griseum*)",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-04",
+      "category": "decision-archaeology",
+      "natural_question": "What was the prior design discussion about making focus changes AI-driven with interactive confirmation?",
+      "search_terms": "focus intelligent auto-advance candidate presentation",
+      "content_fingerprint": "focus changes, focus should be intelligent, auto-advance focus wrong",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true
+    },
+    {
+      "id": "gq-05",
+      "category": "session-opener",
+      "natural_question": "We spun up a cloud backend. Remind me: what is contextify-cloud, what stack, and where are we with it?",
+      "search_terms": "cloud service FastAPI PostgreSQL Customer 0 backend",
+      "content_fingerprint": "Cloud is separate Python FastAPI service with its own PostgreSQL",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-06",
+      "category": "decision-archaeology",
+      "natural_question": "What is the plan for v1.5.0 and what epic tracks it?",
+      "search_terms": "v1.5.0 Cloud Launch ct-389 release plan",
+      "content_fingerprint": "Contextify 1.5.0 = Cloud Launch (`ct",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-07",
+      "category": "debugging",
+      "natural_question": "Who added Sentry monitoring to the contextify-cloud server, and is that work complete?",
+      "search_terms": "Sentry DSN monitoring contextify-cloud production error",
+      "content_fingerprint": "SENTRY_ENVIRONMENT=production",
+      "efficiency_budget": 3,
+      "difficulty": "medium",
+      "verified": true
+    },
+    {
+      "id": "gq-08",
+      "category": "implementation-reference",
+      "natural_question": "What DigitalOcean infrastructure did we provision for the cloud server? What region, size, deployment method?",
+      "search_terms": "DigitalOcean droplet s-2vcpu-4gb NYC3",
+      "content_fingerprint": "DigitalOcean droplet (s-2vcpu-4gb, NYC3 region)",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-09",
+      "category": "implementation-reference",
+      "natural_question": "What did we find out about the patcher's Tier 1 discovery and how it uses anchors?",
+      "search_terms": "discovery engine Tier 1 mechanical patcher",
+      "content_fingerprint": "Tier 1 + Tier 2: LLM fallback",
+      "efficiency_budget": 3,
+      "difficulty": "medium",
+      "verified": true
+    },
+    {
+      "id": "gq-10",
+      "category": "session-opener",
+      "natural_question": "What happened with the ct-287 cloud schema work? Was it merged?",
+      "search_terms": "ct-287 cloud worktree grouping schema project fields",
+      "content_fingerprint": "ct-287-cloud-worktree-grouping",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true
+    },
+    {
+      "id": "gq-11",
+      "category": "cross-session-continuity",
+      "natural_question": "I was working on some Dungeon Crawler Carl novelty hat project - can you find any prior work on that?",
+      "search_terms": "dungeon crawler carl",
+      "content_fingerprint": "dungeon crawler carl bootleg hats project",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true
+    },
+    {
+      "id": "gq-12",
+      "category": "decision-archaeology",
+      "natural_question": "Have we ever had a conversation specifically about renaming a QA job title to Quality Engineer or QE?",
+      "search_terms": "QA rename quality engineering",
+      "content_fingerprint": "Quality Engineering Lead",
+      "efficiency_budget": 3,
+      "difficulty": "medium",
+      "verified": true
+    },
+    {
+      "id": "gq-13",
+      "category": "decision-archaeology",
+      "natural_question": "What decisions have been made on pricing? Did we ever decide how much to charge?",
+      "search_terms": "Justin George personal license Noah Zoschke team cloud",
+      "content_fingerprint": "Justin George (personal license), Noah Zoschke (team/cloud version)",
+      "efficiency_budget": 3,
+      "difficulty": "hard",
+      "verified": true
+    },
+    {
+      "id": "gq-14",
+      "category": "session-opener",
+      "natural_question": "What happened to the navigation UX upgrade work? Was it implemented?",
+      "search_terms": "navigation UX design review sidetracked planned",
+      "content_fingerprint": "The work was planned and scoped",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true
+    }
+  ]
+}

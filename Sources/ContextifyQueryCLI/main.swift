@@ -492,7 +492,7 @@ struct ContextifyQueryCLI {
           let requestedLimit = options.limit
           let requestedOffset = options.offset
           let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
-          let anchorPlan = anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options)
+          let anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
 
           if options.anchorGit {
             if let anchorPlan {
@@ -518,7 +518,7 @@ struct ContextifyQueryCLI {
             includeHidden: options.includeHidden,
             timeRange: timeRange,
             kinds: kinds,
-            snippetTokens: options.snippetTokens ?? 10,
+            snippetTokens: options.snippetTokens ?? 50,
             treatAsFTS: true,
             device: options.device
           )
@@ -1028,7 +1028,7 @@ struct ContextifyQueryCLI {
         --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50; projects defaults to all)
         --offset <n>         Skip first n results (for pagination, default 0)
-        --snippet-tokens <n> Search snippet length in tokens (default 10, max 100)
+        --snippet-tokens <n> Search snippet length in tokens (default 50, max 100)
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
@@ -1225,31 +1225,102 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
     )
   }
 
-  let operatorPattern = "\\b(OR|AND|NOT)\\b"
-  let hasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
-  if hasOperators || trimmed.contains("\"") {
-    return trimmed
+  // Reject unbalanced quotes on original input before preprocessing.
+  // preprocessHyphens auto-closes unclosed quotes, so checking only the
+  // processed string would miss genuinely malformed user input.
+  let originalQuoteCount = trimmed.filter { $0 == "\"" }.count
+  if originalQuoteCount % 2 != 0 {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unbalanced quotes in search query.",
+      exitCode: .invalidArgs
+    )
   }
 
-  return ConversationSearchService.buildSafeFTSQuery(trimmed)
+  // Check the ORIGINAL query for operators/quotes before preprocessing
+  let operatorPattern = "\\b(OR|AND|NOT)\\b"
+  let originalHasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
+  let originalHasQuotes = trimmed.contains("\"")
+
+  // F-02: Pre-process hyphenated tokens before FTS5 query building
+  let hyphenResult = FTSQueryBuilder.preprocessHyphens(trimmed)
+  for hint in hyphenResult.hints {
+    fputs("Hint: \(hint)\n", stderr)
+  }
+  let processed = hyphenResult.query
+
+  // Defensive check: reject unbalanced quotes after preprocessing too
+  let processedQuoteCount = processed.filter { $0 == "\"" }.count
+  if processedQuoteCount % 2 != 0 {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unbalanced quotes in search query.",
+      exitCode: .invalidArgs
+    )
+  }
+
+  // If original had operators/quotes, user knows FTS5 syntax - return preprocessed
+  if originalHasOperators || originalHasQuotes {
+    return processed
+  }
+
+  // If preprocessing didn't change anything, use the standard safe wrapper
+  if processed == trimmed {
+    return ConversationSearchService.buildSafeFTSQuery(processed)
+  }
+
+  // Complex FTS syntax bypasses the custom wrapper to avoid mis-handling
+  let hasComplexSyntax =
+    processed.contains("(") ||
+    processed.contains(")") ||
+    processed.contains(":") ||
+    processed.range(of: "\\bNEAR\\b", options: [.regularExpression, .caseInsensitive]) != nil
+
+  if hasComplexSyntax {
+    return processed
+  }
+
+  // Preprocessing introduced quotes (for hyphenated tokens). Use quote-aware
+  // safe wrapper that preserves those quotes while wrapping remaining bare tokens.
+  return FTSQueryBuilder.safeWrapPreservingQuotes(processed)
 }
 
-private func resolveAnchorBasePath(options: ContextifyQueryCLI.Options) -> String {
-  if let project = options.project {
-    return (project == "." || project == "current")
-      ? FileManager.default.currentDirectoryPath
-      : project
+
+private func resolveAnchorBasePath(
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
+) throws -> String {
+  guard let project = options.project else {
+    return FileManager.default.currentDirectoryPath
   }
-  return FileManager.default.currentDirectoryPath
+  if project == "." || project == "current" {
+    return FileManager.default.currentDirectoryPath
+  }
+
+  // Use name-to-rootPath lookup for non-path values (align with resolveProjectScope)
+  let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+    || FileManager.default.fileExists(atPath: project)
+  if !looksLikePath, let service = service {
+    do {
+      if let result = try service.resolveProjectByNameWithPath(project) {
+        return result.rootPath
+      }
+    } catch let error as ContextifyQueryService.ProjectResolutionError {
+      throw mapProjectResolutionError(error)
+    }
+  }
+
+  return project
 }
 
 private func resolveGitAnchorPlan(
   cues: [GitAnchorCue],
-  options: ContextifyQueryCLI.Options
-) -> GitAnchorPlan? {
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
+) throws -> GitAnchorPlan? {
   guard !cues.isEmpty else { return nil }
 
-  let basePath = resolveAnchorBasePath(options: options)
+  let basePath = try resolveAnchorBasePath(options: options, service: service)
   guard
     let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
       .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1845,47 +1916,25 @@ private func resolveProjectId(
   if project == "." || project == "current" {
     path = FileManager.default.currentDirectoryPath
   } else {
+    // F-03: Try name-based lookup first for non-path values
+    let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+      || FileManager.default.fileExists(atPath: project)
+    if !looksLikePath {
+      do {
+        if let id = try service.resolveProjectByName(project) {
+          return id
+        }
+      } catch let error as ContextifyQueryService.ProjectResolutionError {
+        throw mapProjectResolutionError(error)
+      }
+    }
     path = project
   }
 
   do {
     return try service.resolveProjectId(forPath: path)
   } catch let error as ContextifyQueryService.ProjectResolutionError {
-    switch error {
-    case let .notFound(path, suggestions, totalProjectCount):
-      let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let suggestionObjects: [JSONValue] = suggestions.map { project in
-        jsonProjectSuggestion(project)
-      }
-      let detailsObject: [String: JSONValue] = [
-        "path": .string(path),
-        "suggestions": .array(suggestionObjects),
-        "totalProjectCount": .number(Double(totalProjectCount)),
-      ]
-      let details: JSONValue = .object(detailsObject)
-      throw CLIError(
-        code: "dbProjectNotFound",
-        message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
-        exitCode: .dbNotFound,
-        details: details
-      )
-    case let .ambiguous(path, candidates):
-      let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let candidateObjects: [JSONValue] = candidates.map { project in
-        jsonProjectSuggestion(project)
-      }
-      let detailsObject: [String: JSONValue] = [
-        "path": .string(path),
-        "candidates": .array(candidateObjects),
-      ]
-      let details: JSONValue = .object(detailsObject)
-      throw CLIError(
-        code: "dbProjectNotFound",
-        message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
-        exitCode: .dbNotFound,
-        details: details
-      )
-    }
+    throw mapProjectResolutionError(error)
   }
 }
 
@@ -1893,12 +1942,29 @@ private func resolveProjectScope(
   options: ContextifyQueryCLI.Options,
   service: ContextifyQueryService
 ) throws -> ProjectScope {
-  // 1. Resolve base path
+  // 1. Resolve base path (with F-03 name-based lookup for non-path values)
   let basePath: String
   if let project = options.project {
-    basePath = (project == "." || project == "current")
-      ? FileManager.default.currentDirectoryPath
-      : project
+    if project == "." || project == "current" {
+      basePath = FileManager.default.currentDirectoryPath
+    } else {
+      let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
+        || FileManager.default.fileExists(atPath: project)
+      if !looksLikePath {
+        do {
+          if let result = try service.resolveProjectByNameWithPath(project) {
+            // Use the project's root path for worktree expansion instead of returning early
+            basePath = result.rootPath
+          } else {
+            basePath = project
+          }
+        } catch let error as ContextifyQueryService.ProjectResolutionError {
+          throw mapProjectResolutionError(error)
+        }
+      } else {
+        basePath = project
+      }
+    }
   } else {
     return ProjectScope(projectIds: [], displayNames: [],
                        unresolvedSiblings: [], excluded: [],
@@ -1986,6 +2052,36 @@ private func resolveProjectScope(
   )
 }
 
+private func mapProjectResolutionError(
+  _ error: ContextifyQueryService.ProjectResolutionError
+) -> CLIError {
+  switch error {
+  case let .notFound(path, suggestions, totalProjectCount):
+    let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    return CLIError(
+      code: "dbProjectNotFound",
+      message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
+      exitCode: .dbNotFound,
+      details: .object([
+        "path": .string(path),
+        "suggestions": .array(suggestions.map(jsonProjectSuggestion)),
+        "totalProjectCount": .number(Double(totalProjectCount)),
+      ])
+    )
+  case let .ambiguous(path, candidates):
+    let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    return CLIError(
+      code: "dbProjectNotFound",
+      message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
+      exitCode: .dbNotFound,
+      details: .object([
+        "path": .string(path),
+        "candidates": .array(candidates.map(jsonProjectSuggestion)),
+      ])
+    )
+  }
+}
+
 private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSuggestion) -> JSONValue {
   var object: [String: JSONValue] = [
     "id": .string(project.id),
@@ -2062,6 +2158,23 @@ private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   }
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
+  }
+  // F-05: Catch FTS5 column-reference errors from hyphenated tokens.
+  // Only fire when the error is from the FTS table to avoid misclassifying
+  // real schema/code failures as user input mistakes (ct-736).
+  if message.contains("no such column:") && message.localizedCaseInsensitiveContains("fts") {
+    let marker = "no such column:"
+    if let range = message.range(of: marker) {
+      let columnName = String(message[range.upperBound...])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? "unknown"
+      return CLIError(
+        code: "invalidQuery",
+        message: "FTS5 interpreted '\(columnName)' as a column name (likely from a hyphenated term). Try quoting: \"<prefix> \(columnName)\" or use: <prefix> AND \(columnName)",
+        exitCode: .invalidArgs,
+        details: .object(["hint": .string("Hyphens in search terms cause FTS5 to split tokens. Use quoted phrases or AND operators instead."), "column": .string(columnName)])
+      )
+    }
   }
   if message.localizedCaseInsensitiveContains("fts5") &&
       (message.localizedCaseInsensitiveContains("syntax") || message.localizedCaseInsensitiveContains("parse")) {
