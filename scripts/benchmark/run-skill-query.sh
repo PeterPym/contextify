@@ -24,6 +24,7 @@ if [[ ! -f "$SKILL_PATH" ]]; then
   exit 1
 fi
 SKILL_CONTENT=$(cat "$SKILL_PATH")
+SKILL_HASH=$(shasum -a 256 "$SKILL_PATH" | cut -c1-8)
 
 # Probe for timeout command (macOS may need gtimeout from coreutils)
 if command -v timeout >/dev/null 2>&1; then
@@ -42,6 +43,10 @@ PROMPT="You are a benchmark evaluator. A user is asking you a question about the
 
 IMPORTANT: Always pass --db-path $DB_PATH to every contextify command. This overrides the default database location.
 
+The skill hash for this session is: $SKILL_HASH
+You MUST include this exact hash in your output header as: skill:$SKILL_HASH
+Do NOT attempt to compute the hash yourself. Use the value provided above.
+
 --- BEGIN SKILL ---
 $SKILL_CONTENT
 --- END SKILL ---
@@ -56,7 +61,7 @@ RAW_OUTPUT=$("$TIMEOUT_BIN" "$TIMEOUT" claude -p "$PROMPT" \
   --model sonnet \
   --no-session-persistence \
   --permission-mode bypassPermissions \
-  --allowedTools "Bash(contextify*)" \
+  --allowedTools "Bash(contextify*)" --allowedTools "Bash(shasum*)" \
   2>"${STDERR_LOG}") || {
     EXIT_CODE=$?
     echo "ERROR: claude -p exited with code $EXIT_CODE" >&2
