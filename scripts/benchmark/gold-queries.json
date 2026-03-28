@@ -137,8 +137,8 @@
       "id": "gq-14",
       "category": "session-opener",
       "natural_question": "What happened to the navigation UX upgrade work? Was it implemented?",
-      "search_terms": "navigation UX design review sidetracked planned",
-      "content_fingerprint": "The work was planned and scoped",
+      "search_terms": "navigation reflow dashboard fully implemented committed",
+      "content_fingerprint": "navigation reflow for the Contextify Cloud dashboard is fully implemented",
       "efficiency_budget": 2,
       "difficulty": "medium",
       "verified": true
