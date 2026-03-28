@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # evaluate.sh - Total Recall benchmark evaluator
 #
+# FROZEN (ct-729, 2026-03-27). Calibrated against 35 labeled pairs (F1=0.900).
+# Do not change scoring logic without re-running calibrate-fingerprint.py.
+#
 # Runs gold queries against a frozen DB snapshot and scores the results.
 # Final score (0-100) is printed as the last line on stdout.
 # All diagnostic output goes to stderr.
@@ -225,16 +228,46 @@ def strip_markdown(text):
     text = re.sub(r'`(.+?)`', r'\1', text)
     return text
 
+# Negation signals that indicate the AI did NOT find the content.
+# When present, word-level matches are held to a higher threshold
+# to avoid false positives from topic-adjacent "not found" responses.
+# Calibrated in ct-729 (2026-03-27). Do not change without re-calibration.
+NEGATION_SIGNALS = [
+    "not found", "no results", "no conversation", "no discussion",
+    "no record", "couldn't find", "could not find", "zero results",
+    "no matches", "no relevant", "no evidence", "no mention",
+    "nothing about", "didn't find", "did not find", "no references",
+    "unable to find", "no information", "rather than", "instead of",
+    "nothing specifically",
+]
+
+# Fingerprint matching threshold. Calibrated in ct-729:
+#   0.70 = best F1 (0.878) on 20 TP + 10 TN labeled pairs
+#   Negation penalty +0.25 -> F1 0.900
+# FROZEN: do not change without new calibration data.
+FINGERPRINT_THRESHOLD = 0.70
+NEGATION_PENALTY = 0.25
+
 def check_fingerprint(fp_clean, clean_response):
     """Check if fingerprint content appears in response using word-level matching.
-    Uses stem-aware matching: a fingerprint word matches if the response contains
-    any word that shares the same stem (prefix of 4+ chars)."""
+
+    Calibrated in ct-729 (2026-03-27). Changes require re-running
+    calibrate-fingerprint.py with updated labeled pairs.
+
+    Strategy:
+    1. Exact substring match is authoritative (AI quoted the content)
+    2. Word-level stem matching with 0.70 threshold
+    3. Negation-aware: if response contains "not found" etc., threshold
+       increases by 0.25 to reduce false positives from topic-adjacent responses
+    4. Numeric tokens >= 3 chars qualify (catches issue IDs like "287")
+    """
     if not fp_clean:
         return False
     if fp_clean in clean_response:
         return True
+    # Include numeric tokens >= 3 chars (issue IDs like "287" are discriminating)
     words = [w for w in re.findall(r'[a-z0-9]+', fp_clean)
-             if len(w) >= 4 and w not in stopwords]
+             if (len(w) >= 4 and w not in stopwords) or (w.isdigit() and len(w) >= 3)]
     if not words:
         return False
     # Extract all response words for stem matching
@@ -243,11 +276,18 @@ def check_fingerprint(fp_clean, clean_response):
         """Check if fingerprint word matches any response word by shared stem."""
         if fp_word in clean_response:
             return True
+        # Numeric tokens require exact match (no stemming)
+        if fp_word.isdigit():
+            return fp_word in response_words
         # Try stem matching: if fp_word[:n] matches any response word[:n]
         stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
         return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
     matches = sum(1 for w in words if stem_match(w))
-    return (matches / len(words)) >= 0.70
+    ratio = matches / len(words)
+    # Apply negation penalty when response contains "not found" signals
+    has_negation = any(sig in clean_response for sig in NEGATION_SIGNALS)
+    threshold = min(FINGERPRINT_THRESHOLD + NEGATION_PENALTY, 1.0) if has_negation else FINGERPRINT_THRESHOLD
+    return ratio >= threshold
 
 def evaluate_query(q):
     """Evaluate a single query. Returns a result dict."""
