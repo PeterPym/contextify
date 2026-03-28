@@ -1237,6 +1237,16 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
   }
   let processed = hyphenResult.query
 
+  // Reject unbalanced quotes before any early returns
+  let quoteCount = processed.filter { $0 == "\"" }.count
+  if quoteCount % 2 != 0 {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unbalanced quotes in search query.",
+      exitCode: .invalidArgs
+    )
+  }
+
   // If original had operators/quotes, user knows FTS5 syntax - return preprocessed
   if originalHasOperators || originalHasQuotes {
     return processed
@@ -1245,16 +1255,6 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
   // If preprocessing didn't change anything, use the standard safe wrapper
   if processed == trimmed {
     return ConversationSearchService.buildSafeFTSQuery(processed)
-  }
-
-  // Reject unbalanced quotes
-  let quoteCount = processed.filter { $0 == "\"" }.count
-  if quoteCount % 2 != 0 {
-    throw CLIError(
-      code: "invalidQuery",
-      message: "Unbalanced quotes in search query.",
-      exitCode: .invalidArgs
-    )
   }
 
   // Complex FTS syntax bypasses the custom wrapper to avoid mis-handling
@@ -1919,17 +1919,18 @@ private func resolveProjectScope(
       let looksLikePath = project.contains("/") || project.hasPrefix("~") || project.hasPrefix(".")
       if !looksLikePath {
         do {
-          if let id = try service.resolveProjectByName(project) {
-            return ProjectScope(projectIds: [id], displayNames: [project],
-                               unresolvedSiblings: [], excluded: [],
-                               worktreeGroupDetected: false, worktreesConsidered: [],
-                               expansionApplied: false)
+          if let result = try service.resolveProjectByNameWithPath(project) {
+            // Use the project's root path for worktree expansion instead of returning early
+            basePath = result.rootPath
+          } else {
+            basePath = project
           }
         } catch let error as ContextifyQueryService.ProjectResolutionError {
           throw mapProjectResolutionError(error)
         }
+      } else {
+        basePath = project
       }
-      basePath = project
     }
   } else {
     return ProjectScope(projectIds: [], displayNames: [],
