@@ -211,30 +211,30 @@
       padding: 1.25rem 1.5rem;
       border-bottom: 1px solid var(--border-default);
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 0.75rem;
-      min-height: 72px;
     }
     [data-bs-theme="dark"] .comparison-cell { border-bottom-color: var(--slate-700); }
 
+    .comparison-row { display: contents; }
     .comparison-row:last-child .comparison-cell { border-bottom: none; }
 
     .comparison-cell-without { background: var(--bg-page); }
     [data-bs-theme="dark"] .comparison-cell-without { background: var(--slate-900); }
 
-    .comparison-cell-with { background: var(--bg-page); }
-    [data-bs-theme="dark"] .comparison-cell-with { background: var(--slate-900); }
+    .comparison-cell-with { background: rgba(74, 167, 116, 0.03); }
+    [data-bs-theme="dark"] .comparison-cell-with { background: rgba(74, 167, 116, 0.05); }
 
     .comparison-icon {
       flex-shrink: 0;
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.8rem;
-      margin-top: 0.1rem;
+      font-size: 0.7rem;
+      margin-top: 0.2rem;
     }
     .comparison-icon-without {
       background: var(--contextify-error-light);
@@ -495,24 +495,25 @@
       .cta-card { padding: 2.5rem 1.5rem; }
 
       .comparison-grid {
-        grid-template-columns: 1fr;
+        display: block;
       }
-      .comparison-header-with {
-        border-top: 1px solid var(--border-default);
+      .comparison-header,
+      .comparison-cell-without {
+        display: none;
       }
       .comparison-row {
-        display: contents;
-      }
-      .comparison-cell {
-        min-height: auto;
-      }
-      .comparison-cell-without {
-        border-bottom: none;
-        padding-bottom: 0.5rem;
+        display: block;
       }
       .comparison-cell-with {
-        padding-top: 0.5rem;
-        margin-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-default);
+        background: transparent;
+      }
+      .comparison-row:last-child .comparison-cell-with {
+        border-bottom: none;
+      }
+      .comparison-cell-with .comparison-icon {
+        background: var(--contextify-primary-light);
+        color: var(--contextify-primary);
       }
     }
   </style>
@@ -580,23 +581,23 @@
     <div class="container">
       <div class="row">
         <div class="col-lg-10 mx-auto">
-          <p class="section-label" style="text-align: center;">The difference</p>
-          <h2 class="section-title" style="text-align: center; max-width: none;">What changes when your AI has memory</h2>
+          <p class="section-label" style="text-align: center;">Cloud Sync</p>
+          <h2 class="section-title" style="text-align: center; max-width: none;">What changes when memory follows you</h2>
 
-          <div class="comparison-grid" role="table" aria-label="Comparison of workflow without and with Contextify Cloud">
+          <div class="comparison-grid" role="table" aria-label="Comparison of workflow without and with Cloud Sync">
             <!-- Column headers -->
-            <div class="comparison-header comparison-header-without" role="columnheader">Without Contextify Cloud</div>
+            <div class="comparison-header comparison-header-without" role="columnheader">Without Cloud Sync</div>
             <div class="comparison-header comparison-header-with" role="columnheader">With Contextify Cloud</div>
 
             <!-- Row 1 -->
             <div class="comparison-row" role="row">
               <div class="comparison-cell comparison-cell-without" role="cell">
                 <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
-                <h3>You solved this last week but can't find it</h3>
+                <h3>Switch machines, lose the thread</h3>
               </div>
               <div class="comparison-cell comparison-cell-with" role="cell">
                 <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
-                <h3>Total Recall finds it in seconds</h3>
+                <h3>Search the same history from any machine</h3>
               </div>
             </div>
 
@@ -604,11 +605,11 @@
             <div class="comparison-row" role="row">
               <div class="comparison-cell comparison-cell-without" role="cell">
                 <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
-                <h3>Bug comes back, re-investigate from scratch</h3>
+                <h3>Laptop dies, session history disappears</h3>
               </div>
               <div class="comparison-cell comparison-cell-with" role="cell">
                 <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
-                <h3>Prior root-cause analysis found instantly</h3>
+                <h3>Continuous backup keeps everything intact</h3>
               </div>
             </div>
 
@@ -616,11 +617,11 @@
             <div class="comparison-row" role="row">
               <div class="comparison-cell comparison-cell-without" role="cell">
                 <div class="comparison-icon comparison-icon-without" aria-hidden="true">&#10007;</div>
-                <h3>New laptop, history gone</h3>
+                <h3>Need past context away from your dev box</h3>
               </div>
               <div class="comparison-cell comparison-cell-with" role="cell">
                 <div class="comparison-icon comparison-icon-with" aria-hidden="true">&#10003;</div>
-                <h3>Every session backed up continuously</h3>
+                <h3>Open it from browser or any device</h3>
               </div>
             </div>
           </div>
