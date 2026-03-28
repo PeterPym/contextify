@@ -1305,6 +1305,15 @@ private func resolveAnchorBasePath(
       if let result = try service.resolveProjectByNameWithPath(project) {
         return result.rootPath
       }
+      // ct-725: Name lookup returned nil, surface fuzzy suggestions
+      let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
+      if !fuzzy.isEmpty {
+        throw ContextifyQueryService.ProjectResolutionError.notFound(
+          path: project,
+          suggestions: fuzzy,
+          totalProjectCount: fuzzy.count
+        )
+      }
     } catch let error as ContextifyQueryService.ProjectResolutionError {
       throw mapProjectResolutionError(error)
     }
@@ -1924,6 +1933,15 @@ private func resolveProjectId(
         if let id = try service.resolveProjectByName(project) {
           return id
         }
+        // ct-725: Name lookup returned nil, surface fuzzy suggestions
+        let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
+        if !fuzzy.isEmpty {
+          throw ContextifyQueryService.ProjectResolutionError.notFound(
+            path: project,
+            suggestions: fuzzy,
+            totalProjectCount: fuzzy.count
+          )
+        }
       } catch let error as ContextifyQueryService.ProjectResolutionError {
         throw mapProjectResolutionError(error)
       }
@@ -1956,6 +1974,15 @@ private func resolveProjectScope(
             // Use the project's root path for worktree expansion instead of returning early
             basePath = result.rootPath
           } else {
+            // ct-725: Name lookup returned nil, surface fuzzy suggestions
+            let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
+            if !fuzzy.isEmpty {
+              throw ContextifyQueryService.ProjectResolutionError.notFound(
+                path: project,
+                suggestions: fuzzy,
+                totalProjectCount: fuzzy.count
+              )
+            }
             basePath = project
           }
         } catch let error as ContextifyQueryService.ProjectResolutionError {

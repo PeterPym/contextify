@@ -545,6 +545,60 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertNil(resultNone)
   }
 
+  // MARK: - ct-725 regression: fuzzyProjectSuggestions with edit distance
+
+  func testFuzzyProjectSuggestions_editDistance() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-ctx",
+      name: "contextify",
+      rootPath: "/Users/test/code/contextify",
+      rootBookmark: nil,
+      lastViewedTs: 0,
+      hidden: false,
+      displayOrder: nil,
+      isOrphaned: false,
+      orphanedSince: nil,
+      createdAt: 0,
+      updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo: "contxtify" (missing 'e') should suggest "contextify"
+    let result1 = try service.fuzzyProjectSuggestions("contxtify")
+    XCTAssertEqual(result1.count, 1)
+    XCTAssertEqual(result1.first?.name, "contextify")
+
+    // Typo: "contexify" (missing 't') should suggest "contextify"
+    let result2 = try service.fuzzyProjectSuggestions("contexify")
+    XCTAssertEqual(result2.count, 1)
+    XCTAssertEqual(result2.first?.name, "contextify")
+
+    // Substring match should still work
+    let result3 = try service.fuzzyProjectSuggestions("context")
+    XCTAssertEqual(result3.count, 1)
+
+    // Completely different name should return empty
+    let result4 = try service.fuzzyProjectSuggestions("foobar")
+    XCTAssertTrue(result4.isEmpty)
+
+    // Exact match via substring
+    let result5 = try service.fuzzyProjectSuggestions("contextify")
+    XCTAssertEqual(result5.count, 1)
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).
