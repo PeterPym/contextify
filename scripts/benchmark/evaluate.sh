@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # evaluate.sh - Total Recall benchmark evaluator
 #
-# FROZEN (ct-729, 2026-03-27). Calibrated against 35 labeled pairs (F1=0.900).
+# FROZEN (ct-729, 2026-03-27). Calibrated against 36 labeled pairs (F1=0.900).
 # Do not change scoring logic without re-running calibrate-fingerprint.py.
 #
 # Runs gold queries against a frozen DB snapshot and scores the results.
@@ -242,7 +242,7 @@ NEGATION_SIGNALS = [
 ]
 
 # Fingerprint matching threshold. Calibrated in ct-729:
-#   0.70 = best F1 (0.878) on 20 TP + 10 TN labeled pairs
+#   0.70 = best F1 (0.878) on 20 TP + 11 TN labeled pairs
 #   Negation penalty +0.25 -> F1 0.900
 # FROZEN: do not change without new calibration data.
 FINGERPRINT_THRESHOLD = 0.70
