@@ -9,7 +9,7 @@
 # All diagnostic output goes to stderr.
 #
 # Usage:
-#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose]
+#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace]
 
 set -euo pipefail
 
@@ -23,6 +23,7 @@ GOLD_QUERIES="${SCRIPT_DIR}/gold-queries.json"
 SNAPSHOT=""
 MODE="cli"
 VERBOSE=false
+TRACE=false
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -37,14 +38,17 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"; shift 2 ;;
     --verbose)
       VERBOSE=true; shift ;;
+    --trace)
+      TRACE=true; shift ;;
     --help|-h)
-      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose]" >&2
+      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --gold-queries PATH  Path to gold queries JSON (default: scripts/benchmark/gold-queries.json)" >&2
       echo "  --snapshot PATH      Path to frozen DB snapshot (default: from snapshot-manifest.json)" >&2
       echo "  --mode cli|skill     Execution mode (default: cli)" >&2
       echo "  --verbose            Show per-query results on stderr" >&2
+      echo "  --trace              Write per-query trace files to /tmp/benchmark-traces/" >&2
       exit 0
       ;;
     *)
@@ -172,6 +176,15 @@ export VERBOSE="$VERBOSE"
 export EVAL_MODE="$MODE"
 export SKILL_RUNNER="${SCRIPT_DIR}/run-skill-query.sh"
 export PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
+export TRACE="$TRACE"
+
+# Set up trace directory if tracing enabled
+TRACE_DIR="/tmp/benchmark-traces"
+if [[ "$TRACE" == "true" ]]; then
+  mkdir -p "$TRACE_DIR"
+  echo "Trace output: $TRACE_DIR/" >&2
+fi
+export TRACE_DIR
 
 # ---------------------------------------------------------------------------
 # Compute expected SKILL.md hash (skill mode only)
@@ -194,6 +207,7 @@ import subprocess
 import sys
 import os
 import re
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 gold_queries_path = os.environ.get("GOLD_QUERIES_PATH")
@@ -213,6 +227,9 @@ behavioral_days_365 = 0
 behavioral_snippet_100 = 0
 behavioral_db_path = 0
 behavioral_total = 0
+# Trace support (ct-728)
+trace_enabled = os.environ.get("TRACE") == "true"
+trace_dir = os.environ.get("TRACE_DIR", "/tmp/benchmark-traces")
 
 stopwords = {"the", "that", "this", "with", "from", "have",
              "been", "were", "will", "does", "about", "into",
@@ -289,6 +306,84 @@ def check_fingerprint(fp_clean, clean_response):
     threshold = min(FINGERPRINT_THRESHOLD + NEGATION_PENALTY, 1.0) if has_negation else FINGERPRINT_THRESHOLD
     return ratio >= threshold
 
+def fingerprint_details(fp_clean, clean_response):
+    """Return diagnostic details for a fingerprint check (trace-only, no scoring impact)."""
+    if not fp_clean:
+        return {"status": "no_fingerprint"}
+    if fp_clean in clean_response:
+        return {"status": "exact_match", "threshold": FINGERPRINT_THRESHOLD, "match_ratio": 1.0}
+    words = [w for w in re.findall(r'[a-z0-9]+', fp_clean)
+             if (len(w) >= 4 and w not in stopwords) or (w.isdigit() and len(w) >= 3)]
+    if not words:
+        return {"status": "no_qualifying_words", "threshold": FINGERPRINT_THRESHOLD}
+    response_words = set(re.findall(r'[a-z0-9]+', clean_response))
+    def stem_match(fp_word):
+        if fp_word.isdigit():
+            return fp_word in response_words
+        if fp_word in clean_response:
+            return True
+        stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
+        return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
+    matched = [w for w in words if stem_match(w)]
+    unmatched = [w for w in words if not stem_match(w)]
+    ratio = len(matched) / len(words)
+    has_negation = any(sig in clean_response for sig in NEGATION_SIGNALS)
+    effective_threshold = min(FINGERPRINT_THRESHOLD + NEGATION_PENALTY, 1.0) if has_negation else FINGERPRINT_THRESHOLD
+    return {
+        "status": "word_match",
+        "threshold": FINGERPRINT_THRESHOLD,
+        "effective_threshold": effective_threshold,
+        "negation_detected": has_negation,
+        "match_ratio": round(ratio, 3),
+        "matched_words": matched,
+        "unmatched_words": unmatched,
+        "total_words": len(words),
+        "pass": ratio >= effective_threshold,
+    }
+
+def write_trace(qid, query_dict, result, response_text="", tool_commands=None, cli_command=None):
+    """Write per-query trace file to trace_dir (ct-728)."""
+    if not trace_enabled:
+        return
+    search_cmds = []
+    context_cmds = []
+    if tool_commands:
+        for cmd in tool_commands:
+            if "contextify" in cmd and "search" in cmd:
+                search_cmds.append(cmd)
+            elif "contextify" in cmd and "context" in cmd:
+                context_cmds.append(cmd)
+    if cli_command:
+        search_cmds.append(cli_command)
+
+    fp = query_dict.get("content_fingerprint", "")
+    fp_clean = strip_markdown(fp).lower() if fp else ""
+    clean_resp = strip_markdown(response_text).lower() if response_text else ""
+    fp_details = fingerprint_details(fp_clean, clean_resp) if not result.get("is_negative") else {"status": "negative_query"}
+
+    trace = {
+        "query_id": qid,
+        "natural_question": query_dict.get("natural_question", query_dict.get("search_terms", "")),
+        "search_terms": query_dict.get("search_terms", ""),
+        "mode": eval_mode,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pass": result.get("found", False),
+        "is_negative": result.get("is_negative", False),
+        "search_commands": search_cmds,
+        "context_commands": context_cmds,
+        "result_count": result.get("total_results", 0),
+        "response_excerpt": (response_text or "")[:500],
+        "fingerprint": fp_details,
+        "error": result.get("error") or result.get("infra_error"),
+        "duration_s": result.get("duration_s", 0),
+        "turns": result.get("searches_used", 0),
+        "category": result.get("category", ""),
+        "difficulty": result.get("difficulty", ""),
+    }
+    trace_path = os.path.join(trace_dir, f"{qid}.json")
+    with open(trace_path, "w") as f:
+        json.dump(trace, f, indent=2)
+
 def evaluate_query(q):
     """Evaluate a single query. Returns a result dict."""
     qid = q["id"]
@@ -303,15 +398,77 @@ def evaluate_query(q):
 
     try:
         if eval_mode == "skill":
-            return evaluate_skill_query(q, qid, natural_q, fingerprint, budget,
-                                        category, difficulty, is_negative)
+            result = evaluate_skill_query(q, qid, natural_q, fingerprint, budget,
+                                          category, difficulty, is_negative)
         else:
-            return evaluate_cli_query(q, qid, search_terms, fingerprint, budget,
-                                      category, difficulty, is_negative)
+            result = evaluate_cli_query(q, qid, search_terms, fingerprint, budget,
+                                        category, difficulty, is_negative)
     except subprocess.TimeoutExpired:
-        return {"id": qid, "found": False, "error": "Timeout", "searches_used": 1,
-                "total_results": 0, "category": category, "difficulty": difficulty,
-                "is_negative": is_negative, "duration_s": 0, "natural_q": natural_q}
+        result = {"id": qid, "found": False, "error": "Timeout", "searches_used": 1,
+                  "total_results": 0, "category": category, "difficulty": difficulty,
+                  "is_negative": is_negative, "duration_s": 0, "natural_q": natural_q}
+
+    # Write per-query trace file (ct-728)
+    write_trace(qid, q, result,
+                response_text=result.get("_response", ""),
+                tool_commands=result.get("_tool_commands"),
+                cli_command=result.get("_cli_command"))
+    return result
+
+def evaluate_cli_query(q, qid, search_terms, fingerprint, budget, category, difficulty, is_negative):
+    cmd = [
+        "contextify", "search", search_terms,
+        "--db-path", temp_db_path,
+        "--json",
+        "--full-content",
+        "--snippet-tokens", "100",
+        "--limit", "20"
+    ]
+    cli_cmd_str = " ".join(cmd)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+    if proc.returncode != 0:
+        try:
+            err = json.loads(proc.stdout)
+            error_msg = err.get("message", proc.stderr.strip())
+        except (json.JSONDecodeError, ValueError):
+            error_msg = proc.stderr.strip() or proc.stdout.strip()
+        return {"id": qid, "found": False, "error": error_msg,
+                "searches_used": 1, "total_results": 0,
+                "category": category, "difficulty": difficulty,
+                "is_negative": is_negative, "_cli_command": cli_cmd_str}
+
+    try:
+        response = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"id": qid, "found": False, "error": "Failed to parse JSON",
+                "searches_used": 1, "total_results": 0,
+                "category": category, "difficulty": difficulty,
+                "is_negative": is_negative, "_cli_command": cli_cmd_str}
+
+    total_results = response.get("metadata", {}).get("totalCount", 0)
+    data = response.get("data", [])
+
+    if is_negative:
+        query_found = (total_results == 0)
+    else:
+        raw_output = proc.stdout.lower()
+        fp_lower = fingerprint.lower() if fingerprint else ""
+        if fp_lower and fp_lower in raw_output:
+            query_found = True
+        else:
+            query_found = False
+            if fingerprint:
+                for hit in data:
+                    snippet = (hit.get("contentSnippet") or "").lower()
+                    if fp_lower in snippet:
+                        query_found = True
+                        break
+
+    return {"id": qid, "found": query_found, "searches_used": 1,
+            "total_results": total_results, "category": category,
+            "difficulty": difficulty, "is_negative": is_negative,
+            "_cli_command": cli_cmd_str, "_response": proc.stdout[:500]}
 
 def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, difficulty, is_negative):
     cmd = ["bash", skill_runner, natural_q, temp_db_path, "180"]
@@ -373,9 +530,11 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
         fp_clean = strip_markdown(fingerprint).lower() if fingerprint else ""
         query_found = check_fingerprint(fp_clean, clean_response)
 
+    tool_cmds = skill_output.get("tool_commands", [])
     return {"id": qid, "found": query_found, "searches_used": searches_used,
             "total_results": 0, "category": category, "difficulty": difficulty,
-            "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q}
+            "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q,
+            "_response": ai_response, "_tool_commands": tool_cmds}
 
 with open(gold_queries_path) as f:
     gq = json.load(f)
@@ -424,87 +583,10 @@ else:
     # Serial execution (CLI mode or parallel_workers=1)
     for q in queries:
         qid = q["id"]
-        search_terms = q["search_terms"]
-        fingerprint = q.get("content_fingerprint")
-        expected_result = q.get("expected_result")
         budget = q["efficiency_budget"]
-        category = q["category"]
-        difficulty = q["difficulty"]
-        natural_q = q.get("natural_question", search_terms)
-        is_negative = (fingerprint is None and expected_result == "zero_matches")
+        natural_q = q.get("natural_question", q["search_terms"])
 
-        try:
-            if eval_mode == "skill":
-                result = evaluate_skill_query(q, qid, natural_q, fingerprint, budget,
-                                              category, difficulty, is_negative)
-            else:
-                # CLI mode: run contextify search directly
-                cmd = [
-                    "contextify", "search", search_terms,
-                    "--db-path", temp_db_path,
-                    "--json",
-                    "--full-content",
-                    "--snippet-tokens", "100",
-                    "--limit", "20"
-                ]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-                if proc.returncode != 0:
-                    try:
-                        err = json.loads(proc.stdout)
-                        error_msg = err.get("message", proc.stderr.strip())
-                    except (json.JSONDecodeError, ValueError):
-                        error_msg = proc.stderr.strip() or proc.stdout.strip()
-                    result = {"id": qid, "found": False, "error": error_msg,
-                              "searches_used": 1, "total_results": 0,
-                              "category": category, "difficulty": difficulty}
-                    results.append(result)
-                    total_scorable += 1
-                    efficiency_sum += min(1.0, budget / 1.0)
-                    if verbose:
-                        print(f"  [{qid}] ERROR: {error_msg}", file=sys.stderr)
-                    continue
-
-                try:
-                    response = json.loads(proc.stdout)
-                except json.JSONDecodeError:
-                    result = {"id": qid, "found": False, "error": "Failed to parse JSON",
-                              "searches_used": 1, "total_results": 0}
-                    results.append(result)
-                    total_scorable += 1
-                    efficiency_sum += min(1.0, budget / 1.0)
-                    if verbose:
-                        print(f"  [{qid}] ERROR: Failed to parse JSON", file=sys.stderr)
-                    continue
-
-                total_results = response.get("metadata", {}).get("totalCount", 0)
-                data = response.get("data", [])
-
-                if is_negative:
-                    query_found = (total_results == 0)
-                else:
-                    raw_output = proc.stdout.lower()
-                    fp_lower = fingerprint.lower() if fingerprint else ""
-                    if fp_lower and fp_lower in raw_output:
-                        query_found = True
-                    else:
-                        query_found = False
-                        if fingerprint:
-                            for hit in data:
-                                snippet = (hit.get("contentSnippet") or "").lower()
-                                if fp_lower in snippet:
-                                    query_found = True
-                                    break
-
-                result = {"id": qid, "found": query_found, "searches_used": 1,
-                          "total_results": total_results, "category": category,
-                          "difficulty": difficulty, "is_negative": is_negative}
-
-        except subprocess.TimeoutExpired:
-            result = {"id": qid, "found": False, "error": "Timeout",
-                      "searches_used": 1, "total_results": 0,
-                      "category": category, "difficulty": difficulty,
-                      "is_negative": is_negative}
+        result = evaluate_query(q)
 
         results.append(result)
         total_scorable += 1
@@ -522,7 +604,7 @@ else:
                 print(f"  [{qid}] {status} (turns={turns}, {dur:.1f}s) - {natural_q[:60]!r}", file=sys.stderr)
             else:
                 tr = result.get("total_results", 0)
-                print(f"  [{qid}] {status} ({tr} results) - {search_terms!r}", file=sys.stderr)
+                print(f"  [{qid}] {status} ({tr} results) - {q['search_terms']!r}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -561,6 +643,9 @@ if verbose:
         neg = " [negative]" if r.get("is_negative") else ""
         err = f" ERROR={r['error']}" if "error" in r else ""
         print(f"  {r['id']}: {status}{neg} (results={r['total_results']}){err}", file=sys.stderr)
+
+if trace_enabled:
+    print(f"Traces written to: {trace_dir}/ ({len(results)} files)", file=sys.stderr)
 
 # Print final score to stdout (the ONLY stdout output)
 print(f"{final_score:.1f}")

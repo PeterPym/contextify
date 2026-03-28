@@ -460,6 +460,10 @@ bash scripts/benchmark/evaluate.sh --verbose
 # Run skill benchmark (headless Claude Code, ~15 minutes)
 bash scripts/benchmark/evaluate.sh --mode skill --verbose
 
+# Run with per-query trace files for failure diagnosis
+bash scripts/benchmark/evaluate.sh --verbose --trace
+# Traces written to /tmp/benchmark-traces/{gq-01..gq-14}.json
+
 # Ratchet loop: edit SKILL.md, run benchmark, keep if improved
 bash scripts/benchmark/ratchet.sh --iterations 5
 ```
