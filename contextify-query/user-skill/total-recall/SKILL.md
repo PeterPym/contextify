@@ -446,7 +446,7 @@ Branch on `code`:
 | `code` | Response |
 |-------|----------|
 | `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" If the user has a custom database location (Dropbox, iCloud Drive), use `--db-path <path>` or `--db-dir <dir>`. |
-| `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |
+| `dbProjectNotFound` | Check `details.suggestions` for fuzzy name matches (typo correction). Offer alternatives: "Did you mean: X?" |
 | `featureUnavailable` | Explain limitation clearly, do not imply workarounds |
 | `entryNotFound` | Re-search for a new anchor |
 | `cliNotFound` | "Contextify CLI not found. See https://contextify.sh/help for installation." |

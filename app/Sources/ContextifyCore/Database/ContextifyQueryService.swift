@@ -271,6 +271,14 @@ public struct ContextifyQueryService: Sendable {
     return "\(joinType) transcript_entries \(alias) ON \(alias).id = \(ftsAlias).entry_id"
   }
 
+  /// Fast project count (single COUNT query, no materialization).
+  public func projectCount(includeHidden: Bool = false) throws -> Int {
+    try pool.read { db in
+      let whereClause = includeHidden ? "" : " WHERE hidden = 0"
+      return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects\(whereClause)") ?? 0
+    }
+  }
+
   public func listProjects(includeHidden: Bool = false, limit: Int? = nil) throws -> [ProjectListItem] {
     try pool.read { db in
       var sql = """
@@ -543,19 +551,96 @@ public struct ContextifyQueryService: Sendable {
   }
 
   /// Find fuzzy project name suggestions for a given input.
-  /// Returns projects whose name or directory name contains the input as a substring.
+  /// Returns projects whose name or directory name is similar to the input,
+  /// using substring matching and edit distance (Levenshtein).
   public func fuzzyProjectSuggestions(_ input: String, limit: Int = 5) throws -> [ProjectSuggestion] {
     let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard !normalized.isEmpty else { return [] }
 
+    // Max edit distance scales with input length: 1 for short names, 2 for longer
+    let maxDistance = normalized.count <= 5 ? 1 : 2
+
     return try pool.read { db in
       let candidates = try recentProjectSuggestions(db, limit: 100)
-      return candidates.filter { candidate in
+
+      struct ScoredMatch {
+        let suggestion: ProjectSuggestion
+        let distance: Int  // 0 = substring match, 1+ = edit distance
+      }
+
+      let matches: [ScoredMatch] = candidates.compactMap { candidate in
         let name = (candidate.name ?? "").lowercased()
         let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
-        return name.contains(normalized) || dirName.contains(normalized)
-      }.prefix(limit).map { $0 }
+
+        // Substring match is best (distance 0)
+        if name.contains(normalized) || dirName.contains(normalized)
+          || normalized.contains(name) || normalized.contains(dirName)
+        {
+          return ScoredMatch(suggestion: candidate, distance: 0)
+        }
+
+        // Edit distance match (bounded for performance)
+        let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
+        let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
+        let bestDist = min(nameDist, dirDist)
+        if bestDist <= maxDistance {
+          return ScoredMatch(suggestion: candidate, distance: bestDist)
+        }
+
+        return nil
+      }
+
+      // T3: Stable sort by distance, then alphabetically by name
+      return matches
+        .sorted {
+          if $0.distance != $1.distance {
+            return $0.distance < $1.distance
+          }
+          return ($0.suggestion.name ?? "") < ($1.suggestion.name ?? "")
+        }
+        .prefix(limit)
+        .map { $0.suggestion }
     }
+  }
+
+  /// Bounded Levenshtein edit distance. Returns maxDistance+1 early if threshold exceeded.
+  private static func editDistance(_ a: String, _ b: String, maxDistance: Int) -> Int {
+    let aChars = Array(a)
+    let bChars = Array(b)
+    let m = aChars.count
+    let n = bChars.count
+
+    if m == 0 { return n }
+    if n == 0 { return m }
+
+    // Early length-based pruning
+    if abs(m - n) > maxDistance {
+      return maxDistance + 1
+    }
+
+    var prev = Array(0...n)
+    var curr = Array(repeating: 0, count: n + 1)
+
+    for i in 1...m {
+      curr[0] = i
+      var rowMin = curr[0]
+      for j in 1...n {
+        let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
+        curr[j] = min(
+          prev[j] + 1,       // deletion
+          curr[j - 1] + 1,   // insertion
+          prev[j - 1] + cost  // substitution
+        )
+        rowMin = min(rowMin, curr[j])
+      }
+      // Early exit if entire row exceeds threshold
+      if rowMin > maxDistance {
+        return maxDistance + 1
+      }
+      swap(&prev, &curr)
+    }
+
+    return prev[n]
   }
 
   private func foldPath(_ path: String) -> String {
