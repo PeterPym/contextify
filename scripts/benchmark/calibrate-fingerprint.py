@@ -34,7 +34,7 @@ NEGATION_SIGNALS = [
     "no record", "couldn't find", "could not find", "zero results",
     "no matches", "no relevant", "no evidence", "no mention",
     "nothing about", "didn't find", "did not find", "no references",
-    "unable to find", "no information", "rather than", "instead of",
+    "unable to find", "no information",
     "nothing specifically",
 ]
 
@@ -47,10 +47,11 @@ def _get_words(fp_clean):
             if (len(w) >= 4 and w not in stopwords) or (w.isdigit() and len(w) >= 3)]
 
 def _stem_match_word(fp_word, clean_response, response_words):
-    if fp_word in clean_response:
-        return True
+    # Numeric tokens require exact word match (no stemming, no substring)
     if fp_word.isdigit():
         return fp_word in response_words
+    if fp_word in clean_response:
+        return True
     stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
     return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
 
@@ -279,6 +280,13 @@ CALIBRATION_PAIRS = [
      "I found cloud-related schema work tracked under ct-300 and ct-305, but nothing "
      "specifically about ct-287 or worktree grouping in the cloud context.",
      False, "TN-10: different issue numbers"),
+
+    # TN-11: Numeric substring collision (E1 regression test)
+    # "287" must not match "1287" as a substring
+    ("ct-287-cloud-worktree-grouping",
+     "I could not find any results for that issue. The closest match was ct-1287 which "
+     "dealt with cloud worktree grouping but is a different issue entirely.",
+     False, "TN-11: numeric substring collision (287 vs 1287)"),
 
     # ===== EDGE CASES: near-boundary =====
 

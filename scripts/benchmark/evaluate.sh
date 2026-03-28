@@ -237,7 +237,7 @@ NEGATION_SIGNALS = [
     "no record", "couldn't find", "could not find", "zero results",
     "no matches", "no relevant", "no evidence", "no mention",
     "nothing about", "didn't find", "did not find", "no references",
-    "unable to find", "no information", "rather than", "instead of",
+    "unable to find", "no information",
     "nothing specifically",
 ]
 
@@ -274,11 +274,11 @@ def check_fingerprint(fp_clean, clean_response):
     response_words = set(re.findall(r'[a-z0-9]+', clean_response))
     def stem_match(fp_word):
         """Check if fingerprint word matches any response word by shared stem."""
-        if fp_word in clean_response:
-            return True
-        # Numeric tokens require exact match (no stemming)
+        # Numeric tokens require exact word match (no stemming, no substring)
         if fp_word.isdigit():
             return fp_word in response_words
+        if fp_word in clean_response:
+            return True
         # Try stem matching: if fp_word[:n] matches any response word[:n]
         stem = fp_word[:min(len(fp_word), 5)] if len(fp_word) >= 5 else fp_word[:4]
         return any(rw.startswith(stem) for rw in response_words if len(rw) >= 4)
