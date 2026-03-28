@@ -160,7 +160,7 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
 
-**Quick recipe:** Classify intent, build expanded query, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations.
+**Quick recipe:** Classify intent, pick the 2-3 most distinctive terms (porter stemming handles inflections), add synonyms/irregular forms if relevant, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations. If results look sparse, broaden with OR synonyms or prefix `*` before giving up.
 
 ## Canonical loop
 
