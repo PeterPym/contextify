@@ -265,7 +265,7 @@ Returns:
 }
 ```
 
-**Important:** `data` is a flat array of results. Each result's `id` is the **full UUID** you pass to the `context` and `entry` commands. **These commands require the complete UUID** (e.g., `0e83a2a2-5527-4a1e-8b41-ff4fc8e42223`), not a truncated prefix. Short prefixes like `0e83a2a2` will return `entryNotFound`. Always store the full `id` from search results before calling `context` or `entry`. The 8-char prefix (`entry:<prefix>`) is only for citation display in responses, never for CLI lookups.
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` and `entry` commands. Both full UUIDs and 8+ character prefixes are accepted (the CLI resolves prefixes like git resolves short SHAs). If a prefix is ambiguous (matches multiple entries), the CLI returns an `entryAmbiguousId` error with candidates.
 
 `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
 

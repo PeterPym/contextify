@@ -141,6 +141,45 @@ public struct ContextifyQueryService: Sendable {
 
   public enum EntryLookupError: Error, Sendable {
     case notFound(entryId: String)
+    case ambiguousId(prefix: String, candidates: [String])
+  }
+
+  /// Resolve a full or prefix entry ID to the actual entry ID.
+  /// Accepts full UUIDs (exact match) or prefixes of 8+ characters.
+  /// Throws ambiguousId if the prefix matches multiple entries.
+  public func resolveEntryId(_ input: String) throws -> String {
+    try pool.read { db in
+      // Try exact match first (fast path for full UUIDs)
+      let exactCount = try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE id = ?",
+        arguments: [input]
+      ) ?? 0
+      if exactCount == 1 { return input }
+
+      // If input is too short for prefix matching, it's just not found
+      guard input.count >= 8 else {
+        throw EntryLookupError.notFound(entryId: input)
+      }
+
+      // Prefix match using LIKE with escaped input
+      let prefix = input.replacingOccurrences(of: "%", with: "")
+        .replacingOccurrences(of: "_", with: "")
+      let matches = try String.fetchAll(
+        db,
+        sql: "SELECT id FROM transcript_entries WHERE id LIKE ? LIMIT 10",
+        arguments: ["\(prefix)%"]
+      )
+
+      switch matches.count {
+      case 0:
+        throw EntryLookupError.notFound(entryId: input)
+      case 1:
+        return matches[0]
+      default:
+        throw EntryLookupError.ambiguousId(prefix: input, candidates: Array(matches.prefix(5)))
+      }
+    }
   }
 
   public struct ActivityItem: Codable, Sendable {
@@ -1105,7 +1144,8 @@ public struct ContextifyQueryService: Sendable {
     fullContent: Bool = false,
     maxContentBytes: Int = 2048
   ) throws -> EntryResult {
-    try pool.read { db in
+    let resolvedId = try resolveEntryId(entryId)
+    return try pool.read { db in
       struct Row: FetchableRecord, Decodable {
         let id: String
         let projectId: String
@@ -1153,8 +1193,8 @@ public struct ContextifyQueryService: Sendable {
         WHERE e.id = ?
       """
 
-      guard let row = try Row.fetchOne(db, sql: sql, arguments: [entryId]) else {
-        throw EntryLookupError.notFound(entryId: entryId)
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [resolvedId]) else {
+        throw EntryLookupError.notFound(entryId: resolvedId)
       }
 
       let content: String?
@@ -1232,7 +1272,8 @@ public struct ContextifyQueryService: Sendable {
     fullContent: Bool,
     maxContentBytes: Int
   ) throws -> ContextResult {
-    try pool.read { db in
+    let resolvedId = try resolveEntryId(entryId)
+    return try pool.read { db in
       struct AnchorRow: FetchableRecord, Decodable {
         let id: String
         let projectId: String
@@ -1262,8 +1303,8 @@ public struct ContextifyQueryService: Sendable {
         FROM transcript_entries
         WHERE id = ?
       """
-      guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [entryId]) else {
-        throw EntryLookupError.notFound(entryId: entryId)
+      guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [resolvedId]) else {
+        throw EntryLookupError.notFound(entryId: resolvedId)
       }
 
       func mapEntry(_ row: AnchorRow) -> EntryPayload {
