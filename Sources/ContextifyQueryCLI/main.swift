@@ -134,6 +134,7 @@ struct ContextifyQueryCLI {
     var since: String?
     var until: String?
     var days: Int?
+    var hours: Int?
     var includeHidden: Bool = false
     var before: Int?
     var after: Int?
@@ -253,6 +254,12 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --days", exitCode: .invalidArgs)
           }
           options.days = n
+        case "--hours":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --hours", exitCode: .invalidArgs)
+          }
+          options.hours = n
         case "--include-hidden":
           options.includeHidden = true
         case "--before":
@@ -1028,6 +1035,7 @@ struct ContextifyQueryCLI {
         --since <ts|iso>     Filter by time (inclusive)
         --until <ts|iso>     Filter by time (inclusive)
         --days <n>           Shorthand for --since (now - n days)
+        --hours <n>          Shorthand for --since (now - n hours)
         --include-hidden     Include non-timeline entries
         --before <n>         Context: entries before anchor (default 10)
         --after <n>          Context: entries after anchor (default 20)
@@ -1916,7 +1924,7 @@ private func printActivity(_ items: [ContextifyQueryService.ActivityItem]) {
 
 private func parseTimeRange(options: ContextifyQueryCLI.Options) throws -> QueryTimeRange {
   do {
-    return try QueryTimeParser.parseSinceUntil(since: options.since, until: options.until, days: options.days)
+    return try QueryTimeParser.parseSinceUntil(since: options.since, until: options.until, days: options.days, hours: options.hours)
   } catch {
     throw CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
   }

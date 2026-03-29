@@ -19,19 +19,28 @@ public enum QueryTimeParser {
     since: String?,
     until: String?,
     days: Int?,
+    hours: Int? = nil,
     now: Date = Date()
   ) throws -> QueryTimeRange {
     if let days {
       guard days >= 0 else { throw QueryTimeParseError.invalidValue("--days must be >= 0") }
     }
-    if days != nil && (since != nil || until != nil) {
-      throw QueryTimeParseError.invalidValue("Use either --days or --since/--until, not both")
+    if let hours {
+      guard hours >= 0 else { throw QueryTimeParseError.invalidValue("--hours must be >= 0") }
+    }
+    let shorthandCount = [days != nil, hours != nil, since != nil || until != nil].filter { $0 }.count
+    if shorthandCount > 1 {
+      throw QueryTimeParseError.invalidValue("Use only one of --days, --hours, or --since/--until")
     }
 
     let sinceTs: Int?
     let untilTs: Int?
     if let days {
       let sinceDate = now.addingTimeInterval(-Double(days) * 86_400)
+      sinceTs = Int(sinceDate.timeIntervalSince1970)
+      untilTs = nil
+    } else if let hours {
+      let sinceDate = now.addingTimeInterval(-Double(hours) * 3_600)
       sinceTs = Int(sinceDate.timeIntervalSince1970)
       untilTs = nil
     } else {
