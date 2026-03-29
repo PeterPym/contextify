@@ -141,6 +141,67 @@ public struct ContextifyQueryService: Sendable {
 
   public enum EntryLookupError: Error, Sendable {
     case notFound(entryId: String)
+    case ambiguousId(prefix: String, candidates: [String], totalMatches: Int)
+  }
+
+  /// Resolve a full or prefix entry ID to the actual entry ID.
+  /// Accepts full UUIDs (exact match) or prefixes of 8+ characters.
+  /// Throws ambiguousId if the prefix matches multiple entries.
+  public func resolveEntryId(_ input: String) throws -> String {
+    try pool.read { db in
+      // Try exact match first (fast path for full UUIDs)
+      let exactCount = try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE id = ?",
+        arguments: [input]
+      ) ?? 0
+      if exactCount == 1 { return input }
+
+      // If input is too short for prefix matching, it's just not found
+      guard input.count >= 8 else {
+        throw EntryLookupError.notFound(entryId: input)
+      }
+
+      // Escape LIKE metacharacters instead of deleting them
+      let escapedPrefix = input
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "%", with: "\\%")
+        .replacingOccurrences(of: "_", with: "\\_")
+      let matches = try String.fetchAll(
+        db,
+        sql: """
+          SELECT id FROM transcript_entries
+          WHERE id LIKE ? ESCAPE '\\'
+          ORDER BY id
+          LIMIT 6
+        """,
+        arguments: ["\(escapedPrefix)%"]
+      )
+
+      switch matches.count {
+      case 0:
+        throw EntryLookupError.notFound(entryId: input)
+      case 1:
+        return matches[0]
+      default:
+        let visible = Array(matches.prefix(5))
+        let totalMatches: Int
+        if matches.count == 6 {
+          totalMatches = try Int.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) FROM transcript_entries WHERE id LIKE ? ESCAPE '\\'",
+            arguments: ["\(escapedPrefix)%"]
+          ) ?? visible.count
+        } else {
+          totalMatches = matches.count
+        }
+        throw EntryLookupError.ambiguousId(
+          prefix: input,
+          candidates: visible,
+          totalMatches: totalMatches
+        )
+      }
+    }
   }
 
   public struct ActivityItem: Codable, Sendable {
@@ -153,6 +214,8 @@ public struct ContextifyQueryService: Sendable {
     public let projectCount: Int
     public let transcriptCount: Int
     public let entryCount: Int
+    public let newestEntryTimestamp: Int?
+    public let deviceCount: Int
   }
 
   public struct ProjectStats: Codable, Sendable {
@@ -269,6 +332,14 @@ public struct ContextifyQueryService: Sendable {
       return "\(joinType) transcript_entries \(alias) INDEXED BY \(idx) ON \(alias).id = \(ftsAlias).entry_id"
     }
     return "\(joinType) transcript_entries \(alias) ON \(alias).id = \(ftsAlias).entry_id"
+  }
+
+  /// Fast project count (single COUNT query, no materialization).
+  public func projectCount(includeHidden: Bool = false) throws -> Int {
+    try pool.read { db in
+      let whereClause = includeHidden ? "" : " WHERE hidden = 0"
+      return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects\(whereClause)") ?? 0
+    }
   }
 
   public func listProjects(includeHidden: Bool = false, limit: Int? = nil) throws -> [ProjectListItem] {
@@ -421,6 +492,256 @@ public struct ContextifyQueryService: Sendable {
     """
     let rows = try Row.fetchAll(db, sql: sql, arguments: [limit])
     return rows.map { ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath) }
+  }
+
+  /// ct-795: Fetch all visible (non-hidden) projects for fuzzy matching.
+  /// Unlike recentProjectSuggestions, this has no limit so older projects are still discoverable.
+  private func allVisibleProjectSuggestions(_ db: Database) throws -> [ProjectSuggestion] {
+    struct Row: FetchableRecord, Decodable {
+      let id: String
+      let name: String?
+      let rootPath: String
+
+      enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case rootPath = "root_path"
+      }
+    }
+
+    let sql = """
+      SELECT id, name, root_path
+      FROM projects
+      WHERE hidden = 0
+    """
+    let rows = try Row.fetchAll(db, sql: sql)
+    return rows.map { ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath) }
+  }
+
+  /// Resolve a project by display name (exact, case-insensitive match).
+  /// Returns the project ID on exact match. On ambiguity (multiple exact matches),
+  /// throws .ambiguous. On no match, returns nil (caller should try path resolution).
+  public func resolveProjectByName(_ name: String) throws -> String? {
+    let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedName.isEmpty else { return nil }
+
+    return try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let name: String?
+        let rootPath: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case name
+          case rootPath = "root_path"
+        }
+      }
+
+      let candidates = try Row.fetchAll(db, sql: "SELECT id, name, root_path FROM projects WHERE hidden = 0")
+
+      // Exact match (case-insensitive, trimmed) against project name
+      let exactMatches = candidates.filter { candidate in
+        guard let candidateName = candidate.name else { return false }
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+          .caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if exactMatches.count == 1 {
+        return exactMatches[0].id
+      }
+
+      if exactMatches.count > 1 {
+        let suggestions = exactMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      // Also try matching against the last path component (directory name)
+      let dirMatches = candidates.filter { candidate in
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent
+        return dirName.caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if dirMatches.count == 1 {
+        return dirMatches[0].id
+      }
+
+      if dirMatches.count > 1 {
+        let suggestions = dirMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      return nil
+    }
+  }
+
+  /// Resolve a project name to both its ID and root path.
+  /// Used when callers need the path for worktree expansion after name-based lookup.
+  public func resolveProjectByNameWithPath(_ name: String) throws -> (id: String, rootPath: String)? {
+    let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedName.isEmpty else { return nil }
+
+    return try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let name: String?
+        let rootPath: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case name
+          case rootPath = "root_path"
+        }
+      }
+
+      let candidates = try Row.fetchAll(db, sql: "SELECT id, name, root_path FROM projects WHERE hidden = 0")
+
+      let exactMatches = candidates.filter { candidate in
+        guard let candidateName = candidate.name else { return false }
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+          .caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if exactMatches.count == 1 {
+        return (id: exactMatches[0].id, rootPath: exactMatches[0].rootPath)
+      }
+
+      if exactMatches.count > 1 {
+        let suggestions = exactMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      let dirMatches = candidates.filter { candidate in
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent
+        return dirName.caseInsensitiveCompare(normalizedName) == .orderedSame
+      }
+
+      if dirMatches.count == 1 {
+        return (id: dirMatches[0].id, rootPath: dirMatches[0].rootPath)
+      }
+
+      if dirMatches.count > 1 {
+        let suggestions = dirMatches.map {
+          ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath)
+        }
+        throw ProjectResolutionError.ambiguous(path: normalizedName, candidates: suggestions)
+      }
+
+      return nil
+    }
+  }
+
+  /// Find fuzzy project name suggestions for a given input.
+  /// Returns projects whose name or directory name is similar to the input,
+  /// using substring matching and edit distance (Levenshtein).
+  public func fuzzyProjectSuggestions(_ input: String, limit: Int = 5) throws -> [ProjectSuggestion] {
+    let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalized.isEmpty else { return [] }
+
+    // Max edit distance scales with input length: 1 for short names, 2 for longer
+    let maxDistance = normalized.count <= 5 ? 1 : 2
+
+    return try pool.read { db in
+      // ct-795: Scan ALL visible projects, not just 100 most recent.
+      // The previous limit caused silent false negatives for older projects.
+      let candidates = try allVisibleProjectSuggestions(db)
+
+      struct ScoredMatch {
+        let suggestion: ProjectSuggestion
+        let distance: Int  // 0 = substring match, 1+ = edit distance
+      }
+
+      // ct-795: Minimum candidate length for reverse-substring matching.
+      // Prevents short names like "api" from ranking as distance-0
+      // when the input is something unrelated like "contextify-api-server".
+      let minReverseLen = max(4, normalized.count / 2)
+
+      let matches: [ScoredMatch] = candidates.compactMap { candidate in
+        let name = (candidate.name ?? "").lowercased()
+        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
+
+        // Forward substring: input appears in the candidate name (always valid)
+        if name.contains(normalized) || dirName.contains(normalized) {
+          return ScoredMatch(suggestion: candidate, distance: 0)
+        }
+
+        // Reverse substring: candidate name appears in the input.
+        // Only count this if the candidate name is long enough relative to the input
+        // to avoid short-name noise (e.g. "api" matching "my-api-server").
+        if (name.count >= minReverseLen && normalized.contains(name))
+          || (dirName.count >= minReverseLen && normalized.contains(dirName))
+        {
+          return ScoredMatch(suggestion: candidate, distance: 0)
+        }
+
+        // Edit distance match (bounded for performance)
+        let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
+        let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
+        let bestDist = min(nameDist, dirDist)
+        if bestDist <= maxDistance {
+          return ScoredMatch(suggestion: candidate, distance: bestDist)
+        }
+
+        return nil
+      }
+
+      // T3: Stable sort by distance, then alphabetically by name
+      return matches
+        .sorted {
+          if $0.distance != $1.distance {
+            return $0.distance < $1.distance
+          }
+          return ($0.suggestion.name ?? "") < ($1.suggestion.name ?? "")
+        }
+        .prefix(limit)
+        .map { $0.suggestion }
+    }
+  }
+
+  /// Bounded Levenshtein edit distance. Returns maxDistance+1 early if threshold exceeded.
+  private static func editDistance(_ a: String, _ b: String, maxDistance: Int) -> Int {
+    let aChars = Array(a)
+    let bChars = Array(b)
+    let m = aChars.count
+    let n = bChars.count
+
+    if m == 0 { return n }
+    if n == 0 { return m }
+
+    // Early length-based pruning
+    if abs(m - n) > maxDistance {
+      return maxDistance + 1
+    }
+
+    var prev = Array(0...n)
+    var curr = Array(repeating: 0, count: n + 1)
+
+    for i in 1...m {
+      curr[0] = i
+      var rowMin = curr[0]
+      for j in 1...n {
+        let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
+        curr[j] = min(
+          prev[j] + 1,       // deletion
+          curr[j - 1] + 1,   // insertion
+          prev[j - 1] + cost  // substitution
+        )
+        rowMin = min(rowMin, curr[j])
+      }
+      // Early exit if entire row exceeds threshold
+      if rowMin > maxDistance {
+        return maxDistance + 1
+      }
+      swap(&prev, &curr)
+    }
+
+    return prev[n]
   }
 
   private func foldPath(_ path: String) -> String {
@@ -885,7 +1206,8 @@ public struct ContextifyQueryService: Sendable {
     fullContent: Bool = false,
     maxContentBytes: Int = 2048
   ) throws -> EntryResult {
-    try pool.read { db in
+    let resolvedId = try resolveEntryId(entryId)
+    return try pool.read { db in
       struct Row: FetchableRecord, Decodable {
         let id: String
         let projectId: String
@@ -933,8 +1255,8 @@ public struct ContextifyQueryService: Sendable {
         WHERE e.id = ?
       """
 
-      guard let row = try Row.fetchOne(db, sql: sql, arguments: [entryId]) else {
-        throw EntryLookupError.notFound(entryId: entryId)
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [resolvedId]) else {
+        throw EntryLookupError.notFound(entryId: resolvedId)
       }
 
       let content: String?
@@ -1012,7 +1334,8 @@ public struct ContextifyQueryService: Sendable {
     fullContent: Bool,
     maxContentBytes: Int
   ) throws -> ContextResult {
-    try pool.read { db in
+    let resolvedId = try resolveEntryId(entryId)
+    return try pool.read { db in
       struct AnchorRow: FetchableRecord, Decodable {
         let id: String
         let projectId: String
@@ -1042,8 +1365,8 @@ public struct ContextifyQueryService: Sendable {
         FROM transcript_entries
         WHERE id = ?
       """
-      guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [entryId]) else {
-        throw EntryLookupError.notFound(entryId: entryId)
+      guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [resolvedId]) else {
+        throw EntryLookupError.notFound(entryId: resolvedId)
       }
 
       func mapEntry(_ row: AnchorRow) -> EntryPayload {
@@ -1371,7 +1694,15 @@ public struct ContextifyQueryService: Sendable {
       let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
       let transcriptCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
       let entryCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries") ?? 0
-      return DatabaseCounts(projectCount: projectCount, transcriptCount: transcriptCount, entryCount: entryCount)
+      let newestTs = try Int.fetchOne(db, sql: "SELECT MAX(timestamp) FROM transcript_entries")
+      let deviceCount = try Int.fetchOne(
+        db, sql: "SELECT COUNT(DISTINCT source_device_id) FROM transcript_entries WHERE source_device_id IS NOT NULL"
+      ) ?? 0
+      return DatabaseCounts(
+        projectCount: projectCount, transcriptCount: transcriptCount,
+        entryCount: entryCount, newestEntryTimestamp: newestTs,
+        deviceCount: deviceCount
+      )
     }
   }
 

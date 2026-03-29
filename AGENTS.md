@@ -449,6 +449,42 @@ Feature validation scripts live in subdirectories (e.g., `scripts/qa/codex-suppo
 2. Follow established patterns (build dev app, clear state, capture proof)
 3. QA scripts should build and run the dev build, not rely on installed apps
 
+### Total Recall Benchmark (AutoResearch Pattern)
+
+Automated benchmark for evaluating Total Recall skill and CLI search quality. Uses a frozen DB snapshot with 34 gold queries scored on Recall@k, MRR, and fingerprint matching.
+
+```bash
+# Run CLI benchmark (baseline: 100.0/R@k=0.914, ~4 seconds)
+bash scripts/benchmark/evaluate.sh --verbose
+
+# Run skill benchmark (headless Claude Code, ~15 minutes)
+bash scripts/benchmark/evaluate.sh --mode skill --verbose
+
+# Run with per-query trace files for failure diagnosis
+bash scripts/benchmark/evaluate.sh --verbose --trace
+# Traces written to /tmp/benchmark-traces/{gq-01..gq-34}.json
+
+# Median-of-3 scoring to reduce stochastic variance (skill mode)
+bash scripts/benchmark/evaluate.sh --mode skill --runs 3
+
+# A/B comparison with confidence intervals
+bash scripts/benchmark/evaluate.sh --mode cli --compare snapshot-a.db snapshot-b.db
+
+# Ratchet loop: edit SKILL.md, run benchmark, keep if improved
+bash scripts/benchmark/ratchet.sh --iterations 5
+```
+
+**Key files:**
+- `scripts/benchmark/evaluate.sh` - Evaluator (Recall@k, MRR, fingerprint, `--compare`, `--trace`, `--runs`)
+- `scripts/benchmark/gold-queries.json` - 34 verified queries with entry IDs and fingerprints
+- `scripts/benchmark/README.md` - Full protocol documentation
+- `scripts/benchmark/ratchet.sh` - Ratchet loop wrapper (CLI: auto, skill: advisory)
+- `scripts/benchmark/prepare-snapshot.sh` - Create/refresh frozen DB snapshot
+
+**Snapshot location:** `~/Library/Application Support/Contextify/benchmark/contextify-benchmark-v1.db` (1.8GB, read-only). Manifest at `scripts/benchmark/snapshot-manifest.json`.
+
+**Reusable framework:** `~/code/projects/cli-ai-setup/utils/benchmark/ratchet-loop.sh` (generic loop runner for any evaluator/artifact pair).
+
 ## Git Hooks (Pre-commit Build Guard)
 
 Enable hooks: `git config core.hooksPath .githooks` or `make hooks-setup`

@@ -21,11 +21,13 @@ Always use the exact commands shown in this skill file. Do not improvise command
 
 ## Output Format
 
-Begin your response with:
+Before your first search, compute the skill file hash:
 
-> **Contextify Total Recall**
+```bash
+shasum -a 256 ~/.claude/skills/total-recall/SKILL.md | cut -c1-8
+```
 
-Then provide the search results with citations.
+Use the templates below to format your response. Replace `<hash>` with the 8-character prefix from the shasum output.
 
 ## Trigger phrases
 
@@ -70,59 +72,96 @@ Search results return entries. Use `transcriptId` to see the full conversation, 
 
 ## FTS5 search behavior
 
-The Contextify search backend currently uses FTS5 with **exact token matching** and no stemming.
+The Contextify search backend uses FTS5 with **porter stemming**. The porter algorithm automatically matches morphological variants of English words.
 
-- `"run"` matches only the exact token "run", NOT "running", "runs", or "ran"
-- `"deploy"` does NOT match "deployment" or "deployed"
+- `deploy` matches "deploy", "deploys", "deployed", "deploying", "deployment", "deployments"
+- `run` matches "run", "running", "runs", "runner" (but NOT irregular forms like "ran")
 - Searches are case-insensitive
-- The prefix operator `*` matches token prefixes: `run*` matches "run", "running", "runs", "runner"
-- Quoted phrases match exact sequences: `"memory leak"` requires both words adjacent in order
+- The prefix operator `*` matches token prefixes: `run*` matches any token starting with "run"
+- Quoted phrases match exact sequences with stemming: `"memory leak"` requires both stems adjacent in order
+- **Quoted phrases still apply stemming** to each word within the phrase, but enforce adjacency
+
+**Stemming limitations:** The query builder quotes tokens with special characters (dots, colons) to enforce exact matching for those tokens. Irregular verb forms (e.g., "ran" from "run") are NOT matched by stemming -- use explicit OR for those.
 
 **Tokenization and special characters:** Hyphens, underscores, and most punctuation act as token separators. For example, `CT-97` is tokenized as two separate tokens `CT` and `97`. To match hyphenated or snake_case identifiers, search for `CT AND 97` or try the quoted form `"CT 97"`. File paths and punctuation-heavy identifiers may need simplified forms.
-
-Because there is no stemming, you must explicitly include morphological variants in your queries. See "Query construction" below.
 
 ## Query construction
 
 Before searching, analyze the user's request and build an effective query.
 
+### Priority rule: entities first
+
+Preserve rare names and identifiers exactly. Only expand common verbs and concepts.
+
+- **Proper nouns, people, companies, products**: use as-is or in quoted phrases (`"Perch Innovations"`, `"Fulton House"`)
+- **Task IDs, version numbers**: quote them (`"ct 389"`, `"v1.5.0"`)
+- **Hyphenated project names**: quote without hyphens (`"contextify cloud"`, `"cli ai setup"`)
+- **Common verbs**: porter stemming handles regular forms automatically; only add explicit OR for irregular forms (`run OR ran`)
+
+Start your search with the 2-3 most distinctive terms from the question. If the question mentions a specific name, number, or identifier, that should be your primary search term, not a generic concept.
+
 ### Step 1: Classify intent
 
-Determine the query type to set your strategy:
+Determine the query type to set your strategy and starting `--days` window:
 
-| Intent | Signals | Strategy |
-|--------|---------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | Use `--count-only`. Add `--term-counts` for OR queries. No pagination needed. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
-| **Exploratory** | "what have we talked about", "find anything about" | Start broad, refine iteratively. Use `--limit 20`. |
+| Intent | Signals | Time window | Strategy |
+|--------|---------|-------------|----------|
+| **Counting** | "how many", "count", "every time", "frequency" | `--days 365` | Use `--count-only`. Add `--term-counts` for OR queries. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | `--days 365` | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Exploratory** | "what have we talked about", "find anything about" | `--days 365` | Start broad, refine iteratively. Use `--limit 20`. |
+| **Negative proof** | "have we ever", "did we discuss", "was there any" | `--days 365` | Broad scope. Run 2-3 materially different query variations before declaring absence. |
+| **Debugging** | "when did this break", "what changed", "recent error" | `--days 30` | Narrow, recent. Use `--project .` for current repo focus. |
+| **Time-scoped** | "last N hours", "today", "yesterday", "this morning", "this week", "last week", "past hour" | See below | Detect the time reference and use `--hours` or `--days` accordingly. |
+
+**Time-scoped intent:** When the user's request includes an explicit time reference, override the default window:
+
+| User phrasing | Flag to use |
+|---------------|-------------|
+| "in the last N hours", "past N hours" | `--hours N` |
+| "today", "this morning", "this afternoon" | `--hours 24` |
+| "yesterday" | `--days 2` |
+| "this week", "past few days" | `--days 7` |
+| "last week" | `--days 14` |
+| "last month", "past few weeks" | `--days 30` |
+
+Use `--hours` for sub-day precision (e.g., "last 6 hours") and `--days` for multi-day windows. Do not default to `--days 365` when the user specifies a narrower time frame.
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
 
+### Step 1.5: Check for special characters
+
+Before building the query, scan each search term for characters that FTS5 treats as token separators. The CLI auto-handles common cases (F-02), but verify your query terms are clean:
+
+| Character | Example | Rewrite to |
+|-----------|---------|------------|
+| Hyphen `-` | `cli-ai-setup` | `"cli ai setup"` (quoted phrase without hyphens) |
+| Hyphen `-` in task ID | `ct-361`, `bl-42` | `"ct 361"` (quoted phrase) |
+| Underscore `_` | `UNREAD_COUNT` | `"UNREAD COUNT"` (quoted phrase without underscores) |
+| Dot `.` | `v1.5.0` | `"v1.5.0"` (quote the whole term) |
+
+**When to apply:** Always scan your query terms before Step 2. If any term contains hyphens, underscores, or dots, rewrite it using the table above. Note the reformulation in your response so the user knows what was searched.
+
+**The CLI now auto-rewrites bare hyphenated tokens** (e.g., `review-loop` becomes `"review loop"`), but this only works for simple queries without FTS5 operators. When you construct complex queries with OR/AND, you must handle special characters yourself.
+
 ### Step 2: Expand query terms
 
-For each key term, generate morphological variants and join with OR:
+Porter stemming automatically matches regular inflections: `deploy` finds "deployed", "deploying", "deployment". You do NOT need explicit OR for regular verb/noun forms.
 
-**Verb example:** "deploy"
+**Still expand with OR for:**
+- **Irregular verbs:** `run OR ran`, `break OR broke OR broken`
+- **Synonyms and related terms:** `error OR failure OR bug`, `hat OR cap OR headwear`
+- **Alternative phrasings:** `"pricing model" OR "pricing plan" OR "subscription"`, `rename OR rebrand OR retitle`
+
+**Use prefix `*` when:**
+- The stem is short or ambiguous: `config*` catches "config", "configure", "configuration"
+- You want broad recall: `patcher*` catches "patcher", "patching", "patchers"
+
+**Build multi-concept queries** by combining expanded terms with AND:
 ```
-deploy OR deploys OR deployed OR deploying OR deployment OR deployments
+(deploy OR release) AND (fail OR error OR broke)
 ```
 
-**Shortcut -- prefix matching:** When variants share a common prefix, use `*`:
-```
-deploy*
-```
-This matches deploy, deploys, deployed, deploying, deployment, deployments.
-
-**When to use explicit OR vs prefix `*`:**
-- Prefix `*` is simpler and catches variants you might not think of
-- Explicit OR is better when the stem is ambiguous (e.g., `run*` also matches "rune", "rung")
-- Explicit OR is required for irregular forms (e.g., "ran" is not matched by `run*`)
-- For counting queries, start with explicit OR plus any irregular forms, then use a prefix query as a recall backstop if counts look low
-
-**Compound queries:** Combine expanded terms with AND when the user's query has multiple concepts:
-```
-(deploy* OR release*) AND (fail* OR error* OR broke*)
-```
+**Always try 2-3 query formulations** for non-trivial searches. A single query rarely covers all relevant phrasing. Vary your terms, try alternative angles, and broaden before concluding no results exist.
 
 ### Step 3: Consider synonyms and related terms
 
@@ -139,7 +178,7 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
 
-**Quick recipe:** Classify intent, build expanded query, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations.
+**Quick recipe:** Classify intent, pick 2-3 distinctive terms + OR synonyms (stemming handles inflections, you handle synonyms), choose limit (or `--count-only`), search, try 2-3 query variations, paginate if `hasMore`, answer with citations.
 
 ## Canonical loop
 
@@ -155,6 +194,7 @@ Returns:
   "data": {
     "databasePath": "/Users/.../contextify.db",
     "entryCount": 315465,
+    "newestEntryTimestamp": 1769380895,
     "projectCount": 46,
     "transcriptCount": 3285,
     "ftsEnabled": true,
@@ -174,18 +214,26 @@ If database not found, respond:
 >
 > Download: https://contextify.sh/download
 
+**Data freshness check:** Compare `newestEntryTimestamp` (Unix epoch) to the current time. If the newest entry is more than 1 hour old, warn the user before searching:
+
+> **Note:** Contextify data may be stale (last indexed entry is from [time ago]). Results may be incomplete. Ensure the Contextify app is running to resume ingestion.
+
+Still proceed with the search, but frame results as potentially incomplete. If searching for very recent conversations (e.g., "last hour", "today") and data is stale, the warning is especially important.
+
 2) Construct query and search:
 
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --json
 ```
+
+For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 
 When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
 
 ```bash
-contextify search "<expanded-query>" --project . --days 30 --limit <N> --anchor-git --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json
 ```
 
 Git anchoring is additive, not exclusive:
@@ -199,12 +247,19 @@ Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, 
 
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
-contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
+contextify search "deploy" --project . --days 365 --count-only --json
 ```
+
+Porter stemming matches all regular forms of "deploy" automatically.
 
 Example -- user asks "what did we decide about the database schema":
 ```bash
 contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
+```
+
+Example -- user asks "what did we discuss in the last 6 hours about testing":
+```bash
+contextify search "test OR testing OR \"test suite\"" --project . --hours 6 --limit 10 --json
 ```
 
 Returns:
@@ -229,16 +284,24 @@ Returns:
     "limit": 10,
     "offset": 0,
     "hasMore": true,
-    "totalCount": 847
+    "totalCount": 847,
+    "scopeSummary": {
+      "entryCount": 586093,
+      "projectCount": 46,
+      "deviceCount": 2
+    }
   },
   "schemaVersion": 1,
   "type": "search"
 }
 ```
 
-**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` and `entry` commands. Both full UUIDs and 8+ character prefixes are accepted (the CLI resolves prefixes like git resolves short SHAs). If a prefix is ambiguous (matches multiple entries), the CLI returns an `entryAmbiguousId` error with candidates.
 
-**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Optional fields appear conditionally:
+`projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+
+**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Other fields:
+- `scopeSummary`: always present, contains `entryCount`, `projectCount`, `deviceCount` showing the total database scope being searched
 - `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
 - `worktreeExpansion`: worktree group details (when worktree expansion is active, see "Worktree expansion" below)
 - `sourceCounts`: per-project result counts (when worktreeExpansion is present)
@@ -276,10 +339,14 @@ Anchor selection guidance:
 - Prefer older transcripts unless the user asked about the current chat session.
 - If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, down-rank hits from that transcript unless the user explicitly wants current session results.
 
-3) Retrieve context around the anchor:
+3) Decide whether to fetch context or use the snippet:
+
+**Use the snippet directly** if it already contains the specific answer: a name, number, date, decision, or quote. With `--snippet-tokens 100`, snippets often contain enough detail.
+
+**Fetch context** when: the snippet is truncated and you need the full text, the answer depends on surrounding discussion or rationale, or pronouns/references need resolution.
 
 ```bash
-contextify context "<entry-uuid>" --before 10 --after 20 --project . --json
+contextify context "<entry-uuid>" --before 10 --after 20 --json
 ```
 
 Returns:
@@ -344,32 +411,108 @@ Before formatting your response, check:
   ```
   Increment `--offset` by `--limit` each page until `hasMore` is `false`.
 - **`totalCount` field:** Always present in search metadata. Use this to know the total number of matches without paginating. For counting queries, use `--count-only` instead of paginating.
-- **(Counting intent only) Variant coverage:** If `--term-counts` shows uneven distribution, consider whether you missed a variant. If you searched `deploy*` and a follow-up search for "redeployment" returns additional hits, your prefix did not capture it.
-- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form? A synonym?
+- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form (e.g., "ran" for "run")? A synonym? Porter stemming handles regular inflections but not irregular verbs or synonyms.
 - **For counting queries:** Report `totalCount` from metadata (or per-term counts from `termCounts`), and list which search terms were used so the user can judge completeness.
 
 If results seem incomplete, run additional searches with expanded terms before answering.
 
 6) Format response:
 
-> **Contextify Total Recall**
->
-> **Found:** [brief summary of what was found]
->
-> **From:** [date/time and project context]
->
-> [Key excerpts with citations]
->
-> **Entry ID:** `<uuid>` (for reference)
+Use the template matching the query type. Adapt the structure to the number of results, but keep the header, citation format, and summary sections.
 
-For counting queries, also include:
-> **Search terms used:** [list the OR-expanded terms]
-> **Matched entries:** [totalCount from metadata] entries
-> **Per-term breakdown:** [if --term-counts was used, show each term's count]
+### Lookup / exploratory template
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _Searched <totalCount> entries across <project(s)> | <time range, e.g. "last 90 days" or "all time">_
+
+[1-2 sentence summary: what was found, when, and the bottom line.]
+
+> "[Quoted excerpt from the most relevant result. Keep it concise but include the key fact, decision, or detail.]"
+>
+> -- <project name>, <date in "Mon DD, YYYY" format> `entry:<first-8-chars-of-uuid>`
+
+> "[Second excerpt if needed for a different facet or time period.]"
+>
+> -- <project name>, <date> `entry:<first-8-chars-of-uuid>`
+
+**Summary:** [What was decided or what the current status is, synthesized from the evidence above. Distinguish "discussed and planned" from "implemented and merged" when relevant. If the answer is uncertain or incomplete, say so.]
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+```
+
+### Counting template
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _Searched <scope> | <time range>_
+
+**<totalCount>** entries match across <project(s)>.
+
+| Term | Matches |
+|------|---------|
+| deploy | 312 |
+| deployed | 201 |
+| ... | ... |
+
+**Search terms:** `<the OR-expanded query as sent to the CLI>`
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+```
+
+### Negative result template
+
+After completing the zero-result protocol (section below), if still no results:
+
+```
+> **Contextify Total Recall** `skill:<hash>`
+> _No results found._
+
+Searched <N> entries across <scope> over <time range>.
+
+**Queries tried:**
+1. `<first query>`
+2. `<second query>`
+3. `<broadened query>`
+
+[Brief note on what this means, e.g. "This topic does not appear in your indexed conversation history."]
+```
+
+### Formatting rules
+
+- **Header is mandatory.** Every response starts with the `Contextify Total Recall` header line and search scope line.
+- **Quote, don't paraphrase.** Use `> "..."` blockquotes for source excerpts. Trim for brevity but preserve the key fact.
+- **Cite every excerpt.** Each blockquote gets a `-- project, date entry:<uuid-prefix>` attribution line.
+- **One summary, at the end.** Synthesize across all cited results. Do not repeat what the quotes already say.
+- **Timestamps as dates.** Convert Unix timestamps to "Mon DD, YYYY" (or "Mon DD, YYYY HH:MM" when time matters). Never show raw Unix timestamps to the user.
+- **Multiple results.** Show 2-4 quoted excerpts for the most relevant hits. For exploratory queries with many results, briefly list additional hits by date and project after the key quotes.
+- **Evidence section is mandatory** (except for negative results). Every response that found results must end with a `## Evidence` section. This section helps both humans verify the answer's sources and automated tooling validate search accuracy. Rules:
+  - List 1-5 entries that directly support the answer
+  - Each line: `- \`entry:<first-8-chars-of-uuid>\` <project>, <date>: "<exact quoted span>"`
+  - The entry ID must be the first 8 characters of the entry UUID from search/context results
+  - The quoted span must be an EXACT substring of the entry's content (copy-paste, not paraphrased)
+  - The quoted span should be the most relevant 1-2 sentences from the entry
+  - For negative results (no matches found), omit the Evidence section
+
+**Response fidelity rules:**
+
+- **Quote distinctive terms verbatim.** When results contain technical identifiers (env vars like `SENTRY_ENVIRONMENT`, config values, error codes), exact job titles ("Quality Engineering Lead"), product names, or distinctive phrasing, reproduce them exactly from the source material rather than paraphrasing.
+- **Name every individual mentioned.** When a question asks about decisions, stakeholders, or participants, name ALL individuals found in relevant results with their specific roles or requests, not just the first or most prominent one.
+- **Verify implementation status.** When asked whether work was done or implemented, search for merge/commit evidence (commit hashes, PR numbers, "merged to main"), not just discussion. Clearly distinguish between "discussed and planned" vs "implemented and merged." If you find only discussion without merge evidence, say so.
+- **Include technical details.** When results contain specific values (version numbers, config settings, measurements, URLs), include them in your response. These details are often what the user actually needs.
+- **Fetch context for key results.** When a search snippet seems relevant but is truncated, always use `contextify context` to get the full surrounding conversation. Important details (names, status, outcomes) are often in adjacent entries, not the snippet itself.
+- **Use source language.** When the source material uses distinctive or colorful terms (e.g., "bootleg hats" instead of "novelty hats"), use the source's wording in your response. This preserves the user's original framing.
 
 ## Working with the JSON output
 
 **Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+
+**If piping through Python:** Always check for error responses before accessing `data`. The CLI returns error JSON (with `type: "error"`, no `data` key) on failure, which causes `KeyError: 'data'` if not handled.
 
 - **search**: `data` is an **array** of result objects; pagination info in `metadata`
 - **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
@@ -397,31 +540,46 @@ Branch on `code`:
 | `code` | Response |
 |-------|----------|
 | `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" If the user has a custom database location (Dropbox, iCloud Drive), use `--db-path <path>` or `--db-dir <dir>`. |
-| `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |
+| `dbProjectNotFound` | Check `details.suggestions` for fuzzy name matches (typo correction). Offer alternatives: "Did you mean: X?" |
 | `featureUnavailable` | Explain limitation clearly, do not imply workarounds |
 | `entryNotFound` | Re-search for a new anchor |
 | `cliNotFound` | "Contextify CLI not found. See https://contextify.sh/help for installation." |
 
-## Expanding search
+## Zero-result protocol (mandatory)
 
-### Zero results
+This protocol is **mandatory** before declaring "not found." Skipping steps is a skill violation.
 
-If search returns 0 results:
-1. Widen `--days` (try 90, then 365)
-2. If not clearly about current repo, retry without `--project .`
-3. Try prefix matching (`deploy*` instead of `deploy`)
-4. Use `contextify projects --json` to discover other projects
-5. Ask user to clarify what they're looking for
+When search returns 0 results, follow this escalation path in order. Stop as soon as you get results:
+
+**Step 1: Widen the time window.**
+- If `--days` was < 90, retry with `--days 90`
+- If `--days` was < 365, retry with `--days 365`
+- If already at 365 or no `--days` was set, proceed to Step 2
+
+**Step 2: Broaden query terms.**
+- Simplify: reduce to the 1-2 most distinctive terms (porter stemming already covers regular inflections)
+- Add irregular verb forms if applicable: `run OR ran`
+- Check for special characters (Step 1.5) that may need quoting
+
+**Step 3: Broaden project scope.**
+- If using `--project .`, retry without `--project` (search all projects)
+- Skip this step for clearly repo-scoped debugging queries
+
+**Step 4: Try alternative terms.**
+- Use synonyms or related phrasings
+- For hyphenated identifiers, try both the quoted phrase form and the individual tokens
+
+**Step 5: Only now declare "not found."**
+Report what you searched: "Searched [N] days across [scope] with queries: [list]. No results found."
 
 ### Partial or suspicious results
 
 If results are returned but may be incomplete:
 1. **Check `totalCount` and `hasMore`:** `totalCount` tells you the full count. If you need more result bodies, raise `--limit` or paginate with `--offset`.
-2. **Check variant coverage:** Did you search all morphological forms? Add missing variants and re-search.
-3. **Cross-check with prefix query:** Run a `term*` prefix search and compare the count to your explicit-variant search. A large discrepancy suggests missed variants.
-4. **Widen time range:** Results clustered in recent days may indicate older matches outside `--days` window.
+2. **Check irregular forms and synonyms:** Porter stemming covers regular inflections but not irregular verbs ("ran", "broke") or synonyms. Add those manually if relevant.
+3. **Widen time range:** Results clustered in recent days may indicate older matches outside `--days` window.
 
-For counting queries, use `--count-only` to get the authoritative `totalCount`. If counts seem low, verify your query covers all morphological variants.
+For counting queries, use `--count-only` to get the authoritative `totalCount`. If counts seem low, check for irregular verb forms or synonyms that stemming does not cover.
 
 ## Advanced flags
 
@@ -438,7 +596,7 @@ These flags provide fine-grained control over search and output behavior.
 
 | Flag | Subcommand | Description |
 |------|-----------|-------------|
-| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `system`. Comma-separated. Example: `--kinds user,assistant` |
+| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `summary`, `system`. Comma-separated. Example: `--kinds user,assistant` |
 | `--since <ts\|iso>` | global | Time range start (inclusive). Accepts Unix timestamp, ISO 8601, or `YYYY-MM-DD`. Cannot combine with `--days`. |
 | `--until <ts\|iso>` | global | Time range end (inclusive). Same formats as `--since`. Cannot combine with `--days`. `--since` must be <= `--until`. |
 | `--include-hidden` | global | Include non-timeline entries (system messages, hidden entries). By default only `display_in_timeline=1` entries are returned. |

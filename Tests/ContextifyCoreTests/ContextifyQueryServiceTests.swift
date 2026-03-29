@@ -493,6 +493,229 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertEqual(single, [])
   }
 
+  // MARK: - ct-735 regression: resolveProjectByNameWithPath returns rootPath
+
+  func testResolveProjectByNameWithPath_returnsRootPath() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-name-path-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-abc",
+      name: "MyProject",
+      rootPath: "/Users/test/code/my-project",
+      rootBookmark: nil,
+      lastViewedTs: 0,
+      hidden: false,
+      displayOrder: nil,
+      isOrphaned: false,
+      orphanedSince: nil,
+      createdAt: 0,
+      updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Name-based lookup should return both id and rootPath
+    let result = try service.resolveProjectByNameWithPath("MyProject")
+    XCTAssertNotNil(result)
+    XCTAssertEqual(result?.id, "proj-abc")
+    XCTAssertEqual(result?.rootPath, "/Users/test/code/my-project")
+
+    // Case-insensitive match
+    let resultLower = try service.resolveProjectByNameWithPath("myproject")
+    XCTAssertNotNil(resultLower)
+    XCTAssertEqual(resultLower?.id, "proj-abc")
+
+    // Directory name match
+    let resultDir = try service.resolveProjectByNameWithPath("my-project")
+    XCTAssertNotNil(resultDir)
+    XCTAssertEqual(resultDir?.rootPath, "/Users/test/code/my-project")
+
+    // No match
+    let resultNone = try service.resolveProjectByNameWithPath("nonexistent")
+    XCTAssertNil(resultNone)
+  }
+
+  // MARK: - ct-725 regression: fuzzyProjectSuggestions with edit distance
+
+  func testFuzzyProjectSuggestions_editDistance() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-ctx",
+      name: "contextify",
+      rootPath: "/Users/test/code/contextify",
+      rootBookmark: nil,
+      lastViewedTs: 0,
+      hidden: false,
+      displayOrder: nil,
+      isOrphaned: false,
+      orphanedSince: nil,
+      createdAt: 0,
+      updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo: "contxtify" (missing 'e') should suggest "contextify"
+    let result1 = try service.fuzzyProjectSuggestions("contxtify")
+    XCTAssertEqual(result1.count, 1)
+    XCTAssertEqual(result1.first?.name, "contextify")
+
+    // Typo: "contexify" (missing 't') should suggest "contextify"
+    let result2 = try service.fuzzyProjectSuggestions("contexify")
+    XCTAssertEqual(result2.count, 1)
+    XCTAssertEqual(result2.first?.name, "contextify")
+
+    // Substring match should still work
+    let result3 = try service.fuzzyProjectSuggestions("context")
+    XCTAssertEqual(result3.count, 1)
+
+    // Completely different name should return empty
+    let result4 = try service.fuzzyProjectSuggestions("foobar")
+    XCTAssertTrue(result4.isEmpty)
+
+    // Exact match via substring
+    let result5 = try service.fuzzyProjectSuggestions("contextify")
+    XCTAssertEqual(result5.count, 1)
+  }
+
+  // MARK: - ct-795 regression: scan all projects, not just recent 100
+
+  func testFuzzyProjectSuggestions_findsOlderProjectBeyond100() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-101-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert 101 projects. The target project has the oldest lastViewedTs.
+    try pool.write { db in
+      let target = Project(
+        id: "proj-target",
+        name: "my-special-app",
+        rootPath: "/Users/test/code/my-special-app",
+        rootBookmark: nil,
+        lastViewedTs: 0,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try target.insert(db)
+
+      for i in 1...100 {
+        let filler = Project(
+          id: "proj-filler-\(i)",
+          name: "filler-project-\(i)",
+          rootPath: "/Users/test/code/filler-\(i)",
+          rootBookmark: nil,
+          lastViewedTs: Double(i),
+          hidden: false,
+          displayOrder: nil,
+          isOrphaned: false,
+          orphanedSince: nil,
+          createdAt: 0,
+          updatedAt: 0
+        )
+        try filler.insert(db)
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo of the oldest project should still be found
+    let result = try service.fuzzyProjectSuggestions("my-specail-app")
+    XCTAssertFalse(result.isEmpty, "Oldest project (beyond top-100) must still be discoverable")
+    XCTAssertEqual(result.first?.name, "my-special-app")
+  }
+
+  // MARK: - ct-795 regression: short name does not outrank actual match
+
+  func testFuzzyProjectSuggestions_shortNameDoesNotOutrankActualMatch() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-short-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      // Short name that could match via reverse-substring
+      let short = Project(
+        id: "proj-api",
+        name: "api",
+        rootPath: "/Users/test/code/api",
+        rootBookmark: nil,
+        lastViewedTs: 100,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try short.insert(db)
+
+      // Actual match for the query
+      let actual = Project(
+        id: "proj-my-api-server",
+        name: "my-api-server",
+        rootPath: "/Users/test/code/my-api-server",
+        rootBookmark: nil,
+        lastViewedTs: 50,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try actual.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // "my-api-server" should be a substring match (distance 0).
+    // "api" should NOT be distance 0 because it's too short for reverse-substring.
+    let result = try service.fuzzyProjectSuggestions("my-api-servr")
+    XCTAssertFalse(result.isEmpty)
+    // The actual match should come first (edit distance 1 for the typo),
+    // and "api" should either not appear or not outrank it
+    XCTAssertEqual(result.first?.name, "my-api-server")
+
+    // Direct check: "api" should NOT be distance-0 for a long unrelated input
+    let reverseCheck = try service.fuzzyProjectSuggestions("contextify-api-service")
+    let apiMatch = reverseCheck.first(where: { $0.name == "api" })
+    XCTAssertNil(apiMatch, "Short name 'api' must not match unrelated long input via reverse-substring")
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).
@@ -563,5 +786,257 @@ final class ContextifyQueryServiceTests: XCTestCase {
         "Query plan must NOT use idx_entries_cursor (causes full table scan), got: \(plan)"
       )
     }
+  }
+
+  // MARK: - Entry ID Prefix Resolution (ct-794)
+
+  func testResolveEntryId_fullUUID() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let resolved = try service.resolveEntryId("abcd1234-5678-9abc-def0-123456789abc")
+    XCTAssertEqual(resolved, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_8charPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let resolved = try service.resolveEntryId("abcd1234")
+    XCTAssertEqual(resolved, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_notFound() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    XCTAssertThrowsError(try service.resolveEntryId("zzzzzzzz")) { error in
+      guard case ContextifyQueryService.EntryLookupError.notFound = error else {
+        XCTFail("Expected notFound, got \(error)")
+        return
+      }
+    }
+  }
+
+  func testResolveEntryId_tooShort() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    XCTAssertThrowsError(try service.resolveEntryId("abcd")) { error in
+      guard case ContextifyQueryService.EntryLookupError.notFound = error else {
+        XCTFail("Expected notFound for short prefix, got \(error)")
+        return
+      }
+    }
+  }
+
+  func testResolveEntryId_ambiguous() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // Two entries sharing the same 8-char prefix
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at)
+        VALUES ('abcd1234-aaaa-0000-0000-000000000001', 't1', 'p1', 'claude.code', 'user', 100, 'first', 'sha1', 1, 0, 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at)
+        VALUES ('abcd1234-aaaa-0000-0000-000000000002', 't1', 'p1', 'claude.code', 'user', 200, 'second', 'sha2', 1, 0, 200, 200)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    XCTAssertThrowsError(try service.resolveEntryId("abcd1234")) { error in
+      guard let lookupError = error as? ContextifyQueryService.EntryLookupError,
+            case let .ambiguousId(prefix, candidates, totalMatches) = lookupError else {
+        XCTFail("Expected ambiguousId, got \(error)")
+        return
+      }
+      XCTAssertEqual(prefix, "abcd1234")
+      XCTAssertEqual(candidates.count, 2)
+      XCTAssertEqual(totalMatches, 2)
+    }
+  }
+
+  func testResolveEntryId_ambiguousMoreThanFive_reportsTotalMatches() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // 6 entries sharing the same 8-char prefix
+      for i in 1...6 {
+        try db.execute(
+          sql: """
+            INSERT INTO transcript_entries (
+              id, transcript_id, project_id, provider, kind, timestamp,
+              content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+            )
+            VALUES (?, 't1', 'p1', 'claude.code', 'user', ?, 'entry', ?, 1, 0, 100, 100)
+          """,
+          arguments: ["aaaa1234-bbbb-0000-0000-00000000000\(i)", i * 100, "sha\(i)"]
+        )
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    XCTAssertThrowsError(try service.resolveEntryId("aaaa1234")) { error in
+      guard let lookupError = error as? ContextifyQueryService.EntryLookupError,
+            case let .ambiguousId(prefix, candidates, totalMatches) = lookupError else {
+        XCTFail("Expected ambiguousId, got \(error)")
+        return
+      }
+      XCTAssertEqual(prefix, "aaaa1234")
+      XCTAssertEqual(candidates.count, 5)
+      XCTAssertEqual(totalMatches, 6)
+    }
+  }
+
+  func testResolveEntryId_prefixWithUnderscore_isEscaped() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // Entry with underscore in ID
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 100, 'target', 'sha1', 1, 0, 100, 100)
+        """,
+        arguments: ["ab_d1234-5678-9abc-def0-123456789abc"]
+      )
+      // Entry that would match if _ were treated as wildcard (abXd1234...)
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 200, 'decoy', 'sha2', 1, 0, 200, 200)
+        """,
+        arguments: ["abzd1234-5678-9abc-def0-123456789abc"]
+      )
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    // Searching for "ab_d1234" should find exactly 1 match (the underscore entry),
+    // not 2 (which would happen if _ were treated as LIKE wildcard)
+    let resolved = try service.resolveEntryId("ab_d1234")
+    XCTAssertEqual(resolved, "ab_d1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_contentWithQuotes() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "Bob's test with \"quotes\""
+    )
+    let result = try service.entry(entryId: "abcd1234")
+    XCTAssertEqual(result.entry.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testEntryCommand_resolvesPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let result = try service.entry(entryId: "abcd1234")
+    XCTAssertEqual(result.entry.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testContextCommand_resolvesPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let result = try service.context(entryId: "abcd1234")
+    XCTAssertEqual(result.anchor.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  // MARK: - Test Helpers
+
+  private func makeServiceWithEntry(
+    entryId: String,
+    content: String
+  ) throws -> ContextifyQueryService {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 100, ?, 'sha1', 1, 0, 100, 100)
+        """,
+        arguments: [entryId, content]
+      )
+    }
+
+    return try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
   }
 }

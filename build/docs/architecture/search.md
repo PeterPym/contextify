@@ -35,16 +35,16 @@ CREATE VIRTUAL TABLE transcript_entries_fts USING fts5(
     project_id UNINDEXED,
     role UNINDEXED,
     created_at UNINDEXED,
-    tokenize = 'unicode61 remove_diacritics 2 separators _'
+    tokenize = 'porter unicode61 remove_diacritics 2 separators _'
 );
 ```
 
 **Key details:**
 - `separators _` allows `UNREAD_COUNT_UPDATED` to match `unread`, `count`, `updated`
-- Only indexes `role IN ('user', 'assistant')` with `display_in_timeline = 1`
+- Indexes `role IN ('user', 'assistant', 'summary')` with `display_in_timeline = 1`
 - Synced via `AFTER INSERT/UPDATE/DELETE` triggers on `transcript_entries`
 - Case-insensitive, diacritic-insensitive (é ≈ e)
-- No stemming in Phase 1 (`summary` ≠ `summaries`)
+- Porter stemming enabled (migration v38): `summary` matches `summaries`, `deploy` matches `deployed`
 
 ### Search Service
 
