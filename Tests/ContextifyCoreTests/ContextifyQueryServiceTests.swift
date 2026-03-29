@@ -599,6 +599,123 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertEqual(result5.count, 1)
   }
 
+  // MARK: - ct-795 regression: scan all projects, not just recent 100
+
+  func testFuzzyProjectSuggestions_findsOlderProjectBeyond100() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-101-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert 101 projects. The target project has the oldest lastViewedTs.
+    try pool.write { db in
+      let target = Project(
+        id: "proj-target",
+        name: "my-special-app",
+        rootPath: "/Users/test/code/my-special-app",
+        rootBookmark: nil,
+        lastViewedTs: 0,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try target.insert(db)
+
+      for i in 1...100 {
+        let filler = Project(
+          id: "proj-filler-\(i)",
+          name: "filler-project-\(i)",
+          rootPath: "/Users/test/code/filler-\(i)",
+          rootBookmark: nil,
+          lastViewedTs: Double(i),
+          hidden: false,
+          displayOrder: nil,
+          isOrphaned: false,
+          orphanedSince: nil,
+          createdAt: 0,
+          updatedAt: 0
+        )
+        try filler.insert(db)
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo of the oldest project should still be found
+    let result = try service.fuzzyProjectSuggestions("my-specail-app")
+    XCTAssertFalse(result.isEmpty, "Oldest project (beyond top-100) must still be discoverable")
+    XCTAssertEqual(result.first?.name, "my-special-app")
+  }
+
+  // MARK: - ct-795 regression: short name does not outrank actual match
+
+  func testFuzzyProjectSuggestions_shortNameDoesNotOutrankActualMatch() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-short-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      // Short name that could match via reverse-substring
+      let short = Project(
+        id: "proj-api",
+        name: "api",
+        rootPath: "/Users/test/code/api",
+        rootBookmark: nil,
+        lastViewedTs: 100,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try short.insert(db)
+
+      // Actual match for the query
+      let actual = Project(
+        id: "proj-my-api-server",
+        name: "my-api-server",
+        rootPath: "/Users/test/code/my-api-server",
+        rootBookmark: nil,
+        lastViewedTs: 50,
+        hidden: false,
+        displayOrder: nil,
+        isOrphaned: false,
+        orphanedSince: nil,
+        createdAt: 0,
+        updatedAt: 0
+      )
+      try actual.insert(db)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // "my-api-server" should be a substring match (distance 0).
+    // "api" should NOT be distance 0 because it's too short for reverse-substring.
+    let result = try service.fuzzyProjectSuggestions("my-api-servr")
+    XCTAssertFalse(result.isEmpty)
+    // The actual match should come first (edit distance 1 for the typo),
+    // and "api" should either not appear or not outrank it
+    XCTAssertEqual(result.first?.name, "my-api-server")
+
+    // Direct check: "api" should NOT be distance-0 for a long unrelated input
+    let reverseCheck = try service.fuzzyProjectSuggestions("contextify-api-service")
+    let apiMatch = reverseCheck.first(where: { $0.name == "api" })
+    XCTAssertNil(apiMatch, "Short name 'api' must not match unrelated long input via reverse-substring")
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).

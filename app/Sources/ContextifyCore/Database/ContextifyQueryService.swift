@@ -492,6 +492,30 @@ public struct ContextifyQueryService: Sendable {
     return rows.map { ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath) }
   }
 
+  /// ct-795: Fetch all visible (non-hidden) projects for fuzzy matching.
+  /// Unlike recentProjectSuggestions, this has no limit so older projects are still discoverable.
+  private func allVisibleProjectSuggestions(_ db: Database) throws -> [ProjectSuggestion] {
+    struct Row: FetchableRecord, Decodable {
+      let id: String
+      let name: String?
+      let rootPath: String
+
+      enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case rootPath = "root_path"
+      }
+    }
+
+    let sql = """
+      SELECT id, name, root_path
+      FROM projects
+      WHERE hidden = 0
+    """
+    let rows = try Row.fetchAll(db, sql: sql)
+    return rows.map { ProjectSuggestion(id: $0.id, name: $0.name, rootPath: $0.rootPath) }
+  }
+
   /// Resolve a project by display name (exact, case-insensitive match).
   /// Returns the project ID on exact match. On ambiguity (multiple exact matches),
   /// throws .ambiguous. On no match, returns nil (caller should try path resolution).
@@ -622,20 +646,34 @@ public struct ContextifyQueryService: Sendable {
     let maxDistance = normalized.count <= 5 ? 1 : 2
 
     return try pool.read { db in
-      let candidates = try recentProjectSuggestions(db, limit: 100)
+      // ct-795: Scan ALL visible projects, not just 100 most recent.
+      // The previous limit caused silent false negatives for older projects.
+      let candidates = try allVisibleProjectSuggestions(db)
 
       struct ScoredMatch {
         let suggestion: ProjectSuggestion
         let distance: Int  // 0 = substring match, 1+ = edit distance
       }
 
+      // ct-795: Minimum candidate length for reverse-substring matching.
+      // Prevents short names like "api" from ranking as distance-0
+      // when the input is something unrelated like "contextify-api-server".
+      let minReverseLen = max(4, normalized.count / 2)
+
       let matches: [ScoredMatch] = candidates.compactMap { candidate in
         let name = (candidate.name ?? "").lowercased()
         let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
 
-        // Substring match is best (distance 0)
-        if name.contains(normalized) || dirName.contains(normalized)
-          || normalized.contains(name) || normalized.contains(dirName)
+        // Forward substring: input appears in the candidate name (always valid)
+        if name.contains(normalized) || dirName.contains(normalized) {
+          return ScoredMatch(suggestion: candidate, distance: 0)
+        }
+
+        // Reverse substring: candidate name appears in the input.
+        // Only count this if the candidate name is long enough relative to the input
+        // to avoid short-name noise (e.g. "api" matching "my-api-server").
+        if (name.count >= minReverseLen && normalized.contains(name))
+          || (dirName.count >= minReverseLen && normalized.contains(dirName))
         {
           return ScoredMatch(suggestion: candidate, distance: 0)
         }
