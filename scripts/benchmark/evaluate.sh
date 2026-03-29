@@ -21,6 +21,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 GOLD_QUERIES="${SCRIPT_DIR}/gold-queries.json"
 SNAPSHOT=""
+SNAPSHOT_EXPLICIT=false
 MODE="cli"
 VERBOSE=false
 TRACE=false
@@ -34,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     --gold-queries)
       GOLD_QUERIES="$2"; shift 2 ;;
     --snapshot)
-      SNAPSHOT="$2"; shift 2 ;;
+      SNAPSHOT="$2"; SNAPSHOT_EXPLICIT=true; shift 2 ;;
     --mode)
       MODE="$2"; shift 2 ;;
     --verbose)
@@ -142,8 +143,8 @@ if [[ ! -f "$SNAPSHOT" ]]; then
   exit 1
 fi
 
-# Validate snapshot hash against manifest (if manifest exists)
-if [[ -f "${SCRIPT_DIR}/snapshot-manifest.json" ]]; then
+# Validate snapshot hash against manifest (only for default snapshot, not explicit --snapshot)
+if [[ "$SNAPSHOT_EXPLICIT" == "false" && -f "${SCRIPT_DIR}/snapshot-manifest.json" ]]; then
   EXPECTED_HASH=$(python3 -c "
 import json
 with open('${SCRIPT_DIR}/snapshot-manifest.json') as f:
