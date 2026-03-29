@@ -188,6 +188,21 @@ This copies the current production database and updates the manifest. When rebui
 | `results.tsv` | Score history (annotated) |
 | `BENCHMARK-HISTORY.md` | Full development history and lessons learned |
 
+## Protocol Version History
+
+**v2 (ct-779, March 2026)**: Current protocol. 34 gold queries, Recall@k/MRR, hierarchical bootstrap, structured evidence, budget caps.
+
+**v1 (ct-727/ct-728/ct-729, March 2026)**: Original protocol. 14 gold queries, binary fingerprint hit scoring, found_rate * efficiency_factor.
+
+### Breaking Changes (v1 to v2)
+
+- **gq-13 replaced**: v1's gq-13 tested pricing prospects (Justin George / Noah Zoschke); v2's gq-13 tests approved pricing tiers (ct-525). These are different queries sharing the same ID. **Do not compare v1 and v2 results for gq-13.** The replacement was necessary because the original query had inadequate corpus coverage and failed across all configurations.
+- **gq-14 calibration fix**: The query itself (search terms, fingerprint) is unchanged. Only the labeled pair in `calibrate-fingerprint.py` was corrected to match the actual fingerprint. v1/v2 results for gq-14 are comparable.
+- **gq-15 through gq-34 are new**: No v1 baseline exists for these queries.
+- **Scoring metrics changed**: v1 used `found_rate * efficiency_factor * 100`. v2 uses Recall@k and MRR as primary metrics. The v1 score is still computed for backward compatibility but is saturated at 100.0 and uninformative.
+
+Ratchet history (`results.tsv`) from v1 runs should not be directly compared with v2 runs. The benchmark versions measure different things.
+
 ## Current Baselines (2026-03-29)
 
 | Mode | Score | Recall@k | MRR | Queries |

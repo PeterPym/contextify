@@ -278,12 +278,16 @@ Research complete. FTS5 porter stemming (`tokenize = 'porter unicode61 ...'`) pr
 
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-03-28 | `687fc3ea` | Fix gq-13 calibration, audit gq-14, enforce hard gates |
+| 2026-03-28 | `687fc3ea` | Replace gq-13 (see note), fix gq-14 calibration, enforce hard gates |
 | 2026-03-28 | `b33f98b4` | Add Recall@k and MRR metrics with ground-truth entry sets |
 | 2026-03-28 | `1a906c48` | Expand gold queries from 14 to 34, add morphology diagnostics |
 | 2026-03-28 | `141e2c7f` | Fix hash check bypass for explicit --snapshot argument |
 | 2026-03-28 | `114cea76` | Add structured evidence output and entry-ID validation |
 | 2026-03-28 | `b680b441` | Add hierarchical bootstrap A/B testing, update ratchet policy, enforce budget caps |
+
+#### Query ID Continuity Note
+
+**gq-13 was replaced, not recalibrated.** v1's gq-13 tested pricing prospects (Justin George / Noah Zoschke); v2's gq-13 tests approved pricing tiers (ct-525). The original query had inadequate corpus coverage and failed across all configurations in ct-776 testing. v1 and v2 results for gq-13 are not comparable. gq-14 was only a calibration fix (same query, same fingerprint). All other original queries (gq-01 through gq-12) are unchanged.
 
 #### Recall@k and MRR
 
