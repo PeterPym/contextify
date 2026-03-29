@@ -214,6 +214,7 @@ public struct ContextifyQueryService: Sendable {
     public let projectCount: Int
     public let transcriptCount: Int
     public let entryCount: Int
+    public let newestEntryTimestamp: Int?
   }
 
   public struct ProjectStats: Codable, Sendable {
@@ -1692,7 +1693,11 @@ public struct ContextifyQueryService: Sendable {
       let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
       let transcriptCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
       let entryCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries") ?? 0
-      return DatabaseCounts(projectCount: projectCount, transcriptCount: transcriptCount, entryCount: entryCount)
+      let newestTs = try Int.fetchOne(db, sql: "SELECT MAX(timestamp) FROM transcript_entries")
+      return DatabaseCounts(
+        projectCount: projectCount, transcriptCount: transcriptCount,
+        entryCount: entryCount, newestEntryTimestamp: newestTs
+      )
     }
   }
 

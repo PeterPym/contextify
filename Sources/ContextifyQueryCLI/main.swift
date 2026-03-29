@@ -765,7 +765,8 @@ struct ContextifyQueryCLI {
           summariesEnabled: versionInfo.summariesEnabled,
           projectCount: counts.projectCount,
           transcriptCount: counts.transcriptCount,
-          entryCount: counts.entryCount
+          entryCount: counts.entryCount,
+          newestEntryTimestamp: counts.newestEntryTimestamp
         )
         try printResponse(type: "status", data: payload, json: options.jsonOutput) {
           printStatus(payload)
@@ -1865,6 +1866,7 @@ private struct StatusPayload: Encodable {
   let projectCount: Int
   let transcriptCount: Int
   let entryCount: Int
+  let newestEntryTimestamp: Int?
 
   var appSchemaVersion: Int { expectedSchemaVersion }
 
@@ -1878,6 +1880,7 @@ private struct StatusPayload: Encodable {
     case projectCount
     case transcriptCount
     case entryCount
+    case newestEntryTimestamp
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -1891,6 +1894,7 @@ private struct StatusPayload: Encodable {
     try container.encode(projectCount, forKey: .projectCount)
     try container.encode(transcriptCount, forKey: .transcriptCount)
     try container.encode(entryCount, forKey: .entryCount)
+    try container.encodeIfPresent(newestEntryTimestamp, forKey: .newestEntryTimestamp)
   }
 }
 
@@ -1903,6 +1907,9 @@ private func printStatus(_ status: StatusPayload) {
   print("projects: \(status.projectCount)")
   print("transcripts: \(status.transcriptCount)")
   print("entries: \(status.entryCount)")
+  if let ts = status.newestEntryTimestamp {
+    print("newest_entry_ts: \(ts)")
+  }
 }
 
 private func printActivity(_ items: [ContextifyQueryService.ActivityItem]) {

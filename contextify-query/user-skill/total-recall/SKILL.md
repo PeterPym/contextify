@@ -194,6 +194,7 @@ Returns:
   "data": {
     "databasePath": "/Users/.../contextify.db",
     "entryCount": 315465,
+    "newestEntryTimestamp": 1769380895,
     "projectCount": 46,
     "transcriptCount": 3285,
     "ftsEnabled": true,
@@ -212,6 +213,12 @@ If database not found, respond:
 > Please open Contextify once to initialize the database.
 >
 > Download: https://contextify.sh/download
+
+**Data freshness check:** Compare `newestEntryTimestamp` (Unix epoch) to the current time. If the newest entry is more than 1 hour old, warn the user before searching:
+
+> **Note:** Contextify data may be stale (last indexed entry is from [time ago]). Results may be incomplete. Ensure the Contextify app is running to resume ingestion.
+
+Still proceed with the search, but frame results as potentially incomplete. If searching for very recent conversations (e.g., "last hour", "today") and data is stale, the warning is especially important.
 
 2) Construct query and search:
 
