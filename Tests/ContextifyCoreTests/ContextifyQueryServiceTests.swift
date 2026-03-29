@@ -716,6 +716,91 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertNil(apiMatch, "Short name 'api' must not match unrelated long input via reverse-substring")
   }
 
+  // MARK: - ct-93 regression: status includes newestEntryTimestamp
+
+  func testCounts_includesNewestEntryTimestamp() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-counts-ts-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-ts", name: "test-project",
+      rootPath: "/Users/test/code/test-project",
+      rootBookmark: nil, lastViewedTs: 0, hidden: false,
+      displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+      createdAt: 0, updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('tx-ts', 'proj-ts', '/tmp/test.jsonl', 'claude.code', 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, content, content_sha256,
+          timestamp, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES
+          ('e1', 'tx-ts', 'proj-ts', 'claude.code', 'user', 'first entry', 'sha1', 1000, 1, 0, 0, 0, 0),
+          ('e2', 'tx-ts', 'proj-ts', 'claude.code', 'assistant', 'second entry', 'sha2', 5000, 1, 0, 0, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let counts = try service.counts()
+    XCTAssertEqual(counts.newestEntryTimestamp, 5000)
+    XCTAssertEqual(counts.entryCount, 2)
+    XCTAssertEqual(counts.deviceCount, 0)  // no source_device_id set
+  }
+
+  // MARK: - Review feedback: fuzzy fast-path fallback still finds old projects
+
+  func testFuzzyProjectSuggestions_fallbackToFullScan_beyond500() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-fallback-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      // Target project with oldest lastViewedTs (outside recent-500 window)
+      let target = Project(
+        id: "proj-old-target", name: "my-rare-project",
+        rootPath: "/Users/test/code/my-rare-project",
+        rootBookmark: nil, lastViewedTs: 0, hidden: false,
+        displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+        createdAt: 0, updatedAt: 0
+      )
+      try target.insert(db)
+
+      for i in 1...500 {
+        let filler = Project(
+          id: "proj-fill-\(i)", name: "filler-project-\(i)",
+          rootPath: "/Users/test/code/filler-\(i)",
+          rootBookmark: nil, lastViewedTs: Double(i), hidden: false,
+          displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+          createdAt: 0, updatedAt: 0
+        )
+        try filler.insert(db)
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo of the oldest project should trigger full-scan fallback
+    let result = try service.fuzzyProjectSuggestions("my-rar-project")
+    XCTAssertFalse(result.isEmpty, "Fallback to full scan must find project beyond recent-500")
+    XCTAssertEqual(result.first?.name, "my-rare-project")
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).

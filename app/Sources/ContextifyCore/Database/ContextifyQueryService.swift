@@ -648,10 +648,6 @@ public struct ContextifyQueryService: Sendable {
     let maxDistance = normalized.count <= 5 ? 1 : 2
 
     return try pool.read { db in
-      // ct-795: Scan ALL visible projects, not just 100 most recent.
-      // The previous limit caused silent false negatives for older projects.
-      let candidates = try allVisibleProjectSuggestions(db)
-
       struct ScoredMatch {
         let suggestion: ProjectSuggestion
         let distance: Int  // 0 = substring match, 1+ = edit distance
@@ -662,33 +658,47 @@ public struct ContextifyQueryService: Sendable {
       // when the input is something unrelated like "contextify-api-server".
       let minReverseLen = max(4, normalized.count / 2)
 
-      let matches: [ScoredMatch] = candidates.compactMap { candidate in
-        let name = (candidate.name ?? "").lowercased()
-        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
+      func score(_ candidates: [ProjectSuggestion]) -> [ScoredMatch] {
+        candidates.compactMap { candidate in
+          let name = (candidate.name ?? "").lowercased()
+          let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
 
-        // Forward substring: input appears in the candidate name (always valid)
-        if name.contains(normalized) || dirName.contains(normalized) {
-          return ScoredMatch(suggestion: candidate, distance: 0)
+          // Forward substring: input appears in the candidate name (always valid)
+          if name.contains(normalized) || dirName.contains(normalized) {
+            return ScoredMatch(suggestion: candidate, distance: 0)
+          }
+
+          // Reverse substring: candidate name appears in the input.
+          // Only count this if the candidate name is long enough relative to the input
+          // to avoid short-name noise (e.g. "api" matching "my-api-server").
+          if (name.count >= minReverseLen && normalized.contains(name))
+            || (dirName.count >= minReverseLen && normalized.contains(dirName))
+          {
+            return ScoredMatch(suggestion: candidate, distance: 0)
+          }
+
+          // Edit distance match (bounded for performance)
+          let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
+          let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
+          let bestDist = min(nameDist, dirDist)
+          if bestDist <= maxDistance {
+            return ScoredMatch(suggestion: candidate, distance: bestDist)
+          }
+
+          return nil
         }
+      }
 
-        // Reverse substring: candidate name appears in the input.
-        // Only count this if the candidate name is long enough relative to the input
-        // to avoid short-name noise (e.g. "api" matching "my-api-server").
-        if (name.count >= minReverseLen && normalized.contains(name))
-          || (dirName.count >= minReverseLen && normalized.contains(dirName))
-        {
-          return ScoredMatch(suggestion: candidate, distance: 0)
-        }
-
-        // Edit distance match (bounded for performance)
-        let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
-        let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
-        let bestDist = min(nameDist, dirDist)
-        if bestDist <= maxDistance {
-          return ScoredMatch(suggestion: candidate, distance: bestDist)
-        }
-
-        return nil
+      // Fast path: score recent projects first. Only fall back to the full
+      // visible-project scan if the recent window produces no matches.
+      let recentCandidates = try recentProjectSuggestions(db, limit: 500)
+      let recentMatches = score(recentCandidates)
+      let matches: [ScoredMatch]
+      if recentMatches.isEmpty {
+        let allCandidates = try allVisibleProjectSuggestions(db)
+        matches = score(allCandidates)
+      } else {
+        matches = recentMatches
       }
 
       // T3: Stable sort by distance, then alphabetically by name
