@@ -14,6 +14,7 @@ CLI_TESTS=(
   "CLI-01-query-baseline.sh"
   "CLI-02-query-issues.sh"
   "CLI-03-skill-invocation.sh"
+  "CLI-05-metadata-contract.sh"
 )
 
 PASSED_TESTS=()

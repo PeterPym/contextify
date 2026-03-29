@@ -1124,4 +1124,108 @@ final class ContextifyQueryServiceTests: XCTestCase {
 
     return try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
   }
+
+  // MARK: - ct-796: CLI contract tests (databaseSummary shape, non-path resolution)
+
+  /// Verify counts() returns all fields needed for databaseSummary metadata.
+  /// The CLI wraps this as the "databaseSummary" key in search JSON responses.
+  func testCounts_returnsDatabaseSummaryFields() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-dbsummary-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'alpha', '/test/alpha', 0, 0, 100),
+               ('p2', 'beta', '/test/beta', 0, 0, 50)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/tmp/t1.jsonl', 'claude.code', 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, content, content_sha256,
+          timestamp, display_in_timeline, is_sidechain, created_at, updated_at, is_queued,
+          source_device_id
+        ) VALUES
+          ('e1', 't1', 'p1', 'claude.code', 'user', 'hello', 'sha1', 1000, 1, 0, 0, 0, 0, 'device-a'),
+          ('e2', 't1', 'p1', 'claude.code', 'assistant', 'world', 'sha2', 2000, 1, 0, 0, 0, 0, 'device-b')
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let counts = try service.counts()
+
+    // All fields that back databaseSummary must be present and correct
+    XCTAssertEqual(counts.entryCount, 2)
+    XCTAssertEqual(counts.projectCount, 2)
+    XCTAssertEqual(counts.deviceCount, 2)
+    XCTAssertEqual(counts.newestEntryTimestamp, 2000)
+  }
+
+  /// Verify that databaseSummary counts are global, not filtered by project.
+  /// This was the P1 issue from the ChatGPT review: scopeSummary reported global
+  /// counts while claiming to describe the filtered search scope.
+  func testCounts_areGlobal_notFilteredByProject() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-global-counts-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'alpha', '/test/alpha', 0, 0, 100),
+               ('p2', 'beta', '/test/beta', 0, 0, 50),
+               ('p3', 'gamma', '/test/gamma', 0, 0, 25)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // counts() always returns global totals regardless of any filtering
+    let counts = try service.counts()
+    XCTAssertEqual(counts.projectCount, 3, "counts() must return ALL projects, not a filtered subset")
+  }
+
+  /// Verify resolveProjectByName returns nil for an unknown name,
+  /// enabling the caller to terminate without filesystem fallback.
+  func testResolveProjectByName_unknownName_returnsNil() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-resolve-nil-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'real-project', '/test/real-project', 0, 0, 100)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Name lookup for unknown project returns nil (not an error, not a path)
+    let result = try service.resolveProjectByName("totally-unknown-project")
+    XCTAssertNil(result, "Unknown project name must return nil, not fall through to path resolution")
+
+    // Fuzzy suggestions for a completely unrelated name should be empty
+    let fuzzy = try service.fuzzyProjectSuggestions("zzzzz-no-match")
+    XCTAssertTrue(fuzzy.isEmpty, "Completely unrelated name must produce no fuzzy suggestions")
+  }
 }
