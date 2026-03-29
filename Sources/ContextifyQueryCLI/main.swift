@@ -64,6 +64,7 @@ private struct ErrorEnvelope: Encodable {
   let type: String = "error"
   let code: String
   let message: String
+  let hint: String?
   let details: JSONValue?
 }
 
@@ -80,12 +81,14 @@ private struct CLIError: Error {
   let code: String
   let message: String
   let exitCode: ExitCode
+  let hint: String?
   let details: JSONValue?
 
-  init(code: String, message: String, exitCode: ExitCode, details: JSONValue? = nil) {
+  init(code: String, message: String, exitCode: ExitCode, hint: String? = nil, details: JSONValue? = nil) {
     self.code = code
     self.message = message
     self.exitCode = exitCode
+    self.hint = hint
     self.details = details
   }
 }
@@ -334,7 +337,11 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --snippet-tokens", exitCode: .invalidArgs)
           }
           guard n >= 1 && n <= 100 else {
-            throw CLIError(code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100", exitCode: .invalidArgs)
+            throw CLIError(
+              code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100",
+              exitCode: .invalidArgs,
+              hint: "Max is 100 tokens. For full entry content, use: contextify entry <id>"
+            )
           }
           options.snippetTokens = n
         case "--json":
@@ -359,7 +366,10 @@ struct ContextifyQueryCLI {
           usage(nil)
         default:
           if arg.hasPrefix("--") {
-            throw CLIError(code: "invalidArgs", message: "Unknown option: \(arg)", exitCode: .invalidArgs)
+            throw CLIError(
+              code: "invalidArgs", message: "Unknown option: \(arg)", exitCode: .invalidArgs,
+              hint: "Run contextify <command> --help for available options"
+            )
           }
           remaining.append(arg)
         }
@@ -402,10 +412,16 @@ struct ContextifyQueryCLI {
       switch command {
       case .search:
         guard !commandArgs.isEmpty else {
-          throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+          throw CLIError(
+            code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs,
+            hint: "Usage: contextify search \"your query\" [--project <name>] [--days <n>]"
+          )
         }
         guard options.limit <= 500 else {
-          throw CLIError(code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs)
+          throw CLIError(
+            code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs,
+            hint: "Use --limit 500 for maximum results, or narrow with --project or --days"
+          )
         }
         if options.noContent {
           fputs("Warning: --no-content has no effect on search (snippets are always returned)\n", stderr)
@@ -1208,14 +1224,18 @@ private func parseCSV(_ value: String?) -> [String]? {
 private func buildSearchQuery(_ rawQuery: String) throws -> String {
   let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
   guard !trimmed.isEmpty else {
-    throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+    throw CLIError(
+      code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs,
+      hint: "Usage: contextify search \"your query\" [--project <name>] [--days <n>]"
+    )
   }
 
   if trimmed.contains("|") {
     throw CLIError(
       code: "invalidQuery",
       message: "Unsupported query syntax: '|' is not allowed. Use FTS5 syntax like \"term1 OR term2\".",
-      exitCode: .invalidArgs
+      exitCode: .invalidArgs,
+      hint: "Use OR/AND/NOT operators, or quote exact phrases: \"error handling\""
     )
   }
 
@@ -1227,7 +1247,8 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
     throw CLIError(
       code: "invalidQuery",
       message: "Unbalanced quotes in search query.",
-      exitCode: .invalidArgs
+      exitCode: .invalidArgs,
+      hint: "Close all double-quotes, or remove them to search for individual terms"
     )
   }
 
@@ -2095,10 +2116,14 @@ private func mapProjectResolutionError(
   switch error {
   case let .notFound(path, suggestions, totalProjectCount):
     let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    let message = suggestions.isEmpty
+      ? "No Contextify project found for \(path).\n\nTotal projects: \(totalProjectCount)"
+      : "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)"
     return CLIError(
       code: "dbProjectNotFound",
-      message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
+      message: message,
       exitCode: .dbNotFound,
+      hint: "List all projects with: contextify projects --json",
       details: .object([
         "path": .string(path),
         "suggestions": .array(suggestions.map(jsonProjectSuggestion)),
@@ -2111,6 +2136,7 @@ private func mapProjectResolutionError(
       code: "dbProjectNotFound",
       message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
       exitCode: .dbNotFound,
+      hint: "Use --project-id <id> for an exact match, or list all: contextify projects --json",
       details: .object([
         "path": .string(path),
         "candidates": .array(candidates.map(jsonProjectSuggestion)),
@@ -2156,7 +2182,10 @@ private func emitError(_ cliError: CLIError, json: Bool) {
     do {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = ErrorEnvelope(code: cliError.code, message: cliError.message, details: cliError.details)
+      let payload = ErrorEnvelope(
+        code: cliError.code, message: cliError.message,
+        hint: cliError.hint, details: cliError.details
+      )
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -2165,6 +2194,9 @@ private func emitError(_ cliError: CLIError, json: Bool) {
     }
   } else {
     FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
+    if let hint = cliError.hint {
+      FileHandle.standardError.write(Data("Tip: \(hint)\n".utf8))
+    }
   }
 }
 
