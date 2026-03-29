@@ -11,7 +11,15 @@
       "content_fingerprint": "Fulton House Business Operations, Booking Systems, Google Workspace",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "2957c86f-fb11-42ec-9231-7783d80e2be9",
+        "27a7d952-733e-4b16-9eed-20fd9dd6a272",
+        "queue-4408634305842686125-7186837749046753880",
+        "7b8abba0-1bee-4edf-b957-37179becc6e7",
+        "queue-2035098606622887630-154322997822256445",
+        "30863823-05d6-4a5a-abd9-a53d4613475b"
+      ]
     },
     {
       "id": "gq-02",
@@ -21,7 +29,14 @@
       "content_fingerprint": "A Delaware C-corp (Perch Innovations Inc) has its own",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "d0251c0e-18f1-42ea-9b4d-e68b90dfd98a",
+        "f2a1fad0-ea6c-438a-9704-83f6e2847f6e",
+        "389358af-6ff8-4fe8-8e06-e450f871446e",
+        "1c0ac2b8-bf8b-4dad-b2bd-411883d5a0ee",
+        "7f72e541-fa7f-4758-8a36-1894046c5283"
+      ]
     },
     {
       "id": "gq-03",
@@ -31,7 +46,12 @@
       "content_fingerprint": "Paperbark Maple (*Acer griseum*)",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "bdbbdaa5-1479-43f7-9c01-787955dd3ea2",
+        "0a91aaa5-cea2-4388-8b09-13b667d79f92",
+        "092b2f93-5db2-4c40-90b9-a2338c248146"
+      ]
     },
     {
       "id": "gq-04",
@@ -41,7 +61,11 @@
       "content_fingerprint": "focus changes, focus should be intelligent, auto-advance focus wrong",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "1e50caea-4831-4fa4-8f1d-924cdc0cd4ed",
+        "14200a2f-340e-47ff-93f3-34a2fded97c9"
+      ]
     },
     {
       "id": "gq-05",
@@ -51,7 +75,14 @@
       "content_fingerprint": "Cloud is separate Python FastAPI service with its own PostgreSQL",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "4288430a-7ca8-48cc-a130-97a6b08e2619",
+        "d915429b-1de7-427b-ad85-e06b2340c758",
+        "6875cbad-fdc8-4a00-ac54-0d6a656fb715",
+        "6f5bbff4-c45e-47a6-bb24-51ea37fe6420",
+        "queue-862463464602080431-3182649051988664577"
+      ]
     },
     {
       "id": "gq-06",
@@ -61,7 +92,11 @@
       "content_fingerprint": "Contextify 1.5.0 = Cloud Launch (`ct",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "2496081a-e612-4357-a056-2c26bc97a9b7",
+        "0014c2d1-5594-4a55-b550-c15eb1ce1e87"
+      ]
     },
     {
       "id": "gq-07",
@@ -71,7 +106,13 @@
       "content_fingerprint": "SENTRY_ENVIRONMENT=production",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "cf97cc58-8d78-7d0e-d677-cb46d773f95c",
+        "e6901a32-eb4a-3480-9745-18664a1d01f2",
+        "395eecaa-7f58-4cad-9bbb-21556a376645",
+        "e8d5dea1-a286-e7f3-6c53-4f2de62e4fe3"
+      ]
     },
     {
       "id": "gq-08",
@@ -81,7 +122,11 @@
       "content_fingerprint": "DigitalOcean droplet (s-2vcpu-4gb, NYC3 region)",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "55a33271-4e93-437c-b8e4-714094197a03",
+        "2b5a6742-c4f3-4304-bea6-e74d927a273c"
+      ]
     },
     {
       "id": "gq-09",
@@ -91,7 +136,12 @@
       "content_fingerprint": "Tier 1 + Tier 2: LLM fallback",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "6157c066-a588-47b2-91ed-cc86dcb451cb",
+        "be3e15f4-4149-4a22-8588-96f9a23fcc7c",
+        "queue-7206460425922256590-2032659957165497716"
+      ]
     },
     {
       "id": "gq-10",
@@ -101,7 +151,12 @@
       "content_fingerprint": "ct-287-cloud-worktree-grouping",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "802af532-fad3-4ff0-89b4-9cf26b82a09e",
+        "47843c01-39fe-4a10-aed6-a970cfd39b8e",
+        "54005ac8-d9cc-4901-8f43-409ee5ba7ddb"
+      ]
     },
     {
       "id": "gq-11",
@@ -111,7 +166,12 @@
       "content_fingerprint": "dungeon crawler carl bootleg hats project",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "afcb69d4-e34a-48af-ba96-09eeeefac8dd",
+        "c09634e4-27fb-45a3-9af7-01cca9506a85",
+        "8a94a4a9-7ab3-4507-a4b6-fd9431811b6e"
+      ]
     },
     {
       "id": "gq-12",
@@ -121,7 +181,11 @@
       "content_fingerprint": "Quality Engineering Lead",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "5d319882-13b5-41be-b7e1-e79c22a40541",
+        "def6da96-555f-4573-9e6f-0a6966c9e5bc"
+      ]
     },
     {
       "id": "gq-13",
@@ -131,7 +195,10 @@
       "content_fingerprint": "Pricing Decision (ct-525, approved)",
       "efficiency_budget": 3,
       "difficulty": "hard",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "db439881-fee9-4f8c-986d-505b81c65727"
+      ]
     },
     {
       "id": "gq-14",
@@ -141,7 +208,11 @@
       "content_fingerprint": "navigation reflow for the Contextify Cloud dashboard is fully implemented",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "b758a299-bd6a-461a-9b33-ea94f6bd353f",
+        "eeeaa51e-5766-4325-8181-3284cb17e07e"
+      ]
     }
   ]
 }

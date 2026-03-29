@@ -420,6 +420,8 @@ def write_trace(qid, query_dict, result, response_text="", tool_commands=None, c
         "turns": result.get("searches_used", 0),
         "category": result.get("category", ""),
         "difficulty": result.get("difficulty", ""),
+        "recall_at_k": result.get("recall_at_k"),
+        "mrr": result.get("mrr"),
     }
     trace_path = os.path.join(trace_dir, f"{qid}.json")
     with open(trace_path, "w") as f:
@@ -506,9 +508,26 @@ def evaluate_cli_query(q, qid, search_terms, fingerprint, budget, category, diff
                         query_found = True
                         break
 
+    # Compute ranked retrieval metrics if relevant_entry_ids are defined
+    relevant_ids = set(q.get("relevant_entry_ids", []))
+    result_ids = [hit.get("id", "") for hit in data]
+    recall_at_k = None
+    mrr = None
+    if relevant_ids and not is_negative:
+        # Recall@k: fraction of relevant entries found in top-k results
+        found_relevant = sum(1 for rid in result_ids if rid in relevant_ids)
+        recall_at_k = found_relevant / len(relevant_ids)
+        # MRR: reciprocal rank of first relevant result (0 if none found)
+        mrr = 0.0
+        for rank, rid in enumerate(result_ids, start=1):
+            if rid in relevant_ids:
+                mrr = 1.0 / rank
+                break
+
     return {"id": qid, "found": query_found, "searches_used": 1,
             "total_results": total_results, "category": category,
             "difficulty": difficulty, "is_negative": is_negative,
+            "recall_at_k": recall_at_k, "mrr": mrr,
             "_cli_command": cli_cmd_str, "_response": proc.stdout[:500]}
 
 def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, difficulty, is_negative):
@@ -647,7 +666,12 @@ else:
                 print(f"  [{qid}] {status} (turns={turns}, {dur:.1f}s) - {natural_q[:60]!r}", file=sys.stderr)
             else:
                 tr = result.get("total_results", 0)
-                print(f"  [{qid}] {status} ({tr} results) - {q['search_terms']!r}", file=sys.stderr)
+                r_at_k = result.get("recall_at_k")
+                m = result.get("mrr")
+                metrics = ""
+                if r_at_k is not None:
+                    metrics = f" R@k={r_at_k:.3f} MRR={m:.3f}"
+                print(f"  [{qid}] {status} ({tr} results{metrics}) - {q['search_terms']!r}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -661,6 +685,12 @@ else:
     efficiency_factor = 0.0
     final_score = 0.0
 
+# Compute ranked retrieval metrics (Recall@k and MRR) across queries with qrels
+recall_values = [r["recall_at_k"] for r in results if r.get("recall_at_k") is not None]
+mrr_values = [r["mrr"] for r in results if r.get("mrr") is not None]
+mean_recall = sum(recall_values) / len(recall_values) if recall_values else None
+mean_mrr = sum(mrr_values) / len(mrr_values) if mrr_values else None
+
 # Print summary to stderr
 print("---", file=sys.stderr)
 print(f"Queries total:      {total}", file=sys.stderr)
@@ -669,6 +699,11 @@ print(f"Queries found:      {found_count}", file=sys.stderr)
 print(f"Found rate:         {found_rate:.3f}", file=sys.stderr)
 print(f"Efficiency factor:  {efficiency_factor:.3f}", file=sys.stderr)
 print(f"Final score:        {final_score:.1f}", file=sys.stderr)
+if mean_recall is not None:
+    print(f"", file=sys.stderr)
+    print(f"Retrieval metrics (queries with qrels: {len(recall_values)}):", file=sys.stderr)
+    print(f"  Mean Recall@k:    {mean_recall:.3f}", file=sys.stderr)
+    print(f"  Mean MRR:         {mean_mrr:.3f}", file=sys.stderr)
 
 if eval_mode == "skill":
     if expected_skill_hash:
@@ -703,7 +738,10 @@ if verbose:
         status = "PASS" if r["found"] else "FAIL"
         neg = " [negative]" if r.get("is_negative") else ""
         err = f" ERROR={r['error']}" if "error" in r else ""
-        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}){err}", file=sys.stderr)
+        metrics = ""
+        if r.get("recall_at_k") is not None:
+            metrics = f" R@k={r['recall_at_k']:.3f} MRR={r['mrr']:.3f}"
+        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}{metrics}){err}", file=sys.stderr)
 
 if trace_enabled:
     print(f"Traces written to: {trace_dir}/ ({len(results)} files)", file=sys.stderr)
