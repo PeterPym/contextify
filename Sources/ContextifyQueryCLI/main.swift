@@ -694,10 +694,7 @@ struct ContextifyQueryCLI {
             printEntryResult(result)
           }
         } catch let error as ContextifyQueryService.EntryLookupError {
-          switch error {
-          case let .notFound(entryId):
-            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
-          }
+          throw mapEntryLookupError(error)
         }
 
       case .context:
@@ -732,10 +729,7 @@ struct ContextifyQueryCLI {
             printContextResult(result)
           }
         } catch let error as ContextifyQueryService.EntryLookupError {
-          switch error {
-          case let .notFound(entryId):
-            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
-          }
+          throw mapEntryLookupError(error)
         }
 
       case .status:
@@ -2096,6 +2090,28 @@ private func mapProjectResolutionError(
       details: .object([
         "path": .string(path),
         "candidates": .array(candidates.map(jsonProjectSuggestion)),
+      ])
+    )
+  }
+}
+
+private func mapEntryLookupError(
+  _ error: ContextifyQueryService.EntryLookupError
+) -> CLIError {
+  switch error {
+  case let .notFound(entryId):
+    return CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
+  case let .ambiguousId(prefix, candidates, totalMatches):
+    let list = candidates.joined(separator: "\n  - ")
+    let truncationNote = totalMatches > candidates.count ? "\n  - ..." : ""
+    return CLIError(
+      code: "entryAmbiguousId",
+      message: "Ambiguous entry id prefix '\(prefix)' matches \(totalMatches) entries:\n  - \(list)\(truncationNote)",
+      exitCode: .entryNotFound,
+      details: .object([
+        "prefix": .string(prefix),
+        "totalMatches": .number(Double(totalMatches)),
+        "candidates": .array(candidates.map { .string($0) }),
       ])
     )
   }

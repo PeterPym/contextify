@@ -670,4 +670,256 @@ final class ContextifyQueryServiceTests: XCTestCase {
       )
     }
   }
+
+  // MARK: - Entry ID Prefix Resolution (ct-794)
+
+  func testResolveEntryId_fullUUID() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let resolved = try service.resolveEntryId("abcd1234-5678-9abc-def0-123456789abc")
+    XCTAssertEqual(resolved, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_8charPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let resolved = try service.resolveEntryId("abcd1234")
+    XCTAssertEqual(resolved, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_notFound() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    XCTAssertThrowsError(try service.resolveEntryId("zzzzzzzz")) { error in
+      guard case ContextifyQueryService.EntryLookupError.notFound = error else {
+        XCTFail("Expected notFound, got \(error)")
+        return
+      }
+    }
+  }
+
+  func testResolveEntryId_tooShort() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    XCTAssertThrowsError(try service.resolveEntryId("abcd")) { error in
+      guard case ContextifyQueryService.EntryLookupError.notFound = error else {
+        XCTFail("Expected notFound for short prefix, got \(error)")
+        return
+      }
+    }
+  }
+
+  func testResolveEntryId_ambiguous() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // Two entries sharing the same 8-char prefix
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at)
+        VALUES ('abcd1234-aaaa-0000-0000-000000000001', 't1', 'p1', 'claude.code', 'user', 100, 'first', 'sha1', 1, 0, 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at)
+        VALUES ('abcd1234-aaaa-0000-0000-000000000002', 't1', 'p1', 'claude.code', 'user', 200, 'second', 'sha2', 1, 0, 200, 200)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    XCTAssertThrowsError(try service.resolveEntryId("abcd1234")) { error in
+      guard let lookupError = error as? ContextifyQueryService.EntryLookupError,
+            case let .ambiguousId(prefix, candidates, totalMatches) = lookupError else {
+        XCTFail("Expected ambiguousId, got \(error)")
+        return
+      }
+      XCTAssertEqual(prefix, "abcd1234")
+      XCTAssertEqual(candidates.count, 2)
+      XCTAssertEqual(totalMatches, 2)
+    }
+  }
+
+  func testResolveEntryId_ambiguousMoreThanFive_reportsTotalMatches() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // 6 entries sharing the same 8-char prefix
+      for i in 1...6 {
+        try db.execute(
+          sql: """
+            INSERT INTO transcript_entries (
+              id, transcript_id, project_id, provider, kind, timestamp,
+              content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+            )
+            VALUES (?, 't1', 'p1', 'claude.code', 'user', ?, 'entry', ?, 1, 0, 100, 100)
+          """,
+          arguments: ["aaaa1234-bbbb-0000-0000-00000000000\(i)", i * 100, "sha\(i)"]
+        )
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    XCTAssertThrowsError(try service.resolveEntryId("aaaa1234")) { error in
+      guard let lookupError = error as? ContextifyQueryService.EntryLookupError,
+            case let .ambiguousId(prefix, candidates, totalMatches) = lookupError else {
+        XCTFail("Expected ambiguousId, got \(error)")
+        return
+      }
+      XCTAssertEqual(prefix, "aaaa1234")
+      XCTAssertEqual(candidates.count, 5)
+      XCTAssertEqual(totalMatches, 6)
+    }
+  }
+
+  func testResolveEntryId_prefixWithUnderscore_isEscaped() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      // Entry with underscore in ID
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 100, 'target', 'sha1', 1, 0, 100, 100)
+        """,
+        arguments: ["ab_d1234-5678-9abc-def0-123456789abc"]
+      )
+      // Entry that would match if _ were treated as wildcard (abXd1234...)
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 200, 'decoy', 'sha2', 1, 0, 200, 200)
+        """,
+        arguments: ["abzd1234-5678-9abc-def0-123456789abc"]
+      )
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    // Searching for "ab_d1234" should find exactly 1 match (the underscore entry),
+    // not 2 (which would happen if _ were treated as LIKE wildcard)
+    let resolved = try service.resolveEntryId("ab_d1234")
+    XCTAssertEqual(resolved, "ab_d1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testResolveEntryId_contentWithQuotes() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "Bob's test with \"quotes\""
+    )
+    let result = try service.entry(entryId: "abcd1234")
+    XCTAssertEqual(result.entry.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testEntryCommand_resolvesPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let result = try service.entry(entryId: "abcd1234")
+    XCTAssertEqual(result.entry.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  func testContextCommand_resolvesPrefix() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "test content"
+    )
+    let result = try service.context(entryId: "abcd1234")
+    XCTAssertEqual(result.anchor.id, "abcd1234-5678-9abc-def0-123456789abc")
+  }
+
+  // MARK: - Test Helpers
+
+  private func makeServiceWithEntry(
+    entryId: String,
+    content: String
+  ) throws -> ContextifyQueryService {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, root_path, hidden, created_at, updated_at)
+        VALUES ('p1', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 100, ?, 'sha1', 1, 0, 100, 100)
+        """,
+        arguments: [entryId, content]
+      )
+    }
+
+    return try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+  }
 }
