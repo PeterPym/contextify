@@ -270,27 +270,77 @@ Fuzzy project name suggestions shipped: `--project contxtify` now suggests "cont
 
 Research complete. FTS5 porter stemming (`tokenize = 'porter unicode61 ...'`) preserves all existing query patterns while adding automatic morphological expansion. Cannot be tested against frozen benchmark. Recommended as standalone product feature. See `/tmp/ct-726-porter-stemming-evaluation.md`.
 
+### Phase 9: Benchmark v2 Redesign (2026-03-29, ct-779)
+
+**Goal**: Transform the benchmark from a binary pass/fail system into a proper information retrieval evaluation framework. The legacy score saturated at 100.0 for CLI mode, making it useless for measuring CLI improvements or comparing tokenizers.
+
+**Changes across 6 commits**:
+
+| Date | Commit | Change |
+|------|--------|--------|
+| 2026-03-28 | `687fc3ea` | Fix gq-13 calibration, audit gq-14, enforce hard gates |
+| 2026-03-28 | `b33f98b4` | Add Recall@k and MRR metrics with ground-truth entry sets |
+| 2026-03-28 | `1a906c48` | Expand gold queries from 14 to 34, add morphology diagnostics |
+| 2026-03-28 | `141e2c7f` | Fix hash check bypass for explicit --snapshot argument |
+| 2026-03-28 | `114cea76` | Add structured evidence output and entry-ID validation |
+| 2026-03-28 | `b680b441` | Add hierarchical bootstrap A/B testing, update ratchet policy, enforce budget caps |
+
+#### Recall@k and MRR
+
+Every gold query now has `relevant_entry_ids`: a list of database entry UUIDs that constitute the ground truth. The evaluator computes:
+
+- **Recall@k**: Fraction of ground-truth entries found in search results
+- **MRR**: Reciprocal rank of the first relevant result
+
+These metrics do not saturate at 100% like the legacy found-rate. CLI benchmark with the porter snapshot: Recall@k=0.914, MRR=0.865. This gives headroom for measuring improvements.
+
+#### Expanded Query Set
+
+Gold queries expanded from 14 to 34. New queries cover additional categories and include a 5-query morphology diagnostic slice (gq-28, gq-29, gq-30, gq-32, gq-33) specifically designed to differentiate porter stemming from unicode61 tokenization. These use inflected search terms ("deploying", "configuring", "hallucinating") that require stemming to match stored content.
+
+#### A/B Testing with Bootstrap CIs
+
+New `--compare` mode runs two snapshots through the same query set and reports paired hierarchical bootstrap confidence intervals (1000 samples, 95% CI). The bootstrap resamples at two levels: queries (level 1) and runs within queries (level 2, skill mode only).
+
+First A/B result: Porter vs unicode61 tokenization.
+- Porter: Recall@k=0.914, MRR=0.865 (34/34 found)
+- Unicode61: Recall@k=0.711, MRR=0.722 (26/34 found)
+- Delta Recall@k: -0.203, CI [-0.328, -0.097] (CI excludes zero, significant)
+
+All 5 morphology diagnostics produce zero results on unicode61, confirming they differentiate tokenizers as intended.
+
+#### Ratchet Policy Update
+
+- **CLI ratchet**: Uses Recall@k/MRR (non-saturated). Automated accept/reject.
+- **Skill ratchet**: Advisory only. Prints results but does not auto-accept/reject. This reflects the empirical finding that automated ratchet iterations produce zero lasting SKILL.md improvements while targeted manual edits based on trace analysis produce significant gains.
+
+#### Budget Caps (Skill Mode)
+
+New `--max-turns` and `--max-wall-clock` flags enforce resource limits on skill-mode trials. Default: 10 turns, 180 seconds. Token counting is a placeholder (logged but not enforced).
+
 ---
 
-## Current State (2026-03-28)
+## Current State (2026-03-29)
 
 | Component | Status | Score |
 |-----------|--------|-------|
-| CLI search quality | Stable | 100.0 (14/14) |
-| SKILL.md (skill:5e3f2176) | Stable | ~46.5 verified (13/14) |
-| Previous SKILL.md (skill:72771ddf) | Superseded | 37.0 verified (11/14) |
-| Pre-ct-708 SKILL.md (skill:760873c0) | Archived | 23.1 verified (8/14) |
-| Evaluator | **Frozen** (ct-729) | F1=0.900 |
-| Gold queries | 14 verified | 1 ambiguous (gq-14) |
-| Stochastic variance | Measured | ±8 points per run |
+| CLI search quality (porter) | Stable | 100.0 (34/34), R@k=0.914, MRR=0.865 |
+| CLI search quality (unicode61) | Measured | 76.5 (26/34), R@k=0.711, MRR=0.722 |
+| SKILL.md (skill:5e3f2176) | Stable | ~46.5 verified (13/14, pre-v2 queries) |
+| Evaluator | Extended (ct-779) | Fingerprint F1=0.900 (frozen), +Recall@k/MRR/bootstrap |
+| Gold queries | 34 verified | 5 morphology diagnostics, 1 ambiguous (gq-14) |
+| Stochastic variance (skill) | Measured | +/-8 points per run |
 
 ### Score evolution
 
 ```
-23.1  (Phase 2, pre-ct-708)
-37.0  (Phase 4, post CLI fixes + 3 surgical edits)
-46.5  (Phase 7, response fidelity rules)
-46.5  (Phase 8, plateau confirmed - gq-14 is benchmark limitation)
+23.1  (Phase 2, pre-ct-708, 14 queries)
+37.0  (Phase 4, post CLI fixes + 3 surgical edits, 14 queries)
+46.5  (Phase 7, response fidelity rules, 14 queries)
+46.5  (Phase 8, plateau confirmed, 14 queries)
+---   (Phase 9, v2 redesign, 34 queries)
+CLI:  100.0 found, R@k=0.914, MRR=0.865 (porter, 34 queries)
+CLI:   76.5 found, R@k=0.711, MRR=0.722 (unicode61, 34 queries)
 ```
 
 ### gq-14 Status
@@ -300,12 +350,15 @@ The last failing query is **not fixable** through SKILL.md or CLI changes alone.
 - Fingerprint update (accept implementation answer)
 - Snapshot rebuild (exclude implementation evidence or add queries testing other weaknesses)
 
+Note: gq-14 now passes in CLI mode with the v2 fingerprint ("navigation reflow for the Contextify Cloud dashboard is fully implemented"), but the underlying ambiguity remains for skill mode.
+
 ### Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/benchmark/evaluate.sh` | Frozen evaluator (scoring logic, `--trace`, `--runs N`) |
-| `scripts/benchmark/gold-queries.json` | 14 gold queries with fingerprints |
+| `scripts/benchmark/evaluate.sh` | Evaluator (Recall@k, MRR, fingerprint, `--trace`, `--runs N`, `--compare`) |
+| `scripts/benchmark/gold-queries.json` | 34 gold queries with fingerprints and entry IDs |
+| `scripts/benchmark/README.md` | Protocol documentation and quick start |
 | `scripts/benchmark/results.tsv` | Score history (annotated) |
 | `scripts/benchmark/calibrate-fingerprint.py` | Calibration harness (36 labeled pairs) |
 | `scripts/benchmark/run-skill-query.sh` | Skill runner (headless Claude Code) |
@@ -319,6 +372,7 @@ The last failing query is **not fixable** through SKILL.md or CLI changes alone.
 
 | Issue | Priority | Description |
 |-------|----------|-------------|
-| ct-726 | Done | Porter stemming evaluated, recommended as product feature |
 | ct-732 | P2 | Skill output format polish |
+| ct-779 (follow-up) | P3 | Run skill benchmark with v2 query set (34 queries) |
 | gq-14 | Documented | Benchmark limitation, needs gold query or snapshot changes |
+| Entry-ID coverage | P3 | Some queries have partial Recall@k due to entry-ID format gaps |
