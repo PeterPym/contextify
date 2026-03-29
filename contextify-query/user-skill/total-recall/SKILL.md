@@ -265,7 +265,9 @@ Returns:
 }
 ```
 
-**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+**Important:** `data` is a flat array of results. Each result's `id` is the **full UUID** you pass to the `context` and `entry` commands. **These commands require the complete UUID** (e.g., `0e83a2a2-5527-4a1e-8b41-ff4fc8e42223`), not a truncated prefix. Short prefixes like `0e83a2a2` will return `entryNotFound`. Always store the full `id` from search results before calling `context` or `entry`. The 8-char prefix (`entry:<prefix>`) is only for citation display in responses, never for CLI lookups.
+
+`projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
 
 **Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Optional fields appear conditionally:
 - `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
@@ -461,6 +463,8 @@ Searched <N> entries across <scope> over <time range>.
 ## Working with the JSON output
 
 **Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+
+**If piping through Python:** Always check for error responses before accessing `data`. The CLI returns error JSON (with `type: "error"`, no `data` key) on failure, which causes `KeyError: 'data'` if not handled.
 
 - **search**: `data` is an **array** of result objects; pagination info in `metadata`
 - **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
