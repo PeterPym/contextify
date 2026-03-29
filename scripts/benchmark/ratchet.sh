@@ -5,6 +5,12 @@
 # TR-specific defaults: evaluates the Total Recall SKILL.md against
 # the gold query benchmark using the contextify CLI.
 #
+# Ratchet policy (ct-779):
+# - CLI ratchet: uses Recall@k/MRR metrics (non-saturated). Enabled when
+#   retriever lane metrics are available.
+# - Skill ratchet: ADVISORY ONLY. Prints results but does not auto-accept/reject.
+#   Skill changes require a confirmatory blocked experiment.
+#
 # Usage:
 #   bash scripts/benchmark/ratchet.sh [--iterations N] [--demo] [--mode cli|skill]
 #
@@ -65,11 +71,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
+# Mode-specific policy (ct-779)
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == "skill" ]]; then
+  echo "ADVISORY: Skill mode ratchet is advisory-only (ct-779). Results are informational." >&2
+  echo "For merge decisions, use: evaluate.sh --mode skill --compare <A> <B> --runs 5" >&2
+fi
+
+# ---------------------------------------------------------------------------
 # Run the ratchet loop
 # ---------------------------------------------------------------------------
+# CLI mode uses Recall@k/MRR metrics (non-saturated) via --verbose output.
+# Skill mode runs the same evaluator but results are advisory-only per ct-779 policy.
 exec bash "$RATCHET_LOOP" \
   --evaluator "$EVALUATOR" \
   --artifact "$ARTIFACT" \
   --log "$LOG_DIR" \
-  --eval-args "--mode $MODE" \
+  --eval-args "--mode $MODE --verbose" \
   "${EXTRA_ARGS[@]}"

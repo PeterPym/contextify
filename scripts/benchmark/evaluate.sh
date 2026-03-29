@@ -12,6 +12,16 @@
 #
 # Usage:
 #   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]
+#   bash scripts/benchmark/evaluate.sh --mode cli --compare snapshot-a.db snapshot-b.db [--runs N]
+#
+# A/B comparison mode (ct-783):
+#   --compare <A.db> <B.db>   Run both snapshots and report paired bootstrap CIs
+#   Works with both CLI and skill modes. For skill mode, use --runs N for multiple trials.
+#
+# Budget caps (ct-787, skill mode only):
+#   --max-turns N            Max search turns per trial (default: 10)
+#   --max-wall-clock N       Max seconds per trial (default: 180)
+#   --max-tokens N           Placeholder, logged but not enforced (token counting TODO)
 
 set -euo pipefail
 
@@ -28,6 +38,11 @@ MODE="cli"
 VERBOSE=false
 TRACE=false
 RUNS=1
+COMPARE_A=""
+COMPARE_B=""
+MAX_TURNS=10
+MAX_WALL_CLOCK=180
+MAX_TOKENS=""  # placeholder, not enforced
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -46,8 +61,17 @@ while [[ $# -gt 0 ]]; do
       TRACE=true; shift ;;
     --runs)
       RUNS="$2"; shift 2 ;;
+    --compare)
+      COMPARE_A="$2"; COMPARE_B="$3"; shift 3 ;;
+    --max-turns)
+      MAX_TURNS="$2"; shift 2 ;;
+    --max-wall-clock)
+      MAX_WALL_CLOCK="$2"; shift 2 ;;
+    --max-tokens)
+      MAX_TOKENS="$2"; shift 2 ;;
     --help|-h)
       echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]" >&2
+      echo "       evaluate.sh --mode cli --compare <A.db> <B.db> [--runs N]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --gold-queries PATH  Path to gold queries JSON (default: scripts/benchmark/gold-queries.json)" >&2
@@ -56,6 +80,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --verbose            Show per-query results on stderr" >&2
       echo "  --trace              Write per-query trace files to /tmp/benchmark-traces/" >&2
       echo "  --runs N             Run benchmark N times and report median score (default: 1)" >&2
+      echo "  --compare A.db B.db  A/B comparison with paired hierarchical bootstrap CIs" >&2
+      echo "  --max-turns N        Max search turns per trial, skill mode (default: 10)" >&2
+      echo "  --max-wall-clock N   Max seconds per trial, skill mode (default: 180)" >&2
+      echo "  --max-tokens N       Placeholder: logged but not enforced" >&2
       exit 0
       ;;
     *)
@@ -64,6 +92,308 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# A/B comparison mode (ct-783)
+# ---------------------------------------------------------------------------
+if [[ -n "$COMPARE_A" && -n "$COMPARE_B" ]]; then
+  # Validate both snapshots exist
+  if [[ ! -f "$COMPARE_A" ]]; then
+    echo "ERROR: Snapshot A not found: $COMPARE_A" >&2
+    exit 1
+  fi
+  if [[ ! -f "$COMPARE_B" ]]; then
+    echo "ERROR: Snapshot B not found: $COMPARE_B" >&2
+    exit 1
+  fi
+
+  echo "A/B comparison mode (ct-783)" >&2
+  echo "  A: $COMPARE_A" >&2
+  echo "  B: $COMPARE_B" >&2
+  echo "  Mode: $MODE, Runs: $RUNS" >&2
+  echo "---" >&2
+
+  # Run each snapshot through the evaluator and collect per-query results.
+  # For CLI mode (deterministic), 1 run each. For skill mode, use --runs N.
+  # We run single-run evaluations and capture per-query traces for detailed comparison.
+  TRACE=true  # force tracing so we can read per-query results
+  TRACE_DIR_A=$(mktemp -d /tmp/benchmark-ab-A-XXXXXX)
+  TRACE_DIR_B=$(mktemp -d /tmp/benchmark-ab-B-XXXXXX)
+  cleanup_ab() {
+    rm -rf "$TRACE_DIR_A" "$TRACE_DIR_B"
+  }
+  trap cleanup_ab EXIT
+
+  # Run snapshot A
+  run_single() {
+    local snapshot="$1"
+    local trace_out="$2"
+    local label="$3"
+    local run_idx="$4"
+    echo "  Running $label (run $run_idx)..." >&2
+    TRACE_DIR="$trace_out" "${BASH_SOURCE[0]}" \
+      --snapshot "$snapshot" \
+      --gold-queries "$GOLD_QUERIES" \
+      --mode "$MODE" \
+      --runs 1 \
+      --trace \
+      ${VERBOSE:+--verbose} 2>/dev/null
+  }
+
+  # Collect results: for each run, store per-query metrics
+  # Structure: results_a[run_idx] = {qid: {recall_at_k, mrr}, ...}
+  # For CLI mode, single run. For skill mode, --runs N.
+  NUM_RUNS="$RUNS"
+  if [[ "$MODE" == "cli" ]]; then
+    NUM_RUNS=1  # CLI is deterministic, 1 run suffices
+  fi
+
+  # We will collect all per-query results via trace files per run.
+  # Run evaluations and aggregate trace results using Python.
+  ALL_RESULTS_A=""
+  ALL_RESULTS_B=""
+
+  for run_idx in $(seq 1 "$NUM_RUNS"); do
+    RUN_TRACE_A=$(mktemp -d /tmp/benchmark-ab-A-run-XXXXXX)
+    RUN_TRACE_B=$(mktemp -d /tmp/benchmark-ab-B-run-XXXXXX)
+
+    # Run A
+    echo "  A run $run_idx/$NUM_RUNS..." >&2
+    export TRACE_DIR="$RUN_TRACE_A"
+    SCORE_A=$("${BASH_SOURCE[0]}" \
+      --snapshot "$COMPARE_A" \
+      --gold-queries "$GOLD_QUERIES" \
+      --mode "$MODE" \
+      --runs 1 \
+      --trace 2>/dev/null) || SCORE_A="0.0"
+    echo "    A score: $SCORE_A" >&2
+
+    # Run B
+    echo "  B run $run_idx/$NUM_RUNS..." >&2
+    export TRACE_DIR="$RUN_TRACE_B"
+    SCORE_B=$("${BASH_SOURCE[0]}" \
+      --snapshot "$COMPARE_B" \
+      --gold-queries "$GOLD_QUERIES" \
+      --mode "$MODE" \
+      --runs 1 \
+      --trace 2>/dev/null) || SCORE_B="0.0"
+    echo "    B score: $SCORE_B" >&2
+
+    # Append trace directories (newline-separated)
+    ALL_RESULTS_A="${ALL_RESULTS_A}${RUN_TRACE_A}"$'\n'
+    ALL_RESULTS_B="${ALL_RESULTS_B}${RUN_TRACE_B}"$'\n'
+  done
+
+  # Now use Python to parse all trace files and run hierarchical bootstrap
+  export COMPARE_LABEL_A="$(basename "$COMPARE_A")"
+  export COMPARE_LABEL_B="$(basename "$COMPARE_B")"
+  export ALL_RESULTS_A
+  export ALL_RESULTS_B
+  export GOLD_QUERIES_PATH="$GOLD_QUERIES"
+  export COMPARE_NUM_RUNS="$NUM_RUNS"
+
+  python3 << 'COMPARE_PYEOF'
+import json
+import os
+import sys
+import glob
+import random
+
+def load_traces(trace_dirs):
+    """Load per-query trace results from trace directories.
+
+    Returns: list of dicts, one per run. Each dict maps qid -> trace_dict.
+    """
+    runs = []
+    for d in trace_dirs:
+        d = d.strip()
+        if not d:
+            continue
+        run_data = {}
+        for fpath in sorted(glob.glob(os.path.join(d, "gq-*.json"))):
+            with open(fpath) as f:
+                trace = json.load(f)
+            qid = trace.get("query_id", os.path.basename(fpath).replace(".json", ""))
+            run_data[qid] = trace
+        runs.append(run_data)
+    return runs
+
+
+def hierarchical_bootstrap(runs_a, runs_b, n_bootstrap=1000, seed=42):
+    """Paired hierarchical bootstrap for A/B comparison.
+
+    For each bootstrap iteration:
+      1. Resample queries with replacement (same queries in both A and B)
+      2. If multiple runs per query, resample runs within each query
+      3. Compute the delta between A and B aggregate scores
+
+    Args:
+        runs_a: list of dicts (one per run), each mapping qid -> trace
+        runs_b: list of dicts (one per run), each mapping qid -> trace
+        n_bootstrap: number of bootstrap iterations
+
+    Returns:
+        dict with recall and mrr deltas and confidence intervals
+    """
+    rng = random.Random(seed)
+
+    # Collect all query IDs present in both A and B across all runs
+    all_qids_a = set()
+    for run in runs_a:
+        all_qids_a.update(run.keys())
+    all_qids_b = set()
+    for run in runs_b:
+        all_qids_b.update(run.keys())
+    common_qids = sorted(all_qids_a & all_qids_b)
+
+    if not common_qids:
+        return None
+
+    num_runs = len(runs_a)
+
+    def get_metric(trace, metric):
+        """Extract metric from trace, returning None if missing."""
+        val = trace.get(metric)
+        if val is None:
+            return None
+        return float(val)
+
+    def aggregate_metric(runs, qids, metric):
+        """Compute mean metric across queries, averaging over runs per query."""
+        values = []
+        for qid in qids:
+            query_vals = []
+            for run in runs:
+                if qid in run:
+                    v = get_metric(run[qid], metric)
+                    if v is not None:
+                        query_vals.append(v)
+            if query_vals:
+                values.append(sum(query_vals) / len(query_vals))
+        return sum(values) / len(values) if values else 0.0
+
+    # Observed means
+    obs_recall_a = aggregate_metric(runs_a, common_qids, "recall_at_k")
+    obs_mrr_a = aggregate_metric(runs_a, common_qids, "mrr")
+    obs_recall_b = aggregate_metric(runs_b, common_qids, "recall_at_k")
+    obs_mrr_b = aggregate_metric(runs_b, common_qids, "mrr")
+
+    # Bootstrap
+    deltas_recall = []
+    deltas_mrr = []
+
+    for _ in range(n_bootstrap):
+        # Level 1: resample queries with replacement
+        sampled_qids = [rng.choice(common_qids) for _ in range(len(common_qids))]
+
+        def boot_aggregate(runs, qids, metric):
+            values = []
+            for qid in qids:
+                query_vals = []
+                if num_runs > 1:
+                    # Level 2: resample runs within each query
+                    sampled_runs = [rng.choice(runs) for _ in range(num_runs)]
+                else:
+                    sampled_runs = runs
+                for run in sampled_runs:
+                    if qid in run:
+                        v = get_metric(run[qid], metric)
+                        if v is not None:
+                            query_vals.append(v)
+                if query_vals:
+                    values.append(sum(query_vals) / len(query_vals))
+            return sum(values) / len(values) if values else 0.0
+
+        boot_recall_a = boot_aggregate(runs_a, sampled_qids, "recall_at_k")
+        boot_recall_b = boot_aggregate(runs_b, sampled_qids, "recall_at_k")
+        boot_mrr_a = boot_aggregate(runs_a, sampled_qids, "mrr")
+        boot_mrr_b = boot_aggregate(runs_b, sampled_qids, "mrr")
+
+        deltas_recall.append(boot_recall_b - boot_recall_a)
+        deltas_mrr.append(boot_mrr_b - boot_mrr_a)
+
+    deltas_recall.sort()
+    deltas_mrr.sort()
+
+    ci_low_idx = int(n_bootstrap * 0.025)
+    ci_high_idx = int(n_bootstrap * 0.975) - 1
+
+    return {
+        "n_queries": len(common_qids),
+        "n_runs": num_runs,
+        "n_bootstrap": n_bootstrap,
+        "a_recall": obs_recall_a,
+        "a_mrr": obs_mrr_a,
+        "b_recall": obs_recall_b,
+        "b_mrr": obs_mrr_b,
+        "delta_recall": obs_recall_b - obs_recall_a,
+        "delta_mrr": obs_mrr_b - obs_mrr_a,
+        "ci_low_recall": deltas_recall[ci_low_idx],
+        "ci_high_recall": deltas_recall[ci_high_idx],
+        "ci_low_mrr": deltas_mrr[ci_low_idx],
+        "ci_high_mrr": deltas_mrr[ci_high_idx],
+    }
+
+
+# Load traces from all runs
+dirs_a = os.environ.get("ALL_RESULTS_A", "").strip().split("\n")
+dirs_b = os.environ.get("ALL_RESULTS_B", "").strip().split("\n")
+
+runs_a = load_traces(dirs_a)
+runs_b = load_traces(dirs_b)
+
+label_a = os.environ.get("COMPARE_LABEL_A", "A")
+label_b = os.environ.get("COMPARE_LABEL_B", "B")
+num_runs = int(os.environ.get("COMPARE_NUM_RUNS", "1"))
+
+if not runs_a or not runs_b:
+    print("ERROR: No trace results found for one or both snapshots", file=sys.stderr)
+    sys.exit(1)
+
+result = hierarchical_bootstrap(runs_a, runs_b)
+
+if result is None:
+    print("ERROR: No common queries found between A and B", file=sys.stderr)
+    sys.exit(1)
+
+# Report to stderr
+print("", file=sys.stderr)
+print(f"A/B Comparison ({result['n_queries']} queries, {num_runs} run(s))", file=sys.stderr)
+print(f"  A ({label_a}): Mean Recall@k={result['a_recall']:.3f}, MRR={result['a_mrr']:.3f}", file=sys.stderr)
+print(f"  B ({label_b}): Mean Recall@k={result['b_recall']:.3f}, MRR={result['b_mrr']:.3f}", file=sys.stderr)
+print(f"  Delta Recall@k: {result['delta_recall']:+.3f} [CI: {result['ci_low_recall']:.3f} to {result['ci_high_recall']:.3f}] (95% CI, {result['n_bootstrap']} bootstrap samples)", file=sys.stderr)
+print(f"  Delta MRR: {result['delta_mrr']:+.3f} [CI: {result['ci_low_mrr']:.3f} to {result['ci_high_mrr']:.3f}]", file=sys.stderr)
+
+# JSON summary to stdout
+summary = {
+    "mode": "compare",
+    "label_a": label_a,
+    "label_b": label_b,
+    "n_queries": result["n_queries"],
+    "n_runs": num_runs,
+    "a_recall": round(result["a_recall"], 3),
+    "a_mrr": round(result["a_mrr"], 3),
+    "b_recall": round(result["b_recall"], 3),
+    "b_mrr": round(result["b_mrr"], 3),
+    "delta_recall": round(result["delta_recall"], 3),
+    "delta_mrr": round(result["delta_mrr"], 3),
+    "ci_low_recall": round(result["ci_low_recall"], 3),
+    "ci_high_recall": round(result["ci_high_recall"], 3),
+    "ci_low_mrr": round(result["ci_low_mrr"], 3),
+    "ci_high_mrr": round(result["ci_high_mrr"], 3),
+}
+print(json.dumps(summary))
+
+# Clean up trace directories
+import shutil
+for d in dirs_a + dirs_b:
+    d = d.strip()
+    if d and os.path.isdir(d):
+        shutil.rmtree(d, ignore_errors=True)
+
+COMPARE_PYEOF
+  exit $?
+fi
 
 # ---------------------------------------------------------------------------
 # Multi-run median mode (ct-727)
@@ -221,9 +551,13 @@ export EVAL_MODE="$MODE"
 export SKILL_RUNNER="${SCRIPT_DIR}/run-skill-query.sh"
 export PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
 export TRACE="$TRACE"
+export MAX_TURNS="$MAX_TURNS"
+export MAX_WALL_CLOCK="$MAX_WALL_CLOCK"
+export MAX_TOKENS="${MAX_TOKENS:-}"  # TODO: token counting from stream-json not yet implemented
 
-# Set up trace directory if tracing enabled
-TRACE_DIR="/tmp/benchmark-traces"
+# Set up trace directory if tracing enabled.
+# Respect TRACE_DIR from environment (used by --compare mode for per-run isolation).
+TRACE_DIR="${TRACE_DIR:-/tmp/benchmark-traces}"
 if [[ "$TRACE" == "true" ]]; then
   mkdir -p "$TRACE_DIR"
   echo "Trace output: $TRACE_DIR/" >&2
@@ -278,6 +612,17 @@ sentinel_fingerprint = 0   # queries passing fingerprint check (regression senti
 # Trace support (ct-728)
 trace_enabled = os.environ.get("TRACE") == "true"
 trace_dir = os.environ.get("TRACE_DIR", "/tmp/benchmark-traces")
+# Budget caps (ct-787, skill mode only)
+max_turns = int(os.environ.get("MAX_TURNS", "10"))
+max_wall_clock = int(os.environ.get("MAX_WALL_CLOCK", "180"))
+max_tokens_str = os.environ.get("MAX_TOKENS", "")
+# TODO (ct-787): Token counting from stream-json output is complex (requires parsing
+# input/output token counts from assistant events). Logged in metadata but not enforced.
+max_tokens = int(max_tokens_str) if max_tokens_str else None
+# Budget enforcement counters
+budget_normal = 0
+budget_turns_exceeded = 0
+budget_wall_clock_exceeded = 0
 
 stopwords = {"the", "that", "this", "with", "from", "have",
              "been", "were", "will", "does", "about", "into",
@@ -542,25 +887,51 @@ def evaluate_cli_query(q, qid, search_terms, fingerprint, budget, category, diff
             "_cli_command": cli_cmd_str, "_response": proc.stdout[:500]}
 
 def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, difficulty, is_negative):
-    cmd = ["bash", skill_runner, natural_q, temp_db_path, "180"]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=210)
+    # Use max_wall_clock for the skill runner timeout (ct-787)
+    runner_timeout = str(max_wall_clock)
+    cmd = ["bash", skill_runner, natural_q, temp_db_path, runner_timeout]
+    # Give subprocess slightly more time than the runner timeout to capture output
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max_wall_clock + 30)
 
     if proc.returncode != 0:
         err = proc.stderr.strip() or "skill runner failed"
         return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
                 "category": category, "difficulty": difficulty, "is_negative": is_negative,
-                "duration_s": 0, "natural_q": natural_q, "infra_error": err[:200]}
+                "duration_s": 0, "natural_q": natural_q, "infra_error": err[:200],
+                "stop_reason": "infra_error"}
 
     try:
         skill_output = json.loads(proc.stdout)
     except json.JSONDecodeError:
         return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
                 "category": category, "difficulty": difficulty, "is_negative": is_negative,
-                "duration_s": 0, "natural_q": natural_q, "infra_error": "invalid JSON"}
+                "duration_s": 0, "natural_q": natural_q, "infra_error": "invalid JSON",
+                "stop_reason": "infra_error"}
 
     ai_response = skill_output.get("response", "")
     searches_used = skill_output.get("turns", 1)
     duration = skill_output.get("duration_s", 0)
+
+    # Budget enforcement (ct-787)
+    global budget_normal, budget_turns_exceeded, budget_wall_clock_exceeded
+    stop_reason = "normal"
+    if searches_used > max_turns:
+        stop_reason = "budget_turns"
+        budget_turns_exceeded += 1
+    elif duration > max_wall_clock:
+        stop_reason = "budget_wall_clock"
+        budget_wall_clock_exceeded += 1
+    else:
+        budget_normal += 1
+
+    # If budget exceeded, mark as fail and return early
+    if stop_reason.startswith("budget_"):
+        tool_cmds = skill_output.get("tool_commands", [])
+        return {"id": qid, "found": False, "searches_used": searches_used,
+                "total_results": 0, "category": category, "difficulty": difficulty,
+                "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q,
+                "stop_reason": stop_reason, "_response": ai_response,
+                "_tool_commands": tool_cmds}
 
     # Track behavioral compliance from tool calls
     global behavioral_days_365, behavioral_snippet_100, behavioral_db_path, behavioral_total
@@ -663,6 +1034,7 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
             "total_results": 0, "category": category, "difficulty": difficulty,
             "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q,
             "has_evidence": has_evidence_section, "evidence_ids_count": len(cited_ids),
+            "stop_reason": stop_reason,
             "_response": ai_response, "_tool_commands": tool_cmds}
 
 with open(gold_queries_path) as f:
@@ -801,6 +1173,17 @@ if eval_mode == "skill":
             rate = passed_in_n / len(scorable_results)
             print(f"  success@{n}:  {passed_in_n}/{len(scorable_results)} ({rate:.1%})", file=sys.stderr)
 
+    # Budget enforcement summary (ct-787)
+    budget_total = budget_normal + budget_turns_exceeded + budget_wall_clock_exceeded
+    if budget_total > 0:
+        print(f"", file=sys.stderr)
+        print(f"Budget enforcement (max_turns={max_turns}, max_wall_clock={max_wall_clock}s):", file=sys.stderr)
+        print(f"  Normal completion:   {budget_normal}/{budget_total}", file=sys.stderr)
+        print(f"  Turns exceeded:      {budget_turns_exceeded}/{budget_total}", file=sys.stderr)
+        print(f"  Wall-clock exceeded: {budget_wall_clock_exceeded}/{budget_total}", file=sys.stderr)
+        if max_tokens is not None:
+            print(f"  Max tokens:          {max_tokens} (logged, not enforced)", file=sys.stderr)
+
     # Behavioral compliance hard gate: fail if any requirement missed by >20% of queries
     if behavioral_total > 0:
         compliance_threshold = 0.80
@@ -832,7 +1215,10 @@ if verbose:
         ev = ""
         if r.get("has_evidence"):
             ev = f" ev={r.get('evidence_ids_count', 0)}ids"
-        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}{metrics}{ev}){err}", file=sys.stderr)
+        stop = ""
+        if r.get("stop_reason") and r["stop_reason"] != "normal":
+            stop = f" [{r['stop_reason']}]"
+        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}{metrics}{ev}{stop}){err}", file=sys.stderr)
 
 if trace_enabled:
     print(f"Traces written to: {trace_dir}/ ({len(results)} files)", file=sys.stderr)
