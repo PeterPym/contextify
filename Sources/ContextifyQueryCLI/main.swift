@@ -64,6 +64,7 @@ private struct ErrorEnvelope: Encodable {
   let type: String = "error"
   let code: String
   let message: String
+  let hint: String?
   let details: JSONValue?
 }
 
@@ -80,12 +81,14 @@ private struct CLIError: Error {
   let code: String
   let message: String
   let exitCode: ExitCode
+  let hint: String?
   let details: JSONValue?
 
-  init(code: String, message: String, exitCode: ExitCode, details: JSONValue? = nil) {
+  init(code: String, message: String, exitCode: ExitCode, hint: String? = nil, details: JSONValue? = nil) {
     self.code = code
     self.message = message
     self.exitCode = exitCode
+    self.hint = hint
     self.details = details
   }
 }
@@ -131,6 +134,7 @@ struct ContextifyQueryCLI {
     var since: String?
     var until: String?
     var days: Int?
+    var hours: Int?
     var includeHidden: Bool = false
     var before: Int?
     var after: Int?
@@ -250,6 +254,12 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --days", exitCode: .invalidArgs)
           }
           options.days = n
+        case "--hours":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --hours", exitCode: .invalidArgs)
+          }
+          options.hours = n
         case "--include-hidden":
           options.includeHidden = true
         case "--before":
@@ -334,7 +344,11 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --snippet-tokens", exitCode: .invalidArgs)
           }
           guard n >= 1 && n <= 100 else {
-            throw CLIError(code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100", exitCode: .invalidArgs)
+            throw CLIError(
+              code: "invalidArgs", message: "--snippet-tokens must be between 1 and 100",
+              exitCode: .invalidArgs,
+              hint: "Max is 100 tokens. For full entry content, use: contextify entry <id>"
+            )
           }
           options.snippetTokens = n
         case "--json":
@@ -359,7 +373,10 @@ struct ContextifyQueryCLI {
           usage(nil)
         default:
           if arg.hasPrefix("--") {
-            throw CLIError(code: "invalidArgs", message: "Unknown option: \(arg)", exitCode: .invalidArgs)
+            throw CLIError(
+              code: "invalidArgs", message: "Unknown option: \(arg)", exitCode: .invalidArgs,
+              hint: "Run contextify <command> --help for available options"
+            )
           }
           remaining.append(arg)
         }
@@ -402,10 +419,16 @@ struct ContextifyQueryCLI {
       switch command {
       case .search:
         guard !commandArgs.isEmpty else {
-          throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+          throw CLIError(
+            code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs,
+            hint: "Usage: contextify search \"your query\" [--project <name>] [--days <n>]"
+          )
         }
         guard options.limit <= 500 else {
-          throw CLIError(code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs)
+          throw CLIError(
+            code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs,
+            hint: "Use --limit 500 for maximum results, or narrow with --project or --days"
+          )
         }
         if options.noContent {
           fputs("Warning: --no-content has no effect on search (snippets are always returned)\n", stderr)
@@ -438,6 +461,20 @@ struct ContextifyQueryCLI {
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
         let projectIds = scope.projectIds.isEmpty ? nil : scope.projectIds
 
+        // ct-591: Database-wide summary for operator context.
+        // This is intentionally NOT filtered by the active search scope.
+        let dbCounts = try service.counts()
+        let databaseSummary: [String: JSONValue] = [
+          "entryCount": .number(Double(dbCounts.entryCount)),
+          "projectCount": .number(Double(dbCounts.projectCount)),
+          "deviceCount": .number(Double(dbCounts.deviceCount))
+        ]
+        if !options.jsonOutput {
+          let deviceSuffix = dbCounts.deviceCount > 1 ? " (\(dbCounts.deviceCount) devices)" : ""
+          let entryStr = NumberFormatter.localizedString(from: NSNumber(value: dbCounts.entryCount), number: .decimal)
+          fputs("Database: \(entryStr) entries across \(dbCounts.projectCount) projects\(deviceSuffix)\n", stderr)
+        }
+
         if options.countOnly {
           // Count-only mode: return total count (and term counts for OR queries) without result bodies
           let totalCount = try service.searchCount(
@@ -452,7 +489,8 @@ struct ContextifyQueryCLI {
           )
 
           var metadataDict: [String: JSONValue] = [
-            "totalCount": .number(Double(totalCount))
+            "totalCount": .number(Double(totalCount)),
+            "databaseSummary": .object(databaseSummary)
           ]
 
           if options.termCounts {
@@ -558,7 +596,8 @@ struct ContextifyQueryCLI {
             "limit": .number(Double(requestedLimit)),
             "offset": .number(Double(requestedOffset)),
             "hasMore": .bool(hasMore),
-            "totalCount": .number(Double(totalCount))
+            "totalCount": .number(Double(totalCount)),
+            "databaseSummary": .object(databaseSummary)
           ]
 
           // Add per-term counts for OR queries (opt-in via --term-counts)
@@ -694,10 +733,7 @@ struct ContextifyQueryCLI {
             printEntryResult(result)
           }
         } catch let error as ContextifyQueryService.EntryLookupError {
-          switch error {
-          case let .notFound(entryId):
-            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
-          }
+          throw mapEntryLookupError(error)
         }
 
       case .context:
@@ -732,10 +768,7 @@ struct ContextifyQueryCLI {
             printContextResult(result)
           }
         } catch let error as ContextifyQueryService.EntryLookupError {
-          switch error {
-          case let .notFound(entryId):
-            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
-          }
+          throw mapEntryLookupError(error)
         }
 
       case .status:
@@ -748,7 +781,8 @@ struct ContextifyQueryCLI {
           summariesEnabled: versionInfo.summariesEnabled,
           projectCount: counts.projectCount,
           transcriptCount: counts.transcriptCount,
-          entryCount: counts.entryCount
+          entryCount: counts.entryCount,
+          newestEntryTimestamp: counts.newestEntryTimestamp
         )
         try printResponse(type: "status", data: payload, json: options.jsonOutput) {
           printStatus(payload)
@@ -1018,6 +1052,7 @@ struct ContextifyQueryCLI {
         --since <ts|iso>     Filter by time (inclusive)
         --until <ts|iso>     Filter by time (inclusive)
         --days <n>           Shorthand for --since (now - n days)
+        --hours <n>          Shorthand for --since (now - n hours)
         --include-hidden     Include non-timeline entries
         --before <n>         Context: entries before anchor (default 10)
         --after <n>          Context: entries after anchor (default 20)
@@ -1214,14 +1249,18 @@ private func parseCSV(_ value: String?) -> [String]? {
 private func buildSearchQuery(_ rawQuery: String) throws -> String {
   let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
   guard !trimmed.isEmpty else {
-    throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+    throw CLIError(
+      code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs,
+      hint: "Usage: contextify search \"your query\" [--project <name>] [--days <n>]"
+    )
   }
 
   if trimmed.contains("|") {
     throw CLIError(
       code: "invalidQuery",
       message: "Unsupported query syntax: '|' is not allowed. Use FTS5 syntax like \"term1 OR term2\".",
-      exitCode: .invalidArgs
+      exitCode: .invalidArgs,
+      hint: "Use OR/AND/NOT operators, or quote exact phrases: \"error handling\""
     )
   }
 
@@ -1233,7 +1272,8 @@ private func buildSearchQuery(_ rawQuery: String) throws -> String {
     throw CLIError(
       code: "invalidQuery",
       message: "Unbalanced quotes in search query.",
-      exitCode: .invalidArgs
+      exitCode: .invalidArgs,
+      hint: "Close all double-quotes, or remove them to search for individual terms"
     )
   }
 
@@ -1305,6 +1345,14 @@ private func resolveAnchorBasePath(
       if let result = try service.resolveProjectByNameWithPath(project) {
         return result.rootPath
       }
+      // ct-795: terminate cleanly for non-path values with no match
+      try throwIfFuzzyMatches(service, project: project)
+      let totalCount = try service.projectCount()
+      throw mapProjectResolutionError(
+        ContextifyQueryService.ProjectResolutionError.notFound(
+          path: project, suggestions: [], totalProjectCount: totalCount
+        )
+      )
     } catch let error as ContextifyQueryService.ProjectResolutionError {
       throw mapProjectResolutionError(error)
     }
@@ -1834,6 +1882,7 @@ private struct StatusPayload: Encodable {
   let projectCount: Int
   let transcriptCount: Int
   let entryCount: Int
+  let newestEntryTimestamp: Int?
 
   var appSchemaVersion: Int { expectedSchemaVersion }
 
@@ -1847,6 +1896,7 @@ private struct StatusPayload: Encodable {
     case projectCount
     case transcriptCount
     case entryCount
+    case newestEntryTimestamp
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -1860,6 +1910,7 @@ private struct StatusPayload: Encodable {
     try container.encode(projectCount, forKey: .projectCount)
     try container.encode(transcriptCount, forKey: .transcriptCount)
     try container.encode(entryCount, forKey: .entryCount)
+    try container.encodeIfPresent(newestEntryTimestamp, forKey: .newestEntryTimestamp)
   }
 }
 
@@ -1872,6 +1923,9 @@ private func printStatus(_ status: StatusPayload) {
   print("projects: \(status.projectCount)")
   print("transcripts: \(status.transcriptCount)")
   print("entries: \(status.entryCount)")
+  if let ts = status.newestEntryTimestamp {
+    print("newest_entry_ts: \(ts)")
+  }
 }
 
 private func printActivity(_ items: [ContextifyQueryService.ActivityItem]) {
@@ -1893,7 +1947,7 @@ private func printActivity(_ items: [ContextifyQueryService.ActivityItem]) {
 
 private func parseTimeRange(options: ContextifyQueryCLI.Options) throws -> QueryTimeRange {
   do {
-    return try QueryTimeParser.parseSinceUntil(since: options.since, until: options.until, days: options.days)
+    return try QueryTimeParser.parseSinceUntil(since: options.since, until: options.until, days: options.days, hours: options.hours)
   } catch {
     throw CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
   }
@@ -1924,6 +1978,16 @@ private func resolveProjectId(
         if let id = try service.resolveProjectByName(project) {
           return id
         }
+        // ct-795: throwIfFuzzyMatches either throws (suggestions found) or returns.
+        // If it returns, there are zero matches - terminate here instead of
+        // falling through to filesystem resolution for a non-path value.
+        try throwIfFuzzyMatches(service, project: project)
+        let totalCount = try service.projectCount()
+        throw mapProjectResolutionError(
+          ContextifyQueryService.ProjectResolutionError.notFound(
+            path: project, suggestions: [], totalProjectCount: totalCount
+          )
+        )
       } catch let error as ContextifyQueryService.ProjectResolutionError {
         throw mapProjectResolutionError(error)
       }
@@ -1956,7 +2020,16 @@ private func resolveProjectScope(
             // Use the project's root path for worktree expansion instead of returning early
             basePath = result.rootPath
           } else {
-            basePath = project
+            // ct-795: throwIfFuzzyMatches either throws (suggestions found) or returns.
+            // If it returns, there are zero matches - terminate here instead of
+            // falling through to filesystem/worktree resolution for a non-path value.
+            try throwIfFuzzyMatches(service, project: project)
+            let totalCount = try service.projectCount()
+            throw mapProjectResolutionError(
+              ContextifyQueryService.ProjectResolutionError.notFound(
+                path: project, suggestions: [], totalProjectCount: totalCount
+              )
+            )
           }
         } catch let error as ContextifyQueryService.ProjectResolutionError {
           throw mapProjectResolutionError(error)
@@ -2052,16 +2125,36 @@ private func resolveProjectScope(
   )
 }
 
+/// ct-725: Throw with fuzzy suggestions if any match the given project name.
+/// Extracts common pattern from resolveProjectId, resolveProjectScope, resolveAnchorBasePath.
+private func throwIfFuzzyMatches(
+  _ service: ContextifyQueryService,
+  project: String
+) throws {
+  let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
+  guard !fuzzy.isEmpty else { return }
+  let totalCount = try service.projectCount()
+  throw ContextifyQueryService.ProjectResolutionError.notFound(
+    path: project,
+    suggestions: fuzzy,
+    totalProjectCount: totalCount
+  )
+}
+
 private func mapProjectResolutionError(
   _ error: ContextifyQueryService.ProjectResolutionError
 ) -> CLIError {
   switch error {
   case let .notFound(path, suggestions, totalProjectCount):
     let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+    let message = suggestions.isEmpty
+      ? "No Contextify project found for \(path).\n\nTotal projects: \(totalProjectCount)"
+      : "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)"
     return CLIError(
       code: "dbProjectNotFound",
-      message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
+      message: message,
       exitCode: .dbNotFound,
+      hint: "List all projects with: contextify projects --json",
       details: .object([
         "path": .string(path),
         "suggestions": .array(suggestions.map(jsonProjectSuggestion)),
@@ -2074,9 +2167,32 @@ private func mapProjectResolutionError(
       code: "dbProjectNotFound",
       message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
       exitCode: .dbNotFound,
+      hint: "Use --project-id <id> for an exact match, or list all: contextify projects --json",
       details: .object([
         "path": .string(path),
         "candidates": .array(candidates.map(jsonProjectSuggestion)),
+      ])
+    )
+  }
+}
+
+private func mapEntryLookupError(
+  _ error: ContextifyQueryService.EntryLookupError
+) -> CLIError {
+  switch error {
+  case let .notFound(entryId):
+    return CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
+  case let .ambiguousId(prefix, candidates, totalMatches):
+    let list = candidates.joined(separator: "\n  - ")
+    let truncationNote = totalMatches > candidates.count ? "\n  - ..." : ""
+    return CLIError(
+      code: "entryAmbiguousId",
+      message: "Ambiguous entry id prefix '\(prefix)' matches \(totalMatches) entries:\n  - \(list)\(truncationNote)",
+      exitCode: .entryNotFound,
+      details: .object([
+        "prefix": .string(prefix),
+        "totalMatches": .number(Double(totalMatches)),
+        "candidates": .array(candidates.map { .string($0) }),
       ])
     )
   }
@@ -2097,7 +2213,10 @@ private func emitError(_ cliError: CLIError, json: Bool) {
     do {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = ErrorEnvelope(code: cliError.code, message: cliError.message, details: cliError.details)
+      let payload = ErrorEnvelope(
+        code: cliError.code, message: cliError.message,
+        hint: cliError.hint, details: cliError.details
+      )
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -2106,6 +2225,9 @@ private func emitError(_ cliError: CLIError, json: Bool) {
     }
   } else {
     FileHandle.standardError.write(Data("Error: \(cliError.message)\n".utf8))
+    if let hint = cliError.hint {
+      FileHandle.standardError.write(Data("Tip: \(hint)\n".utf8))
+    }
   }
 }
 

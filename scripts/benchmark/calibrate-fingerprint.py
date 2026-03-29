@@ -169,17 +169,17 @@ CALIBRATION_PAIRS = [
      "organization. Your title would become Quality Engineering Lead.",
      True, "TP-12: job title in response"),
 
-    # TP-13: Names with roles (gq-13 style)
-    ("Justin George (personal license), Noah Zoschke (team/cloud version)",
-     "Two key prospects were discussed: Justin George who wanted a personal license for his "
-     "company, and Noah Zoschke who was interested in a team/cloud version with central sync.",
-     True, "TP-13: names with roles paraphrased"),
+    # TP-13: Issue ID + decision type (gq-13 style)
+    ("Pricing Decision (ct-525, approved)",
+     "The cloud pricing was finalized under ct-525. The Pricing Decision (ct-525, approved) "
+     "sets Free at $0, Pro at $12/mo, and Team at $15/seat/mo.",
+     True, "TP-13: issue ID and decision label in response"),
 
-    # TP-14: Generic phrase that could false-match (gq-14 style)
-    ("The work was planned and scoped",
-     "The navigation UX upgrade was planned and scoped but never implemented. The work was "
-     "started on wb3 via Codex but got sidetracked.",
-     True, "TP-14: generic phrase in context"),
+    # TP-14: Navigation reflow implementation status (gq-14 style)
+    ("navigation reflow for the Contextify Cloud dashboard is fully implemented",
+     "The navigation reflow for the Contextify Cloud dashboard is fully implemented and "
+     "committed. The work was done on wb3 and merged to main.",
+     True, "TP-14: navigation reflow fingerprint in response"),
 
     # ===== HARDER TRUE POSITIVES: AI paraphrases heavily =====
 
@@ -207,11 +207,11 @@ CALIBRATION_PAIRS = [
      "that auto-advancing focus was considered wrong and changes should be intelligent.",
      True, "HTP-04: 'focus','intelligent','auto','advance','wrong','changes' all present"),
 
-    # HTP-05: Very loose paraphrase with proper nouns
-    ("Justin George (personal license), Noah Zoschke (team/cloud version)",
-     "Justin emailed about getting a personal license. Noah Zoschke wanted something more "
-     "like a team cloud offering with centralized management.",
-     True, "HTP-05: names present, roles loosely described"),
+    # HTP-05: Loose paraphrase of pricing decision (gq-13 style)
+    ("Pricing Decision (ct-525, approved)",
+     "The pricing tiers were approved in the ct-525 decision. There is a free tier, a Pro "
+     "plan, and a Team plan with per-seat pricing.",
+     True, "HTP-05: decision reference + key terms present"),
 
     # HTP-06: AI gives summary paragraph, fingerprint words scattered
     ("DigitalOcean droplet (s-2vcpu-4gb, NYC3 region)",

@@ -41,7 +41,7 @@ CREATE VIRTUAL TABLE transcript_entries_fts USING fts5(
 
 **Key details:**
 - `separators _` allows `UNREAD_COUNT_UPDATED` to match `unread`, `count`, `updated`
-- Only indexes `role IN ('user', 'assistant')` with `display_in_timeline = 1`
+- Indexes `role IN ('user', 'assistant', 'summary')` with `display_in_timeline = 1`
 - Synced via `AFTER INSERT/UPDATE/DELETE` triggers on `transcript_entries`
 - Case-insensitive, diacritic-insensitive (é ≈ e)
 - Porter stemming enabled (migration v38): `summary` matches `summaries`, `deploy` matches `deployed`

@@ -127,8 +127,32 @@ behavioral = {
     'contextify_commands': [cmd for cmd in tool_commands if 'contextify' in cmd],
 }
 
+# Extract structured evidence section from the AI response
+import re
+evidence = {'entry_ids': [], 'spans': [], 'raw_section': ''}
+
+# Find the ## Evidence section in the response text
+ev_match = re.search(r'(?:^|\n)##\s+Evidence\s*\n(.*?)(?:\n##|\Z)', result_text, re.DOTALL)
+if ev_match:
+    raw_section = ev_match.group(0).strip()
+    evidence['raw_section'] = raw_section
+    # Parse individual evidence lines:
+    #   - \`entry:<8-char-id>\` <project>, <date>: \"<quoted span>\"
+    # Be tolerant of formatting variations (extra whitespace, different list markers)
+    # Note: backtick is \x60 because this Python runs inside a shell double-quoted string
+    ev_line_pattern = re.compile(
+        r'[-*]\s*\x60entry:([a-f0-9]{8})\x60'  # list marker + entry:<8-char-id>
+        r'[^\"]*'                                # project, date, colon (skip loosely)
+        r'\"([^\"]+)\"',                         # quoted span
+        re.IGNORECASE
+    )
+    for m in ev_line_pattern.finditer(raw_section):
+        evidence['entry_ids'].append(m.group(1))
+        evidence['spans'].append(m.group(2))
+
 print(json.dumps({
     'response': result_text,
+    'evidence': evidence,
     'turns': num_turns,
     'cost_usd': cost_usd,
     'duration_s': duration_ms / 1000,

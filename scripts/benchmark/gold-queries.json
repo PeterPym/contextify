@@ -1,7 +1,7 @@
 {
   "version": 1,
   "snapshot_version": 1,
-  "query_count": 14,
+  "query_count": 34,
   "queries": [
     {
       "id": "gq-01",
@@ -11,7 +11,15 @@
       "content_fingerprint": "Fulton House Business Operations, Booking Systems, Google Workspace",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "2957c86f-fb11-42ec-9231-7783d80e2be9",
+        "27a7d952-733e-4b16-9eed-20fd9dd6a272",
+        "queue-4408634305842686125-7186837749046753880",
+        "7b8abba0-1bee-4edf-b957-37179becc6e7",
+        "queue-2035098606622887630-154322997822256445",
+        "30863823-05d6-4a5a-abd9-a53d4613475b"
+      ]
     },
     {
       "id": "gq-02",
@@ -21,7 +29,14 @@
       "content_fingerprint": "A Delaware C-corp (Perch Innovations Inc) has its own",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "d0251c0e-18f1-42ea-9b4d-e68b90dfd98a",
+        "f2a1fad0-ea6c-438a-9704-83f6e2847f6e",
+        "389358af-6ff8-4fe8-8e06-e450f871446e",
+        "1c0ac2b8-bf8b-4dad-b2bd-411883d5a0ee",
+        "7f72e541-fa7f-4758-8a36-1894046c5283"
+      ]
     },
     {
       "id": "gq-03",
@@ -31,7 +46,12 @@
       "content_fingerprint": "Paperbark Maple (*Acer griseum*)",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "bdbbdaa5-1479-43f7-9c01-787955dd3ea2",
+        "0a91aaa5-cea2-4388-8b09-13b667d79f92",
+        "092b2f93-5db2-4c40-90b9-a2338c248146"
+      ]
     },
     {
       "id": "gq-04",
@@ -41,7 +61,11 @@
       "content_fingerprint": "focus changes, focus should be intelligent, auto-advance focus wrong",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "1e50caea-4831-4fa4-8f1d-924cdc0cd4ed",
+        "14200a2f-340e-47ff-93f3-34a2fded97c9"
+      ]
     },
     {
       "id": "gq-05",
@@ -51,7 +75,14 @@
       "content_fingerprint": "Cloud is separate Python FastAPI service with its own PostgreSQL",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "4288430a-7ca8-48cc-a130-97a6b08e2619",
+        "d915429b-1de7-427b-ad85-e06b2340c758",
+        "6875cbad-fdc8-4a00-ac54-0d6a656fb715",
+        "6f5bbff4-c45e-47a6-bb24-51ea37fe6420",
+        "queue-862463464602080431-3182649051988664577"
+      ]
     },
     {
       "id": "gq-06",
@@ -61,7 +92,11 @@
       "content_fingerprint": "Contextify 1.5.0 = Cloud Launch (`ct",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "2496081a-e612-4357-a056-2c26bc97a9b7",
+        "0014c2d1-5594-4a55-b550-c15eb1ce1e87"
+      ]
     },
     {
       "id": "gq-07",
@@ -71,7 +106,13 @@
       "content_fingerprint": "SENTRY_ENVIRONMENT=production",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "cf97cc58-8d78-7d0e-d677-cb46d773f95c",
+        "e6901a32-eb4a-3480-9745-18664a1d01f2",
+        "395eecaa-7f58-4cad-9bbb-21556a376645",
+        "e8d5dea1-a286-e7f3-6c53-4f2de62e4fe3"
+      ]
     },
     {
       "id": "gq-08",
@@ -81,7 +122,11 @@
       "content_fingerprint": "DigitalOcean droplet (s-2vcpu-4gb, NYC3 region)",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "55a33271-4e93-437c-b8e4-714094197a03",
+        "2b5a6742-c4f3-4304-bea6-e74d927a273c"
+      ]
     },
     {
       "id": "gq-09",
@@ -91,7 +136,12 @@
       "content_fingerprint": "Tier 1 + Tier 2: LLM fallback",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "6157c066-a588-47b2-91ed-cc86dcb451cb",
+        "be3e15f4-4149-4a22-8588-96f9a23fcc7c",
+        "queue-7206460425922256590-2032659957165497716"
+      ]
     },
     {
       "id": "gq-10",
@@ -101,7 +151,12 @@
       "content_fingerprint": "ct-287-cloud-worktree-grouping",
       "efficiency_budget": 2,
       "difficulty": "easy",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "802af532-fad3-4ff0-89b4-9cf26b82a09e",
+        "47843c01-39fe-4a10-aed6-a970cfd39b8e",
+        "54005ac8-d9cc-4901-8f43-409ee5ba7ddb"
+      ]
     },
     {
       "id": "gq-11",
@@ -111,7 +166,12 @@
       "content_fingerprint": "dungeon crawler carl bootleg hats project",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "afcb69d4-e34a-48af-ba96-09eeeefac8dd",
+        "c09634e4-27fb-45a3-9af7-01cca9506a85",
+        "8a94a4a9-7ab3-4507-a4b6-fd9431811b6e"
+      ]
     },
     {
       "id": "gq-12",
@@ -121,27 +181,333 @@
       "content_fingerprint": "Quality Engineering Lead",
       "efficiency_budget": 3,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "5d319882-13b5-41be-b7e1-e79c22a40541",
+        "def6da96-555f-4573-9e6f-0a6966c9e5bc"
+      ]
     },
     {
       "id": "gq-13",
       "category": "decision-archaeology",
-      "natural_question": "What decisions have been made on pricing? Did we ever decide how much to charge?",
-      "search_terms": "Justin George personal license Noah Zoschke team cloud",
-      "content_fingerprint": "Justin George (personal license), Noah Zoschke (team/cloud version)",
+      "natural_question": "What were the final approved pricing tiers for Contextify Cloud? How much per seat?",
+      "search_terms": "ct-525 pricing approved Pro annual unlimited devices",
+      "content_fingerprint": "Pricing Decision (ct-525, approved)",
       "efficiency_budget": 3,
       "difficulty": "hard",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "db439881-fee9-4f8c-986d-505b81c65727"
+      ]
     },
     {
       "id": "gq-14",
       "category": "session-opener",
       "natural_question": "What happened to the navigation UX upgrade work? Was it implemented?",
-      "search_terms": "navigation UX design review sidetracked planned",
-      "content_fingerprint": "The work was planned and scoped",
+      "search_terms": "navigation reflow dashboard fully implemented committed",
+      "content_fingerprint": "navigation reflow for the Contextify Cloud dashboard is fully implemented",
       "efficiency_budget": 2,
       "difficulty": "medium",
-      "verified": true
+      "verified": true,
+      "relevant_entry_ids": [
+        "b758a299-bd6a-461a-9b33-ea94f6bd353f",
+        "eeeaa51e-5766-4325-8181-3284cb17e07e"
+      ]
+    },
+    {
+      "id": "gq-15",
+      "category": "debugging",
+      "natural_question": "There was a bug where the Codex parser was failing to extract working directories. What was the fix?",
+      "search_terms": "64KB buffer Codex CWD extraction",
+      "content_fingerprint": "64KB buffer fix worked",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "7e3e3221-3dc2-4b87-bf91-3431d662a7ae",
+        "521ed873-e90b-44cc-8ce5-d4a74ee93d24",
+        "cd1a956b-b365-47e0-92ec-21ac9ea7f347",
+        "2b874355-7bbb-44c4-af85-7ca25ec31e6b"
+      ]
+    },
+    {
+      "id": "gq-16",
+      "category": "debugging",
+      "natural_question": "Apple Intelligence was producing identical wrong summaries across different entries. What caused it and how was it fixed?",
+      "search_terms": "forceStateless hallucination retry logic",
+      "content_fingerprint": "forceStateless mode",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "4fd3ca31-3323-4064-a052-eeff5f033337",
+        "2a6e2a30-2b0d-4604-ba4f-4392df27957b",
+        "383e5d0b-5c79-45ea-99d2-ec45845b5193"
+      ]
+    },
+    {
+      "id": "gq-17",
+      "category": "implementation-reference",
+      "natural_question": "What is autogaffle and what does it do? How does it capture styles from reference apps?",
+      "search_terms": "autogaffle Playwright reference app capture",
+      "content_fingerprint": "Playwright-based CLI tool for capturing UI styles from reference applications",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "356cffa0-9f7c-4c61-84ae-0110888766c6",
+        "5677c760-6b67-446d-bf0a-f96e6c8f2242",
+        "33eed6b9-cdcf-4aa4-8e98-f0ac92209750"
+      ]
+    },
+    {
+      "id": "gq-18",
+      "category": "debugging",
+      "natural_question": "What is the status of v1.3.0 release? Are existing users getting Sparkle auto-update notifications?",
+      "search_terms": "v1.3.0 Sparkle appcast auto-update stale pending",
+      "content_fingerprint": "Sparkle auto-updates not working",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "88422401-dd45-4950-b0eb-db91ae85ec42",
+        "queue-3494696610501593725-5897752478962868308"
+      ]
+    },
+    {
+      "id": "gq-19",
+      "category": "implementation-reference",
+      "natural_question": "Is GRDB compatible with Linux? What did the assessment find about cross-platform support?",
+      "search_terms": "GRDB Linux community-contributed assessment",
+      "content_fingerprint": "GRDB officially supports Linux",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "8ba4e9a1-b2de-4e9d-b0fe-f5ac35fb9095",
+        "87b504a1-be4d-4117-afb9-1ba9810118e2",
+        "21448e5f-6e35-4286-9ff6-3d09d4471703"
+      ]
+    },
+    {
+      "id": "gq-20",
+      "category": "decision-archaeology",
+      "natural_question": "What security vulnerabilities were found on the contextify-cloud server? Was the Swagger docs exposed?",
+      "search_terms": "openapi.json Swagger publicly accessible reconnaissance",
+      "content_fingerprint": "reconnaissance goldmine",
+      "efficiency_budget": 3,
+      "difficulty": "hard",
+      "verified": true,
+      "relevant_entry_ids": [
+        "42ddbfb6-7378-4708-ba3f-d2719cc2fe52"
+      ]
+    },
+    {
+      "id": "gq-21",
+      "category": "decision-archaeology",
+      "natural_question": "What is Project Chronicle and what was the design vision? Arcs, signposts, narratives?",
+      "search_terms": "Project Chronicle arcs signposts narrative",
+      "content_fingerprint": "Named it \"Project Chronicle\"",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "dbab7b35-c114-4e2f-84f1-d1fb7ad8c694",
+        "f7e06549-d9aa-4ca8-ace3-12d96f465efb",
+        "c442005b-d715-47e6-b3e8-b21ac8576179",
+        "ab7b8c4f-62ff-4e46-bcc2-d86e787612aa"
+      ]
+    },
+    {
+      "id": "gq-22",
+      "category": "cross-session-continuity",
+      "natural_question": "What are all the ghee apps in the monorepo? GheeDrive, GheeCalendar, etc. - which team owns them and how many hours?",
+      "search_terms": "GheeDrive GheeCalendar DELTA Linear hours",
+      "content_fingerprint": "GheeDrive",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "41ca2b4f-7fe4-422f-868d-078fef0b52a5",
+        "4c2c4555-f182-4cbd-8eb8-b9b494298412"
+      ]
+    },
+    {
+      "id": "gq-23",
+      "category": "implementation-reference",
+      "natural_question": "How does Apple Intelligence LLM summarization work in Contextify? Is it sequential? What about viewport awareness?",
+      "search_terms": "FoundationModels sequential-only viewport-aware summarization",
+      "content_fingerprint": "FoundationModels (Apple's on-device LLM) is sequential-only",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "fcdb645e-28ca-4bac-adf2-5afd4b639ae9",
+        "3afd8a52-aa6a-4531-9e2e-d46b4fdd161a"
+      ]
+    },
+    {
+      "id": "gq-24",
+      "category": "implementation-reference",
+      "natural_question": "How does the cloud dashboard handle authentication? What cookie and JWT setup does it use?",
+      "search_terms": "JWT ctx_session cookie dashboard authentication",
+      "content_fingerprint": "ctx_session cookie",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "e7404bb4-8044-4f7c-a01d-d10ea386174c",
+        "8493f1a5-e92d-4652-a7f5-579e4ccf7245",
+        "42ddbfb6-7378-4708-ba3f-d2719cc2fe52"
+      ]
+    },
+    {
+      "id": "gq-25",
+      "category": "decision-archaeology",
+      "natural_question": "Can we upgrade the cloud server to Postgres 18? What would break and what is the migration path?",
+      "search_terms": "Postgres 18 volume migration production pg_dumpall",
+      "content_fingerprint": "Postgres 18 can't read a Postgres 16 data directory",
+      "efficiency_budget": 3,
+      "difficulty": "hard",
+      "verified": true,
+      "relevant_entry_ids": [
+        "251957da-cccb-4ac7-86e8-696328a11a33"
+      ]
+    },
+    {
+      "id": "gq-26",
+      "category": "implementation-reference",
+      "natural_question": "What does the FTSQueryBuilder do with token quoting and how does it interact with porter stemming?",
+      "search_terms": "FTSQueryBuilder porter stemming quoting tokens",
+      "content_fingerprint": "FTSQueryBuilder",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "relevant_entry_ids": [
+        "286c7c0a-5193-44b8-a289-9e2bb62dee9e",
+        "167f61e6-d658-4316-8425-8637593c3896"
+      ]
+    },
+    {
+      "id": "gq-27",
+      "category": "session-opener",
+      "natural_question": "Has the Linux CLI been shipped? What version and what architectures are available?",
+      "search_terms": "Linux CLI shipped v1.1.0 x86_64 arm64 tarball",
+      "content_fingerprint": "Linux CLI v1 shipped",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "049d2c9a-3f10-485c-b3e4-7965f4fc135f",
+        "cc90f259-accb-4cd2-b3ca-2f2a5451eecf",
+        "f6096b3f-7384-42e1-857c-f466b19a4cda"
+      ]
+    },
+    {
+      "id": "gq-28",
+      "category": "implementation-reference",
+      "natural_question": "How is the contextify.sh website deployed? What tools and scripts handle the deployment process?",
+      "search_terms": "deploying website rsync nginx reload",
+      "content_fingerprint": "deploy-website.sh",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "diagnostic": "morphology",
+      "relevant_entry_ids": [
+        "1588fb30-3372-d34f-4075-5862bdb94c83"
+      ]
+    },
+    {
+      "id": "gq-29",
+      "category": "debugging",
+      "natural_question": "Was there a discussion about notarizing the CLI binary? What is the current signing status?",
+      "search_terms": "notarizing DMG Developer ID certificate",
+      "content_fingerprint": "sign_and_notarize",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "diagnostic": "morphology",
+      "relevant_entry_ids": [
+        "ab289bc0-589a-4f91-b5df-868214785ca1",
+        "e5888538-0778-4072-8b8e-f699d7f752ab",
+        "53ad13fc-d4b8-4a93-8ab3-6f2023966e9e"
+      ]
+    },
+    {
+      "id": "gq-30",
+      "category": "implementation-reference",
+      "natural_question": "What steps are involved in configuring Nginx and PostgreSQL for the cloud server setup?",
+      "search_terms": "configuring Nginx reverse proxy PostgreSQL",
+      "content_fingerprint": "Configure Nginx",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "diagnostic": "morphology",
+      "relevant_entry_ids": [
+        "7d559037-4e5c-4fc9-bb28-3baa7c8c5040",
+        "55a33271-4e93-437c-b8e4-714094197a03",
+        "2b5a6742-c4f3-4304-bea6-e74d927a273c"
+      ]
+    },
+    {
+      "id": "gq-31",
+      "category": "implementation-reference",
+      "natural_question": "How does the Contextify website use Bootstrap and CSS variables? What is the tech stack for the marketing site?",
+      "search_terms": "Bootstrap 5.3 CSS variables website static",
+      "content_fingerprint": "Bootstrap 5.3",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "8b42d58f-ecec-4649-ad6e-e8306e3f6c51",
+        "3ab724d8-d84a-4ea6-b305-4a8d7e9058e1"
+      ]
+    },
+    {
+      "id": "gq-32",
+      "category": "debugging",
+      "natural_question": "Was there an issue with LLM summaries being hallucinated? Something about the model producing the same wrong summary repeatedly?",
+      "search_terms": "hallucinating summaries identical wrong",
+      "content_fingerprint": "hallucination",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "diagnostic": "morphology",
+      "relevant_entry_ids": [
+        "ea71267e-dbae-4989-973c-63d45a826e0b",
+        "4fd3ca31-3323-4064-a052-eeff5f033337",
+        "2a6e2a30-2b0d-4604-ba4f-4392df27957b"
+      ]
+    },
+    {
+      "id": "gq-33",
+      "category": "cross-session-continuity",
+      "natural_question": "How does Apple Intelligence handle on-device summarizing of transcript entries? Is it one request at a time?",
+      "search_terms": "summarizing entries viewport sequential",
+      "content_fingerprint": "summarization viewport-aware",
+      "efficiency_budget": 2,
+      "difficulty": "medium",
+      "verified": true,
+      "diagnostic": "morphology",
+      "relevant_entry_ids": [
+        "fcdb645e-28ca-4bac-adf2-5afd4b639ae9",
+        "3afd8a52-aa6a-4531-9e2e-d46b4fdd161a"
+      ]
+    },
+    {
+      "id": "gq-34",
+      "category": "implementation-reference",
+      "natural_question": "How does the DMG signing and notarization pipeline work? What scripts are involved?",
+      "search_terms": "sign_and_notarize.py Developer ID CLI tarball",
+      "content_fingerprint": "sign_and_notarize.py",
+      "efficiency_budget": 2,
+      "difficulty": "easy",
+      "verified": true,
+      "relevant_entry_ids": [
+        "53ad13fc-d4b8-4a93-8ab3-6f2023966e9e",
+        "74a6169e-0acd-429c-9b8f-4421344bb4e2",
+        "145bd0f2-7ec4-4524-99df-9c3e2c9632d9"
+      ]
     }
   ]
 }

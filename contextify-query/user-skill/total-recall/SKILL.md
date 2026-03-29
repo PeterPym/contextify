@@ -104,13 +104,27 @@ Start your search with the 2-3 most distinctive terms from the question. If the 
 
 Determine the query type to set your strategy and starting `--days` window:
 
-| Intent | Signals | Starting `--days` | Strategy |
-|--------|---------|-------------------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | 365 | Use `--count-only`. Add `--term-counts` for OR queries. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | 365 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
-| **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
-| **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
-| **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
+| Intent | Signals | Time window | Strategy |
+|--------|---------|-------------|----------|
+| **Counting** | "how many", "count", "every time", "frequency" | `--days 365` | Use `--count-only`. Add `--term-counts` for OR queries. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | `--days 365` | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Exploratory** | "what have we talked about", "find anything about" | `--days 365` | Start broad, refine iteratively. Use `--limit 20`. |
+| **Negative proof** | "have we ever", "did we discuss", "was there any" | `--days 365` | Broad scope. Run 2-3 materially different query variations before declaring absence. |
+| **Debugging** | "when did this break", "what changed", "recent error" | `--days 30` | Narrow, recent. Use `--project .` for current repo focus. |
+| **Time-scoped** | "last N hours", "today", "yesterday", "this morning", "this week", "last week", "past hour" | See below | Detect the time reference and use `--hours` or `--days` accordingly. |
+
+**Time-scoped intent:** When the user's request includes an explicit time reference, override the default window:
+
+| User phrasing | Flag to use |
+|---------------|-------------|
+| "in the last N hours", "past N hours" | `--hours N` |
+| "today", "this morning", "this afternoon" | `--hours 24` |
+| "yesterday" | `--days 2` |
+| "this week", "past few days" | `--days 7` |
+| "last week" | `--days 14` |
+| "last month", "past few weeks" | `--days 30` |
+
+Use `--hours` for sub-day precision (e.g., "last 6 hours") and `--days` for multi-day windows. Do not default to `--days 365` when the user specifies a narrower time frame.
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
 
@@ -180,6 +194,7 @@ Returns:
   "data": {
     "databasePath": "/Users/.../contextify.db",
     "entryCount": 315465,
+    "newestEntryTimestamp": 1769380895,
     "projectCount": 46,
     "transcriptCount": 3285,
     "ftsEnabled": true,
@@ -198,6 +213,12 @@ If database not found, respond:
 > Please open Contextify once to initialize the database.
 >
 > Download: https://contextify.sh/download
+
+**Data freshness check:** Compare `newestEntryTimestamp` (Unix epoch) to the current time. If the newest entry is more than 1 hour old, warn the user before searching:
+
+> **Note:** Contextify data may be stale (last indexed entry is from [time ago]). Results may be incomplete. Ensure the Contextify app is running to resume ingestion.
+
+Still proceed with the search, but frame results as potentially incomplete. If searching for very recent conversations (e.g., "last hour", "today") and data is stale, the warning is especially important.
 
 2) Construct query and search:
 
@@ -236,6 +257,11 @@ Example -- user asks "what did we decide about the database schema":
 contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
 ```
 
+Example -- user asks "what did we discuss in the last 6 hours about testing":
+```bash
+contextify search "test OR testing OR \"test suite\"" --project . --hours 6 --limit 10 --json
+```
+
 Returns:
 ```json
 {
@@ -258,16 +284,24 @@ Returns:
     "limit": 10,
     "offset": 0,
     "hasMore": true,
-    "totalCount": 847
+    "totalCount": 847,
+    "databaseSummary": {
+      "entryCount": 586093,
+      "projectCount": 46,
+      "deviceCount": 2
+    }
   },
   "schemaVersion": 1,
   "type": "search"
 }
 ```
 
-**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` and `entry` commands. Both full UUIDs and 8+ character prefixes are accepted (the CLI resolves prefixes like git resolves short SHAs). If a prefix is ambiguous (matches multiple entries), the CLI returns an `entryAmbiguousId` error with candidates.
 
-**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Optional fields appear conditionally:
+`projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
+
+**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Other fields:
+- `databaseSummary`: always present, contains `entryCount`, `projectCount`, `deviceCount` for the full database (not filtered by search scope)
 - `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
 - `worktreeExpansion`: worktree group details (when worktree expansion is active, see "Worktree expansion" below)
 - `sourceCounts`: per-project result counts (when worktreeExpansion is present)
@@ -403,6 +437,11 @@ Use the template matching the query type. Adapt the structure to the number of r
 > -- <project name>, <date> `entry:<first-8-chars-of-uuid>`
 
 **Summary:** [What was decided or what the current status is, synthesized from the evidence above. Distinguish "discussed and planned" from "implemented and merged" when relevant. If the answer is uncertain or incomplete, say so.]
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
 ```
 
 ### Counting template
@@ -420,6 +459,10 @@ Use the template matching the query type. Adapt the structure to the number of r
 | ... | ... |
 
 **Search terms:** `<the OR-expanded query as sent to the CLI>`
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
 ```
 
 ### Negative result template
@@ -448,6 +491,13 @@ Searched <N> entries across <scope> over <time range>.
 - **One summary, at the end.** Synthesize across all cited results. Do not repeat what the quotes already say.
 - **Timestamps as dates.** Convert Unix timestamps to "Mon DD, YYYY" (or "Mon DD, YYYY HH:MM" when time matters). Never show raw Unix timestamps to the user.
 - **Multiple results.** Show 2-4 quoted excerpts for the most relevant hits. For exploratory queries with many results, briefly list additional hits by date and project after the key quotes.
+- **Evidence section is mandatory** (except for negative results). Every response that found results must end with a `## Evidence` section. This section helps both humans verify the answer's sources and automated tooling validate search accuracy. Rules:
+  - List 1-5 entries that directly support the answer
+  - Each line: `- \`entry:<first-8-chars-of-uuid>\` <project>, <date>: "<exact quoted span>"`
+  - The entry ID must be the first 8 characters of the entry UUID from search/context results
+  - The quoted span must be an EXACT substring of the entry's content (copy-paste, not paraphrased)
+  - The quoted span should be the most relevant 1-2 sentences from the entry
+  - For negative results (no matches found), omit the Evidence section
 
 **Response fidelity rules:**
 
@@ -461,6 +511,8 @@ Searched <N> entries across <scope> over <time range>.
 ## Working with the JSON output
 
 **Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+
+**If piping through Python:** Always check for error responses before accessing `data`. The CLI returns error JSON (with `type: "error"`, no `data` key) on failure, which causes `KeyError: 'data'` if not handled.
 
 - **search**: `data` is an **array** of result objects; pagination info in `metadata`
 - **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
@@ -488,7 +540,7 @@ Branch on `code`:
 | `code` | Response |
 |-------|----------|
 | `dbNotFound` | "Contextify database not found. Open Contextify to initialize. https://contextify.sh/download" If the user has a custom database location (Dropbox, iCloud Drive), use `--db-path <path>` or `--db-dir <dir>`. |
-| `dbProjectNotFound` | Check `details.suggestions`, offer alternatives |
+| `dbProjectNotFound` | Check `details.suggestions` for fuzzy name matches (typo correction). Offer alternatives: "Did you mean: X?" |
 | `featureUnavailable` | Explain limitation clearly, do not imply workarounds |
 | `entryNotFound` | Re-search for a new anchor |
 | `cliNotFound` | "Contextify CLI not found. See https://contextify.sh/help for installation." |
@@ -544,7 +596,7 @@ These flags provide fine-grained control over search and output behavior.
 
 | Flag | Subcommand | Description |
 |------|-----------|-------------|
-| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `system`. Comma-separated. Example: `--kinds user,assistant` |
+| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `summary`, `system`. Comma-separated. Example: `--kinds user,assistant` |
 | `--since <ts\|iso>` | global | Time range start (inclusive). Accepts Unix timestamp, ISO 8601, or `YYYY-MM-DD`. Cannot combine with `--days`. |
 | `--until <ts\|iso>` | global | Time range end (inclusive). Same formats as `--since`. Cannot combine with `--days`. `--since` must be <= `--until`. |
 | `--include-hidden` | global | Include non-timeline entries (system messages, hidden entries). By default only `display_in_timeline=1` entries are returned. |
