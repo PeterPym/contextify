@@ -7,13 +7,14 @@ final class ConversationSearchServiceTests: XCTestCase {
   // MARK: - Query Builder Tests
 
   func testBuildSafeFTSQuery_simpleTokens() {
+    // Simple words are unquoted for porter stemming
     let result = ConversationSearchService.buildSafeFTSQuery("unread count")
-    XCTAssertEqual(result, "\"unread\" AND \"count\"")
+    XCTAssertEqual(result, "unread AND count")
   }
 
   func testBuildSafeFTSQuery_singleToken() {
     let result = ConversationSearchService.buildSafeFTSQuery("search")
-    XCTAssertEqual(result, "\"search\"")
+    XCTAssertEqual(result, "search")
   }
 
   func testBuildSafeFTSQuery_phraseSearch() {
@@ -27,8 +28,9 @@ final class ConversationSearchServiceTests: XCTestCase {
   }
 
   func testBuildSafeFTSQuery_specialCharacters() {
+    // foo* is simple (wildcard on simple word) -> unquoted; (bar) parens stripped -> simple; "baz" quotes stripped -> simple
     let result = ConversationSearchService.buildSafeFTSQuery("foo* (bar) \"baz\"")
-    XCTAssertEqual(result, "\"foo\" AND \"bar\" AND \"baz\"")
+    XCTAssertEqual(result, "foo* AND bar AND baz")
   }
 
   func testBuildSafeFTSQuery_emptyString() {
@@ -43,33 +45,35 @@ final class ConversationSearchServiceTests: XCTestCase {
 
   func testBuildSafeFTSQuery_leadingTrailingWhitespace() {
     let result = ConversationSearchService.buildSafeFTSQuery("  hello world  ")
-    XCTAssertEqual(result, "\"hello\" AND \"world\"")
+    XCTAssertEqual(result, "hello AND world")
   }
 
   func testBuildSafeFTSQuery_multipleSpaces() {
     let result = ConversationSearchService.buildSafeFTSQuery("hello   world")
-    XCTAssertEqual(result, "\"hello\" AND \"world\"")
+    XCTAssertEqual(result, "hello AND world")
   }
 
   func testBuildSafeFTSQuery_codeIdentifier() {
-    // Should treat code identifiers as single tokens
+    // Underscore is a word character, so code identifiers are simple words
     let result = ConversationSearchService.buildSafeFTSQuery("UNREAD_COUNT_UPDATED")
-    XCTAssertEqual(result, "\"UNREAD_COUNT_UPDATED\"")
+    XCTAssertEqual(result, "UNREAD_COUNT_UPDATED")
   }
 
   func testBuildSafeFTSQuery_mixedCasePreserved() {
     let result = ConversationSearchService.buildSafeFTSQuery("UnreadCount")
-    XCTAssertEqual(result, "\"UnreadCount\"")
+    XCTAssertEqual(result, "UnreadCount")
   }
 
   func testBuildSafeFTSQuery_parenthesesRemoved() {
+    // function() has parens stripped -> "function" is simple -> unquoted
     let result = ConversationSearchService.buildSafeFTSQuery("function()")
-    XCTAssertEqual(result, "\"function\"")
+    XCTAssertEqual(result, "function")
   }
 
-  func testBuildSafeFTSQuery_asterisksRemoved() {
+  func testBuildSafeFTSQuery_asterisksPreservedOnSimpleWord() {
+    // test* is a simple word with wildcard -> unquoted, wildcard preserved
     let result = ConversationSearchService.buildSafeFTSQuery("test*")
-    XCTAssertEqual(result, "\"test\"")
+    XCTAssertEqual(result, "test*")
   }
 
   // MARK: - Search Scope Tests

@@ -72,17 +72,18 @@ Search results return entries. Use `transcriptId` to see the full conversation, 
 
 ## FTS5 search behavior
 
-The Contextify search backend currently uses FTS5 with **exact token matching** and no stemming.
+The Contextify search backend uses FTS5 with **porter stemming**. The porter algorithm automatically matches morphological variants of English words.
 
-- `"run"` matches only the exact token "run", NOT "running", "runs", or "ran"
-- `"deploy"` does NOT match "deployment" or "deployed"
+- `deploy` matches "deploy", "deploys", "deployed", "deploying", "deployment", "deployments"
+- `run` matches "run", "running", "runs", "runner" (but NOT irregular forms like "ran")
 - Searches are case-insensitive
-- The prefix operator `*` matches token prefixes: `run*` matches "run", "running", "runs", "runner"
-- Quoted phrases match exact sequences: `"memory leak"` requires both words adjacent in order
+- The prefix operator `*` matches token prefixes: `run*` matches any token starting with "run"
+- Quoted phrases match exact sequences with stemming: `"memory leak"` requires both stems adjacent in order
+- **Quoted phrases still apply stemming** to each word within the phrase, but enforce adjacency
+
+**Stemming limitations:** The query builder quotes tokens with special characters (dots, colons) to enforce exact matching for those tokens. Irregular verb forms (e.g., "ran" from "run") are NOT matched by stemming -- use explicit OR for those.
 
 **Tokenization and special characters:** Hyphens, underscores, and most punctuation act as token separators. For example, `CT-97` is tokenized as two separate tokens `CT` and `97`. To match hyphenated or snake_case identifiers, search for `CT AND 97` or try the quoted form `"CT 97"`. File paths and punctuation-heavy identifiers may need simplified forms.
-
-Because there is no stemming, you must explicitly include morphological variants in your queries. See "Query construction" below.
 
 ## Query construction
 
@@ -95,7 +96,7 @@ Preserve rare names and identifiers exactly. Only expand common verbs and concep
 - **Proper nouns, people, companies, products**: use as-is or in quoted phrases (`"Perch Innovations"`, `"Fulton House"`)
 - **Task IDs, version numbers**: quote them (`"ct 389"`, `"v1.5.0"`)
 - **Hyphenated project names**: quote without hyphens (`"contextify cloud"`, `"cli ai setup"`)
-- **Common verbs**: expand with prefix matching (`deploy*`, `migrat*`)
+- **Common verbs**: porter stemming handles regular forms automatically; only add explicit OR for irregular forms (`run OR ran`)
 
 Start your search with the 2-3 most distinctive terms from the question. If the question mentions a specific name, number, or identifier, that should be your primary search term, not a generic concept.
 
@@ -130,29 +131,23 @@ Before building the query, scan each search term for characters that FTS5 treats
 
 ### Step 2: Expand query terms
 
-For each key term, generate morphological variants and join with OR:
+Porter stemming automatically matches regular inflections: `deploy` finds "deployed", "deploying", "deployment". You do NOT need explicit OR for regular verb/noun forms.
 
-**Verb example:** "deploy"
+**Still expand with OR for:**
+- **Irregular verbs:** `run OR ran`, `break OR broke OR broken`
+- **Synonyms and related terms:** `error OR failure OR bug`, `hat OR cap OR headwear`
+- **Alternative phrasings:** `"pricing model" OR "pricing plan" OR "subscription"`, `rename OR rebrand OR retitle`
+
+**Use prefix `*` when:**
+- The stem is short or ambiguous: `config*` catches "config", "configure", "configuration"
+- You want broad recall: `patcher*` catches "patcher", "patching", "patchers"
+
+**Build multi-concept queries** by combining expanded terms with AND:
 ```
-deploy OR deploys OR deployed OR deploying OR deployment OR deployments
+(deploy OR release) AND (fail OR error OR broke)
 ```
 
-**Shortcut -- prefix matching:** When variants share a common prefix, use `*`:
-```
-deploy*
-```
-This matches deploy, deploys, deployed, deploying, deployment, deployments.
-
-**When to use explicit OR vs prefix `*`:**
-- Prefix `*` is simpler and catches variants you might not think of
-- Explicit OR is better when the stem is ambiguous (e.g., `run*` also matches "rune", "rung")
-- Explicit OR is required for irregular forms (e.g., "ran" is not matched by `run*`)
-- For counting queries, start with explicit OR plus any irregular forms, then use a prefix query as a recall backstop if counts look low
-
-**Compound queries:** Combine expanded terms with AND when the user's query has multiple concepts:
-```
-(deploy* OR release*) AND (fail* OR error* OR broke*)
-```
+**Always try 2-3 query formulations** for non-trivial searches. A single query rarely covers all relevant phrasing. Vary your terms, try alternative angles, and broaden before concluding no results exist.
 
 ### Step 3: Consider synonyms and related terms
 
@@ -169,7 +164,7 @@ Do NOT add synonyms for literal word searches ("how many times did I say X").
 - **Lookup queries:** `--limit 10` is fine for finding an anchor.
 - **Exploratory queries:** `--limit 20`, then refine.
 
-**Quick recipe:** Classify intent, build expanded query, choose limit (or `--count-only`), search, paginate if `hasMore`, answer with citations.
+**Quick recipe:** Classify intent, pick 2-3 distinctive terms + OR synonyms (stemming handles inflections, you handle synonyms), choose limit (or `--count-only`), search, try 2-3 query variations, paginate if `hasMore`, answer with citations.
 
 ## Canonical loop
 
@@ -231,8 +226,10 @@ Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, 
 
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
-contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
+contextify search "deploy" --project . --days 365 --count-only --json
 ```
+
+Porter stemming matches all regular forms of "deploy" automatically.
 
 Example -- user asks "what did we decide about the database schema":
 ```bash
@@ -380,8 +377,7 @@ Before formatting your response, check:
   ```
   Increment `--offset` by `--limit` each page until `hasMore` is `false`.
 - **`totalCount` field:** Always present in search metadata. Use this to know the total number of matches without paginating. For counting queries, use `--count-only` instead of paginating.
-- **(Counting intent only) Variant coverage:** If `--term-counts` shows uneven distribution, consider whether you missed a variant. If you searched `deploy*` and a follow-up search for "redeployment" returns additional hits, your prefix did not capture it.
-- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form? A synonym?
+- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form (e.g., "ran" for "run")? A synonym? Porter stemming handles regular inflections but not irregular verbs or synonyms.
 - **For counting queries:** Report `totalCount` from metadata (or per-term counts from `termCounts`), and list which search terms were used so the user can judge completeness.
 
 If results seem incomplete, run additional searches with expanded terms before answering.
@@ -509,8 +505,8 @@ When search returns 0 results, follow this escalation path in order. Stop as soo
 - If already at 365 or no `--days` was set, proceed to Step 2
 
 **Step 2: Broaden query terms.**
-- Try prefix matching: `deploy*` instead of `deploy`
-- Simplify: reduce to the 1-2 most distinctive terms
+- Simplify: reduce to the 1-2 most distinctive terms (porter stemming already covers regular inflections)
+- Add irregular verb forms if applicable: `run OR ran`
 - Check for special characters (Step 1.5) that may need quoting
 
 **Step 3: Broaden project scope.**
@@ -528,11 +524,10 @@ Report what you searched: "Searched [N] days across [scope] with queries: [list]
 
 If results are returned but may be incomplete:
 1. **Check `totalCount` and `hasMore`:** `totalCount` tells you the full count. If you need more result bodies, raise `--limit` or paginate with `--offset`.
-2. **Check variant coverage:** Did you search all morphological forms? Add missing variants and re-search.
-3. **Cross-check with prefix query:** Run a `term*` prefix search and compare the count to your explicit-variant search. A large discrepancy suggests missed variants.
-4. **Widen time range:** Results clustered in recent days may indicate older matches outside `--days` window.
+2. **Check irregular forms and synonyms:** Porter stemming covers regular inflections but not irregular verbs ("ran", "broke") or synonyms. Add those manually if relevant.
+3. **Widen time range:** Results clustered in recent days may indicate older matches outside `--days` window.
 
-For counting queries, use `--count-only` to get the authoritative `totalCount`. If counts seem low, verify your query covers all morphological variants.
+For counting queries, use `--count-only` to get the authoritative `totalCount`. If counts seem low, check for irregular verb forms or synonyms that stemming does not cover.
 
 ## Advanced flags
 

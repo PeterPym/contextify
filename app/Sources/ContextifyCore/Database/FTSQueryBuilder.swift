@@ -5,9 +5,32 @@ import Foundation
 
 /// Utility for building safe FTS5 queries from user input.
 public enum FTSQueryBuilder {
+
+  /// FTS5 boolean keywords that must stay quoted when used as search terms.
+  private static let ftsKeywords: Set<String> = ["AND", "OR", "NOT", "NEAR"]
+
+  /// Returns true when a token is a simple word safe to leave unquoted in FTS5.
+  ///
+  /// A token is "simple" when it contains only word characters (`[a-zA-Z0-9_]`)
+  /// and optional trailing `*` (prefix wildcard), and is not an FTS5 keyword,
+  /// column filter (contains `:`), initial-token operator (contains `^`), or
+  /// dotted version number (contains `.`).
+  static func isSimpleWord(_ token: String) -> Bool {
+    guard !token.isEmpty else { return false }
+    // FTS5 keywords must stay quoted (check base without trailing wildcard)
+    let base = token.hasSuffix("*") ? String(token.dropLast()) : token
+    if ftsKeywords.contains(base.uppercased()) { return false }
+    // Tokens with special FTS5 meaning must stay quoted
+    if token.contains(":") || token.contains("^") || token.contains(".") { return false }
+    // Allow word chars and trailing wildcard only
+    let pattern = #"^\w+\*?$"#
+    return token.range(of: pattern, options: .regularExpression) != nil
+  }
+
   /// Sanitizes user input for FTS5 MATCH queries.
   /// - Handles quoted phrases
   /// - Removes special FTS operators
+  /// - Leaves simple words unquoted so porter stemming applies
   /// - Joins tokens with AND for multi-word queries
   public static func buildSafeFTSQuery(_ query: String) -> String {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -21,32 +44,38 @@ public enum FTSQueryBuilder {
       return "\"\(sanitized)\""
     }
 
-    // Split on whitespace, wrap each token in quotes, join with AND
+    // Split on whitespace, process each token, join with AND
     let tokens = trimmed.components(separatedBy: .whitespaces)
       .filter { !$0.isEmpty }
-      .map { token in
-        // Remove any quotes and special chars from individual tokens
-        let clean = token
+      .map { token -> String in
+        // Normalize: strip quotes and parentheses before classification
+        let normalized = token
           .replacingOccurrences(of: "\"", with: "")
-          .replacingOccurrences(of: "*", with: "")
           .replacingOccurrences(of: "(", with: "")
           .replacingOccurrences(of: ")", with: "")
+        guard !normalized.isEmpty else { return "" }
+        // For simple words, leave unquoted (enables porter stemming + prefix wildcards)
+        if isSimpleWord(normalized) {
+          return normalized
+        }
+        // Complex tokens: strip wildcard and quote
+        let clean = normalized.replacingOccurrences(of: "*", with: "")
         return "\"\(clean)\""
       }
-      .filter { $0 != "\"\"" }  // Filter out empty tokens
+      .filter { $0 != "\"\"" && !$0.isEmpty }  // Filter out empty tokens
 
     guard !tokens.isEmpty else { return "" }
     return tokens.joined(separator: " AND ")
   }
 
   /// Build a safe FTS5 query from input that may already contain quoted phrases
-  /// (e.g., from hyphen preprocessing). Wraps bare tokens in quotes, preserves
-  /// existing quoted phrases and FTS5 operators, and joins with AND.
+  /// (e.g., from hyphen preprocessing). Leaves simple bare tokens unquoted so
+  /// porter stemming applies, preserves existing quoted phrases and FTS5
+  /// operators, and joins with AND.
   public static func safeWrapPreservingQuotes(_ query: String) -> String {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return "" }
 
-    let ftsOperators: Set<String> = ["OR", "AND", "NOT", "NEAR"]
     var parts: [String] = []
     var current = ""
     var inQuote = false
@@ -61,12 +90,16 @@ public enum FTSQueryBuilder {
           if !current.isEmpty {
             let bareTokens = current.split(separator: " ").map(String.init).filter { !$0.isEmpty }
             for token in bareTokens {
-              if ftsOperators.contains(token.uppercased()) {
-                parts.append(token)
+              let normalized = token
+                .replacingOccurrences(of: "(", with: "")
+                .replacingOccurrences(of: ")", with: "")
+              guard !normalized.isEmpty else { continue }
+              if ftsKeywords.contains(normalized.uppercased()) {
+                parts.append(normalized)
+              } else if isSimpleWord(normalized) {
+                parts.append(normalized)
               } else {
-                let clean = token
-                  .replacingOccurrences(of: "(", with: "")
-                  .replacingOccurrences(of: ")", with: "")
+                let clean = normalized.replacingOccurrences(of: "*", with: "")
                 if !clean.isEmpty { parts.append("\"\(clean)\"") }
               }
             }
@@ -84,7 +117,9 @@ public enum FTSQueryBuilder {
     } else if !current.isEmpty {
       let bareTokens = current.split(separator: " ").map(String.init).filter { !$0.isEmpty }
       for token in bareTokens {
-        if ftsOperators.contains(token.uppercased()) {
+        if ftsKeywords.contains(token.uppercased()) {
+          parts.append(token)
+        } else if isSimpleWord(token) {
           parts.append(token)
         } else {
           let clean = token
@@ -102,7 +137,7 @@ public enum FTSQueryBuilder {
     for i in 1..<parts.count {
       let prev = parts[i - 1].uppercased()
       let curr = parts[i].uppercased()
-      if ftsOperators.contains(prev) || ftsOperators.contains(curr) {
+      if ftsKeywords.contains(prev) || ftsKeywords.contains(curr) {
         result += " \(parts[i])"
       } else {
         result += " AND \(parts[i])"
