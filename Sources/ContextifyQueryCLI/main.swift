@@ -1488,13 +1488,16 @@ private func runProcess(_ executable: String, arguments: [String]) -> String? {
 
   do {
     try process.run()
-    process.waitUntilExit()
   } catch {
     return nil
   }
 
-  guard process.terminationStatus == 0 else { return nil }
+  // Read stdout before waitUntilExit to avoid pipe deadlock when output
+  // exceeds the ~64KB macOS pipe buffer (e.g. git ls-files in large repos).
   let data = stdout.fileHandleForReading.readDataToEndOfFile()
+  process.waitUntilExit()
+
+  guard process.terminationStatus == 0 else { return nil }
   return String(data: data, encoding: .utf8)
 }
 
