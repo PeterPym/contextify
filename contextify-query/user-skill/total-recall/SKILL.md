@@ -403,6 +403,11 @@ Use the template matching the query type. Adapt the structure to the number of r
 > -- <project name>, <date> `entry:<first-8-chars-of-uuid>`
 
 **Summary:** [What was decided or what the current status is, synthesized from the evidence above. Distinguish "discussed and planned" from "implemented and merged" when relevant. If the answer is uncertain or incomplete, say so.]
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
 ```
 
 ### Counting template
@@ -420,6 +425,10 @@ Use the template matching the query type. Adapt the structure to the number of r
 | ... | ... |
 
 **Search terms:** `<the OR-expanded query as sent to the CLI>`
+
+## Evidence
+
+- `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
 ```
 
 ### Negative result template
@@ -448,6 +457,13 @@ Searched <N> entries across <scope> over <time range>.
 - **One summary, at the end.** Synthesize across all cited results. Do not repeat what the quotes already say.
 - **Timestamps as dates.** Convert Unix timestamps to "Mon DD, YYYY" (or "Mon DD, YYYY HH:MM" when time matters). Never show raw Unix timestamps to the user.
 - **Multiple results.** Show 2-4 quoted excerpts for the most relevant hits. For exploratory queries with many results, briefly list additional hits by date and project after the key quotes.
+- **Evidence section is mandatory** (except for negative results). Every response that found results must end with a `## Evidence` section. This section helps both humans verify the answer's sources and automated tooling validate search accuracy. Rules:
+  - List 1-5 entries that directly support the answer
+  - Each line: `- \`entry:<first-8-chars-of-uuid>\` <project>, <date>: "<exact quoted span>"`
+  - The entry ID must be the first 8 characters of the entry UUID from search/context results
+  - The quoted span must be an EXACT substring of the entry's content (copy-paste, not paraphrased)
+  - The quoted span should be the most relevant 1-2 sentences from the entry
+  - For negative results (no matches found), omit the Evidence section
 
 **Response fidelity rules:**
 

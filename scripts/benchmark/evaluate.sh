@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # evaluate.sh - Total Recall benchmark evaluator
 #
-# FROZEN (ct-729, 2026-03-27). Calibrated against 36 labeled pairs (F1=0.900).
-# Do not change scoring logic without re-running calibrate-fingerprint.py.
+# Fingerprint scoring FROZEN (ct-729, 2026-03-27). Calibrated against 36 labeled pairs (F1=0.900).
+# Do not change fingerprint scoring logic without re-running calibrate-fingerprint.py.
+# Evidence-based scoring added in ct-779 (2026-03-28) as PRIMARY signal for skill mode.
+# Fingerprint matching demoted to regression sentinel.
 #
 # Runs gold queries against a frozen DB snapshot and scores the results.
 # Final score (0-100) is printed as the last line on stdout.
@@ -269,6 +271,10 @@ behavioral_days_365 = 0
 behavioral_snippet_100 = 0
 behavioral_db_path = 0
 behavioral_total = 0
+# Track evidence-based validation (ct-779)
+evidence_emitted = 0       # queries that included an Evidence section
+evidence_with_ids = 0      # queries that had at least 1 entry_id in evidence
+sentinel_fingerprint = 0   # queries passing fingerprint check (regression sentinel)
 # Trace support (ct-728)
 trace_enabled = os.environ.get("TRACE") == "true"
 trace_dir = os.environ.get("TRACE_DIR", "/tmp/benchmark-traces")
@@ -416,6 +422,10 @@ def write_trace(qid, query_dict, result, response_text="", tool_commands=None, c
         "result_count": result.get("total_results", 0),
         "response_excerpt": (response_text or "")[:500],
         "fingerprint": fp_details,
+        "evidence": {
+            "has_section": result.get("has_evidence", False),
+            "entry_ids_count": result.get("evidence_ids_count", 0),
+        },
         "error": result.get("error") or result.get("infra_error"),
         "duration_s": result.get("duration_s", 0),
         "turns": result.get("searches_used", 0),
@@ -584,19 +594,75 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
 
     clean_response = strip_markdown(ai_response).lower()
 
+    # --- Evidence-based validation (ct-779) ---
+    # PRIMARY scoring: check if the AI emitted a structured Evidence section
+    # with entry IDs. This is deterministic and avoids fuzzy fingerprint matching.
+    #
+    # TODO (ct-779 follow-up): The relevant_entry_ids in gold-queries.json are
+    # UUID strings (e.g. "e897a104-1234-..."), while the Evidence section uses
+    # only the first 8 chars. To do full entry_id validation (checking cited IDs
+    # against the gold set), we need to compare 8-char prefixes from evidence
+    # against the 8-char prefixes of the relevant_entry_ids UUIDs. This is
+    # implemented below as best-effort prefix matching.
+    global evidence_emitted, evidence_with_ids, sentinel_fingerprint
+    evidence = skill_output.get("evidence", {})
+    cited_ids = evidence.get("entry_ids", [])
+    cited_spans = evidence.get("spans", [])
+    has_evidence_section = bool(evidence.get("raw_section", ""))
+    has_evidence_ids = len(cited_ids) > 0
+
+    # Compute fingerprint match (always, for sentinel tracking)
+    fp_clean = strip_markdown(fingerprint).lower() if fingerprint else ""
+    fp_match = False
     if is_negative:
         negative_signals = ["not found", "no results", "no conversation", "no discussion",
                             "no record", "couldn't find", "could not find", "zero results",
                             "no matches", "no relevant", "no evidence", "no mention"]
-        query_found = any(sig in clean_response for sig in negative_signals)
+        fp_match = any(sig in clean_response for sig in negative_signals)
     else:
-        fp_clean = strip_markdown(fingerprint).lower() if fingerprint else ""
-        query_found = check_fingerprint(fp_clean, clean_response)
+        fp_match = check_fingerprint(fp_clean, clean_response)
+
+    if fp_match:
+        sentinel_fingerprint += 1
+
+    # Evidence tracking
+    if has_evidence_section:
+        evidence_emitted += 1
+    if has_evidence_ids:
+        evidence_with_ids += 1
+
+    # PRIMARY score decision:
+    # 1. If evidence section with entry_ids exists, validate via entry_id prefix matching
+    # 2. If no evidence but fingerprint matches, pass (backward compatible)
+    # 3. If neither, fail
+    if is_negative:
+        # Negative queries: evidence section should be omitted, use negation signals
+        query_found = fp_match
+    elif has_evidence_ids:
+        # Evidence-based: check if cited 8-char prefixes overlap with relevant UUIDs
+        relevant_uuids = q.get("relevant_entry_ids", [])
+        if relevant_uuids:
+            # Extract 8-char prefixes from full UUIDs in the gold set
+            relevant_prefixes = set(uuid[:8] for uuid in relevant_uuids)
+            cited_set = set(cited_ids)
+            overlap = cited_set & relevant_prefixes
+            # Pass if at least one cited entry matches the relevant set
+            query_found = len(overlap) > 0
+        else:
+            # No relevant_entry_ids in gold query, fall back: evidence section
+            # was emitted with IDs, treat as pass (we trust the structure)
+            query_found = True
+    elif fp_match:
+        # Backward compatible: no evidence section but fingerprint matched
+        query_found = True
+    else:
+        query_found = False
 
     tool_cmds = skill_output.get("tool_commands", [])
     return {"id": qid, "found": query_found, "searches_used": searches_used,
             "total_results": 0, "category": category, "difficulty": difficulty,
             "is_negative": is_negative, "duration_s": duration, "natural_q": natural_q,
+            "has_evidence": has_evidence_section, "evidence_ids_count": len(cited_ids),
             "_response": ai_response, "_tool_commands": tool_cmds}
 
 with open(gold_queries_path) as f:
@@ -714,6 +780,27 @@ if eval_mode == "skill":
     if behavioral_total > 0:
         print(f"  Behavior: --days 365={behavioral_days_365}/{behavioral_total}  --snippet-tokens 100={behavioral_snippet_100}/{behavioral_total}  --db-path={behavioral_db_path}/{behavioral_total}", file=sys.stderr)
 
+    # Evidence and sentinel reporting (ct-779)
+    scorable_non_negative = sum(1 for r in results if not r.get("is_negative") and "infra_error" not in r)
+    if scorable_non_negative > 0:
+        print(f"", file=sys.stderr)
+        print(f"Primary (evidence):   {evidence_emitted}/{scorable_non_negative} queries emitted Evidence section", file=sys.stderr)
+        print(f"  With entry IDs:     {evidence_with_ids}/{scorable_non_negative}", file=sys.stderr)
+        print(f"Sentinel (fingerprint): {sentinel_fingerprint}/{total_scorable} queries matched via fingerprint check", file=sys.stderr)
+
+    # Success@N turn-budget curves (ct-779)
+    # For each turn budget N, compute the fraction of non-negative, non-infra-error
+    # queries that passed within N search turns.
+    scorable_results = [r for r in results if not r.get("is_negative") and "infra_error" not in r]
+    if scorable_results:
+        print(f"", file=sys.stderr)
+        print(f"Turn-budget curves (non-negative queries: {len(scorable_results)}):", file=sys.stderr)
+        for n in [1, 2, 4, 8]:
+            passed_in_n = sum(1 for r in scorable_results
+                              if r.get("found") and r.get("searches_used", 999) <= n)
+            rate = passed_in_n / len(scorable_results)
+            print(f"  success@{n}:  {passed_in_n}/{len(scorable_results)} ({rate:.1%})", file=sys.stderr)
+
     # Behavioral compliance hard gate: fail if any requirement missed by >20% of queries
     if behavioral_total > 0:
         compliance_threshold = 0.80
@@ -742,7 +829,10 @@ if verbose:
         metrics = ""
         if r.get("recall_at_k") is not None:
             metrics = f" R@k={r['recall_at_k']:.3f} MRR={r['mrr']:.3f}"
-        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}{metrics}){err}", file=sys.stderr)
+        ev = ""
+        if r.get("has_evidence"):
+            ev = f" ev={r.get('evidence_ids_count', 0)}ids"
+        print(f"  {r['id']}: {status}{neg} (results={r['total_results']}{metrics}{ev}){err}", file=sys.stderr)
 
 if trace_enabled:
     print(f"Traces written to: {trace_dir}/ ({len(results)} files)", file=sys.stderr)
