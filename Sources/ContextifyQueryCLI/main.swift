@@ -461,9 +461,10 @@ struct ContextifyQueryCLI {
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
         let projectIds = scope.projectIds.isEmpty ? nil : scope.projectIds
 
-        // ct-591: Fetch scope summary for search context
+        // ct-591: Database-wide summary for operator context.
+        // This is intentionally NOT filtered by the active search scope.
         let dbCounts = try service.counts()
-        let scopeSummary: [String: JSONValue] = [
+        let databaseSummary: [String: JSONValue] = [
           "entryCount": .number(Double(dbCounts.entryCount)),
           "projectCount": .number(Double(dbCounts.projectCount)),
           "deviceCount": .number(Double(dbCounts.deviceCount))
@@ -471,7 +472,7 @@ struct ContextifyQueryCLI {
         if !options.jsonOutput {
           let deviceSuffix = dbCounts.deviceCount > 1 ? " (\(dbCounts.deviceCount) devices)" : ""
           let entryStr = NumberFormatter.localizedString(from: NSNumber(value: dbCounts.entryCount), number: .decimal)
-          fputs("Searching \(entryStr) entries across \(dbCounts.projectCount) projects\(deviceSuffix)\n", stderr)
+          fputs("Database: \(entryStr) entries across \(dbCounts.projectCount) projects\(deviceSuffix)\n", stderr)
         }
 
         if options.countOnly {
@@ -489,7 +490,7 @@ struct ContextifyQueryCLI {
 
           var metadataDict: [String: JSONValue] = [
             "totalCount": .number(Double(totalCount)),
-            "scopeSummary": .object(scopeSummary)
+            "databaseSummary": .object(databaseSummary)
           ]
 
           if options.termCounts {
@@ -596,7 +597,7 @@ struct ContextifyQueryCLI {
             "offset": .number(Double(requestedOffset)),
             "hasMore": .bool(hasMore),
             "totalCount": .number(Double(totalCount)),
-            "scopeSummary": .object(scopeSummary)
+            "databaseSummary": .object(databaseSummary)
           ]
 
           // Add per-term counts for OR queries (opt-in via --term-counts)

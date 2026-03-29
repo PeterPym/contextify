@@ -285,7 +285,7 @@ Returns:
     "offset": 0,
     "hasMore": true,
     "totalCount": 847,
-    "scopeSummary": {
+    "databaseSummary": {
       "entryCount": 586093,
       "projectCount": 46,
       "deviceCount": 2
@@ -301,7 +301,7 @@ Returns:
 `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
 
 **Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Other fields:
-- `scopeSummary`: always present, contains `entryCount`, `projectCount`, `deviceCount` showing the total database scope being searched
+- `databaseSummary`: always present, contains `entryCount`, `projectCount`, `deviceCount` for the full database (not filtered by search scope)
 - `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
 - `worktreeExpansion`: worktree group details (when worktree expansion is active, see "Worktree expansion" below)
 - `sourceCounts`: per-project result counts (when worktreeExpansion is present)
