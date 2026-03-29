@@ -1299,7 +1299,14 @@ private func resolveAnchorBasePath(
       if let result = try service.resolveProjectByNameWithPath(project) {
         return result.rootPath
       }
+      // ct-795: terminate cleanly for non-path values with no match
       try throwIfFuzzyMatches(service, project: project)
+      let totalCount = try service.projectCount()
+      throw mapProjectResolutionError(
+        ContextifyQueryService.ProjectResolutionError.notFound(
+          path: project, suggestions: [], totalProjectCount: totalCount
+        )
+      )
     } catch let error as ContextifyQueryService.ProjectResolutionError {
       throw mapProjectResolutionError(error)
     }
@@ -1919,7 +1926,16 @@ private func resolveProjectId(
         if let id = try service.resolveProjectByName(project) {
           return id
         }
+        // ct-795: throwIfFuzzyMatches either throws (suggestions found) or returns.
+        // If it returns, there are zero matches - terminate here instead of
+        // falling through to filesystem resolution for a non-path value.
         try throwIfFuzzyMatches(service, project: project)
+        let totalCount = try service.projectCount()
+        throw mapProjectResolutionError(
+          ContextifyQueryService.ProjectResolutionError.notFound(
+            path: project, suggestions: [], totalProjectCount: totalCount
+          )
+        )
       } catch let error as ContextifyQueryService.ProjectResolutionError {
         throw mapProjectResolutionError(error)
       }
@@ -1952,8 +1968,16 @@ private func resolveProjectScope(
             // Use the project's root path for worktree expansion instead of returning early
             basePath = result.rootPath
           } else {
+            // ct-795: throwIfFuzzyMatches either throws (suggestions found) or returns.
+            // If it returns, there are zero matches - terminate here instead of
+            // falling through to filesystem/worktree resolution for a non-path value.
             try throwIfFuzzyMatches(service, project: project)
-            basePath = project
+            let totalCount = try service.projectCount()
+            throw mapProjectResolutionError(
+              ContextifyQueryService.ProjectResolutionError.notFound(
+                path: project, suggestions: [], totalProjectCount: totalCount
+              )
+            )
           }
         } catch let error as ContextifyQueryService.ProjectResolutionError {
           throw mapProjectResolutionError(error)
