@@ -2101,14 +2101,16 @@ private func mapEntryLookupError(
   switch error {
   case let .notFound(entryId):
     return CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
-  case let .ambiguousId(prefix, candidates):
+  case let .ambiguousId(prefix, candidates, totalMatches):
     let list = candidates.joined(separator: "\n  - ")
+    let truncationNote = totalMatches > candidates.count ? "\n  - ..." : ""
     return CLIError(
       code: "entryAmbiguousId",
-      message: "Ambiguous entry id prefix '\(prefix)' matches \(candidates.count) entries:\n  - \(list)",
+      message: "Ambiguous entry id prefix '\(prefix)' matches \(totalMatches) entries:\n  - \(list)\(truncationNote)",
       exitCode: .entryNotFound,
       details: .object([
         "prefix": .string(prefix),
+        "totalMatches": .number(Double(totalMatches)),
         "candidates": .array(candidates.map { .string($0) }),
       ])
     )

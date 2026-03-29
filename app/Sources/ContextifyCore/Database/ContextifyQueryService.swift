@@ -141,7 +141,7 @@ public struct ContextifyQueryService: Sendable {
 
   public enum EntryLookupError: Error, Sendable {
     case notFound(entryId: String)
-    case ambiguousId(prefix: String, candidates: [String])
+    case ambiguousId(prefix: String, candidates: [String], totalMatches: Int)
   }
 
   /// Resolve a full or prefix entry ID to the actual entry ID.
@@ -162,13 +162,20 @@ public struct ContextifyQueryService: Sendable {
         throw EntryLookupError.notFound(entryId: input)
       }
 
-      // Prefix match using LIKE with escaped input
-      let prefix = input.replacingOccurrences(of: "%", with: "")
-        .replacingOccurrences(of: "_", with: "")
+      // Escape LIKE metacharacters instead of deleting them
+      let escapedPrefix = input
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "%", with: "\\%")
+        .replacingOccurrences(of: "_", with: "\\_")
       let matches = try String.fetchAll(
         db,
-        sql: "SELECT id FROM transcript_entries WHERE id LIKE ? LIMIT 10",
-        arguments: ["\(prefix)%"]
+        sql: """
+          SELECT id FROM transcript_entries
+          WHERE id LIKE ? ESCAPE '\\'
+          ORDER BY id
+          LIMIT 6
+        """,
+        arguments: ["\(escapedPrefix)%"]
       )
 
       switch matches.count {
@@ -177,7 +184,22 @@ public struct ContextifyQueryService: Sendable {
       case 1:
         return matches[0]
       default:
-        throw EntryLookupError.ambiguousId(prefix: input, candidates: Array(matches.prefix(5)))
+        let visible = Array(matches.prefix(5))
+        let totalMatches: Int
+        if matches.count == 6 {
+          totalMatches = try Int.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) FROM transcript_entries WHERE id LIKE ? ESCAPE '\\\\'",
+            arguments: ["\(escapedPrefix)%"]
+          ) ?? visible.count
+        } else {
+          totalMatches = matches.count
+        }
+        throw EntryLookupError.ambiguousId(
+          prefix: input,
+          candidates: visible,
+          totalMatches: totalMatches
+        )
       }
     }
   }

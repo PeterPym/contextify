@@ -749,13 +749,24 @@ final class ContextifyQueryServiceTests: XCTestCase {
 
     let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
     XCTAssertThrowsError(try service.resolveEntryId("abcd1234")) { error in
-      guard case let ContextifyQueryService.EntryLookupError.ambiguousId(prefix, candidates) = error else {
+      guard let lookupError = error as? ContextifyQueryService.EntryLookupError,
+            case let .ambiguousId(prefix, candidates, totalMatches) = lookupError else {
         XCTFail("Expected ambiguousId, got \(error)")
         return
       }
       XCTAssertEqual(prefix, "abcd1234")
       XCTAssertEqual(candidates.count, 2)
+      XCTAssertEqual(totalMatches, 2)
     }
+  }
+
+  func testResolveEntryId_contentWithQuotes() throws {
+    let service = try makeServiceWithEntry(
+      entryId: "abcd1234-5678-9abc-def0-123456789abc",
+      content: "Bob's test with \"quotes\""
+    )
+    let result = try service.entry(entryId: "abcd1234")
+    XCTAssertEqual(result.entry.id, "abcd1234-5678-9abc-def0-123456789abc")
   }
 
   func testEntryCommand_resolvesPrefix() throws {
@@ -785,6 +796,7 @@ final class ContextifyQueryServiceTests: XCTestCase {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("contextify-prefix-test-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: tempDir) }
 
     let dbURL = tempDir.appendingPathComponent("contextify.db")
     let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
@@ -799,10 +811,16 @@ final class ContextifyQueryServiceTests: XCTestCase {
         INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
         VALUES ('t1', 'p1', '/test/t.jsonl', 'claude.code', 0, 1, 0, 1, 'active', 'complete', 0, 0)
       """)
-      try db.execute(sql: """
-        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at)
-        VALUES ('\(entryId)', 't1', 'p1', 'claude.code', 'user', 100, '\(content)', 'sha1', 1, 0, 100, 100)
-      """)
+      try db.execute(
+        sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp,
+            content, content_sha256, display_in_timeline, is_sidechain, created_at, updated_at
+          )
+          VALUES (?, 't1', 'p1', 'claude.code', 'user', 100, ?, 'sha1', 1, 0, 100, 100)
+        """,
+        arguments: [entryId, content]
+      )
     }
 
     return try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
