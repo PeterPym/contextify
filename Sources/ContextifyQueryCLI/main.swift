@@ -1305,6 +1305,7 @@ private func resolveAnchorBasePath(
       if let result = try service.resolveProjectByNameWithPath(project) {
         return result.rootPath
       }
+      try throwIfFuzzyMatches(service, project: project)
     } catch let error as ContextifyQueryService.ProjectResolutionError {
       throw mapProjectResolutionError(error)
     }
@@ -1924,6 +1925,7 @@ private func resolveProjectId(
         if let id = try service.resolveProjectByName(project) {
           return id
         }
+        try throwIfFuzzyMatches(service, project: project)
       } catch let error as ContextifyQueryService.ProjectResolutionError {
         throw mapProjectResolutionError(error)
       }
@@ -1956,6 +1958,7 @@ private func resolveProjectScope(
             // Use the project's root path for worktree expansion instead of returning early
             basePath = result.rootPath
           } else {
+            try throwIfFuzzyMatches(service, project: project)
             basePath = project
           }
         } catch let error as ContextifyQueryService.ProjectResolutionError {
@@ -2049,6 +2052,22 @@ private func resolveProjectScope(
     worktreeGroupDetected: true,
     worktreesConsidered: worktreesConsidered,
     expansionApplied: projectIds.count > 1
+  )
+}
+
+/// ct-725: Throw with fuzzy suggestions if any match the given project name.
+/// Extracts common pattern from resolveProjectId, resolveProjectScope, resolveAnchorBasePath.
+private func throwIfFuzzyMatches(
+  _ service: ContextifyQueryService,
+  project: String
+) throws {
+  let fuzzy = try service.fuzzyProjectSuggestions(project, limit: 5)
+  guard !fuzzy.isEmpty else { return }
+  let totalCount = try service.projectCount()
+  throw ContextifyQueryService.ProjectResolutionError.notFound(
+    path: project,
+    suggestions: fuzzy,
+    totalProjectCount: totalCount
   )
 }
 
