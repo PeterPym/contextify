@@ -549,8 +549,10 @@ def evaluate_skill_query(q, qid, natural_q, fingerprint, budget, category, diffi
     if expected_skill_hash:
         if not hash_match:
             skill_hash_missing += 1
-            if verbose:
-                print(f"  [{qid}] WARN: skill hash missing from output", file=sys.stderr)
+            return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
+                    "category": category, "difficulty": difficulty, "is_negative": is_negative,
+                    "duration_s": duration, "natural_q": natural_q,
+                    "infra_error": f"skill hash missing from output (expected {expected_skill_hash})"}
         elif hash_match.group(1) != expected_skill_hash:
             skill_hash_mismatch += 1
             return {"id": qid, "found": False, "searches_used": 0, "total_results": 0,
@@ -675,6 +677,24 @@ if eval_mode == "skill":
         print(f"  Hash:     verified={skill_hash_verified}/{total}  missing={skill_hash_missing}  mismatch={skill_hash_mismatch}", file=sys.stderr)
     if behavioral_total > 0:
         print(f"  Behavior: --days 365={behavioral_days_365}/{behavioral_total}  --snippet-tokens 100={behavioral_snippet_100}/{behavioral_total}  --db-path={behavioral_db_path}/{behavioral_total}", file=sys.stderr)
+
+    # Behavioral compliance hard gate: fail if any requirement missed by >20% of queries
+    if behavioral_total > 0:
+        compliance_threshold = 0.80
+        behavioral_checks = [
+            ("--days 365", behavioral_days_365, behavioral_total),
+            ("--snippet-tokens 100", behavioral_snippet_100, behavioral_total),
+            ("--db-path", behavioral_db_path, behavioral_total),
+        ]
+        gate_failed = False
+        for name, passed, total_b in behavioral_checks:
+            rate = passed / total_b
+            if rate < compliance_threshold:
+                print(f"ERROR: Behavioral gate failed: {name} compliance {passed}/{total_b} ({rate:.0%}) < {compliance_threshold:.0%}", file=sys.stderr)
+                gate_failed = True
+        if gate_failed:
+            print("0.0")
+            sys.exit(1)
 
 if verbose:
     print("", file=sys.stderr)

@@ -126,9 +126,9 @@
     {
       "id": "gq-13",
       "category": "decision-archaeology",
-      "natural_question": "What decisions have been made on pricing? Did we ever decide how much to charge?",
-      "search_terms": "Justin George personal license Noah Zoschke team cloud",
-      "content_fingerprint": "Justin George (personal license), Noah Zoschke (team/cloud version)",
+      "natural_question": "What were the final approved pricing tiers for Contextify Cloud? How much per seat?",
+      "search_terms": "ct-525 pricing approved Pro annual unlimited devices",
+      "content_fingerprint": "Pricing Decision (ct-525, approved)",
       "efficiency_budget": 3,
       "difficulty": "hard",
       "verified": true
