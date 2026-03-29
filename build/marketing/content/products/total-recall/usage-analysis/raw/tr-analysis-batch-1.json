@@ -1,0 +1,273 @@
+{
+  "---": "YAML front matter embedded as top-level field per project convention",
+  "session_id": "7167f5f7-2eb0-47d9-92b7-3cd37532bdf5",
+  "date": "2026-03-25",
+  "project": "contextify-wb4",
+  "branch": "main-wb4",
+  "status": "ready-for-review",
+  "invocations": [
+    {
+      "id": "inv-001",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-consulting-openai/5dd20285-778a-44c3-a50c-38f9ae7c7d92.jsonl",
+      "session_id": "5dd20285-778a-44c3-a50c-38f9ae7c7d92",
+      "project": "a consulting project",
+      "timestamp": "2026-03-03T02:45:45.188Z",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "do we have anything in /total-recall about researching quality engineering and renaming quality assurance QA QE?",
+        "underlying_need": "User wants to know if they have prior conversation history on the industry topic of QA-to-QE title renaming/rebranding - checking for prior research or decisions on this topic"
+      },
+      "query": {
+        "raw_args": "quality engineering QA QE rename research",
+        "searches_constructed": [
+          "\"quality engineering\" OR \"quality assurance\" OR QE OR QA OR rename* OR rebrand*  --project . --days 365 --limit 15",
+          "\"quality engineer\" OR \"QE role\" OR \"QA to QE\" OR \"quality engineer*\" OR \"rename QA\" OR \"rebrand QA\" OR \"QA engineer\" --days 365 --limit 10",
+          "\"quality engineering\" OR \"QE\" OR \"QA role\" OR \"quality engineer title\" --days 365 --limit 10",
+          "\"quality engineer\" OR \"QA to QE\" OR \"testing role\" OR \"rename.*QA\" OR \"rebrand.*quality\" --days 365 --count-only"
+        ],
+        "strategy": "Lookup then count-only; multiple rounds with increasingly precise terms; broadened from project-scoped to all-projects"
+      },
+      "results": {
+        "success": true,
+        "count": 0,
+        "quality": "negative_proof - confirmed no relevant history exists",
+        "notes": "Multiple false positives were found and correctly identified: regex flag '-qE' in shell scripts was matching 'QE', and project-specific QA testing activity (test scripts, CI work) was matching 'QA'. All false positives were recognized and discarded. Final count-only query returned totalCount=0.",
+        "drilled_into_context": true
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + plain text negative result with explanation of false positives encountered",
+        "key_finding": "No past conversations found on QA-to-QE professional rename topic. All hits were false positives."
+      },
+      "aftermath": {
+        "user_acted": "Session ended - no further messages after delivery",
+        "impact": "User now knows this topic has not been previously discussed"
+      },
+      "classification": ["knowledge_search", "negative_proof"]
+    },
+    {
+      "id": "inv-002",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-personal-administration-wb1/76e3d276-afb1-4ea9-8132-46621d236fd8.jsonl",
+      "session_id": "76e3d276-afb1-4ea9-8132-46621d236fd8",
+      "project": "a personal administration project",
+      "timestamp": "2026-03-25T21:47:20.635Z",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "use /total-recall",
+        "underlying_need": "User asked about an active project for 'the fulton house' but no local files or tasks were found. The AI had already searched locally and found nothing. User directed TR to search conversation history to surface what they knew about the topic.",
+        "context_before_invocation": "AI had grepped codebase and searched bloon tasks - both returned nothing for 'fulton'. AI concluded 'No references to Fulton anywhere' and asked user for context. User then triggered /total-recall."
+      },
+      "query": {
+        "raw_args": "fulton house",
+        "searches_constructed": [
+          "fulton OR \"fulton house\" --project . --days 365 --limit 10 --snippet-tokens 50"
+        ],
+        "strategy": "Lookup, single broad search scoped to project then context retrieval on the anchor hit"
+      },
+      "results": {
+        "success": true,
+        "count": 1,
+        "quality": "hit - found reference in prior care-coordination session from Feb 2026",
+        "notes": "Found anchor entry 0dcf4b0f-c46f-46c3-9ebe-49729d35d3ae. Context retrieval revealed the Fulton House was a B&B belonging to user's mother, with email stay@thefultonhouse.com managed via Think Reservations + Google Workspace, credentials saved in 1Password. Care coordination doc had existed in inbox but was no longer present in current worktree.",
+        "drilled_into_context": true
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + bullet summary of discovered facts about the property",
+        "key_finding": "The Fulton House is user's mother's B&B; email stay@thefultonhouse.com, Google Workspace managed by Think Reservations, referenced in a care coordination doc that no longer exists in this worktree. Seed script has the household under Georgia Wilcox."
+      },
+      "aftermath": {
+        "user_acted": true,
+        "impact": "User disclosed that Rex (her partner) had passed away and they needed to take over B&B administration. This triggered a major new project proposal. The TR results directly informed the context used by two parallel research agents (a general codebase agent and a contextify-researcher agent) to build the Fulton House project bootstrapping proposal.",
+        "follow_on": "Two async agents launched: one to search codebase for project scaffolding patterns, one to do deeper Contextify research on Fulton House. TR results formed the seed knowledge for both."
+      },
+      "classification": ["cross_session_continuity", "session_handoff", "knowledge_search"]
+    },
+    {
+      "id": "inv-003",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-personal-administration-wb2/35fdba7b-04c9-4987-94d7-d63144b7e143.jsonl",
+      "session_id": "35fdba7b-04c9-4987-94d7-d63144b7e143",
+      "project": "a personal administration project",
+      "timestamp": "2026-03-25T21:21:19.577Z",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "Do you have the actual text i encountered on the web when trying to file the franchise tax? use /total-recall if needed",
+        "underlying_need": "User was drafting a message to a business partner about inability to pay Delaware franchise tax. They needed to quote the exact error/status text they had seen on the Delaware state website in a prior session. The AI did not have this in current context.",
+        "context_before_invocation": "Prior turns discussed that a Delaware entity was showing as inactive, preventing online payment. User had hit '0' to bypass phone tree but couldn't reach the office. Was composing a message to business partner."
+      },
+      "query": {
+        "raw_args": "perch innovations delaware franchise tax website filing problem",
+        "searches_constructed": [
+          "delaware franchise tax website --project . --days 90 --limit 10 --snippet-tokens 50",
+          "delaware corp pay* OR franchise OR annual report OR file number --project . --days 365 --limit 20 --snippet-tokens 50",
+          "corp.delaware.gov OR \"file number\" OR \"voided\" OR \"inactive\" OR \"not in good standing\" OR \"revoked\" --project . --days 365 --limit 20 --snippet-tokens 50"
+        ],
+        "strategy": "Lookup with progressively broader terms; parallel searches on last two; context retrieval on two specific entries"
+      },
+      "results": {
+        "success": true,
+        "count": "multiple hits across searches",
+        "quality": "excellent - found exact website text the user had seen in a prior session",
+        "notes": "First search only found current session. Second/third broader searches found entries. Context retrieval on entries 709edf79 and f2cbb021 surfaced the exact Delaware website text showing entity as 'inactive', the table of years needing reports, the file number 5759110, and the quarterly payment amounts.",
+        "drilled_into_context": true
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + reconstructed Delaware website UI text with table format (Entity is inactive message, tax year / action table, quarterly tax payment table)",
+        "key_finding": "Entity file 5759110 shown as inactive on Delaware website; had two outstanding reports (2024 amended, 2025 new); $172,758.28 shown using wrong calculation method"
+      },
+      "aftermath": {
+        "user_acted": true,
+        "impact": "User used the retrieved text to complete a message to their business partner (Andrey) explaining the situation with the franchise tax. The exact website language was quoted in the draft message. Directly enabled task completion.",
+        "follow_on": "User's message draft was completed using the retrieved text"
+      },
+      "classification": ["decision_recall", "incident_forensics", "implementation_reference"]
+    },
+    {
+      "id": "inv-004",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-personal-administration-wb2/b23057f0-98d3-4564-897b-d2395d6e8574.jsonl",
+      "session_id": "b23057f0-98d3-4564-897b-d2395d6e8574",
+      "project": "a personal administration project",
+      "timestamp": "2026-03-25T21:47:XX.XXXZ",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "There was some other tree type. I think that was not on the list but might've been a good fit. Do you remember what that was or can you figure it out if you don't have it written down using /total-recall?",
+        "underlying_need": "User was closing out tree-removal tasks after a silver birch was removed. They remembered discussing an alternative (off-approved-list) tree species in a prior session but couldn't recall the name. AI first checked the inbox document and found a mention of Paperbark Maple, then invoked TR to find the full discussion.",
+        "context_before_invocation": "AI had found a mention of 'Paperbark Maple' on line 267 of inbox/2025-12-tree-removal.md and noted 'you said it wasn't on the approved list - let me check Total Recall for more detail.'"
+      },
+      "query": {
+        "raw_args": "tree replacement species birch maple alternative approved list",
+        "searches_constructed": [
+          "\"Paperbark Maple\" OR \"paperbark\" OR \"replacement tree\" OR \"approved list\" OR \"street tree list\" OR \"alternative species\" --project . --days 90 --limit 10 --snippet-tokens 50"
+        ],
+        "strategy": "Lookup; targeted phrase search; context retrieval on anchor entry bdbbdaa5"
+      },
+      "results": {
+        "success": true,
+        "count": "multiple hits",
+        "quality": "good - found the full original discussion",
+        "notes": "Primary result returned was the current session's own mention of Paperbark Maple (high scoring self-reference). Context retrieval on entry bdbbdaa5 found the original discussion from a prior session explaining why Paperbark Maple was appealing and not on the approved list, plus info about the exception request process.",
+        "drilled_into_context": true
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + bullet summary of what was discussed about Paperbark Maple (Acer griseum)",
+        "key_finding": "The tree was Paperbark Maple (Acer griseum) - cinnamon peeling bark, slow growing, not on Portland's approved street tree list but city allows exceptions by asking Tree Inspector. Also found discussion of other off-list options: Stewartia, Snakebark Maple, White-barked Himalayan Birch."
+      },
+      "aftermath": {
+        "user_acted": true,
+        "impact": "User continued asking follow-up questions (is it genetically modified? what about branded trees like Dura-Heat?). These follow-up questions were answered from the same conversation context now in scope. The Paperbark Maple identity was confirmed and the Heritage River Birch cultivar/trademark context was retrieved.",
+        "follow_on": "User asked two follow-up questions in same session, both answered from prior TR context. No new TR invocations needed."
+      },
+      "classification": ["decision_recall", "cross_session_continuity", "implementation_reference"]
+    },
+    {
+      "id": "inv-005",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-personal-administration/e283b278-d0bb-4a02-8546-c956cedeef16.jsonl",
+      "session_id": "e283b278-d0bb-4a02-8546-c956cedeef16",
+      "project": "a personal administration project",
+      "timestamp": "2026-03-21T04:02:37.801Z",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "use /total-recall to figure it out",
+        "underlying_need": "A pre-commit git hook had been discovered in the administration repo that blocked certain paths (including docs/) from being committed. The hook appeared to have been written by a previous AI session. The user wanted to know when it was created and which session created it. AI had already stated it could not find this in git history (hook was in .git/hooks/ which is untracked).",
+        "context_before_invocation": "AI had found the hook timestamp and noted it was likely set up by 'a prior Claude session' but couldn't be certain. The hook blocked docs/, data/, processed/, inbox/, and archive/ directories. The question was why docs/ was included."
+      },
+      "query": {
+        "raw_args": "When was the pre-commit hook with BLOCKED_PATHS added to the administration project? Which session created it?",
+        "searches_constructed": [
+          "BLOCKED_PATHS pre-commit hook administration --project . --days 365 --limit 10 --snippet-tokens 60",
+          "pre-commit hook --project . --days 365 --limit 10 --snippet-tokens 60"
+        ],
+        "strategy": "Lookup; two searches - one specific (BLOCKED_PATHS), one broader (pre-commit hook)"
+      },
+      "results": {
+        "success": true,
+        "count": "hit found",
+        "quality": "good - found the original session that created the hook and the reasoning behind it",
+        "notes": "Found transcript CC2EFA26 from approximately February 16, 2026. The key snippet explained why docs/ was blocked: at the time there was a plan to push the repo to GitHub, so everything was blocked preemptively. The hook comment 'Catches both normal adds and force-adds' was identified as an AI-written comment.",
+        "drilled_into_context": false
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + explanation of origin with quoted snippet from the original session",
+        "key_finding": "Hook created in transcript CC2EFA26 around Feb 16, 2026. The docs/ block was a preemptive privacy measure from when there was a plan to push to GitHub. At that time, stub .gitkeep directories were being created to show structure on GitHub, so docs/ was treated as potentially public."
+      },
+      "aftermath": {
+        "user_acted": true,
+        "impact": "The explanation resolved the mystery and informed subsequent discussion about whether inbox/ should be committed (the same rationale applied). User asked follow-up 'why dont we commit to inbox again?' and 'i thought we did' - git log then confirmed inbox/ files had been committed in an earlier commit (c455003: 'Add GitHub guardrails'). TR result directly explained a design decision from a prior session.",
+        "follow_on": "Discussion of git history for inbox/ files, confirming they had in fact been committed before the hook was added"
+      },
+      "classification": ["debugging_history", "decision_recall", "incident_forensics"]
+    },
+    {
+      "id": "inv-006",
+      "file": "/Users/rob/.claude/projects/-Users-rob-code-personal-administration/fba286a1-6783-43a2-a935-b3b831d7004d.jsonl",
+      "session_id": "fba286a1-6783-43a2-a935-b3b831d7004d",
+      "project": "a personal administration project",
+      "timestamp": "2026-03-02T05:40:52.555Z",
+      "trigger": {
+        "initiator": "user",
+        "prompt": "use /total-recall to look into my check on this",
+        "underlying_need": "User had a bloon task (ad-28) to pay Delaware franchise tax for a C-corp. Task notes said ~$225-450. User wanted to check if they had already made progress on this or if there was more context from prior sessions about what to expect on the payment portal.",
+        "context_before_invocation": "AI had just shown the bloon task notes: 'Pay at corp.delaware.gov/paytaxes/. ~$225-450. Rob handling, will send Andrey confirmation.' AI said it was 'straightforward - just the one payment portal'. User then said to use TR 'to look into my check on this', implying they wanted to verify their prior investigation."
+      },
+      "query": {
+        "raw_args": "Delaware franchise tax Perch Innovations ad-28 payment",
+        "searches_constructed": [
+          "\"Delaware franchise\" OR \"franchise tax\" OR \"DE franchise\" --project . --days 180 --limit 10 --snippet-tokens 60"
+        ],
+        "strategy": "Lookup; targeted phrase with OR variants; context retrieval on most relevant hit (af01c19b)"
+      },
+      "results": {
+        "success": true,
+        "count": "multiple hits",
+        "quality": "excellent - found a detailed prior investigation that revealed the situation was far more complex than the task notes suggested",
+        "notes": "Context retrieval on entry af01c19b revealed: entity was inactive (voided good standing), $172,758.28 shown on website (wrong authorized shares method, real amount ~$450 using Assumed Par Value Capital Method), 2024 annual report needed amending, 2025 report also due. The bloon task note was incomplete/misleading relative to what had actually been discovered.",
+        "drilled_into_context": true
+      },
+      "delivery": {
+        "format": "Contextify Total Recall header + numbered list of complications discovered in prior session",
+        "key_finding": "The payment was not straightforward: entity was inactive; online payment alone would not restore good standing; absurd $172k amount shown from wrong calculation method; 2024 amended report + 2025 report both needed; prior discussion of possible wind-down of company."
+      },
+      "aftermath": {
+        "user_acted": true,
+        "impact": "AI reframed the situation completely - the task was much more complex than task notes indicated. User immediately pivoted to asking what they needed to raise with their accountant (Andrey). AI provided a structured list of 4 questions to ask Andrey about reinstatement, amended report, correct calculation method, and wind-down vs. reinstate decision. TR directly prevented user from attempting a naive portal payment that would have failed.",
+        "follow_on": "User drafted question list for accountant. Session ended with clear action items."
+      },
+      "classification": ["decision_recall", "implementation_reference", "debugging_history"]
+    }
+  ],
+  "summary_statistics": {
+    "total_invocations": 6,
+    "user_initiated": 6,
+    "ai_initiated": 0,
+    "successful_searches": 5,
+    "negative_proofs": 1,
+    "average_searches_per_invocation": 2.3,
+    "context_retrieval_used": 5,
+    "classifications_frequency": {
+      "decision_recall": 4,
+      "cross_session_continuity": 2,
+      "implementation_reference": 3,
+      "knowledge_search": 2,
+      "negative_proof": 1,
+      "debugging_history": 2,
+      "incident_forensics": 2,
+      "session_handoff": 1
+    }
+  },
+  "patterns_observed": [
+    "All 6 invocations were user-initiated, typically with 'use /total-recall' as a short imperative command",
+    "TR was invoked when local search (grep, glob, bloon) had already failed or returned insufficient context - TR was the escalation path, not the first resort",
+    "In 4 of 6 cases the AI recognized context was missing BEFORE the user asked for TR, but the user made the explicit call",
+    "Context retrieval (contextify context) was used after nearly every search to get surrounding conversation - the snippet alone was rarely sufficient",
+    "Multiple searches per invocation was common (avg 2.3) due to false positives and need to broaden terms",
+    "False positives from technical content (regex flags like -qE matching 'QE', shell scripts matching domain terms) were a recurring issue requiring multiple refinement rounds",
+    "In inv-006, TR revealed that a task-tracker note was dangerously incomplete compared to what had actually been discovered in prior sessions - TR caught a potential costly mistake",
+    "In inv-002, the TR result directly triggered a major life-event disclosure (death in family) and a new project proposal - TR result served as the seed context for that pivot",
+    "The 'Multiple Contextify installs detected' warning appeared in every invocation - a consistent UX noise issue across all sessions"
+  ],
+  "anomalies": [
+    "inv-002: The initial TR args were 'fulton house' (2 words) but prior local search found nothing - TR was invoked without specific args, relying on the skill to infer the search terms. The skill correctly constructed the search.",
+    "inv-004: First search result was the current session's own entry (self-reference false positive) due to the AI's prior spoken mention of 'Paperbark Maple' being indexed",
+    "inv-005: The AI framed the TR query as a question ('When was...? Which session created it?') rather than keywords - the skill still ran keyword searches correctly",
+    "inv-003: Two searches were run in parallel (both at line 38) - an efficiency pattern not seen in other invocations",
+    "inv-001: 4 searches were needed due to repeated false positives; most invocations needed 2-3"
+  ]
+}

@@ -112,3 +112,6 @@ scripts/performance/results/*
 !scripts/performance/results/.gitignore
 !scripts/performance/results/.gitkeep
 Sources/ContextifyIngestionCLI/Version.generated.swift
+scripts/benchmark/fixtures/
+scripts/benchmark/runs/*
+!scripts/benchmark/runs/.gitkeep

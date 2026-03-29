@@ -1539,9 +1539,12 @@ public struct ContextifyQueryService: Sendable {
     afterEntryId: String? = nil
   ) throws -> Int {
     try pool.read { db in
+      // v37: JOIN projects to exclude cloud_sync_enabled = 0
       var sql = """
         SELECT COUNT(*) FROM transcript_entries e
+        JOIN projects p ON p.id = e.project_id
         WHERE e.display_in_timeline = 1
+          AND p.cloud_sync_enabled = 1
         """
       var args: [DatabaseValueConvertible] = []
       if let afterTimestamp, let afterEntryId {
@@ -1572,13 +1575,16 @@ public struct ContextifyQueryService: Sendable {
   ) throws -> CloudPushExport {
     try pool.read { db in
       // Get entries (ordered by timestamp, id for stable keyset paging)
+      // v37: JOIN projects to exclude cloud_sync_enabled = 0
       var sql = """
         SELECT e.id, e.transcript_id, e.project_id, e.session_id,
                e.provider, e.kind, e.timestamp, e.content, e.content_sha256,
                e.display_in_timeline, e.git_branch, e.git_commit,
                e.cwd, e.created_at, e.updated_at
         FROM transcript_entries e
+        JOIN projects p ON p.id = e.project_id
         WHERE e.display_in_timeline = 1
+          AND p.cloud_sync_enabled = 1
         """
       var args: [DatabaseValueConvertible] = []
       if (afterTimestamp == nil) != (afterEntryId == nil) {
@@ -1686,6 +1692,76 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Project Cloud Sync Settings
+
+  /// List all projects with their cloud sync enabled status.
+  public func listProjectsCloudSyncStatus() throws -> [(id: String, name: String?, rootPath: String, cloudSyncEnabled: Bool)] {
+    try pool.read { db in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT id, name, root_path, cloud_sync_enabled
+        FROM projects
+        WHERE hidden = 0
+        ORDER BY display_order ASC, name ASC
+      """)
+      return rows.map { row in
+        (
+          id: row["id"] as String,
+          name: row["name"] as String?,
+          rootPath: row["root_path"] as String,
+          cloudSyncEnabled: (row["cloud_sync_enabled"] as Int) != 0
+        )
+      }
+    }
+  }
+
+  /// Error when CLI match is ambiguous
+  public enum ProjectSyncMatchError: Error, LocalizedError, Sendable {
+    case ambiguous(query: String, candidates: [String])
+    public var errorDescription: String? {
+      switch self {
+      case .ambiguous(let query, let candidates):
+        return "Ambiguous match for \"\(query)\": \(candidates.joined(separator: ", ")). Use the full path to disambiguate."
+      }
+    }
+  }
+
+  /// Set cloud_sync_enabled for a project by name (match on name or root_path).
+  /// Fails closed on ambiguity: throws if multiple projects match.
+  public func setProjectCloudSyncEnabled(projectMatch: String, enabled: Bool) throws -> String? {
+    try pool.write { db in
+      let now = Int(Date().timeIntervalSince1970)
+      // Escape LIKE wildcards in user input
+      let escaped = projectMatch
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "%", with: "\\%")
+        .replacingOccurrences(of: "_", with: "\\_")
+      // Fetch all matches, prioritizing exact matches
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT id, name, root_path FROM projects
+        WHERE hidden = 0
+          AND (name = ? OR root_path = ? OR root_path LIKE ? ESCAPE '\\')
+        ORDER BY
+          CASE WHEN name = ? OR root_path = ? THEN 0 ELSE 1 END,
+          root_path ASC
+      """, arguments: [projectMatch, projectMatch, "%/\(escaped)", projectMatch, projectMatch])
+
+      guard !rows.isEmpty else { return nil }
+      guard rows.count == 1 else {
+        let candidates = rows.map { ($0["name"] as String?) ?? ($0["root_path"] as String) }
+        throw ProjectSyncMatchError.ambiguous(query: projectMatch, candidates: candidates)
+      }
+
+      let row = rows[0]
+      let projectId: String = row["id"]
+      let projectName: String? = row["name"]
+      try db.execute(
+        sql: "UPDATE projects SET cloud_sync_enabled = ?, updated_at = ? WHERE id = ?",
+        arguments: [enabled, now, projectId]
+      )
+      return projectName ?? row["root_path"]
+    }
+  }
+
   // MARK: - Cloud Pull Import
 
   /// Import data received from a cloud pull response into the local database.
@@ -1777,6 +1853,68 @@ public struct ContextifyQueryService: Sendable {
           arguments: [serverId])
       }
 
+      // v37: Build pull exclusion set once, using grouping cascade that doesn't
+      // depend on repo_group_key backfill (which only runs from Settings UI).
+      // Uses: repo_group_key > group_id > name pattern (-wb\d+ suffix stripping).
+      // A project is excluded only when ALL members of its logical group are excluded.
+      let localProjectRows = try Row.fetchAll(db, sql: """
+        SELECT id, name, root_path, group_id, repo_group_key, cloud_sync_enabled
+        FROM projects WHERE hidden = 0 AND is_orphaned = 0
+      """)
+
+      func effectivePullGroupKey(id: String, name: String?, rootPath: String, groupId: String?, repoGroupKey: String?) -> String? {
+        if let key = repoGroupKey, !key.isEmpty { return "repo:\(key)" }
+        if let gid = groupId, !gid.isEmpty { return "tab:\(gid)" }
+        let display = name ?? URL(fileURLWithPath: rootPath).lastPathComponent
+        if let range = display.range(of: #"-wb\d+$"#, options: .regularExpression) {
+          return "name:\(display[..<range.lowerBound])"
+        }
+        return nil
+      }
+
+      // Also map base names to group keys so base projects group with their worktrees
+      var nameToKey: [String: String] = [:]
+      for row in localProjectRows {
+        let name: String = (row["name"] as String?) ?? URL(fileURLWithPath: row["root_path"] as String).lastPathComponent
+        if let range = name.range(of: #"-wb\d+$"#, options: .regularExpression) {
+          let baseName = String(name[..<range.lowerBound])
+          let key = effectivePullGroupKey(
+            id: row["id"], name: row["name"], rootPath: row["root_path"],
+            groupId: row["group_id"], repoGroupKey: row["repo_group_key"]
+          )
+          if let key { nameToKey[baseName] = key }
+        }
+      }
+
+      var enabledGroupCounts: [String: Int] = [:]
+      for row in localProjectRows {
+        let enabled: Int = row["cloud_sync_enabled"]
+        guard enabled != 0 else { continue }
+        let key = effectivePullGroupKey(
+          id: row["id"], name: row["name"], rootPath: row["root_path"],
+          groupId: row["group_id"], repoGroupKey: row["repo_group_key"]
+        ) ?? {
+          let name: String = (row["name"] as String?) ?? URL(fileURLWithPath: row["root_path"] as String).lastPathComponent
+          return nameToKey[name]
+        }()
+        if let key { enabledGroupCounts[key, default: 0] += 1 }
+      }
+
+      let excludedProjectIds: Set<String> = Set(localProjectRows.compactMap { row -> String? in
+        let enabled: Int = row["cloud_sync_enabled"]
+        guard enabled == 0 else { return nil }
+        let id: String = row["id"]
+        let key = effectivePullGroupKey(
+          id: id, name: row["name"], rootPath: row["root_path"],
+          groupId: row["group_id"], repoGroupKey: row["repo_group_key"]
+        ) ?? {
+          let name: String = (row["name"] as String?) ?? URL(fileURLWithPath: row["root_path"] as String).lastPathComponent
+          return nameToKey[name]
+        }()
+        guard let key else { return id }  // No group: per-project exclusion
+        return (enabledGroupCounts[key] ?? 0) == 0 ? id : nil  // All excluded: exclude
+      })
+
       // Upsert transcripts
       for tx in transcripts {
         guard let id = tx["id"] as? String,
@@ -1788,6 +1926,11 @@ public struct ContextifyQueryService: Sendable {
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping transcript \(id, privacy: .public): no local project for server project_id=\(rawProjectId, privacy: .public)")
           #endif
+          continue
+        }
+        // v37: Skip transcripts for projects excluded from pull
+        if excludedProjectIds.contains(projectId) {
+          skipped += 1
           continue
         }
         let exists = try Int.fetchOne(db, sql:
@@ -1840,6 +1983,12 @@ public struct ContextifyQueryService: Sendable {
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
             .warning("Skipping entry \(id, privacy: .public): no local transcript for transcript_id=\(transcriptId, privacy: .public)")
           #endif
+          skipped += 1
+          continue
+        }
+
+        // v37: Skip entries for projects excluded from pull on this device
+        if excludedProjectIds.contains(projectId) {
           skipped += 1
           continue
         }
