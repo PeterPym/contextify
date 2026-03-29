@@ -189,7 +189,7 @@ public struct ContextifyQueryService: Sendable {
         if matches.count == 6 {
           totalMatches = try Int.fetchOne(
             db,
-            sql: "SELECT COUNT(*) FROM transcript_entries WHERE id LIKE ? ESCAPE '\\\\'",
+            sql: "SELECT COUNT(*) FROM transcript_entries WHERE id LIKE ? ESCAPE '\\'",
             arguments: ["\(escapedPrefix)%"]
           ) ?? visible.count
         } else {
