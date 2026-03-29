@@ -564,7 +564,7 @@ These flags provide fine-grained control over search and output behavior.
 
 | Flag | Subcommand | Description |
 |------|-----------|-------------|
-| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `system`. Comma-separated. Example: `--kinds user,assistant` |
+| `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `summary`, `system`. Comma-separated. Example: `--kinds user,assistant` |
 | `--since <ts\|iso>` | global | Time range start (inclusive). Accepts Unix timestamp, ISO 8601, or `YYYY-MM-DD`. Cannot combine with `--days`. |
 | `--until <ts\|iso>` | global | Time range end (inclusive). Same formats as `--since`. Cannot combine with `--days`. `--since` must be <= `--until`. |
 | `--include-hidden` | global | Include non-timeline entries (system messages, hidden entries). By default only `display_in_timeline=1` entries are returned. |
