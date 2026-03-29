@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "created": "2026-03-27",
-  "source": "production DB snapshot",
-  "entries": 573120,
+  "created": "2026-03-28",
+  "source": "production DB snapshot (porter stemming, migration v38)",
+  "entries": 581779,
   "projects": 81,
-  "transcripts": 7147,
+  "transcripts": 7186,
   "size_bytes": 1911091200,
-  "hash_prefix": "5e82a3ba44745c48",
+  "hash_prefix": "722b3b989ddbb778",
   "path_relative_to_home": "Library/Application Support/Contextify/benchmark/contextify-benchmark-v1.db",
   "notes": "Frozen snapshot for Total Recall benchmark. Never written to during evaluation. Each benchmark run should copy this to a temp location and use --db-path to point at the copy."
 }
