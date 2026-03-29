@@ -123,8 +123,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             let timestamp = parseISO8601(timestampStr) else {
         throw ParserError.skipEntry
       }
-      // Generate stable UUID from timestamp and content for queue-operation entries
-      let queueUuid = "queue-\(abs(timestampStr.hashValue))-\(abs(queueContent.hashValue))"
+      // Generate deterministic ID from timestamp and content using SHA256 (not hashValue, which is randomized per process)
+      let queueHash = SHA256Utils.hash("\(timestampStr)|\(queueContent)")
+      let queueUuid = "queue-\(queueHash.prefix(16))"
       let contentSha256 = SHA256Utils.hash(queueContent)
       let providerSessionId = json["sessionId"] as? String ?? sessionId
 
