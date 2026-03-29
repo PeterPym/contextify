@@ -2,36 +2,45 @@
 
 **Target URL:** contextify.sh/cloud/
 **Bloon task:** ct-390
-**Status:** Live, v3 polish committed (branch ct-390-v3-polish)
+**Status:** Live, hybrid version promoted to index.html
 
-## Current page structure
+## Current page structure (hybrid, review-informed)
 
-1. **Hero** - "I know I figured this out already." + terminal showing Total Recall query
-2. **Problem** - "Claude Code and Codex conversations are trapped on individual machines" + fenced-devices illustration
-3. **Individual value** - "One unified context across every machine" (3 cards: survives everything, search from any machine, Mac + Linux)
-4. **Total Recall** - Standalone section with 3 real proof points (TR-2, TR-3, TR-4)
-5. **Teams** - Brief teaser paragraph with pricing link (slimmed from 3 cards in v2)
-6. **Trust/Privacy** - 7 items including per-project sync control
-7. **FAQ** - 6 questions (Dropbox comparison, offline use, what syncs, per-project exclusion, cancellation, self-hosted)
-8. **CTA** - Download + pricing
+Based on external marketing review analyzing Vercel, Supabase, Linear, Raycast, 1Password, Warp patterns, and Evil Martians' 100-page dev tool study. Structure: scannable first, evidence second, trust third.
+
+1. **Hero** - "I know I figured this out already." (rated 9/10 by reviewer) + subhead naming /total-recall skill + terminal mockup. CTA: Download for Mac + See Plans. Reassurance line: "Free tier available. Opt-in sync. Per-project control. Mac + Linux."
+2. **Before/After strip** - 3 cloud-specific rows (switch machines, laptop dies, need context remotely). Mobile: shows positive outcomes only.
+3. **Value cards** - 3 cards: Survives everything, Past sessions become context, Mac + Linux one history
+4. **Production proof cases** - 3 real stories with "89% returned actionable information" stat. Bug that kept coming back (TR-3), schema work nobody could find (Case 9), pricing decision that never happened (Case 8).
+5. **How it works** - 3 steps: Install, Enable Cloud Sync, Search from anywhere
+6. **Privacy + FAQ** - Layered trust: 4-item compact grid (off by default, per-project control, encrypted, no lock-in) + 4 FAQ items (Dropbox, offline, what syncs, project exclusion)
+7. **Teams teaser** - Compact paragraph with pricing link
+8. **Final CTA** - Download for Mac + Install on Linux + See Pricing
 
 ## Content sources
 
 - `content/products/cloud-sync/value-props.md` - value propositions
+- `content/products/cloud-sync/reviews/2026-03-26-chatgpt-marketing-review.md` - external review
 - `content/products/total-recall/proof-points.md` - TR-1 through TR-12
-- ct-390 attachment `388d619e` - full product brief with brand voice, audience segments
-- ct-390 attachment `1b055884` - ChatGPT review of v2 (4 findings, all implemented)
+- `content/products/total-recall/usage-analysis/marketing-cases.md` - 15 marketing-ready cases
+- ct-390 attachment `388d619e` - product brief with brand voice, audience segments
+
+## Variant pages (for reference)
+
+Three earlier approaches preserved at `website/cloud/variants/`:
+- `story-led.html` - narrative-first, real production stories
+- `before-after.html` - scannable comparison grid
+- `hybrid.html` - the version promoted to index.html (kept as reference copy)
 
 ## Open work
 
-- **Total Recall headline:** current "Search past AI sessions from your current one" undersells it. Needs refresh, possibly after /total-recall/ page exists and this section becomes a bridge to it.
-- **Architecture diagram:** product brief called for a proper generated image (not HTML/CSS). Not yet done.
+- **Architecture diagram:** product brief called for a generated image. Not yet done. Reviewer recommended real terminal mockup + browser screenshot over diagrams.
 - **Teams section:** slimmed to teaser, will link to /teams/ page when ct-665 creates it.
-- **Image: connected devices:** fenced-devices illustration exists, a "connected" version (fences removed, devices linked) was discussed for the value section.
+- **Total Recall dedicated page:** ct-669 would allow the cloud page's proof section to link deeper.
 
 ## Design notes
 
-- Page uses site-wide Bootstrap 5.3 + CSS tokens from styles.css
-- Dark mode works via `data-bs-theme` detection
-- No Bootstrap JS loaded (no interactive components)
-- Accessibility: skip link, `<main>` landmark, `:focus-visible` on all CTAs, `aria-hidden` on decorative icons
+- Bootstrap 5.3 + CSS tokens from styles.css, dark mode via `data-bs-theme`
+- No Bootstrap JS (no interactive components)
+- Accessibility: skip link, `<main>` landmark, `:focus-visible` on CTAs, `aria-hidden` on decorative icons
+- Mobile responsive: before/after grid hides headers and "without" column, shows positive outcomes only
