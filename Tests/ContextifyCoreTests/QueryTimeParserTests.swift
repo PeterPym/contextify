@@ -33,5 +33,30 @@ final class QueryTimeParserTests: XCTestCase {
       XCTAssertTrue(String(describing: error).contains("invalidValue"))
     }
   }
+
+  // MARK: - ct-101: --hours flag
+
+  func testParseSinceUntil_hoursComputesSince() throws {
+    let now = Date(timeIntervalSince1970: 100_000)
+    let range = try QueryTimeParser.parseSinceUntil(since: nil, until: nil, days: nil, hours: 6, now: now)
+    XCTAssertEqual(range.sinceTimestamp, 100_000 - 6 * 3600)
+    XCTAssertNil(range.untilTimestamp)
+  }
+
+  func testParseSinceUntil_rejectsHoursWithDays() {
+    XCTAssertThrowsError(
+      try QueryTimeParser.parseSinceUntil(since: nil, until: nil, days: 1, hours: 6)
+    ) { error in
+      XCTAssertTrue(String(describing: error).contains("invalidValue"))
+    }
+  }
+
+  func testParseSinceUntil_rejectsHoursWithSince() {
+    XCTAssertThrowsError(
+      try QueryTimeParser.parseSinceUntil(since: "0", until: nil, days: nil, hours: 6)
+    ) { error in
+      XCTAssertTrue(String(describing: error).contains("invalidValue"))
+    }
+  }
 }
 

@@ -104,13 +104,27 @@ Start your search with the 2-3 most distinctive terms from the question. If the 
 
 Determine the query type to set your strategy and starting `--days` window:
 
-| Intent | Signals | Starting `--days` | Strategy |
-|--------|---------|-------------------|----------|
-| **Counting** | "how many", "count", "every time", "frequency" | 365 | Use `--count-only`. Add `--term-counts` for OR queries. |
-| **Lookup** | "what did we decide", "find the discussion", "when did we" | 365 | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
-| **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
-| **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
-| **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
+| Intent | Signals | Time window | Strategy |
+|--------|---------|-------------|----------|
+| **Counting** | "how many", "count", "every time", "frequency" | `--days 365` | Use `--count-only`. Add `--term-counts` for OR queries. |
+| **Lookup** | "what did we decide", "find the discussion", "when did we" | `--days 365` | Balanced. Use quoted phrases for precision. Default `--limit 10`. |
+| **Exploratory** | "what have we talked about", "find anything about" | `--days 365` | Start broad, refine iteratively. Use `--limit 20`. |
+| **Negative proof** | "have we ever", "did we discuss", "was there any" | `--days 365` | Broad scope. Run 2-3 materially different query variations before declaring absence. |
+| **Debugging** | "when did this break", "what changed", "recent error" | `--days 30` | Narrow, recent. Use `--project .` for current repo focus. |
+| **Time-scoped** | "last N hours", "today", "yesterday", "this morning", "this week", "last week", "past hour" | See below | Detect the time reference and use `--hours` or `--days` accordingly. |
+
+**Time-scoped intent:** When the user's request includes an explicit time reference, override the default window:
+
+| User phrasing | Flag to use |
+|---------------|-------------|
+| "in the last N hours", "past N hours" | `--hours N` |
+| "today", "this morning", "this afternoon" | `--hours 24` |
+| "yesterday" | `--days 2` |
+| "this week", "past few days" | `--days 7` |
+| "last week" | `--days 14` |
+| "last month", "past few weeks" | `--days 30` |
+
+Use `--hours` for sub-day precision (e.g., "last 6 hours") and `--days` for multi-day windows. Do not default to `--days 365` when the user specifies a narrower time frame.
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
 
@@ -234,6 +248,11 @@ Porter stemming matches all regular forms of "deploy" automatically.
 Example -- user asks "what did we decide about the database schema":
 ```bash
 contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
+```
+
+Example -- user asks "what did we discuss in the last 6 hours about testing":
+```bash
+contextify search "test OR testing OR \"test suite\"" --project . --hours 6 --limit 10 --json
 ```
 
 Returns:
