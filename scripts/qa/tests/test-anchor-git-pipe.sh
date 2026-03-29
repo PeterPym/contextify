@@ -64,9 +64,9 @@ else
   echo "  ~ git ls-files output is ${LS_SIZE} bytes (<64KB, deadlock not testable in this repo)"
 fi
 
-# Test 4: non-zero exit from git doesn't hang (stderr-only scenario)
+# Test 4: invalid DB path returns error promptly (does not exercise git subprocesses)
 echo ""
-echo "Test 4: anchor-git with bad db path returns error promptly"
+echo "Test 4: invalid DB path returns error promptly"
 if timeout 10 contextify search "test" \
     --db-path /nonexistent/path.db --json --limit 1 --anchor-git >/dev/null 2>&1; then
   fail "should have returned non-zero for missing db"
