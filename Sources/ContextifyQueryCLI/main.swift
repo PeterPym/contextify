@@ -163,6 +163,7 @@ struct ContextifyQueryCLI {
     var countOnly: Bool = false
     var termCounts: Bool = false
     var anchorGit: Bool = false
+    var anchorFiles: String?
 
     // Device filter
     var device: String?
@@ -359,6 +360,10 @@ struct ContextifyQueryCLI {
           options.termCounts = true
         case "--anchor-git":
           options.anchorGit = true
+        case "--anchor-files":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --anchor-files", exitCode: .invalidArgs) }
+          options.anchorFiles = args[index]
         case "--device":
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --device", exitCode: .invalidArgs) }
@@ -529,18 +534,32 @@ struct ContextifyQueryCLI {
           // Normal mode: fetch results with metadata
           let requestedLimit = options.limit
           let requestedOffset = options.offset
-          let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
-          let anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
 
-          if options.anchorGit {
+          // Resolve git anchor plan: --anchor-files (explicit) takes precedence over --anchor-git (regex)
+          let anchorPlan: GitAnchorPlan?
+          let anchorCues: [GitAnchorCue]
+          if let anchorFilesArg = options.anchorFiles {
+            anchorCues = []
+            anchorPlan = try resolveFileAnchorPlan(files: anchorFilesArg, options: options, service: service)
+          } else if options.anchorGit {
+            anchorCues = GitAnchorSearch.extractCues(from: rawQuery)
+            anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
+          } else {
+            anchorCues = []
+            anchorPlan = nil
+          }
+
+          // User-visible output when git-accelerated retrieval activates
+          if options.anchorFiles != nil || options.anchorGit {
             if let anchorPlan {
               let fileLabels = anchorPlan.fileLabels
               if !fileLabels.isEmpty {
-                fputs("Using git anchors from: \(fileLabels.joined(separator: ", "))\n", stderr)
+                fputs("Using git-accelerated context retrieval: found \(anchorPlan.commits.count) commits touching \(fileLabels.joined(separator: ", "))\n", stderr)
               } else {
                 fputs("Using git anchors from query cues: \(anchorPlan.triggerKinds.joined(separator: ", "))\n", stderr)
               }
-              fputs("Found \(anchorPlan.commits.count) relevant commits, narrowing search to nearby conversations\n", stderr)
+            } else if options.anchorFiles != nil {
+              fputs("Git-accelerated retrieval: no commits found for specified files, continuing with broad text search\n", stderr)
             } else if !anchorCues.isEmpty {
               fputs("Git anchor path found no strong commit signal, continuing with broad text search\n", stderr)
             }
@@ -1067,6 +1086,7 @@ struct ContextifyQueryCLI {
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
+        --anchor-files <csv> Search: boost results near commits touching these files
         --json               Emit JSON output
 
       Commands:
@@ -1385,6 +1405,60 @@ private func resolveGitAnchorPlan(
   guard !commits.isEmpty else { return nil }
 
   return GitAnchorPlan(cues: cues, files: files, commits: commits)
+}
+
+private func resolveFileAnchorPlan(
+  files anchorFilesArg: String,
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
+) throws -> GitAnchorPlan? {
+  let fileTokens = anchorFilesArg
+    .split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty }
+  guard !fileTokens.isEmpty else { return nil }
+
+  let basePath = try resolveAnchorBasePath(options: options, service: service)
+  guard
+    let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+    !repoRoot.isEmpty
+  else {
+    return nil
+  }
+
+  // Resolve file tokens against tracked files (supports basenames, relative paths, and globs)
+  let trackedFiles = trackedGitFiles(repoRoot: repoRoot)
+  var resolvedFiles: [String] = []
+  var seen = Set<String>()
+
+  for token in fileTokens {
+    for path in trackedFiles {
+      let basename = URL(fileURLWithPath: path).lastPathComponent
+      let matches = path == token
+        || path.hasSuffix("/\(token)")
+        || basename == token
+        || (token.contains("/") && path.contains(token))
+      if matches, seen.insert(path).inserted {
+        resolvedFiles.append(path)
+      }
+    }
+    if resolvedFiles.count >= 8 { break }
+  }
+
+  guard !resolvedFiles.isEmpty else { return nil }
+
+  let absolutePaths = Array(resolvedFiles.prefix(8)).map { relativePath in
+    URL(fileURLWithPath: repoRoot).appendingPathComponent(relativePath).path
+  }
+
+  let commits = resolveGitAnchorCommits(files: absolutePaths, repoRoot: repoRoot)
+  guard !commits.isEmpty else { return nil }
+
+  let cues = fileTokens.prefix(8).map {
+    GitAnchorCue(rawValue: $0, normalized: $0, kind: .file)
+  }
+  return GitAnchorPlan(cues: cues, files: absolutePaths, commits: commits)
 }
 
 private func trackedGitFiles(repoRoot: String) -> [String] {
