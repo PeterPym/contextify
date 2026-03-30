@@ -119,6 +119,7 @@ struct ContextifyQueryCLI {
     case summaries
     case stats
     case version
+    case tag
     #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
@@ -171,6 +172,9 @@ struct ContextifyQueryCLI {
     // Worktree options
     var thisWorktreeOnly: Bool = false
     var exclude: String?
+
+    // Tag filtering
+    var excludeTags: String?
   }
 
   struct StateSidecar: Decodable {
@@ -374,6 +378,10 @@ struct ContextifyQueryCLI {
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude", exitCode: .invalidArgs) }
           options.exclude = args[index]
+        case "--exclude-tags":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude-tags", exitCode: .invalidArgs) }
+          options.excludeTags = args[index]
         case "--help", "-h":
           usage(nil)
         default:
@@ -417,7 +425,8 @@ struct ContextifyQueryCLI {
       #if os(macOS)
       // All other commands need database (macOS only)
       let dbURL = try resolveDatabaseURL(options: options)
-      let service = try ContextifyQueryService(databaseURL: dbURL)
+      let needsWrite = command == .tag
+      let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: !needsWrite)
       let versionInfo = try service.versionInfo()
       let timeRange = try parseTimeRange(options: options)
 
@@ -482,6 +491,7 @@ struct ContextifyQueryCLI {
 
         if options.countOnly {
           // Count-only mode: return total count (and term counts for OR queries) without result bodies
+          let countExcludeTagsList = parseCSV(options.excludeTags)?.map { $0.lowercased() }
           let totalCount = try service.searchCount(
             query: query,
             projectIds: projectIds,
@@ -490,7 +500,8 @@ struct ContextifyQueryCLI {
             timeRange: timeRange,
             kinds: kinds,
             treatAsFTS: true,
-            device: options.device
+            device: options.device,
+            excludeTags: countExcludeTagsList
           )
 
           var metadataDict: [String: JSONValue] = [
@@ -506,7 +517,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: countExcludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -566,6 +578,7 @@ struct ContextifyQueryCLI {
           }
 
           let fetchLimit = anchorPlan == nil ? requestedLimit + 1 : min(max(requestedLimit * 3, 25), 100)
+          let excludeTagsList = parseCSV(options.excludeTags)?.map { $0.lowercased() }
           let results = try service.search(
             query: query,
             projectIds: projectIds,
@@ -577,7 +590,8 @@ struct ContextifyQueryCLI {
             kinds: kinds,
             snippetTokens: options.snippetTokens ?? 50,
             treatAsFTS: true,
-            device: options.device
+            device: options.device,
+            excludeTags: excludeTagsList
           )
           let anchorResult = anchorPlan.map {
             GitAnchorSearch.rerank(hits: results, using: $0, requestedLimit: requestedLimit)
@@ -604,7 +618,8 @@ struct ContextifyQueryCLI {
               timeRange: timeRange,
               kinds: kinds,
               treatAsFTS: true,
-              device: options.device
+              device: options.device,
+              excludeTags: excludeTagsList
             )
           } else {
             totalCount = trimmedResults.count
@@ -628,7 +643,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: excludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -827,6 +843,9 @@ struct ContextifyQueryCLI {
         try printResponse(type: "version", data: versionInfo, json: options.jsonOutput) {
           printVersionInfo(versionInfo)
         }
+
+      case .tag:
+        try runTag(commandArgs: commandArgs, options: options, service: service)
 
       case .installPlugin, .uninstallPlugin, .doctor:
         // Handled above (before database connection)
@@ -1087,6 +1106,7 @@ struct ContextifyQueryCLI {
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
         --anchor-files <csv> Search: boost results near commits touching these files
+        --exclude-tags <csv> Search: exclude entries from transcripts with matching tags
         --json               Emit JSON output
 
       Commands:
@@ -1096,6 +1116,7 @@ struct ContextifyQueryCLI {
         transcripts          List transcripts for a project
         entry <uuid>         Fetch an entry by id (UUID)
         context <uuid>       Fetch context around an entry (UUID)
+        tag <id> [<tag>]     List/add/remove transcript tags (--remove to delete)
         status               Show database status
         feedback             Record or manage CLI feedback
         summaries            Recent transcript summaries
@@ -1575,6 +1596,90 @@ private func runProcess(_ executable: String, arguments: [String]) -> String? {
 
   guard process.terminationStatus == 0 else { return nil }
   return String(data: data, encoding: .utf8)
+}
+
+private func runTag(
+  commandArgs: [String],
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService
+) throws {
+  // Usage: contextify tag <transcript-id> <tag> [--remove]
+  //        contextify tag <transcript-id>          (list tags)
+  let supportedFlags: Set<String> = ["--remove", "--json"]
+  if let unknown = commandArgs.first(where: { $0.hasPrefix("--") && !supportedFlags.contains($0) }) {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Unknown option: \(unknown)",
+      exitCode: .invalidArgs,
+      hint: "Usage: contextify tag <transcript-id> [<tag>] [--remove]"
+    )
+  }
+
+  let positional = commandArgs.filter { !$0.hasPrefix("--") }
+  let isRemove = commandArgs.contains("--remove")
+
+  guard let transcriptId = positional.first else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Usage: contextify tag <transcript-id> [<tag>] [--remove]",
+      exitCode: .invalidArgs,
+      hint: "Example: contextify tag abc123 benchmark"
+    )
+  }
+
+  if positional.count == 1 && !isRemove {
+    // List tags
+    let tags = try service.getTags(transcriptId: transcriptId)
+    struct TagListResult: Encodable {
+      let transcriptId: String
+      let tags: [String]
+    }
+    try ContextifyQueryCLI.printResponse(
+      type: "tags", data: TagListResult(transcriptId: transcriptId, tags: tags),
+      json: options.jsonOutput
+    ) {
+      if tags.isEmpty {
+        print("No tags on transcript \(transcriptId)")
+      } else {
+        print("Tags: \(tags.joined(separator: ", "))")
+      }
+    }
+    return
+  }
+
+  guard positional.count == 2 else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: isRemove ? "Usage: contextify tag <transcript-id> <tag> --remove" : "Usage: contextify tag <transcript-id> <tag>",
+      exitCode: .invalidArgs,
+      hint: "Example: contextify tag abc123 benchmark"
+    )
+  }
+
+  let tagValue = positional[1]
+
+  if isRemove {
+    try service.removeTag(transcriptId: transcriptId, tag: tagValue)
+    fputs("Removed tag '\(tagValue)' from transcript \(transcriptId)\n", stderr)
+  } else {
+    try service.addTag(transcriptId: transcriptId, tag: tagValue)
+    fputs("Added tag '\(tagValue)' to transcript \(transcriptId)\n", stderr)
+  }
+
+  let tags = try service.getTags(transcriptId: transcriptId)
+  struct TagResult: Encodable {
+    let transcriptId: String
+    let tags: [String]
+    let action: String
+    let tag: String
+  }
+  try ContextifyQueryCLI.printResponse(
+    type: "tags",
+    data: TagResult(transcriptId: transcriptId, tags: tags, action: isRemove ? "removed" : "added", tag: tagValue),
+    json: options.jsonOutput
+  ) {
+    // Human output already printed above via fputs
+  }
 }
 
 private func runFeedback(

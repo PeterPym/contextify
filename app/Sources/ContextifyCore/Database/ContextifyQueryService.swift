@@ -883,7 +883,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool,
     timeRange: QueryTimeRange,
     kinds: [String]?,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) -> FTSFilterClause {
     var whereParts: [String] = []
     var args: [DatabaseValueConvertible] = [query]
@@ -933,6 +934,20 @@ public struct ContextifyQueryService: Sendable {
       args.append(device)
       args.append(device)
     }
+    if let excludeTags, !excludeTags.isEmpty {
+      // Exclude entries from transcripts that have any of the specified tags.
+      // Uses the indexed transcript_tags table for efficient filtering.
+      let sortedTags = Array(Set(excludeTags)).sorted()
+      let placeholders = sortedTags.map { _ in "?" }.joined(separator: ", ")
+      whereParts.append("""
+        NOT EXISTS (
+          SELECT 1 FROM transcript_tags tt
+          WHERE tt.transcript_id = e.transcript_id
+          AND tt.tag IN (\(placeholders))
+        )
+        """)
+      args.append(contentsOf: sortedTags)
+    }
 
     let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
     return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
@@ -949,7 +964,8 @@ public struct ContextifyQueryService: Sendable {
     kinds: [String]? = nil,
     snippetTokens: Int = 10,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
@@ -961,7 +977,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return [] }
 
@@ -1069,7 +1086,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [String: Int]? {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
@@ -1089,7 +1107,8 @@ public struct ContextifyQueryService: Sendable {
         timeRange: timeRange,
         kinds: kinds,
         treatAsFTS: true,
-        device: device
+        device: device,
+        excludeTags: excludeTags
       )
       result[term] = count
     }
@@ -1144,7 +1163,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> Int {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
@@ -1156,7 +1176,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return 0 }
 
@@ -1860,6 +1881,60 @@ public struct ContextifyQueryService: Sendable {
           lastViewedTs: $0.lastViewedTs
         )
       }
+    }
+  }
+
+  // MARK: - Transcript Tags
+
+  private func ensureTranscriptExists(_ transcriptId: String, db: Database) throws {
+    let exists = try Bool.fetchOne(
+      db,
+      sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
+      arguments: [transcriptId]
+    ) ?? false
+    guard exists else {
+      throw QueryError.featureUnavailable(
+        feature: "tag",
+        message: "Transcript not found: \(transcriptId)"
+      )
+    }
+  }
+
+  /// Add a tag to a transcript. Uses dedicated transcript_tags table.
+  public func addTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    guard !trimmed.isEmpty else { return }
+    try pool.write { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      let now = Int(Date().timeIntervalSince1970)
+      try db.execute(
+        sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
+        arguments: [transcriptId, trimmed, now]
+      )
+    }
+  }
+
+  /// Get the tags for a transcript.
+  public func getTags(transcriptId: String) throws -> [String] {
+    try pool.read { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      return try String.fetchAll(
+        db,
+        sql: "SELECT tag FROM transcript_tags WHERE transcript_id = ? ORDER BY tag",
+        arguments: [transcriptId]
+      )
+    }
+  }
+
+  /// Remove a tag from a transcript.
+  public func removeTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    try pool.write { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      try db.execute(
+        sql: "DELETE FROM transcript_tags WHERE transcript_id = ? AND tag = ?",
+        arguments: [transcriptId, trimmed]
+      )
     }
   }
 
