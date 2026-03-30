@@ -821,15 +821,17 @@ struct CloudPushCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func execute() throws -> Result {
+  func execute(emitOutput: Bool = true) throws -> Result {
     let config: CLICloudConfig
     do {
       config = try CLICloudConfig.load()
     } catch {
-      if json {
-        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
-      } else {
-        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
       }
       throw ExitCode(1)
     }
@@ -872,7 +874,7 @@ struct CloudPushCommand: ParsableCommand {
       )
 
       if exportData.entries.isEmpty {
-        if batchCount == 0 && !json {
+        if batchCount == 0 && emitOutput && !json {
           print(CLIStyle.dimText("No entries to push."))
         }
         break
@@ -887,7 +889,7 @@ struct CloudPushCommand: ParsableCommand {
       )
       let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-      if !json {
+      if emitOutput && !json {
         print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(mutableConfig.serverURL))...")
       }
 
@@ -908,7 +910,7 @@ struct CloudPushCommand: ParsableCommand {
         // can be retried. ct-810 cursor-skip needs a server protocol
         // change to distinguish permanent vs transient failures.
         if !batchErrors.isEmpty {
-          if !json {
+          if emitOutput && !json {
             print(CLIStyle.warning("Batch \(batchCount) had \(batchErrors.count) error\(batchErrors.count == 1 ? "" : "s"):"))
             for e in batchErrors.prefix(3) { print("  \(CLIStyle.redText("-")) \(e)") }
           }
@@ -947,22 +949,20 @@ struct CloudPushCommand: ParsableCommand {
   func run() throws {
     let result = try execute()
 
-    if result.batches > 0 {
-      if json {
-        let output: [String: Any] = [
-          "accepted": result.accepted,
-          "duplicates_skipped": result.duplicatesSkipped,
-          "errors": Array(result.errors.prefix(10)),
-          "batches": result.batches,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
-        print(String(data: data, encoding: .utf8) ?? "{}")
-      } else {
-        print(CLIStyle.success("Push complete: \(result.accepted) accepted, \(result.duplicatesSkipped) duplicates (\(result.batches) batch\(result.batches == 1 ? "" : "es"))"))
-        if !result.errors.isEmpty {
-          print(CLIStyle.error("Errors: \(result.errors.count)"))
-          for e in result.errors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
-        }
+    if json {
+      let output: [String: Any] = [
+        "accepted": result.accepted,
+        "duplicates_skipped": result.duplicatesSkipped,
+        "errors": Array(result.errors.prefix(10)),
+        "batches": result.batches,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8) ?? "{}")
+    } else if result.batches > 0 {
+      print(CLIStyle.success("Push complete: \(result.accepted) accepted, \(result.duplicatesSkipped) duplicates (\(result.batches) batch\(result.batches == 1 ? "" : "es"))"))
+      if !result.errors.isEmpty {
+        print(CLIStyle.error("Errors: \(result.errors.count)"))
+        for e in result.errors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
       }
     }
 
@@ -1006,15 +1006,17 @@ struct CloudPullCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func execute() throws -> Result {
+  func execute(emitOutput: Bool = true) throws -> Result {
     var config: CLICloudConfig
     do {
       config = try CLICloudConfig.load()
     } catch {
-      if json {
-        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
-      } else {
-        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
       }
       throw ExitCode(1)
     }
@@ -1027,7 +1029,7 @@ struct CloudPullCommand: ParsableCommand {
     var cursor = config.lastPullSequence
     var hasMore = true
 
-    if !json {
+    if emitOutput && !json {
       print("Pulling from \(CLIStyle.cyanText(config.serverURL)) \(CLIStyle.dimText("(cursor: \(cursor))"))...")
     }
 
@@ -1077,7 +1079,7 @@ struct CloudPullCommand: ParsableCommand {
         )
         totalImported += importResult.entriesImported
 
-        if !json {
+        if emitOutput && !json {
           print(CLIStyle.dimText("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))"))
         }
       }
@@ -1163,7 +1165,7 @@ struct CloudSyncCommand: ParsableCommand {
     push.limit = 500
     push.json = false  // Suppress push's own JSON; sync emits envelope
     do {
-      pushResult = try push.execute()
+      pushResult = try push.execute(emitOutput: !json)
     } catch {
       // Only continue to pull for recoverable push failures (network/server).
       // Fail fast for auth, validation, and programming errors.
@@ -1195,24 +1197,26 @@ struct CloudSyncCommand: ParsableCommand {
     pull.db = dbPath
     pull.project = project
     pull.json = false  // Suppress pull's own JSON; sync emits envelope
-    let pullResult = try pull.execute()
+    let pullResult = try pull.execute(emitOutput: !json)
 
     if json {
       // ct-824: Single structured JSON envelope for sync results
-      var pushDict: [String: Any] = [:]
+      var pushDict: [String: Any] = [
+        "accepted": 0,
+        "duplicates_skipped": 0,
+        "errors": [String](),
+        "batches": 0,
+        "failed": false,
+      ]
       if let pr = pushResult {
-        pushDict = [
-          "accepted": pr.accepted,
-          "duplicates_skipped": pr.duplicatesSkipped,
-          "errors": Array(pr.errors.prefix(10)),
-          "batches": pr.batches,
-        ]
+        pushDict["accepted"] = pr.accepted
+        pushDict["duplicates_skipped"] = pr.duplicatesSkipped
+        pushDict["errors"] = Array(pr.errors.prefix(10))
+        pushDict["batches"] = pr.batches
       }
       if pushFailed {
         pushDict["failed"] = true
         pushDict["error"] = pushError ?? "unknown"
-      } else {
-        pushDict["failed"] = false
       }
 
       let output: [String: Any] = [
