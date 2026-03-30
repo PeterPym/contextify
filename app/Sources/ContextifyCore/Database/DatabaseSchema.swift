@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v38 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild)
+/// Current version: v39 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild, v39: transcript tags)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 38
+  public static let version = 39
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -332,10 +332,17 @@ public enum DatabaseSchema {
         )
       """)
 
-      // Copy data
+      // Copy stable columns explicitly so legacy/dev-only extra columns
+      // on transcript_metadata do not break rebuilds.
+      let baseCols = """
+        transcript_id, project_id, title, description, topics, confidence,
+        may_contain_hallucinations, needs_review, generated_at, model,
+        prompt_version, generator_version, transcript_sha256, message_count,
+        strategy, llm_calls, latency_ms, created_at, updated_at
+      """
       try db.execute(sql: """
-        INSERT INTO transcript_metadata_new
-        SELECT * FROM transcript_metadata
+        INSERT INTO transcript_metadata_new (\(baseCols))
+        SELECT \(baseCols) FROM transcript_metadata
       """)
 
       // Drop old table
@@ -1175,6 +1182,51 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v38] Porter stemming FTS index created successfully")
     }
 
+    // ========================================================================
+    // v39: Transcript tags (dedicated table for purpose labeling)
+    // ========================================================================
+    migrator.registerMigration("v39_transcript_tags") { db in
+      logger.info("[MIGRATION-v39] Creating transcript_tags table")
+
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcript_tags (
+          transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+          tag TEXT NOT NULL COLLATE NOCASE,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (transcript_id, tag)
+        )
+      """)
+      try db.create(
+        index: "idx_transcript_tags_tag",
+        on: "transcript_tags",
+        columns: ["tag", "transcript_id"],
+        ifNotExists: true
+      )
+
+      // Migrate any existing tags from transcript_metadata.tags column (if present from dev builds)
+      if try db.columnExists("tags", in: "transcript_metadata") {
+        let rows = try Row.fetchAll(db, sql: """
+          SELECT transcript_id, tags FROM transcript_metadata WHERE tags != '[]' AND tags IS NOT NULL
+        """)
+        let now = Int(Date().timeIntervalSince1970)
+        for row in rows {
+          let transcriptId: String = row["transcript_id"]
+          let tagsJson: String = row["tags"]
+          if let data = tagsJson.data(using: .utf8),
+             let tags = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            for tag in tags {
+              try db.execute(
+                sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
+                arguments: [transcriptId, tag.lowercased(), now]
+              )
+            }
+          }
+        }
+      }
+
+      logger.info("[MIGRATION-v39] Transcript tags table created")
+    }
+
     return migrator
   }
 
@@ -1467,6 +1519,22 @@ public enum DatabaseSchema {
     try db.create(index: "idx_tm_generated_at", on: "transcript_metadata", columns: ["generated_at"], ifNotExists: true)
     try db.create(index: "idx_tm_needs_review", on: "transcript_metadata", columns: ["needs_review", "generated_at"], ifNotExists: true)
     try db.create(index: "idx_tm_sha", on: "transcript_metadata", columns: ["transcript_sha256"], ifNotExists: true)
+
+    // Transcript tags table (v39: dedicated table for purpose labeling)
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS transcript_tags (
+        transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL COLLATE NOCASE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (transcript_id, tag)
+      )
+    """)
+    try db.create(
+      index: "idx_transcript_tags_tag",
+      on: "transcript_tags",
+      columns: ["tag", "transcript_id"],
+      ifNotExists: true
+    )
 
     // Parse errors table
     try db.create(table: "parse_errors", ifNotExists: true) { t in

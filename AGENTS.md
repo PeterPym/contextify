@@ -184,7 +184,7 @@ Skipping architecture docs leads to incomplete implementations and repeated mist
 - `build/docs/architecture/sql-backend.md` - Schema, migrations, repositories
 - `build/docs/architecture/COMPONENTS.md` - Database layer components
 - `build/docs/operations/DATABASE-LOCATIONS.md` - Custom locations, discovery
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v33)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v39)
 
 **LLM/Timeline work:**
 - `build/docs/architecture/llm-processing.md` - LLM queue architecture (start here)

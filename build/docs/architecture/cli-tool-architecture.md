@@ -403,7 +403,10 @@ contextify-query projects            # List projects
 contextify-query transcripts         # List transcripts
 contextify-query entry <uuid>        # Get specific entry
 contextify-query context <uuid>      # Get context around entry
+contextify-query tag <id> [<tag>]    # Add tag to transcript; --remove to remove it
 ```
+
+**`--exclude-tags` flag:** The `search` command accepts `--exclude-tags <csv>` to exclude transcripts that have any of the specified tags. Comma-separated list of tag names (e.g., `--exclude-tags archived,noise`).
 
 **`--project` flag:** Most commands accept `--project <value>` to scope results to a project. The value can be:
 - A project name (e.g., `--project contextify`) - resolved via name-based lookup

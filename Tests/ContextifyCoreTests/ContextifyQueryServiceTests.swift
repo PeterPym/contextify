@@ -1309,4 +1309,160 @@ final class ContextifyQueryServiceTests: XCTestCase {
     let fuzzy = try service.fuzzyProjectSuggestions("zzzzz-no-match")
     XCTAssertTrue(fuzzy.isEmpty, "Completely unrelated name must produce no fuzzy suggestions")
   }
+
+  // MARK: - Transcript Tag Tests
+
+  /// Tags can be added, listed, and removed via the query service.
+  func testTagOperations_addListRemove() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-tags-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'h1', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Initially no tags
+    let initial = try service.getTags(transcriptId: "t1")
+    XCTAssertTrue(initial.isEmpty)
+
+    // Add a tag
+    try service.addTag(transcriptId: "t1", tag: "benchmark")
+    let afterAdd = try service.getTags(transcriptId: "t1")
+    XCTAssertEqual(afterAdd, ["benchmark"])
+
+    // Add same tag again (idempotent)
+    try service.addTag(transcriptId: "t1", tag: "benchmark")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark"])
+
+    // Add second tag
+    try service.addTag(transcriptId: "t1", tag: "evaluation")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark", "evaluation"])
+
+    // Remove a tag
+    try service.removeTag(transcriptId: "t1", tag: "benchmark")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["evaluation"])
+
+    // Remove last tag
+    try service.removeTag(transcriptId: "t1", tag: "evaluation")
+    XCTAssertTrue(try service.getTags(transcriptId: "t1").isEmpty)
+  }
+
+  /// Search with --exclude-tags filters out entries from tagged transcripts.
+  func testSearch_excludeTags_filtersTaggedTranscripts() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-excl-tags-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      // Two transcripts: one will be tagged, one won't
+      for (tid, path) in [("t-real", "/test/real.jsonl"), ("t-bench", "/test/bench.jsonl")] {
+        try db.execute(sql: """
+          INSERT INTO transcripts (
+            id, project_id, file_path, normalized_path, path_hash, provider,
+            last_modified, file_size, content_length, mtime_ms,
+            line_count, last_processed_line, parser_version, status, ingest_state,
+            created_at, updated_at
+          ) VALUES (?, 'p1', ?, ?, ?, 'claude.code', 0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+        """, arguments: [tid, path, path, "h-\(tid)"])
+      }
+      // Both have entries matching "deploy pipeline"
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, timestamp, content,
+          content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES
+          ('e-real', 't-real', 'p1', 'claude.code', 'user', 100, 'fix the deploy pipeline', 'sha-r', 1, 0, 100, 100, 0),
+          ('e-bench', 't-bench', 'p1', 'claude.code', 'user', 200, 'search for deploy pipeline issues', 'sha-b', 1, 0, 200, 200, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Without excludeTags, both results appear
+    let allResults = try service.search(query: "deploy pipeline", limit: 10)
+    XCTAssertEqual(allResults.count, 2, "Without tag filter, both entries match")
+
+    // Tag the benchmark transcript
+    try service.addTag(transcriptId: "t-bench", tag: "benchmark")
+
+    // With excludeTags=["benchmark"], only the real entry appears
+    let filtered = try service.search(query: "deploy pipeline", limit: 10, excludeTags: ["benchmark"])
+    XCTAssertEqual(filtered.count, 1, "With --exclude-tags benchmark, only non-tagged entry matches")
+    XCTAssertEqual(filtered.first?.id, "e-real")
+
+    // searchCount also respects the filter
+    let filteredCount = try service.searchCount(query: "deploy pipeline", excludeTags: ["benchmark"])
+    XCTAssertEqual(filteredCount, 1)
+
+    // Untagged transcript is never affected
+    let noFilter = try service.search(query: "deploy pipeline", limit: 10, excludeTags: ["nonexistent"])
+    XCTAssertEqual(noFilter.count, 2, "Excluding a tag that no transcript has should return all results")
+  }
+
+  /// Tags are normalized to lowercase.
+  func testTags_normalizedToLowercase() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-tag-norm-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'h1', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    try service.addTag(transcriptId: "t1", tag: "Benchmark")
+    let tags = try service.getTags(transcriptId: "t1")
+    XCTAssertEqual(tags, ["benchmark"], "Tags should be normalized to lowercase")
+
+    // Adding same tag with different case should be idempotent
+    try service.addTag(transcriptId: "t1", tag: "BENCHMARK")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark"])
+  }
 }
