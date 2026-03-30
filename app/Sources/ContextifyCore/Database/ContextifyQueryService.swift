@@ -883,7 +883,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool,
     timeRange: QueryTimeRange,
     kinds: [String]?,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) -> FTSFilterClause {
     var whereParts: [String] = []
     var args: [DatabaseValueConvertible] = [query]
@@ -933,6 +934,20 @@ public struct ContextifyQueryService: Sendable {
       args.append(device)
       args.append(device)
     }
+    if let excludeTags, !excludeTags.isEmpty {
+      // Exclude entries from transcripts that have any of the specified tags.
+      // Uses json_each to unpack the tags JSON array and checks for intersection.
+      let sortedTags = Array(Set(excludeTags)).sorted()
+      let placeholders = sortedTags.map { _ in "?" }.joined(separator: ", ")
+      whereParts.append("""
+        NOT EXISTS (
+          SELECT 1 FROM transcript_metadata tm_tag, json_each(tm_tag.tags) jt
+          WHERE tm_tag.transcript_id = e.transcript_id
+          AND jt.value IN (\(placeholders))
+        )
+        """)
+      args.append(contentsOf: sortedTags)
+    }
 
     let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
     return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
@@ -949,7 +964,8 @@ public struct ContextifyQueryService: Sendable {
     kinds: [String]? = nil,
     snippetTokens: Int = 10,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
@@ -961,7 +977,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return [] }
 
@@ -1144,7 +1161,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> Int {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
@@ -1156,7 +1174,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return 0 }
 
@@ -1860,6 +1879,107 @@ public struct ContextifyQueryService: Sendable {
           lastViewedTs: $0.lastViewedTs
         )
       }
+    }
+  }
+
+  // MARK: - Transcript Tags
+
+  /// Add a tag to a transcript's metadata. Creates metadata row if missing (tag-only, no LLM fields).
+  public func addTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    guard !trimmed.isEmpty else { return }
+    try pool.write { db in
+      // Check if transcript exists
+      let exists = try Bool.fetchOne(
+        db,
+        sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
+        arguments: [transcriptId]
+      ) ?? false
+      guard exists else {
+        throw QueryError.featureUnavailable(feature: "tag", message: "Transcript not found: \(transcriptId)")
+      }
+
+      // Check if metadata row exists
+      let hasMeta = try Bool.fetchOne(
+        db,
+        sql: "SELECT EXISTS(SELECT 1 FROM transcript_metadata WHERE transcript_id = ?)",
+        arguments: [transcriptId]
+      ) ?? false
+
+      if hasMeta {
+        // Read current tags, append if not present
+        let current = try String.fetchOne(
+          db,
+          sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
+          arguments: [transcriptId]
+        ) ?? "[]"
+        let data = Data(current.utf8)
+        var tags = (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+        guard !tags.contains(trimmed) else { return }
+        tags.append(trimmed)
+        let json = try JSONSerialization.data(withJSONObject: tags)
+        let jsonString = String(data: json, encoding: .utf8) ?? "[]"
+        try db.execute(
+          sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
+          arguments: [jsonString, transcriptId]
+        )
+      } else {
+        // Create a minimal metadata row with just the tag
+        let json = try JSONSerialization.data(withJSONObject: [trimmed])
+        let jsonString = String(data: json, encoding: .utf8) ?? "[]"
+        let now = Int(Date().timeIntervalSince1970)
+        try db.execute(
+          sql: """
+            INSERT INTO transcript_metadata (
+              transcript_id, project_id, title, description, topics, confidence,
+              may_contain_hallucinations, needs_review, generated_at, model,
+              prompt_version, generator_version, transcript_sha256, message_count,
+              strategy, llm_calls, latency_ms, created_at, updated_at, tags
+            ) VALUES (
+              ?, (SELECT project_id FROM transcripts WHERE id = ?),
+              '', '', '[]', 0.0,
+              0, 0, ?, 'manual',
+              0, 0, '', 0,
+              'full', 0, 0, ?, ?, ?
+            )
+          """,
+          arguments: [transcriptId, transcriptId, now, now, now, jsonString]
+        )
+      }
+    }
+  }
+
+  /// Get the tags for a transcript.
+  public func getTags(transcriptId: String) throws -> [String] {
+    try pool.read { db in
+      let json = try String.fetchOne(
+        db,
+        sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
+        arguments: [transcriptId]
+      ) ?? "[]"
+      let data = Data(json.utf8)
+      return (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+    }
+  }
+
+  /// Remove a tag from a transcript's metadata.
+  public func removeTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    try pool.write { db in
+      let current = try String.fetchOne(
+        db,
+        sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
+        arguments: [transcriptId]
+      ) ?? "[]"
+      let data = Data(current.utf8)
+      var tags = (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+      tags.removeAll { $0 == trimmed }
+      let json = try JSONSerialization.data(withJSONObject: tags)
+      let jsonString = String(data: json, encoding: .utf8) ?? "[]"
+      try db.execute(
+        sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
+        arguments: [jsonString, transcriptId]
+      )
     }
   }
 

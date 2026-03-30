@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v38 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild)
+/// Current version: v39 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild, v39: transcript tags)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 38
+  public static let version = 39
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -307,6 +307,7 @@ public enum DatabaseSchema {
       guard tableExists else { return }
 
       // Create temp table with corrected CHECK constraint
+      // Note: includes tags column (v39) with DEFAULT for collapsed-schema compatibility
       try db.execute(sql: """
         CREATE TABLE transcript_metadata_new (
           transcript_id TEXT PRIMARY KEY,
@@ -328,15 +329,30 @@ public enum DatabaseSchema {
           latency_ms INTEGER NOT NULL,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
+          tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags)),
           FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
         )
       """)
 
-      // Copy data
-      try db.execute(sql: """
-        INSERT INTO transcript_metadata_new
-        SELECT * FROM transcript_metadata
-      """)
+      // Copy data using explicit column list (SELECT * breaks when source has different column count)
+      let baseCols = """
+        transcript_id, project_id, title, description, topics, confidence,
+        may_contain_hallucinations, needs_review, generated_at, model,
+        prompt_version, generator_version, transcript_sha256, message_count,
+        strategy, llm_calls, latency_ms, created_at, updated_at
+      """
+      let hasTagsCol = try db.columnExists("tags", in: "transcript_metadata")
+      if hasTagsCol {
+        try db.execute(sql: """
+          INSERT INTO transcript_metadata_new (\(baseCols), tags)
+          SELECT \(baseCols), tags FROM transcript_metadata
+        """)
+      } else {
+        try db.execute(sql: """
+          INSERT INTO transcript_metadata_new (\(baseCols))
+          SELECT \(baseCols) FROM transcript_metadata
+        """)
+      }
 
       // Drop old table
       try db.execute(sql: "DROP TABLE transcript_metadata")
@@ -1175,6 +1191,21 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v38] Porter stemming FTS index created successfully")
     }
 
+    // ========================================================================
+    // v39: Transcript tags for purpose labeling (benchmark, evaluation, etc.)
+    // ========================================================================
+    migrator.registerMigration("v39_transcript_tags") { db in
+      logger.info("[MIGRATION-v39] Adding tags column to transcript_metadata")
+
+      if try !db.columnExists("tags", in: "transcript_metadata") {
+        try db.execute(sql: """
+          ALTER TABLE transcript_metadata ADD COLUMN tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags))
+        """)
+      }
+
+      logger.info("[MIGRATION-v39] Transcript tags column added")
+    }
+
     return migrator
   }
 
@@ -1460,7 +1491,8 @@ public enum DatabaseSchema {
         llm_calls INTEGER NOT NULL,
         latency_ms INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags))
       )
     """)
     try db.create(index: "idx_tm_project", on: "transcript_metadata", columns: ["project_id"], ifNotExists: true)

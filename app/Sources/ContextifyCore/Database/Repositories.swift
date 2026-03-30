@@ -550,6 +550,8 @@ public protocol MetadataRepository {
   func getBatch(_ transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord]
   func delete(_ transcriptId: String) throws
   func stale(promptVersion: Int, generatorVersion: Int) throws -> [String]
+  func setTags(_ transcriptId: String, tags: [String]) throws
+  func addTag(_ transcriptId: String, tag: String) throws
 }
 
 public final class MetadataRepositoryImpl: MetadataRepository {
@@ -566,11 +568,11 @@ public final class MetadataRepositoryImpl: MetadataRepository {
           transcript_id, project_id, title, description, topics, confidence,
           may_contain_hallucinations, needs_review, generated_at, model,
           prompt_version, generator_version, transcript_sha256, message_count,
-          strategy, llm_calls, latency_ms, created_at, updated_at
+          strategy, llm_calls, latency_ms, created_at, updated_at, tags
         )
         VALUES (
           ?, (SELECT project_id FROM transcripts WHERE id = ?),
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         ON CONFLICT(transcript_id) DO UPDATE SET
           title = excluded.title,
@@ -588,13 +590,14 @@ public final class MetadataRepositoryImpl: MetadataRepository {
           strategy = excluded.strategy,
           llm_calls = excluded.llm_calls,
           latency_ms = excluded.latency_ms,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          tags = excluded.tags
       """, arguments: [
         r.transcriptId, r.transcriptId,
         r.title, r.description, r.topics, r.confidence,
         r.mayContainHallucinations, r.needsReview, r.generatedAt, r.model,
         r.promptVersion, r.generatorVersion, r.transcriptSha256, r.messageCount,
-        r.strategy, r.llmCalls, r.latencyMs, r.createdAt, r.updatedAt
+        r.strategy, r.llmCalls, r.latencyMs, r.createdAt, r.updatedAt, r.tags
       ])
     }
   }
@@ -642,6 +645,39 @@ public final class MetadataRepositoryImpl: MetadataRepository {
         .filter(sql: "prompt_version < ? OR generator_version < ?", arguments: [promptVersion, generatorVersion])
         .fetchAll(db)
         .map { $0.transcriptId }
+    }
+  }
+
+  public func setTags(_ transcriptId: String, tags: [String]) throws {
+    let json = try JSONSerialization.data(withJSONObject: tags)
+    let jsonString = String(data: json, encoding: .utf8) ?? "[]"
+    try db.write { db in
+      try db.execute(
+        sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
+        arguments: [jsonString, transcriptId]
+      )
+    }
+  }
+
+  public func addTag(_ transcriptId: String, tag: String) throws {
+    try db.write { db in
+      // Read current tags, add new one if not already present
+      let current = try String.fetchOne(
+        db,
+        sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
+        arguments: [transcriptId]
+      ) ?? "[]"
+      let data = Data(current.utf8)
+      var tags = (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+      let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+      guard !trimmed.isEmpty, !tags.contains(trimmed) else { return }
+      tags.append(trimmed)
+      let json = try JSONSerialization.data(withJSONObject: tags)
+      let jsonString = String(data: json, encoding: .utf8) ?? "[]"
+      try db.execute(
+        sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
+        arguments: [jsonString, transcriptId]
+      )
     }
   }
 }
