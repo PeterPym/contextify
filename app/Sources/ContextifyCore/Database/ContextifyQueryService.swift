@@ -1086,7 +1086,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [String: Int]? {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
@@ -1106,7 +1107,8 @@ public struct ContextifyQueryService: Sendable {
         timeRange: timeRange,
         kinds: kinds,
         treatAsFTS: true,
-        device: device
+        device: device,
+        excludeTags: excludeTags
       )
       result[term] = count
     }
@@ -1884,22 +1886,26 @@ public struct ContextifyQueryService: Sendable {
 
   // MARK: - Transcript Tags
 
+  private func ensureTranscriptExists(_ transcriptId: String, db: Database) throws {
+    let exists = try Bool.fetchOne(
+      db,
+      sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
+      arguments: [transcriptId]
+    ) ?? false
+    guard exists else {
+      throw QueryError.featureUnavailable(
+        feature: "tag",
+        message: "Transcript not found: \(transcriptId)"
+      )
+    }
+  }
+
   /// Add a tag to a transcript. Uses dedicated transcript_tags table.
   public func addTag(transcriptId: String, tag: String) throws {
     let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
     guard !trimmed.isEmpty else { return }
     try pool.write { db in
-      let exists = try Bool.fetchOne(
-        db,
-        sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
-        arguments: [transcriptId]
-      ) ?? false
-      guard exists else {
-        throw QueryError.featureUnavailable(
-          feature: "tag",
-          message: "Transcript not found: \(transcriptId)"
-        )
-      }
+      try ensureTranscriptExists(transcriptId, db: db)
       let now = Int(Date().timeIntervalSince1970)
       try db.execute(
         sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
@@ -1911,7 +1917,8 @@ public struct ContextifyQueryService: Sendable {
   /// Get the tags for a transcript.
   public func getTags(transcriptId: String) throws -> [String] {
     try pool.read { db in
-      try String.fetchAll(
+      try ensureTranscriptExists(transcriptId, db: db)
+      return try String.fetchAll(
         db,
         sql: "SELECT tag FROM transcript_tags WHERE transcript_id = ? ORDER BY tag",
         arguments: [transcriptId]
@@ -1923,6 +1930,7 @@ public struct ContextifyQueryService: Sendable {
   public func removeTag(transcriptId: String, tag: String) throws {
     let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
     try pool.write { db in
+      try ensureTranscriptExists(transcriptId, db: db)
       try db.execute(
         sql: "DELETE FROM transcript_tags WHERE transcript_id = ? AND tag = ?",
         arguments: [transcriptId, trimmed]

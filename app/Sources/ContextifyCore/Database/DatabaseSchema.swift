@@ -332,10 +332,17 @@ public enum DatabaseSchema {
         )
       """)
 
-      // Copy data
+      // Copy stable columns explicitly so legacy/dev-only extra columns
+      // on transcript_metadata do not break rebuilds.
+      let baseCols = """
+        transcript_id, project_id, title, description, topics, confidence,
+        may_contain_hallucinations, needs_review, generated_at, model,
+        prompt_version, generator_version, transcript_sha256, message_count,
+        strategy, llm_calls, latency_ms, created_at, updated_at
+      """
       try db.execute(sql: """
-        INSERT INTO transcript_metadata_new
-        SELECT * FROM transcript_metadata
+        INSERT INTO transcript_metadata_new (\(baseCols))
+        SELECT \(baseCols) FROM transcript_metadata
       """)
 
       // Drop old table

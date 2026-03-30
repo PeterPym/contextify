@@ -517,7 +517,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: countExcludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -642,7 +643,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: excludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
