@@ -2374,8 +2374,8 @@ public struct ContextifyQueryService: Sendable {
             entry["cwd"] as? String,
             createdAt, updatedAt,
             Double(timestamp),
-            entry["source_device_id"] as? String,
-            entry["source_device_name"] as? String,
+            entry["source_device_id"] as? String ?? entry["uploaded_by_device_id"] as? String,
+            entry["source_device_name"] as? String ?? entry["uploaded_by_device_name"] as? String,
           ])
         entriesImported += 1
       }
