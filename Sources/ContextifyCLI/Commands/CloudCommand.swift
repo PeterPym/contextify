@@ -791,6 +791,13 @@ struct CloudStatusCommand: ParsableCommand {
 // MARK: - Push Command
 
 struct CloudPushCommand: ParsableCommand {
+  struct Result {
+    let accepted: Int
+    let duplicatesSkipped: Int
+    let errors: [String]
+    let batches: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "push",
     abstract: "Push local entries to cloud",
@@ -814,7 +821,7 @@ struct CloudPushCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
+  func execute() throws -> Result {
     let config: CLICloudConfig
     do {
       config = try CLICloudConfig.load()
@@ -865,12 +872,8 @@ struct CloudPushCommand: ParsableCommand {
       )
 
       if exportData.entries.isEmpty {
-        if batchCount == 0 {
-          if json {
-            print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
-          } else {
-            print(CLIStyle.dimText("No entries to push."))
-          }
+        if batchCount == 0 && !json {
+          print(CLIStyle.dimText("No entries to push."))
         }
         break
       }
@@ -933,27 +936,37 @@ struct CloudPushCommand: ParsableCommand {
       }
     }
 
-    // Print final summary
-    if batchCount > 0 {
+    return Result(
+      accepted: totalAccepted,
+      duplicatesSkipped: totalDuplicates,
+      errors: totalErrors,
+      batches: batchCount
+    )
+  }
+
+  func run() throws {
+    let result = try execute()
+
+    if result.batches > 0 {
       if json {
         let output: [String: Any] = [
-          "accepted": totalAccepted,
-          "duplicates_skipped": totalDuplicates,
-          "errors": Array(totalErrors.prefix(10)),
-          "batches": batchCount,
+          "accepted": result.accepted,
+          "duplicates_skipped": result.duplicatesSkipped,
+          "errors": Array(result.errors.prefix(10)),
+          "batches": result.batches,
         ]
         let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
         print(String(data: data, encoding: .utf8) ?? "{}")
       } else {
-        print(CLIStyle.success("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))"))
-        if !totalErrors.isEmpty {
-          print(CLIStyle.error("Errors: \(totalErrors.count)"))
-          for e in totalErrors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
+        print(CLIStyle.success("Push complete: \(result.accepted) accepted, \(result.duplicatesSkipped) duplicates (\(result.batches) batch\(result.batches == 1 ? "" : "es"))"))
+        if !result.errors.isEmpty {
+          print(CLIStyle.error("Errors: \(result.errors.count)"))
+          for e in result.errors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
         }
       }
     }
 
-    if !totalErrors.isEmpty { throw ExitCode(1) }
+    if !result.errors.isEmpty { throw ExitCode(1) }
   }
 
   private func resolveDbPath() -> String {
@@ -965,6 +978,12 @@ struct CloudPushCommand: ParsableCommand {
 // MARK: - Pull Command
 
 struct CloudPullCommand: ParsableCommand {
+  struct Result {
+    let pulled: Int
+    let imported: Int
+    let cursor: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "pull",
     abstract: "Pull entries from other devices",
@@ -987,7 +1006,7 @@ struct CloudPullCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
+  func execute() throws -> Result {
     var config: CLICloudConfig
     do {
       config = try CLICloudConfig.load()
@@ -1067,14 +1086,20 @@ struct CloudPullCommand: ParsableCommand {
     config.lastPullSequence = cursor
     try config.save()
 
+    return Result(pulled: totalPulled, imported: totalImported, cursor: cursor)
+  }
+
+  func run() throws {
+    let result = try execute()
+
     if json {
       let output: [String: Any] = [
-        "pulled": totalPulled, "imported": totalImported, "cursor": cursor,
+        "pulled": result.pulled, "imported": result.imported, "cursor": result.cursor,
       ]
       let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
       print(String(data: data, encoding: .utf8)!)
     } else {
-      print(CLIStyle.success("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)"))
+      print(CLIStyle.success("Pull complete: \(result.pulled) received, \(result.imported) imported, cursor at \(result.cursor)"))
     }
   }
 
@@ -1129,14 +1154,16 @@ struct CloudSyncCommand: ParsableCommand {
     }
 
     var pushFailed = false
+    var pushResult: CloudPushCommand.Result?
+    var pushError: String?
 
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
     push.db = dbPath
     push.limit = 500
-    push.json = json
+    push.json = false  // Suppress push's own JSON; sync emits envelope
     do {
-      try push.run()
+      pushResult = try push.execute()
     } catch {
       // Only continue to pull for recoverable push failures (network/server).
       // Fail fast for auth, validation, and programming errors.
@@ -1156,6 +1183,7 @@ struct CloudSyncCommand: ParsableCommand {
       guard recoverable else { throw error }
 
       pushFailed = true
+      pushError = "\(error)"
       if !json {
         print(CLIStyle.warning("Push failed: \(error)"))
         print(CLIStyle.dimText("Continuing with pull..."))
@@ -1166,10 +1194,40 @@ struct CloudSyncCommand: ParsableCommand {
     var pull = CloudPullCommand()
     pull.db = dbPath
     pull.project = project
-    pull.json = json
-    try pull.run()
+    pull.json = false  // Suppress pull's own JSON; sync emits envelope
+    let pullResult = try pull.execute()
 
-    if !json {
+    if json {
+      // ct-824: Single structured JSON envelope for sync results
+      var pushDict: [String: Any] = [:]
+      if let pr = pushResult {
+        pushDict = [
+          "accepted": pr.accepted,
+          "duplicates_skipped": pr.duplicatesSkipped,
+          "errors": Array(pr.errors.prefix(10)),
+          "batches": pr.batches,
+        ]
+      }
+      if pushFailed {
+        pushDict["failed"] = true
+        pushDict["error"] = pushError ?? "unknown"
+      } else {
+        pushDict["failed"] = false
+      }
+
+      let output: [String: Any] = [
+        "push": pushDict,
+        "pull": [
+          "pulled": pullResult.pulled,
+          "imported": pullResult.imported,
+          "cursor": pullResult.cursor,
+        ],
+        "partial": pushFailed,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8)!)
+    } else {
+      print(CLIStyle.success("Pull complete: \(pullResult.pulled) received, \(pullResult.imported) imported, cursor at \(pullResult.cursor)"))
       if pushFailed {
         print("\n" + CLIStyle.warning("Sync partially complete (push failed, pull succeeded)."))
       } else {
