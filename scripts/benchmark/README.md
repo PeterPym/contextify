@@ -175,7 +175,14 @@ The benchmark uses a frozen database snapshot for reproducibility.
 bash scripts/benchmark/prepare-snapshot.sh
 ```
 
-This copies the current production database and updates the manifest. When rebuilding the snapshot (e.g., after a tokenizer change), all gold queries must be re-verified.
+This copies the current production database and updates the manifest. By default, it excludes transcripts tagged with `"benchmark"` or `"evaluation"` (via the `transcript_tags` table) to prevent benchmark-run transcripts from contaminating the evaluation corpus. Pass `--no-exclude-tags` to include all transcripts regardless of tags.
+
+```bash
+# Include all transcripts, bypassing tag exclusion
+bash scripts/benchmark/prepare-snapshot.sh --no-exclude-tags
+```
+
+When rebuilding the snapshot (e.g., after a tokenizer change), all gold queries must be re-verified.
 
 **Creating a comparison snapshot** (e.g., with a different tokenizer):
 
