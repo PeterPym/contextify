@@ -307,7 +307,6 @@ public enum DatabaseSchema {
       guard tableExists else { return }
 
       // Create temp table with corrected CHECK constraint
-      // Note: includes tags column (v39) with DEFAULT for collapsed-schema compatibility
       try db.execute(sql: """
         CREATE TABLE transcript_metadata_new (
           transcript_id TEXT PRIMARY KEY,
@@ -329,30 +328,15 @@ public enum DatabaseSchema {
           latency_ms INTEGER NOT NULL,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
-          tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags)),
           FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
         )
       """)
 
-      // Copy data using explicit column list (SELECT * breaks when source has different column count)
-      let baseCols = """
-        transcript_id, project_id, title, description, topics, confidence,
-        may_contain_hallucinations, needs_review, generated_at, model,
-        prompt_version, generator_version, transcript_sha256, message_count,
-        strategy, llm_calls, latency_ms, created_at, updated_at
-      """
-      let hasTagsCol = try db.columnExists("tags", in: "transcript_metadata")
-      if hasTagsCol {
-        try db.execute(sql: """
-          INSERT INTO transcript_metadata_new (\(baseCols), tags)
-          SELECT \(baseCols), tags FROM transcript_metadata
-        """)
-      } else {
-        try db.execute(sql: """
-          INSERT INTO transcript_metadata_new (\(baseCols))
-          SELECT \(baseCols) FROM transcript_metadata
-        """)
-      }
+      // Copy data
+      try db.execute(sql: """
+        INSERT INTO transcript_metadata_new
+        SELECT * FROM transcript_metadata
+      """)
 
       // Drop old table
       try db.execute(sql: "DROP TABLE transcript_metadata")
@@ -1192,18 +1176,48 @@ public enum DatabaseSchema {
     }
 
     // ========================================================================
-    // v39: Transcript tags for purpose labeling (benchmark, evaluation, etc.)
+    // v39: Transcript tags (dedicated table for purpose labeling)
     // ========================================================================
     migrator.registerMigration("v39_transcript_tags") { db in
-      logger.info("[MIGRATION-v39] Adding tags column to transcript_metadata")
+      logger.info("[MIGRATION-v39] Creating transcript_tags table")
 
-      if try !db.columnExists("tags", in: "transcript_metadata") {
-        try db.execute(sql: """
-          ALTER TABLE transcript_metadata ADD COLUMN tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags))
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcript_tags (
+          transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+          tag TEXT NOT NULL COLLATE NOCASE,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (transcript_id, tag)
+        )
+      """)
+      try db.create(
+        index: "idx_transcript_tags_tag",
+        on: "transcript_tags",
+        columns: ["tag", "transcript_id"],
+        ifNotExists: true
+      )
+
+      // Migrate any existing tags from transcript_metadata.tags column (if present from dev builds)
+      if try db.columnExists("tags", in: "transcript_metadata") {
+        let rows = try Row.fetchAll(db, sql: """
+          SELECT transcript_id, tags FROM transcript_metadata WHERE tags != '[]' AND tags IS NOT NULL
         """)
+        let now = Int(Date().timeIntervalSince1970)
+        for row in rows {
+          let transcriptId: String = row["transcript_id"]
+          let tagsJson: String = row["tags"]
+          if let data = tagsJson.data(using: .utf8),
+             let tags = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            for tag in tags {
+              try db.execute(
+                sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
+                arguments: [transcriptId, tag.lowercased(), now]
+              )
+            }
+          }
+        }
       }
 
-      logger.info("[MIGRATION-v39] Transcript tags column added")
+      logger.info("[MIGRATION-v39] Transcript tags table created")
     }
 
     return migrator
@@ -1491,14 +1505,29 @@ public enum DatabaseSchema {
         llm_calls INTEGER NOT NULL,
         latency_ms INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        tags TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags))
+        updated_at INTEGER NOT NULL
       )
     """)
     try db.create(index: "idx_tm_project", on: "transcript_metadata", columns: ["project_id"], ifNotExists: true)
     try db.create(index: "idx_tm_generated_at", on: "transcript_metadata", columns: ["generated_at"], ifNotExists: true)
     try db.create(index: "idx_tm_needs_review", on: "transcript_metadata", columns: ["needs_review", "generated_at"], ifNotExists: true)
     try db.create(index: "idx_tm_sha", on: "transcript_metadata", columns: ["transcript_sha256"], ifNotExists: true)
+
+    // Transcript tags table (v39: dedicated table for purpose labeling)
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS transcript_tags (
+        transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL COLLATE NOCASE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (transcript_id, tag)
+      )
+    """)
+    try db.create(
+      index: "idx_transcript_tags_tag",
+      on: "transcript_tags",
+      columns: ["tag", "transcript_id"],
+      ifNotExists: true
+    )
 
     // Parse errors table
     try db.create(table: "parse_errors", ifNotExists: true) { t in

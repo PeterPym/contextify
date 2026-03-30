@@ -1260,11 +1260,11 @@ final class ContextifyQueryServiceTests: XCTestCase {
 
     let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
 
-    // Initially no tags (no metadata row yet)
+    // Initially no tags
     let initial = try service.getTags(transcriptId: "t1")
     XCTAssertTrue(initial.isEmpty)
 
-    // Add a tag (creates minimal metadata row)
+    // Add a tag
     try service.addTag(transcriptId: "t1", tag: "benchmark")
     let afterAdd = try service.getTags(transcriptId: "t1")
     XCTAssertEqual(afterAdd, ["benchmark"])

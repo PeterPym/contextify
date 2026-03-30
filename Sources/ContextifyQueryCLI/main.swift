@@ -1104,6 +1104,7 @@ struct ContextifyQueryCLI {
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
         --anchor-files <csv> Search: boost results near commits touching these files
+        --exclude-tags <csv> Search: exclude entries from transcripts with matching tags
         --json               Emit JSON output
 
       Commands:
@@ -1113,6 +1114,7 @@ struct ContextifyQueryCLI {
         transcripts          List transcripts for a project
         entry <uuid>         Fetch an entry by id (UUID)
         context <uuid>       Fetch context around an entry (UUID)
+        tag <id> [<tag>]     List/add/remove transcript tags (--remove to delete)
         status               Show database status
         feedback             Record or manage CLI feedback
         summaries            Recent transcript summaries
@@ -1601,7 +1603,20 @@ private func runTag(
 ) throws {
   // Usage: contextify tag <transcript-id> <tag> [--remove]
   //        contextify tag <transcript-id>          (list tags)
-  guard !commandArgs.isEmpty else {
+  let supportedFlags: Set<String> = ["--remove", "--json"]
+  if let unknown = commandArgs.first(where: { $0.hasPrefix("--") && !supportedFlags.contains($0) }) {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Unknown option: \(unknown)",
+      exitCode: .invalidArgs,
+      hint: "Usage: contextify tag <transcript-id> [<tag>] [--remove]"
+    )
+  }
+
+  let positional = commandArgs.filter { !$0.hasPrefix("--") }
+  let isRemove = commandArgs.contains("--remove")
+
+  guard let transcriptId = positional.first else {
     throw CLIError(
       code: "invalidArgs",
       message: "Usage: contextify tag <transcript-id> [<tag>] [--remove]",
@@ -1610,13 +1625,7 @@ private func runTag(
     )
   }
 
-  let transcriptId = commandArgs[0]
-
-  // Filter out flags from commandArgs to get positional args
-  let positional = commandArgs.filter { !$0.hasPrefix("--") }
-  let isRemove = commandArgs.contains("--remove")
-
-  if positional.count == 1 {
+  if positional.count == 1 && !isRemove {
     // List tags
     let tags = try service.getTags(transcriptId: transcriptId)
     struct TagListResult: Encodable {
@@ -1634,6 +1643,15 @@ private func runTag(
       }
     }
     return
+  }
+
+  guard positional.count == 2 else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: isRemove ? "Usage: contextify tag <transcript-id> <tag> --remove" : "Usage: contextify tag <transcript-id> <tag>",
+      exitCode: .invalidArgs,
+      hint: "Example: contextify tag abc123 benchmark"
+    )
   }
 
   let tagValue = positional[1]

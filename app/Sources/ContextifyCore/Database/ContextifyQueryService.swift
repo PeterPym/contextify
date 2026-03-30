@@ -936,14 +936,14 @@ public struct ContextifyQueryService: Sendable {
     }
     if let excludeTags, !excludeTags.isEmpty {
       // Exclude entries from transcripts that have any of the specified tags.
-      // Uses json_each to unpack the tags JSON array and checks for intersection.
+      // Uses the indexed transcript_tags table for efficient filtering.
       let sortedTags = Array(Set(excludeTags)).sorted()
       let placeholders = sortedTags.map { _ in "?" }.joined(separator: ", ")
       whereParts.append("""
         NOT EXISTS (
-          SELECT 1 FROM transcript_metadata tm_tag, json_each(tm_tag.tags) jt
-          WHERE tm_tag.transcript_id = e.transcript_id
-          AND jt.value IN (\(placeholders))
+          SELECT 1 FROM transcript_tags tt
+          WHERE tt.transcript_id = e.transcript_id
+          AND tt.tag IN (\(placeholders))
         )
         """)
       args.append(contentsOf: sortedTags)
@@ -1884,101 +1884,48 @@ public struct ContextifyQueryService: Sendable {
 
   // MARK: - Transcript Tags
 
-  /// Add a tag to a transcript's metadata. Creates metadata row if missing (tag-only, no LLM fields).
+  /// Add a tag to a transcript. Uses dedicated transcript_tags table.
   public func addTag(transcriptId: String, tag: String) throws {
     let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
     guard !trimmed.isEmpty else { return }
     try pool.write { db in
-      // Check if transcript exists
       let exists = try Bool.fetchOne(
         db,
         sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
         arguments: [transcriptId]
       ) ?? false
       guard exists else {
-        throw QueryError.featureUnavailable(feature: "tag", message: "Transcript not found: \(transcriptId)")
-      }
-
-      // Check if metadata row exists
-      let hasMeta = try Bool.fetchOne(
-        db,
-        sql: "SELECT EXISTS(SELECT 1 FROM transcript_metadata WHERE transcript_id = ?)",
-        arguments: [transcriptId]
-      ) ?? false
-
-      if hasMeta {
-        // Read current tags, append if not present
-        let current = try String.fetchOne(
-          db,
-          sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
-          arguments: [transcriptId]
-        ) ?? "[]"
-        let data = Data(current.utf8)
-        var tags = (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
-        guard !tags.contains(trimmed) else { return }
-        tags.append(trimmed)
-        let json = try JSONSerialization.data(withJSONObject: tags)
-        let jsonString = String(data: json, encoding: .utf8) ?? "[]"
-        try db.execute(
-          sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
-          arguments: [jsonString, transcriptId]
-        )
-      } else {
-        // Create a minimal metadata row with just the tag
-        let json = try JSONSerialization.data(withJSONObject: [trimmed])
-        let jsonString = String(data: json, encoding: .utf8) ?? "[]"
-        let now = Int(Date().timeIntervalSince1970)
-        try db.execute(
-          sql: """
-            INSERT INTO transcript_metadata (
-              transcript_id, project_id, title, description, topics, confidence,
-              may_contain_hallucinations, needs_review, generated_at, model,
-              prompt_version, generator_version, transcript_sha256, message_count,
-              strategy, llm_calls, latency_ms, created_at, updated_at, tags
-            ) VALUES (
-              ?, (SELECT project_id FROM transcripts WHERE id = ?),
-              '', '', '[]', 0.0,
-              0, 0, ?, 'manual',
-              0, 0, '', 0,
-              'full', 0, 0, ?, ?, ?
-            )
-          """,
-          arguments: [transcriptId, transcriptId, now, now, now, jsonString]
+        throw QueryError.featureUnavailable(
+          feature: "tag",
+          message: "Transcript not found: \(transcriptId)"
         )
       }
+      let now = Int(Date().timeIntervalSince1970)
+      try db.execute(
+        sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
+        arguments: [transcriptId, trimmed, now]
+      )
     }
   }
 
   /// Get the tags for a transcript.
   public func getTags(transcriptId: String) throws -> [String] {
     try pool.read { db in
-      let json = try String.fetchOne(
+      try String.fetchAll(
         db,
-        sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
+        sql: "SELECT tag FROM transcript_tags WHERE transcript_id = ? ORDER BY tag",
         arguments: [transcriptId]
-      ) ?? "[]"
-      let data = Data(json.utf8)
-      return (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
+      )
     }
   }
 
-  /// Remove a tag from a transcript's metadata.
+  /// Remove a tag from a transcript.
   public func removeTag(transcriptId: String, tag: String) throws {
     let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
     try pool.write { db in
-      let current = try String.fetchOne(
-        db,
-        sql: "SELECT tags FROM transcript_metadata WHERE transcript_id = ?",
-        arguments: [transcriptId]
-      ) ?? "[]"
-      let data = Data(current.utf8)
-      var tags = (try? JSONSerialization.jsonObject(with: data) as? [String]) ?? []
-      tags.removeAll { $0 == trimmed }
-      let json = try JSONSerialization.data(withJSONObject: tags)
-      let jsonString = String(data: json, encoding: .utf8) ?? "[]"
       try db.execute(
-        sql: "UPDATE transcript_metadata SET tags = ? WHERE transcript_id = ?",
-        arguments: [jsonString, transcriptId]
+        sql: "DELETE FROM transcript_tags WHERE transcript_id = ? AND tag = ?",
+        arguments: [transcriptId, trimmed]
       )
     }
   }

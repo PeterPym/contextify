@@ -487,7 +487,6 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
   public var latencyMs: Int
   public var createdAt: Int
   public var updatedAt: Int
-  public var tags: String  // JSON array of purpose labels, e.g. '["benchmark","evaluation"]'
 
   public init(
     transcriptId: String,
@@ -508,8 +507,7 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
     llmCalls: Int,
     latencyMs: Int,
     createdAt: Int,
-    updatedAt: Int,
-    tags: String = "[]"
+    updatedAt: Int
   ) {
     self.transcriptId = transcriptId
     self.projectId = projectId
@@ -530,7 +528,6 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
     self.latencyMs = latencyMs
     self.createdAt = createdAt
     self.updatedAt = updatedAt
-    self.tags = tags
   }
 
   public static let databaseTableName = "transcript_metadata"
@@ -555,7 +552,6 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
     case latencyMs = "latency_ms"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
-    case tags
   }
 }
 
