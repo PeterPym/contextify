@@ -1138,6 +1138,23 @@ struct CloudSyncCommand: ParsableCommand {
     do {
       try push.run()
     } catch {
+      // Only continue to pull for recoverable push failures (network/server).
+      // Fail fast for auth, validation, and programming errors.
+      let recoverable: Bool
+      if let cloudError = error as? CloudError {
+        switch cloudError {
+        case .networkError:
+          recoverable = true
+        case .apiError(let code, _):
+          recoverable = code >= 500
+        default:
+          recoverable = false
+        }
+      } else {
+        recoverable = false
+      }
+      guard recoverable else { throw error }
+
       pushFailed = true
       if !json {
         print(CLIStyle.warning("Push failed: \(error)"))

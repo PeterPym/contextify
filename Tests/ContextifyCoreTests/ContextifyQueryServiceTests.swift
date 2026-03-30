@@ -343,6 +343,87 @@ final class ContextifyQueryServiceTests: XCTestCase {
     }
   }
 
+  /// Regression test for ct-834: pull must not crash when a transcript already
+  /// exists locally with a different ID but the same (project_id, file_path).
+  func testImportFromCloudPull_skipsTranscriptWithDuplicateProjectIdAndFilePath() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-cloud-pull-dup-transcript-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Seed a project and transcript as if local ingest created them
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('local-proj', 'TestProject', '/test/cloud-push', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('local-transcript', 'local-proj',
+          '/root/.claude/projects/test-hash/session.jsonl', 'claude.code',
+          100, 3, 3, 1, 'active', 'complete', 100, 100)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Pull delivers the same transcript with a DIFFERENT id but same
+    // project_id + file_path. Before ct-834 fix this caused a UNIQUE
+    // constraint violation.
+    let result = try service.importFromCloudPull(
+      projects: [[
+        "id": "local-proj",
+        "name": "TestProject",
+        "root_path": "/test/cloud-push",
+      ]],
+      transcripts: [[
+        "id": "cloud-transcript-different-id",
+        "project_id": "local-proj",
+        "file_path": "/root/.claude/projects/test-hash/session.jsonl",
+        "provider": "claude.code",
+        "line_count": 3,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      entries: [[
+        "id": "cloud-entry-1",
+        "transcript_id": "cloud-transcript-different-id",
+        "project_id": "local-proj",
+        "provider": "claude.code",
+        "kind": "user",
+        "timestamp": 100,
+        "content": "test entry for ct-834",
+        "content_sha256": "sha-ct834",
+        "display_in_timeline": true,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      summaries: []
+    )
+
+    // Transcript should be skipped (already exists), not crash
+    XCTAssertEqual(result.transcriptsImported, 0)
+    // Entry should still import (remapped to the local transcript ID)
+    XCTAssertEqual(result.entriesImported, 1)
+
+    try pool.read { db in
+      let transcriptCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts")
+      XCTAssertEqual(transcriptCount, 1, "Should still have only the original transcript")
+
+      // Entry should reference the LOCAL transcript ID, not the cloud one
+      let entryTranscriptId = try String.fetchOne(
+        db, sql: "SELECT transcript_id FROM transcript_entries WHERE id = 'cloud-entry-1'")
+      XCTAssertEqual(entryTranscriptId, "local-transcript",
+        "Entry should be remapped to local transcript ID")
+    }
+  }
+
   // MARK: - FTS Search Correctness & Query Plan Guards (ct-178)
 
   /// Verifies OR queries return correct results through search, searchCount, and searchTermCounts.
