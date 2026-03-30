@@ -4,6 +4,14 @@
 import ArgumentParser
 import Foundation
 
+#if canImport(FoundationNetworking)
+@preconcurrency import FoundationNetworking
+#endif
+
+#if canImport(Glibc)
+@preconcurrency import Glibc
+#endif
+
 #if os(macOS)
 import ContextifyCore
 #else
@@ -136,30 +144,7 @@ private func cloudRequest(
   request.httpBody = body
   request.timeoutInterval = timeoutSeconds
 
-  let semaphore = DispatchSemaphore(value: 0)
-  var responseData: Data?
-  var statusCode: Int = 0
-  var requestError: Error?
-
-  let task = URLSession.shared.dataTask(with: request) { data, response, error in
-    responseData = data
-    statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-    requestError = error
-    semaphore.signal()
-  }
-  task.resume()
-  let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds + 5)
-  if waitResult == .timedOut {
-    task.cancel()
-    throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
-  }
-
-  if let error = requestError {
-    throw CloudError.networkError(error.localizedDescription)
-  }
-  guard let data = responseData else {
-    throw CloudError.networkError("No response received")
-  }
+  let (data, statusCode) = try syncHTTPRequest(request, timeoutSeconds: timeoutSeconds)
   return (data, statusCode)
 }
 
@@ -180,15 +165,44 @@ private func unauthenticatedRequest(
   request.httpBody = body
   request.timeoutInterval = timeoutSeconds
 
+  let (data, statusCode) = try syncHTTPRequest(request, timeoutSeconds: timeoutSeconds)
+  return (data, statusCode)
+}
+
+/// Thread-safe container for URLSession callback results.
+/// Uses NSLock to synchronize writes (callback thread) and reads (waiting thread).
+private final class HTTPResultBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _data: Data?
+  private var _statusCode: Int = 0
+  private var _error: Error?
+
+  func store(data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    _data = data
+    _statusCode = statusCode
+    _error = error
+    lock.unlock()
+  }
+
+  func snapshot() -> (data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (_data, _statusCode, _error)
+  }
+}
+
+/// Execute a URLRequest synchronously using a semaphore.
+private func syncHTTPRequest(_ request: URLRequest, timeoutSeconds: TimeInterval) throws -> (Data, Int) {
+  let box = HTTPResultBox()
   let semaphore = DispatchSemaphore(value: 0)
-  var responseData: Data?
-  var statusCode: Int = 0
-  var requestError: Error?
 
   let task = URLSession.shared.dataTask(with: request) { data, response, error in
-    responseData = data
-    statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-    requestError = error
+    box.store(
+      data: data,
+      statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0,
+      error: error
+    )
     semaphore.signal()
   }
   task.resume()
@@ -198,13 +212,14 @@ private func unauthenticatedRequest(
     throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
   }
 
-  if let error = requestError {
+  let result = box.snapshot()
+  if let error = result.error {
     throw CloudError.networkError(error.localizedDescription)
   }
-  guard let data = responseData else {
+  guard let data = result.data else {
     throw CloudError.networkError("No response received")
   }
-  return (data, statusCode)
+  return (data, result.statusCode)
 }
 
 // MARK: - Device Flow Types
@@ -295,8 +310,7 @@ private func pollForDeviceToken(
     // Show spinner progress
     if CLIStyle.isStyled {
       let frame = spinnerFrames[frameIndex % spinnerFrames.count]
-      print("\r  \(frame) Waiting for browser authorization...", terminator: "")
-      fflush(stdout)
+      writeStdout("\r  \(frame) Waiting for browser authorization...")
       frameIndex += 1
     }
 
@@ -319,8 +333,7 @@ private func pollForDeviceToken(
     if statusCode == 200 {
       // Clear spinner line
       if CLIStyle.isStyled {
-        print("\r\u{001B}[2K", terminator: "")
-        fflush(stdout)
+        writeStdout("\r\u{001B}[2K")
       }
       return try JSONDecoder().decode(DeviceTokenResponse.self, from: data)
     }
@@ -335,20 +348,17 @@ private func pollForDeviceToken(
         continue
       case "expired_token":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization timed out. The code has expired. Please run setup again.")
       case "access_denied":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization was denied by the user.")
       default:
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError(
           errorResponse.errorDescription ?? "Unknown error: \(errorResponse.error)")
@@ -357,8 +367,7 @@ private func pollForDeviceToken(
 
     // Unexpected status code
     if CLIStyle.isStyled {
-      print("\r\u{001B}[2K", terminator: "")
-      fflush(stdout)
+      writeStdout("\r\u{001B}[2K")
     }
     let respBody = String(data: data, encoding: .utf8) ?? ""
     throw CloudError.apiError(statusCode, respBody)
@@ -366,8 +375,7 @@ private func pollForDeviceToken(
 
   // Expired by local deadline
   if CLIStyle.isStyled {
-    print("\r\u{001B}[2K", terminator: "")
-    fflush(stdout)
+    writeStdout("\r\u{001B}[2K")
   }
   throw CloudError.networkError("Authorization timed out after \(expiresIn) seconds.")
 }
@@ -966,7 +974,7 @@ struct CloudPullCommand: ParsableCommand {
     var config = try CLICloudConfig.load()
 
     let dbPath = resolveDbPath()
-    let queryService = try ContextifyQueryService(databasePath: dbPath)
+    let queryService = try ContextifyQueryService(databaseURL: URL(fileURLWithPath: dbPath), readOnly: false)
 
     var totalPulled = 0
     var totalImported = 0
@@ -1268,37 +1276,26 @@ struct CloudSearchCommand: ParsableCommand {
 
 // MARK: - Helpers
 
-/// Stable machine identifier for device registration
-private func getStableMachineId() -> String {
-  #if os(macOS)
-  return MachineID.current()
-  #else
-  if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
-    .trimmingCharacters(in: .whitespacesAndNewlines) {
-    return id
-  }
-  return ProcessInfo.processInfo.hostName
-  #endif
+/// Write directly to stdout, bypassing Swift's print buffer.
+/// Avoids Swift 6 concurrency warnings for the global `stdout` symbol
+/// and ensures immediate output for interactive progress (spinners, line clearing).
+private func writeStdout(_ text: String) {
+  guard let data = text.data(using: .utf8) else { return }
+  try? FileHandle.standardOutput.write(contentsOf: data)
 }
 
-/// Get a human-readable machine name for device identity
+/// Stable machine identifier for device registration (delegates to cross-platform MachineID)
+private func getStableMachineId() -> String {
+  MachineID.current()
+}
+
+/// Get a human-readable machine name for device identity (delegates to cross-platform DeviceName)
 private func getLocalMachineName() -> String {
-  #if os(macOS)
-  return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-  #else
-  return ProcessInfo.processInfo.hostName
-  #endif
+  DeviceName.current()
 }
 
 private func normalizedCLICloudDeviceID(_ storedID: String?) -> String {
-  #if os(macOS)
-  return MachineID.normalizedCloudDeviceID(storedID)
-  #else
-  guard let storedID, !storedID.isEmpty else {
-    return getStableMachineId()
-  }
-  return storedID
-  #endif
+  MachineID.normalizedCloudDeviceID(storedID)
 }
 
 /// Build push payload from exported data
@@ -1313,11 +1310,7 @@ private func buildPushPayload(
   if let name = machineName, !name.isEmpty {
     resolvedName = name
   } else {
-    #if os(macOS)
-    resolvedName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-    #else
-    resolvedName = ProcessInfo.processInfo.hostName
-    #endif
+    resolvedName = DeviceName.current()
   }
 
   return [

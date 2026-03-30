@@ -1958,24 +1958,10 @@ public struct ContextifyQueryService: Sendable {
         )
       }
 
-      // Collect referenced project and transcript IDs
-      let projectIds = Array(Set(entries.map { $0.projectId }))
+      // Collect referenced transcript IDs from entries
       let transcriptIds = Array(Set(entries.map { $0.transcriptId }))
 
-      // Fetch projects
-      var projects: [CloudPushExport.Project] = []
-      if !projectIds.isEmpty {
-        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
-        let projRows = try Row.fetchAll(db,
-          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
-          arguments: StatementArguments(projectIds))
-        projects = projRows.map { row in
-          CloudPushExport.Project(
-            id: row["id"], name: row["name"], rootPath: row["root_path"])
-        }
-      }
-
-      // Fetch transcripts
+      // Fetch transcripts first (needed to discover transcript-referenced project IDs)
       var transcripts: [CloudPushExport.Transcript] = []
       if !transcriptIds.isEmpty {
         let placeholders = transcriptIds.map { _ in "?" }.joined(separator: ",")
@@ -1993,6 +1979,27 @@ public struct ContextifyQueryService: Sendable {
             providerSessionId: row["provider_session_id"],
             lineCount: row["line_count"] ?? 0,
             createdAt: row["created_at"], updatedAt: row["updated_at"])
+        }
+      }
+
+      // Collect project IDs from BOTH entries and transcripts.
+      // These can differ: entries get cwd-resolved UUIDs via HooverEngine's
+      // resolveProjectId(), while transcripts keep the original discovery-phase
+      // project ID. Both must be exported for server FK integrity.
+      let projectIds = Array(Set(
+        entries.map { $0.projectId } + transcripts.map { $0.projectId }
+      ))
+
+      // Fetch projects
+      var projects: [CloudPushExport.Project] = []
+      if !projectIds.isEmpty {
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
+        let projRows = try Row.fetchAll(db,
+          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
+          arguments: StatementArguments(projectIds))
+        projects = projRows.map { row in
+          CloudPushExport.Project(
+            id: row["id"], name: row["name"], rootPath: row["root_path"])
         }
       }
 

@@ -268,4 +268,90 @@ final class CloudSyncPrivacyTests: XCTestCase {
     // Entry should be imported because the repo group has at least one enabled member
     XCTAssertEqual(result.entriesImported, 1, "Entries for mixed repo groups should be imported during pull")
   }
+
+  // MARK: - ct-806: Divergent transcript vs entry project IDs
+
+  /// Regression test for ct-806. HooverEngine can reassign entries to a different
+  /// project than the transcript (cwd-based resolution). exportForCloudPush() must
+  /// include projects referenced by BOTH entries and transcripts, or the server
+  /// rejects the transcript insert with a FK violation.
+  func testExportForCloudPushIncludesTranscriptReferencedProjects() throws {
+    let (dbManager, tempDir) = try makeTestDB()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let pool = try dbManager.pool
+
+    // Two projects: one from discovery (transcript points here), one from cwd resolution (entry points here)
+    try insertProject(pool: pool, id: "proj-discovery", name: "discovery-project")
+    try insertProject(pool: pool, id: "proj-cwd", name: "cwd-resolved-project")
+
+    // Transcript references the discovery project
+    let now = Int(Date().timeIntervalSince1970)
+    let transcript = Transcript(
+      id: "tx-divergent",
+      projectId: "proj-discovery",
+      filePath: "/test/discovery-project/session.jsonl",
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: 0,
+      fileSize: nil,
+      lineCount: 1,
+      bookmark: nil,
+      lastProcessedLine: 0,
+      lastProcessedEntryId: nil,
+      parserVersion: 1,
+      status: "active",
+      ingestState: "complete",
+      lastError: nil,
+      createdAt: now,
+      updatedAt: now
+    )
+    // Entry references the cwd-resolved project (different from transcript's project)
+    let entry = TranscriptEntry(
+      id: "e-divergent",
+      transcriptId: "tx-divergent",
+      projectId: "proj-cwd",
+      sessionId: nil,
+      provider: "claude.code",
+      kind: "user",
+      timestamp: 500,
+      content: "divergent project test",
+      contentSha256: "sha-divergent",
+      displayInTimeline: 1,
+      gitBranch: nil,
+      gitCommit: nil,
+      cwd: nil,
+      createdAt: now,
+      updatedAt: now,
+      isQueued: 0,
+      isSidechain: 0
+    )
+    try pool.write { db in
+      try transcript.insert(db)
+      try entry.insert(db)
+    }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let export = try service.exportForCloudPush()
+
+    // Entry should reference the cwd-resolved project
+    XCTAssertEqual(export.entries.count, 1)
+    XCTAssertEqual(export.entries.first?.projectId, "proj-cwd")
+
+    // Transcript should reference the discovery project
+    XCTAssertEqual(export.transcripts.count, 1)
+    XCTAssertEqual(export.transcripts.first?.projectId, "proj-discovery")
+
+    // Both projects must be included in the export (server needs both for FK integrity)
+    let exportedProjectIds = Set(export.projects.map { $0.id })
+    XCTAssertTrue(
+      exportedProjectIds.contains("proj-discovery"),
+      "Export must include transcript-referenced project for server FK integrity"
+    )
+    XCTAssertTrue(
+      exportedProjectIds.contains("proj-cwd"),
+      "Export must include entry-referenced project for server FK integrity"
+    )
+    XCTAssertEqual(exportedProjectIds.count, 2, "Both divergent projects must be exported")
+  }
 }
