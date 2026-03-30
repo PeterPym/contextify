@@ -896,23 +896,14 @@ struct CloudPushCommand: ParsableCommand {
         throw CloudError.apiError(status, body)
       }
 
-      // Always advance cursor past this batch so failed entries
-      // are not retried indefinitely on subsequent pushes
-      if let last = exportData.entries.last {
-        afterTimestamp = last.timestamp
-        afterEntryId = last.id
-      }
-      if let ts = afterTimestamp, let eid = afterEntryId {
-        mutableConfig.lastPushTimestamp = ts
-        mutableConfig.lastPushEntryId = eid
-        try mutableConfig.save()
-      }
-
       if let result = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
         totalAccepted += result["accepted"] as? Int ?? 0
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
+        // Fail closed: do NOT advance cursor past errors so entries
+        // can be retried. ct-810 cursor-skip needs a server protocol
+        // change to distinguish permanent vs transient failures.
         if !batchErrors.isEmpty {
           if !json {
             print(CLIStyle.warning("Batch \(batchCount) had \(batchErrors.count) error\(batchErrors.count == 1 ? "" : "s"):"))
@@ -920,6 +911,20 @@ struct CloudPushCommand: ParsableCommand {
           }
           break
         }
+      }
+
+      // Advance keyset cursor from last entry in this batch
+      if let last = exportData.entries.last {
+        afterTimestamp = last.timestamp
+        afterEntryId = last.id
+      }
+
+      // Checkpoint cursor after each successful batch so retries
+      // resume from here instead of replaying all prior batches
+      if let ts = afterTimestamp, let eid = afterEntryId {
+        mutableConfig.lastPushTimestamp = ts
+        mutableConfig.lastPushEntryId = eid
+        try mutableConfig.save()
       }
 
       // Short page means we have exported everything
@@ -1103,6 +1108,19 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
+    // Preflight: fail fast if cloud is not configured rather than
+    // running push (fail) then pull (fail) with duplicate errors
+    do {
+      _ = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
+
     var pushFailed = false
 
     if !json { print("\n\(CLIStyle.header("Push"))") }
