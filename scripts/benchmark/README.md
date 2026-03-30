@@ -35,6 +35,16 @@ Runs gold-query search terms directly against the `contextify` CLI. Deterministi
 bash scripts/benchmark/evaluate.sh --mode cli --verbose
 ```
 
+Pass `--anchor-git` to enable git-anchored search for all queries. This adds local git history as an additive ranking signal. Note: the current gold queries are keyword-based and do not benefit from git anchoring; this flag is useful when adding file-path or commit-based gold queries.
+
+**Ad-hoc testing against the snapshot:** To run individual queries outside the evaluator, use `--db-path` (not `--db`) with the full snapshot path:
+
+```bash
+contextify search "your query" --db-path "$HOME/Library/Application Support/Contextify/benchmark/contextify-benchmark-v1.db" --limit 10 --json
+```
+
+The snapshot is read-only. The evaluator copies it to a temp location internally, but direct reads work fine for ad-hoc queries.
+
 ### Skill Mode
 
 Runs each gold query's natural-language question through headless Claude Code with the Total Recall SKILL.md loaded. Non-deterministic due to LLM variance. Use this for evaluating SKILL.md changes.
@@ -165,7 +175,14 @@ The benchmark uses a frozen database snapshot for reproducibility.
 bash scripts/benchmark/prepare-snapshot.sh
 ```
 
-This copies the current production database and updates the manifest. When rebuilding the snapshot (e.g., after a tokenizer change), all gold queries must be re-verified.
+This copies the current production database and updates the manifest. By default, it excludes transcripts tagged with `"benchmark"` or `"evaluation"` (via the `transcript_tags` table) to prevent benchmark-run transcripts from contaminating the evaluation corpus. Pass `--no-exclude-tags` to include all transcripts regardless of tags.
+
+```bash
+# Include all transcripts, bypassing tag exclusion
+bash scripts/benchmark/prepare-snapshot.sh --no-exclude-tags
+```
+
+When rebuilding the snapshot (e.g., after a tokenizer change), all gold queries must be re-verified.
 
 **Creating a comparison snapshot** (e.g., with a different tokenizer):
 

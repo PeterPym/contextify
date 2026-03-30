@@ -30,7 +30,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v33** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v39** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -70,7 +70,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v33)
+- SQL schema definitions and versioned migrations (v1-v39)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -87,6 +87,7 @@ This document provides detailed information about Contextify's architecture and 
 - **v31**: pending_rehoover for lazy watchers
 - **v32**: lazy watcher baseline tracking (`transcripts.known_last_entry_ts`, `known_file_size`, `unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`, `last_activity_detected_at`, `projects.last_activity_detected_at`)
 - **v33**: ingestion_runs table for CLI debugging
+- **v39**: transcript_tags table (composite PK: transcript_id, tag) for transcript tagging
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
