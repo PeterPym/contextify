@@ -425,7 +425,8 @@ struct ContextifyQueryCLI {
       #if os(macOS)
       // All other commands need database (macOS only)
       let dbURL = try resolveDatabaseURL(options: options)
-      let service = try ContextifyQueryService(databaseURL: dbURL)
+      let needsWrite = command == .tag
+      let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: !needsWrite)
       let versionInfo = try service.versionInfo()
       let timeRange = try parseTimeRange(options: options)
 
