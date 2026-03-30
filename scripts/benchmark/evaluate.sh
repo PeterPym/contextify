@@ -11,7 +11,7 @@
 # All diagnostic output goes to stderr.
 #
 # Usage:
-#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]
+#   bash scripts/benchmark/evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N] [--anchor-git]
 #   bash scripts/benchmark/evaluate.sh --mode cli --compare snapshot-a.db snapshot-b.db [--runs N]
 #
 # A/B comparison mode (ct-783):
@@ -43,6 +43,7 @@ COMPARE_B=""
 MAX_TURNS=10
 MAX_WALL_CLOCK=180
 MAX_TOKENS=""  # placeholder, not enforced
+ANCHOR_GIT=false
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -69,8 +70,10 @@ while [[ $# -gt 0 ]]; do
       MAX_WALL_CLOCK="$2"; shift 2 ;;
     --max-tokens)
       MAX_TOKENS="$2"; shift 2 ;;
+    --anchor-git)
+      ANCHOR_GIT=true; shift ;;
     --help|-h)
-      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N]" >&2
+      echo "Usage: evaluate.sh [--gold-queries PATH] [--snapshot PATH] [--mode cli|skill] [--verbose] [--trace] [--runs N] [--anchor-git]" >&2
       echo "       evaluate.sh --mode cli --compare <A.db> <B.db> [--runs N]" >&2
       echo "" >&2
       echo "Options:" >&2
@@ -84,6 +87,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --max-turns N        Max search turns per trial, skill mode (default: 10)" >&2
       echo "  --max-wall-clock N   Max seconds per trial, skill mode (default: 180)" >&2
       echo "  --max-tokens N       Placeholder: logged but not enforced" >&2
+      echo "  --anchor-git         Pass --anchor-git to contextify search (CLI mode)" >&2
       exit 0
       ;;
     *)
@@ -541,6 +545,9 @@ print(len(q['queries']))
 ")
 
 echo "Running $TOTAL_QUERIES gold queries in $MODE mode..." >&2
+if [[ "$ANCHOR_GIT" == "true" ]]; then
+  echo "  --anchor-git ENABLED" >&2
+fi
 echo "---" >&2
 
 # Export variables for the Python subprocess
@@ -554,6 +561,7 @@ export TRACE="$TRACE"
 export MAX_TURNS="$MAX_TURNS"
 export MAX_WALL_CLOCK="$MAX_WALL_CLOCK"
 export MAX_TOKENS="${MAX_TOKENS:-}"  # TODO: token counting from stream-json not yet implemented
+export ANCHOR_GIT="$ANCHOR_GIT"
 
 # Set up trace directory if tracing enabled.
 # Respect TRACE_DIR from environment (used by --compare mode for per-run isolation).
@@ -594,6 +602,7 @@ verbose = os.environ.get("VERBOSE") == "true"
 eval_mode = os.environ.get("EVAL_MODE", "cli")
 skill_runner = os.environ.get("SKILL_RUNNER", "")
 expected_skill_hash = os.environ.get("EXPECTED_SKILL_HASH", "")
+anchor_git = os.environ.get("ANCHOR_GIT") == "true"
 # Parallel workers for skill mode (CLI mode is already fast)
 parallel_workers = int(os.environ.get("PARALLEL_WORKERS", "4")) if eval_mode == "skill" else 1
 # Track skill hash verification across queries
@@ -823,6 +832,8 @@ def evaluate_cli_query(q, qid, search_terms, fingerprint, budget, category, diff
         "--snippet-tokens", "100",
         "--limit", "20"
     ]
+    if anchor_git:
+        cmd.append("--anchor-git")
     cli_cmd_str = " ".join(cmd)
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
