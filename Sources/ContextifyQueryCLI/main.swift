@@ -1482,19 +1482,24 @@ private func runProcess(_ executable: String, arguments: [String]) -> String? {
   process.executableURL = URL(fileURLWithPath: executable)
   process.arguments = arguments
   let stdout = Pipe()
-  let stderrPipe = Pipe()
   process.standardOutput = stdout
-  process.standardError = stderrPipe
+  // Discard stderr: this helper only returns stdout and maps non-zero exit
+  // to nil. Leaving stderr piped-but-unread risks the same pipe-buffer
+  // deadlock we are fixing for stdout.
+  process.standardError = FileHandle.nullDevice
 
   do {
     try process.run()
-    process.waitUntilExit()
   } catch {
     return nil
   }
 
-  guard process.terminationStatus == 0 else { return nil }
+  // Drain stdout before waitUntilExit so large payloads (e.g. git ls-files
+  // in repos with >1000 tracked files) do not block on the pipe buffer.
   let data = stdout.fileHandleForReading.readDataToEndOfFile()
+  process.waitUntilExit()
+
+  guard process.terminationStatus == 0 else { return nil }
   return String(data: data, encoding: .utf8)
 }
 

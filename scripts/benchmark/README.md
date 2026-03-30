@@ -35,6 +35,8 @@ Runs gold-query search terms directly against the `contextify` CLI. Deterministi
 bash scripts/benchmark/evaluate.sh --mode cli --verbose
 ```
 
+Pass `--anchor-git` to enable git-anchored search for all queries. This adds local git history as an additive ranking signal. Note: the current gold queries are keyword-based and do not benefit from git anchoring; this flag is useful when adding file-path or commit-based gold queries.
+
 ### Skill Mode
 
 Runs each gold query's natural-language question through headless Claude Code with the Total Recall SKILL.md loaded. Non-deterministic due to LLM variance. Use this for evaluating SKILL.md changes.
