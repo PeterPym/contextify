@@ -815,7 +815,18 @@ struct CloudPushCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    var config = try CLICloudConfig.load()
+    let config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
+    var mutableConfig = config
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -832,15 +843,15 @@ struct CloudPushCommand: ParsableCommand {
     #else
     let osName = "linux"
     #endif
-    let machineId = normalizedCLICloudDeviceID(config.deviceId)
-    if machineId != config.deviceId {
-      config.deviceId = machineId
-      try config.save()
+    let machineId = normalizedCLICloudDeviceID(mutableConfig.deviceId)
+    if machineId != mutableConfig.deviceId {
+      mutableConfig.deviceId = machineId
+      try mutableConfig.save()
     }
 
     // Keyset pagination: resume from saved cursor for incremental push
-    var afterTimestamp: Int? = config.lastPushTimestamp
-    var afterEntryId: String? = config.lastPushEntryId
+    var afterTimestamp: Int? = mutableConfig.lastPushTimestamp
+    var afterEntryId: String? = mutableConfig.lastPushEntryId
     var totalAccepted = 0
     var totalDuplicates = 0
     var totalErrors: [String] = []
@@ -868,17 +879,17 @@ struct CloudPushCommand: ParsableCommand {
       let payload = buildPushPayload(
         exportData: exportData,
         machineId: machineId,
-        machineName: config.deviceName.isEmpty ? nil : config.deviceName,
+        machineName: mutableConfig.deviceName.isEmpty ? nil : mutableConfig.deviceName,
         osName: osName
       )
       let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
       if !json {
-        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(config.serverURL))...")
+        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(mutableConfig.serverURL))...")
       }
 
       let (responseData, status) = try cloudRequest(
-        config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+        config: mutableConfig, method: "POST", path: "/api/v1/sync/push", body: bodyData)
 
       guard status == 200 else {
         let body = String(data: responseData, encoding: .utf8) ?? "unknown"
@@ -890,8 +901,14 @@ struct CloudPushCommand: ParsableCommand {
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
-        // Fail closed: checkpoint cursor at last successful batch, then stop
+        // Fail closed: do NOT advance cursor past errors so entries
+        // can be retried. ct-810 cursor-skip needs a server protocol
+        // change to distinguish permanent vs transient failures.
         if !batchErrors.isEmpty {
+          if !json {
+            print(CLIStyle.warning("Batch \(batchCount) had \(batchErrors.count) error\(batchErrors.count == 1 ? "" : "s"):"))
+            for e in batchErrors.prefix(3) { print("  \(CLIStyle.redText("-")) \(e)") }
+          }
           break
         }
       }
@@ -905,9 +922,9 @@ struct CloudPushCommand: ParsableCommand {
       // Checkpoint cursor after each successful batch so retries
       // resume from here instead of replaying all prior batches
       if let ts = afterTimestamp, let eid = afterEntryId {
-        config.lastPushTimestamp = ts
-        config.lastPushEntryId = eid
-        try config.save()
+        mutableConfig.lastPushTimestamp = ts
+        mutableConfig.lastPushEntryId = eid
+        try mutableConfig.save()
       }
 
       // Short page means we have exported everything
@@ -971,7 +988,17 @@ struct CloudPullCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    var config = try CLICloudConfig.load()
+    var config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
 
     let dbPath = resolveDbPath()
     let queryService = try ContextifyQueryService(databaseURL: URL(fileURLWithPath: dbPath), readOnly: false)
@@ -1081,21 +1108,59 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
+    // Preflight: fail fast on local preconditions (missing config,
+    // missing DB) before invoking push/pull subcommands. This prevents
+    // pull from creating a writable DB at a typo path when push fails
+    // on the same bad path.
+    let dbPath = db.map(XDGPaths.expandTilde) ?? XDGPaths.databasePath.path
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+      throw ValidationError("Database not found at \(dbPath)")
+    }
+
+    do {
+      _ = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
+
+    var pushFailed = false
+
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
-    push.db = db
+    push.db = dbPath
     push.limit = 500
     push.json = json
-    try push.run()
+    do {
+      try push.run()
+    } catch {
+      pushFailed = true
+      if !json {
+        print(CLIStyle.warning("Push failed: \(error)"))
+        print(CLIStyle.dimText("Continuing with pull..."))
+      }
+    }
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
     var pull = CloudPullCommand()
-    pull.db = db
+    pull.db = dbPath
     pull.project = project
     pull.json = json
     try pull.run()
 
-    if !json { print("\n" + CLIStyle.success("Sync complete.")) }
+    if !json {
+      if pushFailed {
+        print("\n" + CLIStyle.warning("Sync partially complete (push failed, pull succeeded)."))
+      } else {
+        print("\n" + CLIStyle.success("Sync complete."))
+      }
+    }
+
+    if pushFailed { throw ExitCode(1) }
   }
 }
 
