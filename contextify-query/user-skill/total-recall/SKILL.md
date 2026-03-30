@@ -230,7 +230,15 @@ contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100
 
 For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 
-When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
+When the request relates to specific code, subsystems, or files you can identify from your project knowledge, pass those files as anchors to boost results from conversations near commits touching those files:
+
+```bash
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-files "<file1>,<file2>" --json
+```
+
+Determine the relevant files from your understanding of the codebase, not from the user's query text. For example, if the user asks "what did we decide about the database migration?", you know that relates to `DatabaseSchema.swift`, so pass `--anchor-files DatabaseSchema.swift`. If the user asks about the startup flow, you know that relates to `StartupCoordinator.swift`.
+
+For queries where you cannot identify specific relevant files but the query contains literal filenames or symbols, fall back to `--anchor-git` which extracts cues from the query text automatically:
 
 ```bash
 contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json

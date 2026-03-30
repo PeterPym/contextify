@@ -37,6 +37,14 @@ bash scripts/benchmark/evaluate.sh --mode cli --verbose
 
 Pass `--anchor-git` to enable git-anchored search for all queries. This adds local git history as an additive ranking signal. Note: the current gold queries are keyword-based and do not benefit from git anchoring; this flag is useful when adding file-path or commit-based gold queries.
 
+**Ad-hoc testing against the snapshot:** To run individual queries outside the evaluator, use `--db-path` (not `--db`) with the full snapshot path:
+
+```bash
+contextify search "your query" --db-path "$HOME/Library/Application Support/Contextify/benchmark/contextify-benchmark-v1.db" --limit 10 --json
+```
+
+The snapshot is read-only. The evaluator copies it to a temp location internally, but direct reads work fine for ad-hoc queries.
+
 ### Skill Mode
 
 Runs each gold query's natural-language question through headless Claude Code with the Total Recall SKILL.md loaded. Non-deterministic due to LLM variance. Use this for evaluating SKILL.md changes.
