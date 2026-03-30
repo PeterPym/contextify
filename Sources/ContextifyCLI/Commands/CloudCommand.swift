@@ -169,11 +169,27 @@ private func unauthenticatedRequest(
   return (data, statusCode)
 }
 
-/// Thread-safe container for URLSession callback results (avoids Swift 6 captured-var errors).
+/// Thread-safe container for URLSession callback results.
+/// Uses NSLock to synchronize writes (callback thread) and reads (waiting thread).
 private final class HTTPResultBox: @unchecked Sendable {
-  var data: Data?
-  var statusCode: Int = 0
-  var error: Error?
+  private let lock = NSLock()
+  private var _data: Data?
+  private var _statusCode: Int = 0
+  private var _error: Error?
+
+  func store(data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    _data = data
+    _statusCode = statusCode
+    _error = error
+    lock.unlock()
+  }
+
+  func snapshot() -> (data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (_data, _statusCode, _error)
+  }
 }
 
 /// Execute a URLRequest synchronously using a semaphore.
@@ -182,9 +198,11 @@ private func syncHTTPRequest(_ request: URLRequest, timeoutSeconds: TimeInterval
   let semaphore = DispatchSemaphore(value: 0)
 
   let task = URLSession.shared.dataTask(with: request) { data, response, error in
-    box.data = data
-    box.statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-    box.error = error
+    box.store(
+      data: data,
+      statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0,
+      error: error
+    )
     semaphore.signal()
   }
   task.resume()
@@ -194,13 +212,14 @@ private func syncHTTPRequest(_ request: URLRequest, timeoutSeconds: TimeInterval
     throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
   }
 
-  if let error = box.error {
+  let result = box.snapshot()
+  if let error = result.error {
     throw CloudError.networkError(error.localizedDescription)
   }
-  guard let data = box.data else {
+  guard let data = result.data else {
     throw CloudError.networkError("No response received")
   }
-  return (data, box.statusCode)
+  return (data, result.statusCode)
 }
 
 // MARK: - Device Flow Types
@@ -291,8 +310,7 @@ private func pollForDeviceToken(
     // Show spinner progress
     if CLIStyle.isStyled {
       let frame = spinnerFrames[frameIndex % spinnerFrames.count]
-      print("\r  \(frame) Waiting for browser authorization...", terminator: "")
-      flushStdout()
+      writeStdout("\r  \(frame) Waiting for browser authorization...")
       frameIndex += 1
     }
 
@@ -315,8 +333,7 @@ private func pollForDeviceToken(
     if statusCode == 200 {
       // Clear spinner line
       if CLIStyle.isStyled {
-        print("\r\u{001B}[2K", terminator: "")
-        flushStdout()
+        writeStdout("\r\u{001B}[2K")
       }
       return try JSONDecoder().decode(DeviceTokenResponse.self, from: data)
     }
@@ -331,20 +348,17 @@ private func pollForDeviceToken(
         continue
       case "expired_token":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          flushStdout()
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization timed out. The code has expired. Please run setup again.")
       case "access_denied":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          flushStdout()
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization was denied by the user.")
       default:
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          flushStdout()
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError(
           errorResponse.errorDescription ?? "Unknown error: \(errorResponse.error)")
@@ -353,8 +367,7 @@ private func pollForDeviceToken(
 
     // Unexpected status code
     if CLIStyle.isStyled {
-      print("\r\u{001B}[2K", terminator: "")
-      flushStdout()
+      writeStdout("\r\u{001B}[2K")
     }
     let respBody = String(data: data, encoding: .utf8) ?? ""
     throw CloudError.apiError(statusCode, respBody)
@@ -362,8 +375,7 @@ private func pollForDeviceToken(
 
   // Expired by local deadline
   if CLIStyle.isStyled {
-    print("\r\u{001B}[2K", terminator: "")
-    flushStdout()
+    writeStdout("\r\u{001B}[2K")
   }
   throw CloudError.networkError("Authorization timed out after \(expiresIn) seconds.")
 }
@@ -1264,9 +1276,12 @@ struct CloudSearchCommand: ParsableCommand {
 
 // MARK: - Helpers
 
-/// Flush stdout safely, avoiding Swift 6 concurrency warnings for global `stdout`.
-private func flushStdout() {
-  FileHandle.standardOutput.synchronizeFile()
+/// Write directly to stdout, bypassing Swift's print buffer.
+/// Avoids Swift 6 concurrency warnings for the global `stdout` symbol
+/// and ensures immediate output for interactive progress (spinners, line clearing).
+private func writeStdout(_ text: String) {
+  guard let data = text.data(using: .utf8) else { return }
+  try? FileHandle.standardOutput.write(contentsOf: data)
 }
 
 /// Stable machine identifier for device registration (delegates to cross-platform MachineID)
