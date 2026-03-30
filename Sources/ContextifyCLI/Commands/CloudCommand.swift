@@ -1108,8 +1108,15 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
-    // Preflight: fail fast if cloud is not configured rather than
-    // running push (fail) then pull (fail) with duplicate errors
+    // Preflight: fail fast on local preconditions (missing config,
+    // missing DB) before invoking push/pull subcommands. This prevents
+    // pull from creating a writable DB at a typo path when push fails
+    // on the same bad path.
+    let dbPath = db.map(XDGPaths.expandTilde) ?? XDGPaths.databasePath.path
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+      throw ValidationError("Database not found at \(dbPath)")
+    }
+
     do {
       _ = try CLICloudConfig.load()
     } catch {
@@ -1125,7 +1132,7 @@ struct CloudSyncCommand: ParsableCommand {
 
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
-    push.db = db
+    push.db = dbPath
     push.limit = 500
     push.json = json
     do {
@@ -1140,7 +1147,7 @@ struct CloudSyncCommand: ParsableCommand {
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
     var pull = CloudPullCommand()
-    pull.db = db
+    pull.db = dbPath
     pull.project = project
     pull.json = json
     try pull.run()
