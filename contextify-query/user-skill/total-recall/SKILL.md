@@ -21,13 +21,14 @@ Always use the exact commands shown in this skill file. Do not improvise command
 
 ## Output Format
 
-Before your first search, compute the skill file hash:
+Before your first search, compute the skill and CLI fingerprints:
 
 ```bash
 shasum -a 256 ~/.claude/skills/total-recall/SKILL.md | cut -c1-8
+contextify --version
 ```
 
-Use the templates below to format your response. Replace `<hash>` with the 8-character prefix from the shasum output.
+Use these in response headers: `skill:<hash> cli:<version>` (e.g., `skill:e07ddcfc cli:1.3.2`).
 
 ## Trigger phrases
 
@@ -407,7 +408,7 @@ Use the template matching the query type. Adapt the structure to the number of r
 ### Lookup / exploratory template
 
 ```
-> **Contextify Total Recall** `skill:<hash>`
+> **Contextify Total Recall**
 > _Searched <totalCount> entries across <project(s)> | <time range, e.g. "last 90 days" or "all time">_
 
 [1-2 sentence summary: what was found, when, and the bottom line.]
@@ -426,12 +427,14 @@ Use the template matching the query type. Adapt the structure to the number of r
 
 - `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
 - `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+
+`skill:<hash> cli:<version>`
 ```
 
 ### Counting template
 
 ```
-> **Contextify Total Recall** `skill:<hash>`
+> **Contextify Total Recall**
 > _Searched <scope> | <time range>_
 
 **<totalCount>** entries match across <project(s)>.
@@ -447,6 +450,8 @@ Use the template matching the query type. Adapt the structure to the number of r
 ## Evidence
 
 - `entry:<first-8-of-uuid>` <project>, <date>: "<exact quoted span from the entry content>"
+
+`skill:<hash> cli:<version>`
 ```
 
 ### Negative result template
@@ -454,7 +459,7 @@ Use the template matching the query type. Adapt the structure to the number of r
 After completing the zero-result protocol (section below), if still no results:
 
 ```
-> **Contextify Total Recall** `skill:<hash>`
+> **Contextify Total Recall**
 > _No results found._
 
 Searched <N> entries across <scope> over <time range>.
@@ -465,6 +470,8 @@ Searched <N> entries across <scope> over <time range>.
 3. `<broadened query>`
 
 [Brief note on what this means, e.g. "This topic does not appear in your indexed conversation history."]
+
+`skill:<hash> cli:<version>`
 ```
 
 ### Formatting rules
