@@ -21,7 +21,6 @@ VERSION=1
 SNAPSHOT_PATH="$SNAPSHOT_DIR/contextify-benchmark-v${VERSION}.db"
 EXCLUDE_TAGS=true
 DEFAULT_EXCLUDED_TAGS="benchmark,evaluation"
-
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,15 +38,7 @@ if [ ! -f "$PROD_DB" ]; then
 fi
 
 if [ -f "$SNAPSHOT_PATH" ]; then
-  echo "Snapshot already exists: $SNAPSHOT_PATH"
-  echo "Size: $(du -h "$SNAPSHOT_PATH" | cut -f1)"
-  echo ""
-  read -p "Replace with fresh snapshot? [y/N] " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Keeping existing snapshot."
-    exit 0
-  fi
+  echo "Replacing existing snapshot ($(du -h "$SNAPSHOT_PATH" | cut -f1))..."
 fi
 
 mkdir -p "$SNAPSHOT_DIR"
