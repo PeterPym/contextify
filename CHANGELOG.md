@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-(Nothing currently unreleased; all items shipped in v1.3.0 or v1.3.1.)
+### Changed
+- **CLI search text output** - Human-readable format now shows entry IDs, human dates, project summary, and drill-down hints instead of raw timestamps and scores
+- **Total Recall SKILL.md** - Text-first approach: canonical search commands no longer use `--json` by default. Added CRITICAL anti-piping guardrails. Restored `--hours`, `--exclude-tags`, `--device` flag documentation.
 
 ## [1.3.1] - 2026-02-18
 

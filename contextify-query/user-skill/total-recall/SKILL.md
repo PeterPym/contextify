@@ -114,6 +114,17 @@ Determine the query type to set your strategy and starting `--days` window:
 | **Exploratory** | "what have we talked about", "find anything about" | 365 | Start broad, refine iteratively. Use `--limit 20`. |
 | **Negative proof** | "have we ever", "did we discuss", "was there any" | 365 | Broad scope. Run 2-3 materially different query variations before declaring absence. |
 | **Debugging** | "when did this break", "what changed", "recent error" | 30 | Narrow, recent. Use `--project .` for current repo focus. |
+| **Time-scoped** | "last N hours", "today", "yesterday", "this week" | See below | Use `--hours` for sub-day precision, `--days` for multi-day. |
+
+**Time-scoped intent:** When the user's request includes an explicit time reference, use the appropriate flag:
+
+| User phrasing | Flag to use |
+|---------------|-------------|
+| "in the last N hours", "past N hours" | `--hours N` |
+| "today", "this morning" | `--hours 24` |
+| "yesterday" | `--days 2` |
+| "this week", "past few days" | `--days 7` |
+| "last month" | `--days 30` |
 
 **Counting note:** Counts refer to matched entries (messages), not individual word occurrences within those entries. Use `--count-only` to get `totalCount` without fetching result bodies. For OR queries, add `--term-counts` to get per-term breakdowns. Apply `--days` and `--project` filters as needed.
 
@@ -213,15 +224,23 @@ If database not found, respond:
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100
 ```
 
 For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 
-When the request references files, commands, skills, symbols, versions, or a narrow implementation detail, prefer git-anchored search first:
+When the request relates to specific code, subsystems, or files you can identify from your project knowledge, pass those files as anchors to boost results from conversations near commits touching those files:
 
 ```bash
-contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-files "<file1>,<file2>"
+```
+
+Determine the relevant files from your understanding of the codebase, not from the user's query text. For example, if the user asks "what did we decide about the database migration?", you know that relates to `DatabaseSchema.swift`, so pass `--anchor-files DatabaseSchema.swift`.
+
+For queries where you cannot identify specific relevant files but the query contains literal filenames or symbols, fall back to `--anchor-git` which extracts cues from the query text automatically:
+
+```bash
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git
 ```
 
 Git anchoring is additive, not exclusive:
@@ -229,81 +248,41 @@ Git anchoring is additive, not exclusive:
 - if it reports no strong commit signal, continue with normal broad search
 - do not stop exploring just because the git path was attempted
 
-Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only` instead (no `--limit` needed).
+Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only --json` (counting requires JSON for structured `totalCount`).
 
 **Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching. Use parentheses when mixing AND/OR to control grouping; do not rely on default operator precedence.
 
+**Text output format:** The default (non-JSON) output is designed to be read directly:
+
+```
+847 results across my-project, other-project
+Showing 10 of 847
+
+1. [assistant] my-project · Mar 29, 2026 14:06  entry:e897a104
+   The database schema was migrated in phase 3 to support multi-device sync...
+
+2. [user] my-project · Mar 28, 2026 09:15  entry:5f981600
+   What did we decide about the migration strategy?...
+
+Drill down:
+  contextify context <entry-id> --before 5 --after 15    # surrounding conversation
+  contextify entry <entry-id>                             # full entry text
+  Add --offset 10 to see the next page
+```
+
+Each result shows: numbered position, entry kind, project name, human-readable date, and the 8-character entry ID prefix (usable with `context` and `entry` commands). The summary line shows total count and projects. The drill-down hints show how to fetch more detail.
+
 Example -- user asks "how many times have I mentioned deploying":
 ```bash
-contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
+contextify search "deploy" --project . --days 365 --count-only --term-counts --json
 ```
+
+Porter stemming matches all regular forms automatically. Use `--json` here because counting queries need the structured `totalCount` and `termCounts` fields.
 
 Example -- user asks "what did we decide about the database schema":
 ```bash
-contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
+contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10
 ```
-
-Returns:
-```json
-{
-  "data": [
-    {
-      "id": "e897a104-...",
-      "contentSnippet": "...matched text with context...",
-      "contentTruncated": true,
-      "kind": "assistant",
-      "score": -12.34,
-      "timestamp": 1769380895,
-      "projectName": "my-project",
-      "projectId": "AB12CD34-...",
-      "transcriptId": "5F9816DE-...",
-      "provider": "claude.code"
-    }
-  ],
-  "metadata": {
-    "returned": 10,
-    "limit": 10,
-    "offset": 0,
-    "hasMore": true,
-    "totalCount": 847
-  },
-  "schemaVersion": 1,
-  "type": "search"
-}
-```
-
-**Important:** `data` is a flat array of results. Each result's `id` is the UUID you pass to the `context` command. `projectId` is an opaque string (format varies). `score` is an internal ranking value; treat it as opaque. Results are already returned in best-first order; do not re-sort. If `contentTruncated` is `true`, always fetch full content via `context` (preferred) or `entry`.
-
-**Metadata fields:** `returned`, `limit`, `offset`, `hasMore`, and `totalCount` are always present. Optional fields appear conditionally:
-- `termCounts`: per-term match counts (when `--term-counts` used with an OR query)
-- `worktreeExpansion`: worktree group details (when worktree expansion is active, see "Worktree expansion" below)
-- `sourceCounts`: per-project result counts (when worktreeExpansion is present)
-
-**Count-only example** (for counting queries):
-```bash
-contextify search "deploy OR deploys OR deployed OR deploying OR deployment" --project . --days 365 --count-only --term-counts --json
-```
-
-Returns:
-```json
-{
-  "data": [],
-  "metadata": {
-    "totalCount": 847,
-    "termCounts": {
-      "deploy": 312,
-      "deployed": 201,
-      "deploying": 98,
-      "deployment": 187,
-      "deploys": 49
-    }
-  },
-  "schemaVersion": 1,
-  "type": "search"
-}
-```
-
-With `--count-only`, `data` is always an empty array. Only `totalCount` (and optionally `termCounts`) appear in metadata. No pagination is needed.
 
 If `--project .` returns a `dbProjectNotFound` error, retry without `--project` (omit it entirely) to search all projects. If you need a specific project, run `contextify projects --json` which returns a `data` array of objects with `name` and `rootPath` fields, then pass `--project <name>`.
 
@@ -319,74 +298,29 @@ Anchor selection guidance:
 **Fetch context** when: the snippet is truncated and you need the full text, the answer depends on surrounding discussion or rationale, or pronouns/references need resolution.
 
 ```bash
-contextify context "<entry-uuid>" --before 10 --after 20 --json
+contextify context "<entry-id>" --before 5 --after 15
 ```
 
-Returns:
-```json
-{
-  "data": {
-    "before": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791,
-        "createdAt": 1769380791, "provider": "claude.code" }
-    ],
-    "anchor": {
-      "id": "e897a104-...", "kind": "assistant", "content": "full text here...",
-      "timestamp": 1769380895, "createdAt": 1769380895,
-      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
-    },
-    "after": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900,
-        "createdAt": 1769380900, "provider": "claude.code" }
-    ],
-    "meta": {
-      "transcriptEntryCount": 75,
-      "hasMoreBefore": true,
-      "hasMoreAfter": false
-    }
-  },
-  "schemaVersion": 1,
-  "type": "context"
-}
-```
-
-**Important:** `data` is an object with `before` (array), `anchor` (object), and `after` (array). The `before` array is in chronological order. Read the entries directly from the JSON; do not pipe through `jq` or write parsers.
+The text output shows the surrounding conversation in chronological order with entry IDs and dates. Use the 8-character entry ID prefix from the search results. For structured access, add `--json`.
 
 4) If a snippet is too short and you need the full entry:
 
 ```bash
-contextify entry "<entry-uuid>" --json
+contextify entry "<entry-id>"
 ```
 
-Returns:
-```json
-{
-  "data": {
-    "entry": {
-      "id": "...", "kind": "assistant", "content": "full untruncated text...",
-      "timestamp": 1769380895, "createdAt": 1769380895,
-      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
-    },
-    "projectName": "my-project"
-  },
-  "schemaVersion": 1,
-  "type": "entry"
-}
-```
+Returns the full untruncated entry text. Use the 8-character entry ID prefix from search results.
 
 5) Validate results before answering:
 
 Before formatting your response, check:
 
-- **`hasMore` flag:** If `true`, you have not retrieved all matches. For lookup/exploratory queries needing more results, paginate with `--offset`:
+- **Total count:** The text output header shows "N results across projects" and "Showing X of Y". If more exist, paginate with `--offset`:
   ```bash
-  contextify search "<expanded-query>" --project . --limit 20 --offset 20 --json
+  contextify search "<expanded-query>" --project . --limit 20 --offset 20
   ```
-  Increment `--offset` by `--limit` each page until `hasMore` is `false`.
-- **`totalCount` field:** Always present in search metadata. Use this to know the total number of matches without paginating. For counting queries, use `--count-only` instead of paginating.
-- **(Counting intent only) Variant coverage:** If `--term-counts` shows uneven distribution, consider whether you missed a variant. If you searched `deploy*` and a follow-up search for "redeployment" returns additional hits, your prefix did not capture it.
-- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form? A synonym?
-- **For counting queries:** Report `totalCount` from metadata (or per-term counts from `termCounts`), and list which search terms were used so the user can judge completeness.
+- **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form (e.g., "ran" for "run")? A synonym? Porter stemming handles regular inflections but not irregular verbs or synonyms.
+- **For counting queries:** Use `--count-only --json` and report `totalCount` from metadata. List which search terms were used so the user can judge completeness.
 
 If results seem incomplete, run additional searches with expanded terms before answering.
 
@@ -416,16 +350,13 @@ For counting queries, also include:
 > **Matched entries:** [totalCount from metadata] entries
 > **Per-term breakdown:** [if --term-counts was used, show each term's count]
 
-## Working with the JSON output
+## NEVER pipe CLI output through external tools
 
-**Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+**CRITICAL:** Do not pipe `contextify` output through `python3`, `jq`, `awk`, `sed`, `grep`, or any other tool. This is the single most common cause of errors shown to users. The text output is designed to be read directly. If you need structured data for counting, use `--json` and read the JSON directly from the Bash output. You are capable of reading JSON natively without external parsers.
 
-- **search**: `data` is an **array** of result objects; pagination info in `metadata`
-- **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
-- **entry**: `data` is an **object** with `entry` and `projectName`
-- **status**: `data` is an **object** with database stats
+**Never use `2>&1` with contextify.** The CLI writes informational messages to stderr. Using `2>&1` merges these into stdout and corrupts the output.
 
-Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `timestamp` (Unix), `projectId`, `transcriptId`, `provider` (claude.code/codex).
+**When `--json` is used:** Successful responses return `{"data": ..., "schemaVersion": 1, "type": "..."}`. Errors return `{"type": "error", "code": "...", "message": "..."}`. Read the JSON directly.
 
 ## Error handling
 
@@ -506,8 +437,10 @@ These flags provide fine-grained control over search and output behavior.
 | `--kinds <csv>` | search, context | Filter by entry kind: `user`, `assistant`, `system`. Comma-separated. Example: `--kinds user,assistant` |
 | `--since <ts\|iso>` | global | Time range start (inclusive). Accepts Unix timestamp, ISO 8601, or `YYYY-MM-DD`. Cannot combine with `--days`. |
 | `--until <ts\|iso>` | global | Time range end (inclusive). Same formats as `--since`. Cannot combine with `--days`. `--since` must be <= `--until`. |
+| `--exclude-tags <csv>` | search | Exclude transcripts that have any of the specified tags. Comma-separated tag names. Example: `--exclude-tags archived,noise` |
 | `--include-hidden` | global | Include non-timeline entries (system messages, hidden entries). By default only `display_in_timeline=1` entries are returned. |
 | `--transcript-id <id>` | global | Scope queries to a specific transcript by ID. Narrows search/activity results to a single conversation. |
+| `--device <name>` | global | Filter by originating device name (case-insensitive substring match). |
 
 ### Content control
 
