@@ -45,6 +45,7 @@ These cause real problems when violated:
     status: draft|in-progress|ready-for-review|ready-for-merge
     ---
     ```
+16. **Linux builds require `/linux-env` skill** - Before ANY Docker, Colima, or Linux compilation work, invoke the `/linux-env` skill first. It contains critical architecture rules (arm64 native vs x86_64 CI-only), Colima profile management, and Docker context verification that prevent slow/broken builds. Never run `docker-linux-build.sh` or start Colima manually without consulting this skill. On ARM Mac: local builds must use arm64 profile; x86_64 builds go through GitHub CI only.
 
 ---
 

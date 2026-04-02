@@ -2338,7 +2338,8 @@ public struct ContextifyQueryService: Sendable {
         return (enabledGroupCounts[key] ?? 0) == 0 ? id : nil  // All excluded: exclude
       })
 
-      // Upsert transcripts
+      // Upsert transcripts (with ID remap for entries that reference them)
+      var transcriptIdRemap = [String: String]()
       for tx in transcripts {
         guard let id = tx["id"] as? String,
               let rawProjectId = tx["project_id"] as? String,
@@ -2356,25 +2357,35 @@ public struct ContextifyQueryService: Sendable {
           skipped += 1
           continue
         }
-        let exists = try Int.fetchOne(db, sql:
-          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
-        if exists == nil {
-          let lineCount = tx["line_count"] as? Int ?? 0
-          let createdAt = tx["created_at"] as? Int ?? now
-          let updatedAt = tx["updated_at"] as? Int ?? now
-          try db.execute(sql: """
-            INSERT INTO transcripts (id, project_id, file_path, provider,
-              provider_session_id, last_modified, line_count,
-              last_processed_line, parser_version, status, ingest_state,
-              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
-            """, arguments: [
-              id, projectId, filePath, provider,
-              tx["provider_session_id"] as? String,
-              updatedAt, lineCount, createdAt, updatedAt,
-            ])
-          transcriptsImported += 1
+        if try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id]) != nil {
+          transcriptIdRemap[id] = id
+          continue
         }
+        // ct-834: Check by (project_id, file_path) since local ingest
+        // creates transcripts with different IDs for the same file path
+        if let localId = try String.fetchOne(db, sql:
+          "SELECT id FROM transcripts WHERE project_id = ? AND file_path = ?",
+          arguments: [projectId, filePath]) {
+          transcriptIdRemap[id] = localId
+          continue
+        }
+        let lineCount = tx["line_count"] as? Int ?? 0
+        let createdAt = tx["created_at"] as? Int ?? now
+        let updatedAt = tx["updated_at"] as? Int ?? now
+        try db.execute(sql: """
+          INSERT INTO transcripts (id, project_id, file_path, provider,
+            provider_session_id, last_modified, line_count,
+            last_processed_line, parser_version, status, ingest_state,
+            created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
+          """, arguments: [
+            id, projectId, filePath, provider,
+            tx["provider_session_id"] as? String,
+            updatedAt, lineCount, createdAt, updatedAt,
+          ])
+        transcriptIdRemap[id] = id
+        transcriptsImported += 1
       }
 
       // Insert entries (skip existing by id)
@@ -2397,10 +2408,12 @@ public struct ContextifyQueryService: Sendable {
           continue
         }
 
-        // Validate transcript exists locally before inserting entry
+        // Resolve transcript ID through remap (ct-834: local ingest may
+        // have created the transcript with a different ID)
+        let localTranscriptId = transcriptIdRemap[transcriptId] ?? transcriptId
         let transcriptExists = try Int.fetchOne(db,
           sql: "SELECT 1 FROM transcripts WHERE id = ?",
-          arguments: [transcriptId])
+          arguments: [localTranscriptId])
         guard transcriptExists != nil else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
@@ -2440,7 +2453,7 @@ public struct ContextifyQueryService: Sendable {
             created_at, updated_at, created_ts, source_device_id, source_device_name)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
-            id, transcriptId, projectId,
+            id, localTranscriptId, projectId,
             entry["session_id"] as? String,
             provider, kind, timestamp, content, contentSha256,
             displayInTimeline ? 1 : 0,
@@ -2449,8 +2462,8 @@ public struct ContextifyQueryService: Sendable {
             entry["cwd"] as? String,
             createdAt, updatedAt,
             Double(timestamp),
-            entry["source_device_id"] as? String,
-            entry["source_device_name"] as? String,
+            entry["source_device_id"] as? String ?? entry["uploaded_by_device_id"] as? String,
+            entry["source_device_name"] as? String ?? entry["uploaded_by_device_name"] as? String,
           ])
         entriesImported += 1
       }

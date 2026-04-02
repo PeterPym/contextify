@@ -203,6 +203,10 @@ curl -H "Authorization: Bearer <api-key>" https://cloud.contextify.sh/api/v1/syn
 ssh deploy@174.138.94.110 "cd /opt/contextify-cloud && docker compose exec db pg_dump -U contextify contextify > /tmp/backup-\$(date +%Y%m%d).sql"
 ```
 
+## QA Test Accounts
+
+See [`build/docs/operations/qa-accounts.csv`](qa-accounts.csv) for the canonical list of QA users, tenants, and API key IDs used in cloud testing. Do not store full API key secrets in version control.
+
 ## Relationship to Other Servers
 
 The cloud server has **no relationship** to the website server at banagale.com (143.198.70.216). They are:

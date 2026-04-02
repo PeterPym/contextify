@@ -791,6 +791,13 @@ struct CloudStatusCommand: ParsableCommand {
 // MARK: - Push Command
 
 struct CloudPushCommand: ParsableCommand {
+  struct Result {
+    let accepted: Int
+    let duplicatesSkipped: Int
+    let errors: [String]
+    let batches: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "push",
     abstract: "Push local entries to cloud",
@@ -814,8 +821,21 @@ struct CloudPushCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
-    var config = try CLICloudConfig.load()
+  func execute(emitOutput: Bool = true) throws -> Result {
+    let config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
+      }
+      throw ExitCode(1)
+    }
+    var mutableConfig = config
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -832,15 +852,15 @@ struct CloudPushCommand: ParsableCommand {
     #else
     let osName = "linux"
     #endif
-    let machineId = normalizedCLICloudDeviceID(config.deviceId)
-    if machineId != config.deviceId {
-      config.deviceId = machineId
-      try config.save()
+    let machineId = normalizedCLICloudDeviceID(mutableConfig.deviceId)
+    if machineId != mutableConfig.deviceId {
+      mutableConfig.deviceId = machineId
+      try mutableConfig.save()
     }
 
     // Keyset pagination: resume from saved cursor for incremental push
-    var afterTimestamp: Int? = config.lastPushTimestamp
-    var afterEntryId: String? = config.lastPushEntryId
+    var afterTimestamp: Int? = mutableConfig.lastPushTimestamp
+    var afterEntryId: String? = mutableConfig.lastPushEntryId
     var totalAccepted = 0
     var totalDuplicates = 0
     var totalErrors: [String] = []
@@ -854,12 +874,8 @@ struct CloudPushCommand: ParsableCommand {
       )
 
       if exportData.entries.isEmpty {
-        if batchCount == 0 {
-          if json {
-            print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
-          } else {
-            print(CLIStyle.dimText("No entries to push."))
-          }
+        if batchCount == 0 && emitOutput && !json {
+          print(CLIStyle.dimText("No entries to push."))
         }
         break
       }
@@ -868,17 +884,17 @@ struct CloudPushCommand: ParsableCommand {
       let payload = buildPushPayload(
         exportData: exportData,
         machineId: machineId,
-        machineName: config.deviceName.isEmpty ? nil : config.deviceName,
+        machineName: mutableConfig.deviceName.isEmpty ? nil : mutableConfig.deviceName,
         osName: osName
       )
       let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-      if !json {
-        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(config.serverURL))...")
+      if emitOutput && !json {
+        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(mutableConfig.serverURL))...")
       }
 
       let (responseData, status) = try cloudRequest(
-        config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+        config: mutableConfig, method: "POST", path: "/api/v1/sync/push", body: bodyData)
 
       guard status == 200 else {
         let body = String(data: responseData, encoding: .utf8) ?? "unknown"
@@ -890,8 +906,14 @@ struct CloudPushCommand: ParsableCommand {
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
-        // Fail closed: checkpoint cursor at last successful batch, then stop
+        // Fail closed: do NOT advance cursor past errors so entries
+        // can be retried. ct-810 cursor-skip needs a server protocol
+        // change to distinguish permanent vs transient failures.
         if !batchErrors.isEmpty {
+          if emitOutput && !json {
+            print(CLIStyle.warning("Batch \(batchCount) had \(batchErrors.count) error\(batchErrors.count == 1 ? "" : "s"):"))
+            for e in batchErrors.prefix(3) { print("  \(CLIStyle.redText("-")) \(e)") }
+          }
           break
         }
       }
@@ -905,9 +927,9 @@ struct CloudPushCommand: ParsableCommand {
       // Checkpoint cursor after each successful batch so retries
       // resume from here instead of replaying all prior batches
       if let ts = afterTimestamp, let eid = afterEntryId {
-        config.lastPushTimestamp = ts
-        config.lastPushEntryId = eid
-        try config.save()
+        mutableConfig.lastPushTimestamp = ts
+        mutableConfig.lastPushEntryId = eid
+        try mutableConfig.save()
       }
 
       // Short page means we have exported everything
@@ -916,27 +938,35 @@ struct CloudPushCommand: ParsableCommand {
       }
     }
 
-    // Print final summary
-    if batchCount > 0 {
-      if json {
-        let output: [String: Any] = [
-          "accepted": totalAccepted,
-          "duplicates_skipped": totalDuplicates,
-          "errors": Array(totalErrors.prefix(10)),
-          "batches": batchCount,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
-        print(String(data: data, encoding: .utf8) ?? "{}")
-      } else {
-        print(CLIStyle.success("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))"))
-        if !totalErrors.isEmpty {
-          print(CLIStyle.error("Errors: \(totalErrors.count)"))
-          for e in totalErrors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
-        }
+    return Result(
+      accepted: totalAccepted,
+      duplicatesSkipped: totalDuplicates,
+      errors: totalErrors,
+      batches: batchCount
+    )
+  }
+
+  func run() throws {
+    let result = try execute()
+
+    if json {
+      let output: [String: Any] = [
+        "accepted": result.accepted,
+        "duplicates_skipped": result.duplicatesSkipped,
+        "errors": Array(result.errors.prefix(10)),
+        "batches": result.batches,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8) ?? "{}")
+    } else if result.batches > 0 {
+      print(CLIStyle.success("Push complete: \(result.accepted) accepted, \(result.duplicatesSkipped) duplicates (\(result.batches) batch\(result.batches == 1 ? "" : "es"))"))
+      if !result.errors.isEmpty {
+        print(CLIStyle.error("Errors: \(result.errors.count)"))
+        for e in result.errors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
       }
     }
 
-    if !totalErrors.isEmpty { throw ExitCode(1) }
+    if !result.errors.isEmpty { throw ExitCode(1) }
   }
 
   private func resolveDbPath() -> String {
@@ -948,6 +978,12 @@ struct CloudPushCommand: ParsableCommand {
 // MARK: - Pull Command
 
 struct CloudPullCommand: ParsableCommand {
+  struct Result {
+    let pulled: Int
+    let imported: Int
+    let cursor: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "pull",
     abstract: "Pull entries from other devices",
@@ -970,8 +1006,20 @@ struct CloudPullCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
-    var config = try CLICloudConfig.load()
+  func execute(emitOutput: Bool = true) throws -> Result {
+    var config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
+      }
+      throw ExitCode(1)
+    }
 
     let dbPath = resolveDbPath()
     let queryService = try ContextifyQueryService(databaseURL: URL(fileURLWithPath: dbPath), readOnly: false)
@@ -981,7 +1029,7 @@ struct CloudPullCommand: ParsableCommand {
     var cursor = config.lastPullSequence
     var hasMore = true
 
-    if !json {
+    if emitOutput && !json {
       print("Pulling from \(CLIStyle.cyanText(config.serverURL)) \(CLIStyle.dimText("(cursor: \(cursor))"))...")
     }
 
@@ -1031,7 +1079,7 @@ struct CloudPullCommand: ParsableCommand {
         )
         totalImported += importResult.entriesImported
 
-        if !json {
+        if emitOutput && !json {
           print(CLIStyle.dimText("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))"))
         }
       }
@@ -1040,14 +1088,20 @@ struct CloudPullCommand: ParsableCommand {
     config.lastPullSequence = cursor
     try config.save()
 
+    return Result(pulled: totalPulled, imported: totalImported, cursor: cursor)
+  }
+
+  func run() throws {
+    let result = try execute()
+
     if json {
       let output: [String: Any] = [
-        "pulled": totalPulled, "imported": totalImported, "cursor": cursor,
+        "pulled": result.pulled, "imported": result.imported, "cursor": result.cursor,
       ]
       let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
       print(String(data: data, encoding: .utf8)!)
     } else {
-      print(CLIStyle.success("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)"))
+      print(CLIStyle.success("Pull complete: \(result.pulled) received, \(result.imported) imported, cursor at \(result.cursor)"))
     }
   }
 
@@ -1081,21 +1135,111 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
+    // Preflight: fail fast on local preconditions (missing config,
+    // missing DB) before invoking push/pull subcommands. This prevents
+    // pull from creating a writable DB at a typo path when push fails
+    // on the same bad path.
+    let dbPath = db.map(XDGPaths.expandTilde) ?? XDGPaths.databasePath.path
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+      throw ValidationError("Database not found at \(dbPath)")
+    }
+
+    do {
+      _ = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
+
+    var pushFailed = false
+    var pushResult: CloudPushCommand.Result?
+    var pushError: String?
+
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
-    push.db = db
+    push.db = dbPath
     push.limit = 500
-    push.json = json
-    try push.run()
+    push.json = false  // Suppress push's own JSON; sync emits envelope
+    do {
+      pushResult = try push.execute(emitOutput: !json)
+    } catch {
+      // Only continue to pull for recoverable push failures (network/server).
+      // Fail fast for auth, validation, and programming errors.
+      let recoverable: Bool
+      if let cloudError = error as? CloudError {
+        switch cloudError {
+        case .networkError:
+          recoverable = true
+        case .apiError(let code, _):
+          recoverable = code >= 500
+        default:
+          recoverable = false
+        }
+      } else {
+        recoverable = false
+      }
+      guard recoverable else { throw error }
+
+      pushFailed = true
+      pushError = "\(error)"
+      if !json {
+        print(CLIStyle.warning("Push failed: \(error)"))
+        print(CLIStyle.dimText("Continuing with pull..."))
+      }
+    }
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
     var pull = CloudPullCommand()
-    pull.db = db
+    pull.db = dbPath
     pull.project = project
-    pull.json = json
-    try pull.run()
+    pull.json = false  // Suppress pull's own JSON; sync emits envelope
+    let pullResult = try pull.execute(emitOutput: !json)
 
-    if !json { print("\n" + CLIStyle.success("Sync complete.")) }
+    if json {
+      // ct-824: Single structured JSON envelope for sync results
+      var pushDict: [String: Any] = [
+        "accepted": 0,
+        "duplicates_skipped": 0,
+        "errors": [String](),
+        "batches": 0,
+        "failed": false,
+      ]
+      if let pr = pushResult {
+        pushDict["accepted"] = pr.accepted
+        pushDict["duplicates_skipped"] = pr.duplicatesSkipped
+        pushDict["errors"] = Array(pr.errors.prefix(10))
+        pushDict["batches"] = pr.batches
+      }
+      if pushFailed {
+        pushDict["failed"] = true
+        pushDict["error"] = pushError ?? "unknown"
+      }
+
+      let output: [String: Any] = [
+        "push": pushDict,
+        "pull": [
+          "pulled": pullResult.pulled,
+          "imported": pullResult.imported,
+          "cursor": pullResult.cursor,
+        ],
+        "partial": pushFailed,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8)!)
+    } else {
+      print(CLIStyle.success("Pull complete: \(pullResult.pulled) received, \(pullResult.imported) imported, cursor at \(pullResult.cursor)"))
+      if pushFailed {
+        print("\n" + CLIStyle.warning("Sync partially complete (push failed, pull succeeded)."))
+      } else {
+        print("\n" + CLIStyle.success("Sync complete."))
+      }
+    }
+
+    if pushFailed { throw ExitCode(1) }
   }
 }
 

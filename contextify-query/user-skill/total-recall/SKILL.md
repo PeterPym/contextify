@@ -225,7 +225,7 @@ Still proceed with the search, but frame results as potentially incomplete. If s
 Build your query following the "Query construction" section above, then search:
 
 ```bash
-contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100
 ```
 
 For repo-scoped debugging, add `--project .` and use `--days 30` instead.
@@ -233,7 +233,7 @@ For repo-scoped debugging, add `--project .` and use `--days 30` instead.
 When the request relates to specific code, subsystems, or files you can identify from your project knowledge, pass those files as anchors to boost results from conversations near commits touching those files:
 
 ```bash
-contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-files "<file1>,<file2>" --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-files "<file1>,<file2>"
 ```
 
 Determine the relevant files from your understanding of the codebase, not from the user's query text. For example, if the user asks "what did we decide about the database migration?", you know that relates to `DatabaseSchema.swift`, so pass `--anchor-files DatabaseSchema.swift`. If the user asks about the startup flow, you know that relates to `StartupCoordinator.swift`.
@@ -241,7 +241,7 @@ Determine the relevant files from your understanding of the codebase, not from t
 For queries where you cannot identify specific relevant files but the query contains literal filenames or symbols, fall back to `--anchor-git` which extracts cues from the query text automatically:
 
 ```bash
-contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git --json
+contextify search "<expanded-query>" --days 365 --limit <N> --snippet-tokens 100 --anchor-git
 ```
 
 Git anchoring is additive, not exclusive:
@@ -249,25 +249,45 @@ Git anchoring is additive, not exclusive:
 - if it reports no strong commit signal, continue with normal broad search
 - do not stop exploring just because the git path was attempted
 
-Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only` instead (no `--limit` needed).
+Set `--limit` based on intent: 10 for lookup, 20 for exploratory. For counting, use `--count-only --json` (counting requires JSON for structured `totalCount`).
 
 **Search query syntax (FTS5):** Use `OR`, `AND`, `NOT` operators, quoted phrases for exact sequences, and `*` for prefix matching. Use parentheses when mixing AND/OR to control grouping; do not rely on default operator precedence.
 
-Example -- user asks "how many times have I mentioned deploying":
-```bash
-contextify search "deploy" --project . --days 365 --count-only --json
+**Text output format:** The default (non-JSON) output is designed to be read directly:
+
+```
+847 results across my-project, other-project
+Showing 10 of 847
+
+1. [assistant] my-project · Mar 29, 2026 14:06  entry:e897a104
+   The database schema was migrated in phase 3 to support multi-device sync...
+
+2. [user] my-project · Mar 28, 2026 09:15  entry:5f981600
+   What did we decide about the migration strategy?...
+
+Drill down:
+  contextify context <entry-id> --before 5 --after 15    # surrounding conversation
+  contextify entry <entry-id>                             # full entry text
+  Add --offset 10 to see the next page
 ```
 
-Porter stemming matches all regular forms of "deploy" automatically.
+Each result shows: numbered position, entry kind, project name, human-readable date, and the 8-character entry ID prefix (usable with `context` and `entry` commands). The summary line shows total count and projects. The drill-down hints show how to fetch more detail.
+
+Example -- user asks "how many times have I mentioned deploying":
+```bash
+contextify search "deploy" --project . --days 365 --count-only --term-counts --json
+```
+
+Porter stemming matches all regular forms automatically. Use `--json` here because counting queries need the structured `totalCount` and `termCounts` fields.
 
 Example -- user asks "what did we decide about the database schema":
 ```bash
-contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10 --json
+contextify search "\"database schema\" OR \"schema migration\" OR \"schema change\"" --project . --days 90 --limit 10
 ```
 
 Example -- user asks "what did we discuss in the last 6 hours about testing":
 ```bash
-contextify search "test OR testing OR \"test suite\"" --project . --hours 6 --limit 10 --json
+contextify search "test OR testing OR \"test suite\"" --project . --hours 6 --limit 10
 ```
 
 Returns:
@@ -354,73 +374,29 @@ Anchor selection guidance:
 **Fetch context** when: the snippet is truncated and you need the full text, the answer depends on surrounding discussion or rationale, or pronouns/references need resolution.
 
 ```bash
-contextify context "<entry-uuid>" --before 10 --after 20 --json
+contextify context "<entry-id>" --before 5 --after 15
 ```
 
-Returns:
-```json
-{
-  "data": {
-    "before": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380791,
-        "createdAt": 1769380791, "provider": "claude.code" }
-    ],
-    "anchor": {
-      "id": "e897a104-...", "kind": "assistant", "content": "full text here...",
-      "timestamp": 1769380895, "createdAt": 1769380895,
-      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
-    },
-    "after": [
-      { "id": "...", "kind": "user", "content": "...", "timestamp": 1769380900,
-        "createdAt": 1769380900, "provider": "claude.code" }
-    ],
-    "meta": {
-      "transcriptEntryCount": 75,
-      "hasMoreBefore": true,
-      "hasMoreAfter": false
-    }
-  },
-  "schemaVersion": 1,
-  "type": "context"
-}
-```
-
-**Important:** `data` is an object with `before` (array), `anchor` (object), and `after` (array). The `before` array is in chronological order. Read the entries directly from the JSON; do not pipe through `jq` or write parsers.
+The text output shows the surrounding conversation in chronological order with entry IDs and dates. Use the 8-character entry ID prefix from search results. For structured access, add `--json`.
 
 4) If a snippet is too short and you need the full entry:
 
 ```bash
-contextify entry "<entry-uuid>" --json
+contextify entry "<entry-id>"
 ```
 
-Returns:
-```json
-{
-  "data": {
-    "entry": {
-      "id": "...", "kind": "assistant", "content": "full untruncated text...",
-      "timestamp": 1769380895, "createdAt": 1769380895,
-      "transcriptId": "...", "projectId": "...", "provider": "claude.code"
-    },
-    "projectName": "my-project"
-  },
-  "schemaVersion": 1,
-  "type": "entry"
-}
-```
+Returns the full untruncated entry text. Use the 8-character entry ID prefix from search results.
 
 5) Validate results before answering:
 
 Before formatting your response, check:
 
-- **`hasMore` flag:** If `true`, you have not retrieved all matches. For lookup/exploratory queries needing more results, paginate with `--offset`:
+- **Total count:** The text output header shows "N results across projects" and "Showing X of Y". If more exist, paginate with `--offset`:
   ```bash
-  contextify search "<expanded-query>" --project . --limit 20 --offset 20 --json
+  contextify search "<expanded-query>" --project . --limit 20 --offset 20
   ```
-  Increment `--offset` by `--limit` each page until `hasMore` is `false`.
-- **`totalCount` field:** Always present in search metadata. Use this to know the total number of matches without paginating. For counting queries, use `--count-only` instead of paginating.
 - **Result volume sanity check:** If a counting query returns fewer results than expected, re-examine your query. Did you miss an irregular form (e.g., "ran" for "run")? A synonym? Porter stemming handles regular inflections but not irregular verbs or synonyms.
-- **For counting queries:** Report `totalCount` from metadata (or per-term counts from `termCounts`), and list which search terms were used so the user can judge completeness.
+- **For counting queries:** Use `--count-only --json` and report `totalCount` from metadata. List which search terms were used so the user can judge completeness.
 
 If results seem incomplete, run additional searches with expanded terms before answering.
 
@@ -516,18 +492,13 @@ Searched <N> entries across <scope> over <time range>.
 - **Fetch context for key results.** When a search snippet seems relevant but is truncated, always use `contextify context` to get the full surrounding conversation. Important details (names, status, outcomes) are often in adjacent entries, not the snippet itself.
 - **Use source language.** When the source material uses distinctive or colorful terms (e.g., "bootleg hats" instead of "novelty hats"), use the source's wording in your response. This preserves the user's original framing.
 
-## Working with the JSON output
+## NEVER pipe CLI output through external tools
 
-**Successful responses** return `{"data": ..., "schemaVersion": 1, "type": "..."}`. **Errors** return `{"type": "error", "code": "...", "message": "...", "details": ...}`. Read the JSON output directly. You do not need to pipe it through `python3`, `jq`, or any other tool. You are capable of reading and interpreting JSON natively.
+**CRITICAL:** Do not pipe `contextify` output through `python3`, `jq`, `awk`, `sed`, `grep`, or any other tool. This is the single most common cause of errors shown to users. The text output is designed to be read directly. If you need structured data for counting, use `--json` and read the JSON directly from the Bash output. You are capable of reading JSON natively without external parsers.
 
-**If piping through Python:** Always check for error responses before accessing `data`. The CLI returns error JSON (with `type: "error"`, no `data` key) on failure, which causes `KeyError: 'data'` if not handled.
+**Never use `2>&1` with contextify.** The CLI writes informational messages to stderr. Using `2>&1` merges these into stdout and corrupts the output.
 
-- **search**: `data` is an **array** of result objects; pagination info in `metadata`
-- **context**: `data` is an **object** with `before`, `anchor`, `after`; pagination info in `meta` (note: name differs from search)
-- **entry**: `data` is an **object** with `entry` and `projectName`
-- **status**: `data` is an **object** with database stats
-
-Common entry fields: `id` (UUID), `kind` (user/assistant/system), `content`, `timestamp` (Unix), `projectId`, `transcriptId`, `provider` (claude.code/codex).
+**When `--json` is used:** Successful responses return `{"data": ..., "schemaVersion": 1, "type": "..."}`. Errors return `{"type": "error", "code": "...", "message": "..."}`. Read the JSON directly.
 
 ## Error handling
 

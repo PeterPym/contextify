@@ -695,7 +695,7 @@ struct ContextifyQueryCLI {
 
           let metadata: JSONValue = .object(metadataDict)
           try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
-            printSearchHits(trimmedResults)
+            printSearchHits(trimmedResults, totalCount: totalCount, hasMore: hasMore)
           }
         }
 
@@ -2044,16 +2044,42 @@ private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptL
   }
 }
 
-private func printSearchHits(_ hits: [ContextifyQueryService.SearchHit]) {
+private func printSearchHits(
+  _ hits: [ContextifyQueryService.SearchHit],
+  totalCount: Int,
+  hasMore: Bool
+) {
   if hits.isEmpty {
     print("(no results)")
     return
   }
-  for hit in hits {
+
+  let projects = Set(hits.compactMap { $0.projectName }).sorted()
+  let projectSummary = projects.isEmpty ? "unknown" : projects.joined(separator: ", ")
+  print("\(totalCount) results across \(projectSummary)")
+  if totalCount > hits.count {
+    print("Showing \(hits.count) of \(totalCount)")
+  }
+  print("")
+
+  let formatter = DateFormatter()
+  formatter.dateFormat = "MMM dd, yyyy HH:mm"
+
+  for (index, hit) in hits.enumerated() {
     let projectLabel = hit.projectName?.isEmpty == false ? hit.projectName! : hit.projectId
-    let transcriptLabel = hit.transcriptTitle?.isEmpty == false ? hit.transcriptTitle! : hit.transcriptId
-    print("[\(hit.timestamp)] \(projectLabel) / \(transcriptLabel)  \(hit.kind)  score=\(hit.score)")
-    print("  \(hit.contentSnippet)")
+    let date = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(hit.timestamp)))
+    let entryPrefix = String(hit.id.prefix(8))
+    print("\(index + 1). [\(hit.kind)] \(projectLabel) · \(date)  entry:\(entryPrefix)")
+    print("   \(hit.contentSnippet)")
+    if index < hits.count - 1 { print("") }
+  }
+
+  print("")
+  print("Drill down:")
+  print("  contextify context <entry-id> --before 5 --after 15    # surrounding conversation")
+  print("  contextify entry <entry-id>                             # full entry text")
+  if hasMore {
+    print("  Add --offset \(hits.count) to see the next page")
   }
 }
 

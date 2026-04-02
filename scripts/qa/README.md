@@ -442,6 +442,14 @@ This tests Lite Mode code paths but is not a substitute for full VM testing befo
 
 ---
 
+## Cloud QA Test Accounts
+
+QA accounts for cloud sync testing are tracked in [`build/docs/operations/qa-accounts.csv`](../../build/docs/operations/qa-accounts.csv). The CSV lists tenant slugs, user emails, roles, and API key IDs (not secrets) for all test accounts on cloud.contextify.sh.
+
+When writing cloud QA scripts, reference that CSV for account details. Full API key secrets are stored in bloon issue comments (ct-812) and should not be committed to version control.
+
+---
+
 ## Linux QA (Docker)
 
 Local Linux testing validates that the CLI tools build and function correctly on Linux, without needing to push to CI.
