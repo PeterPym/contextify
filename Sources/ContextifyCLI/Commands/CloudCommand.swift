@@ -1162,7 +1162,7 @@ struct CloudSyncCommand: ParsableCommand {
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
     push.db = dbPath
-    push.limit = 500
+    // Use push command's own default (aligned with CloudSyncManager.pushBatchSize)
     push.json = false  // Suppress push's own JSON; sync emits envelope
     do {
       pushResult = try push.execute(emitOutput: !json)
