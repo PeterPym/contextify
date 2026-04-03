@@ -815,8 +815,8 @@ struct CloudPushCommand: ParsableCommand {
   @Option(name: .long, help: "Path to the SQLite database file")
   var db: String?
 
-  @Option(name: .long, help: "Maximum entries per batch (default: 500)")
-  var limit: Int = 500
+  @Option(name: .long, help: "Maximum entries per batch (default: 2500)")
+  var limit: Int = 2500
 
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
