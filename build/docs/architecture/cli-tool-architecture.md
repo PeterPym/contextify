@@ -425,7 +425,7 @@ contextify cloud sync                # Bidirectional sync (push + pull)
 contextify cloud search "query"      # Search across all cloud-synced machines
 ```
 
-Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud` dispatches through the shared `ContextifyCloudCommands` library target before the hand-rolled option parser, so ArgumentParser flags like `--help` and `--limit` are passed through correctly.
+Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud ...` dispatches directly to the shared `ContextifyCloudCommands` library target when `cloud` is the first token, so cloud subcommand flags are parsed by ArgumentParser. Flags placed before `cloud` are rejected with a clear error.
 
 ### Plugin Commands
 ```bash
