@@ -431,12 +431,9 @@ struct ContextifyQueryCLI {
 
       #if os(macOS)
       case .cloud:
-        // Cloud commands use ArgumentParser and manage their own DB/network.
-        // Find "cloud" in the original args to correctly skip any leading
-        // global flags that the hand-rolled parser already consumed.
-        if let idx = CommandLine.arguments.firstIndex(of: "cloud") {
-          CloudCommandBridge.run(Array(CommandLine.arguments[(idx + 1)...]))
-        }
+        // Cloud commands use ArgumentParser and manage their own parsing.
+        // Use commandArgs (positional tokens after "cloud") directly.
+        CloudCommandBridge.run(commandArgs)
         return
 
       default:
