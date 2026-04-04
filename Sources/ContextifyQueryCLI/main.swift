@@ -432,7 +432,33 @@ struct ContextifyQueryCLI {
       #if os(macOS)
       case .cloud:
         // Cloud commands use ArgumentParser and manage their own parsing.
-        // Use commandArgs (positional tokens after "cloud") directly.
+        // Reject global flags that the outer parser consumed but cannot
+        // forward, so users get a clear error instead of silent ignore.
+        let defaults = Options()
+        if options.jsonOutput != defaults.jsonOutput
+            || options.dbPath != defaults.dbPath
+            || options.dbDir != defaults.dbDir
+            || options.projectId != defaults.projectId
+            || options.project != defaults.project
+            || options.transcriptId != defaults.transcriptId
+            || options.since != defaults.since
+            || options.until != defaults.until
+            || options.days != defaults.days
+            || options.hours != defaults.hours
+            || options.includeHidden != defaults.includeHidden
+            || options.noContent != defaults.noContent
+            || options.fullContent != defaults.fullContent
+            || options.countOnly != defaults.countOnly
+            || options.anchorGit != defaults.anchorGit
+            || options.device != defaults.device
+            || options.thisWorktreeOnly != defaults.thisWorktreeOnly {
+          throw CLIError(
+            code: "invalidArgs",
+            message: "Put cloud-command options after `cloud`, not before it.",
+            exitCode: .invalidArgs,
+            hint: "Example: contextify cloud status --json"
+          )
+        }
         CloudCommandBridge.run(commandArgs)
         return
 
