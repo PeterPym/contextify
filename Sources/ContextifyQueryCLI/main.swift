@@ -214,32 +214,12 @@ struct ContextifyQueryCLI {
 
       #if os(macOS)
       // Cloud commands use ArgumentParser and manage their own arg parsing.
-      // Pre-scan for `cloud` as the first positional (non-flag) token so
-      // global flags like --json or --db-path may appear before it.
-      do {
-        // Flags that consume the next token as a value
-        let flagsWithValue: Set<String> = [
-          "--db-path", "--db-dir", "--project-id", "--project", "--transcript-id",
-          "--since", "--until", "--days", "--hours", "--before", "--after",
-          "--kinds", "--max-window", "--intent", "--gap", "--workaround",
-          "--proposal", "--format", "--older-than-days", "--limit", "--offset",
-          "--snippet-tokens", "--anchor-files", "--device", "--exclude", "--exclude-tags",
-        ]
-        var i = 0
-        while i < args.count {
-          let arg = args[i]
-          if arg == "--" { break }
-          if arg.hasPrefix("-") {
-            i += flagsWithValue.contains(arg) ? 2 : 1
-            continue
-          }
-          // First positional token found
-          if arg == "cloud" {
-            CloudCommandBridge.run(Array(args[(i + 1)...]))
-            return
-          }
-          break
-        }
+      // Fast-path: when `cloud` is the first token, dispatch immediately.
+      // When global flags precede `cloud`, the hand-rolled parser consumes
+      // them normally and the `case .cloud` branch handles dispatch.
+      if let first = args.first, first == "cloud" {
+        CloudCommandBridge.run(Array(args.dropFirst()))
+        return
       }
       #endif
 
@@ -451,9 +431,12 @@ struct ContextifyQueryCLI {
 
       #if os(macOS)
       case .cloud:
-        // Cloud commands use ArgumentParser and manage their own DB/network
-        let cloudArgs = Array(CommandLine.arguments.dropFirst(2))
-        CloudCommandBridge.run(cloudArgs)
+        // Cloud commands use ArgumentParser and manage their own DB/network.
+        // Find "cloud" in the original args to correctly skip any leading
+        // global flags that the hand-rolled parser already consumed.
+        if let idx = CommandLine.arguments.firstIndex(of: "cloud") {
+          CloudCommandBridge.run(Array(CommandLine.arguments[(idx + 1)...]))
+        }
         return
 
       default:
