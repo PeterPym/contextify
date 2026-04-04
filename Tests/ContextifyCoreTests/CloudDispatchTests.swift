@@ -45,11 +45,15 @@ final class CloudDispatchTests: XCTestCase {
   /// the exit code, stdout, and stderr as strings.
   private func run(
     _ arguments: [String],
-    timeout: TimeInterval = 30
+    timeout: TimeInterval = 30,
+    environment: [String: String]? = nil
   ) throws -> (exitCode: Int32, stdout: String, stderr: String) {
     let process = Process()
     process.executableURL = Self.binaryURL
     process.arguments = arguments
+    if let environment {
+      process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+    }
 
     let stdoutPipe = Pipe()
     let stderrPipe = Pipe()
@@ -203,6 +207,85 @@ final class CloudDispatchTests: XCTestCase {
       output.contains("Unknown option"),
       "Expected 'Unknown option' error, got: \(output.prefix(300))"
     )
+  }
+
+  // MARK: - Sync subcommand initialization (ct-886 regression)
+
+  /// `contextify-query cloud sync --help` must not crash. Before the fix
+  /// (ct-886), CloudSyncCommand created child push/pull commands via the
+  /// default memberwise init, which left property wrappers uninitialized.
+  func testCloudSync_helpDoesNotCrash() throws {
+    try XCTSkipIf(
+      !FileManager.default.fileExists(atPath: Self.binaryURL.path),
+      "contextify-query binary not built; run `swift build` first"
+    )
+
+    let result = try run(["cloud", "sync", "--help"])
+
+    XCTAssertEqual(result.exitCode, 0, "cloud sync --help should exit 0")
+    XCTAssertTrue(
+      result.stdout.contains("USAGE: cloud sync"),
+      "Expected sync usage text, got: \(result.stdout.prefix(200))"
+    )
+  }
+
+  /// Exercise the actual sync runtime path far enough to construct child
+  /// push/pull commands via ArgumentParser. This must not hit the old
+  /// "Can't read a value from a parsable argument definition" crash (ct-886).
+  /// Uses a temp DB and temp XDG_CONFIG_HOME so it gets past preflight
+  /// guards and into the patched .parse() calls.
+  func testCloudSync_runtimePathDoesNotCrashOnChildCommandInit() throws {
+    try XCTSkipIf(
+      !FileManager.default.fileExists(atPath: Self.binaryURL.path),
+      "contextify-query binary not built; run `swift build` first"
+    )
+
+    let fm = FileManager.default
+    let tempDir = fm.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString, isDirectory: true
+    )
+    try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: tempDir) }
+
+    // Create an empty DB file so the preflight guard passes
+    let dbURL = tempDir.appendingPathComponent("test.db")
+    fm.createFile(atPath: dbURL.path, contents: Data(), attributes: nil)
+
+    // Create a minimal cloud.json so config load passes
+    let xdgHome = tempDir.appendingPathComponent("xdg", isDirectory: true)
+    let configDir = xdgHome.appendingPathComponent("contextify", isDirectory: true)
+    try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
+
+    let config = """
+    {
+      "server_url": "http://127.0.0.1:1",
+      "api_key": "ctx_testkey1234abcd_secretsecretsecretsecr",
+      "device_id": "test-device",
+      "device_name": "Test Mac",
+      "enabled": true,
+      "last_pull_sequence": 0
+    }
+    """
+    try config.data(using: .utf8)!.write(
+      to: configDir.appendingPathComponent("cloud.json")
+    )
+
+    let result = try run(
+      ["cloud", "sync", "--db", dbURL.path],
+      timeout: 5,
+      environment: ["XDG_CONFIG_HOME": xdgHome.path]
+    )
+    let output = combinedOutput(result)
+
+    // The ArgumentParser crash must never appear
+    XCTAssertFalse(
+      output.contains("Can't read a value from a parsable argument definition"),
+      "cloud sync crashed with ArgumentParser init error (ct-886)"
+    )
+
+    // Expect a runtime failure (bad DB, unreachable server), not a crash
+    XCTAssertNotEqual(result.exitCode, 0,
+      "Expected runtime failure, but not the ct-886 crash")
   }
 
   // MARK: - Non-cloud commands unaffected
