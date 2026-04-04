@@ -1160,10 +1160,9 @@ struct CloudSyncCommand: ParsableCommand {
     var pushError: String?
 
     if !json { print("\n\(CLIStyle.header("Push"))") }
-    var push = CloudPushCommand()
-    push.db = dbPath
-    // Use push command's own default (aligned with CloudSyncManager.pushBatchSize)
-    push.json = false  // Suppress push's own JSON; sync emits envelope
+    var pushArgs = ["--db", dbPath]
+    // json is suppressed; sync emits its own envelope
+    var push = try CloudPushCommand.parse(pushArgs)
     do {
       pushResult = try push.execute(emitOutput: !json)
     } catch {
@@ -1193,10 +1192,10 @@ struct CloudSyncCommand: ParsableCommand {
     }
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
-    var pull = CloudPullCommand()
-    pull.db = dbPath
-    pull.project = project
-    pull.json = false  // Suppress pull's own JSON; sync emits envelope
+    var pullArgs = ["--db", dbPath]
+    if let project { pullArgs += ["--project", project] }
+    // json is suppressed; sync emits its own envelope
+    var pull = try CloudPullCommand.parse(pullArgs)
     let pullResult = try pull.execute(emitOutput: !json)
 
     if json {

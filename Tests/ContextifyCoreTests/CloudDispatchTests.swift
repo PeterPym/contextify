@@ -205,6 +205,55 @@ final class CloudDispatchTests: XCTestCase {
     )
   }
 
+  // MARK: - Sync subcommand initialization (ct-886 regression)
+
+  /// `contextify-query cloud sync --help` must not crash. Before the fix
+  /// (ct-886), CloudSyncCommand created child push/pull commands via the
+  /// default memberwise init, which left property wrappers uninitialized.
+  func testCloudSync_helpDoesNotCrash() throws {
+    try XCTSkipIf(
+      !FileManager.default.fileExists(atPath: Self.binaryURL.path),
+      "contextify-query binary not built; run `swift build` first"
+    )
+
+    let result = try run(["cloud", "sync", "--help"])
+
+    XCTAssertEqual(result.exitCode, 0, "cloud sync --help should exit 0")
+    XCTAssertTrue(
+      result.stdout.contains("USAGE: cloud sync"),
+      "Expected sync usage text, got: \(result.stdout.prefix(200))"
+    )
+  }
+
+  /// `contextify-query cloud sync --db /nonexistent` should produce a
+  /// validation error about a missing database, NOT an ArgumentParser
+  /// "Can't read a value" crash. This exercises the actual run() path
+  /// with properly initialized property wrappers (ct-886 regression).
+  func testCloudSync_missingDbProducesValidationError() throws {
+    try XCTSkipIf(
+      !FileManager.default.fileExists(atPath: Self.binaryURL.path),
+      "contextify-query binary not built; run `swift build` first"
+    )
+
+    let result = try run(["cloud", "sync", "--db", "/nonexistent/path.db"])
+    let output = combinedOutput(result)
+
+    XCTAssertFalse(
+      output.contains("Can't read a value from a parsable argument definition"),
+      "cloud sync crashed with ArgumentParser init error (ct-886)"
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0, "Should fail with missing db")
+    let isExpectedError =
+      output.contains("Database not found")
+      || output.contains("not_configured")
+      || output.contains("Cloud not configured")
+    XCTAssertTrue(
+      isExpectedError,
+      "Expected database/config error, got: \(output.prefix(400))"
+    )
+  }
+
   // MARK: - Non-cloud commands unaffected
 
   /// `contextify-query --json projects` should still work normally. Global
