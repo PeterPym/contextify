@@ -815,8 +815,8 @@ struct CloudPushCommand: ParsableCommand {
   @Option(name: .long, help: "Path to the SQLite database file")
   var db: String?
 
-  @Option(name: .long, help: "Maximum entries per batch (default: 500)")
-  var limit: Int = 500
+  @Option(name: .long, help: "Maximum entries per batch (default: 2500)")
+  var limit: Int = 2500
 
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
@@ -1162,7 +1162,7 @@ struct CloudSyncCommand: ParsableCommand {
     if !json { print("\n\(CLIStyle.header("Push"))") }
     var push = CloudPushCommand()
     push.db = dbPath
-    push.limit = 500
+    // Use push command's own default (aligned with CloudSyncManager.pushBatchSize)
     push.json = false  // Suppress push's own JSON; sync emits envelope
     do {
       pushResult = try push.execute(emitOutput: !json)

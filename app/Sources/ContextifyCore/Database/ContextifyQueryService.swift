@@ -1983,11 +1983,11 @@ public struct ContextifyQueryService: Sendable {
   /// - Parameters:
   ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
   ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
-  ///   - limit: Maximum entries per batch (default 500).
+  ///   - limit: Maximum entries per batch (default 2500).
   public func exportForCloudPush(
     afterTimestamp: Int? = nil,
     afterEntryId: String? = nil,
-    limit: Int = 500
+    limit: Int = 2500
   ) throws -> CloudPushExport {
     try pool.read { db in
       // Get entries (ordered by timestamp, id for stable keyset paging)

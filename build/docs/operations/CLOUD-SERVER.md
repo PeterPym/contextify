@@ -119,8 +119,8 @@ Production config is in `/opt/contextify-cloud/.env` (chmod 600, not in git). Ke
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signature verification |
 | `ALLOWED_ORIGINS` | CORS origins (contextify.sh, cloud.contextify.sh) |
 | `ENABLE_DOCS` | Set `true` to enable Swagger UI at `/api/docs` (disabled in production) |
-| `MAX_BATCH_SIZE` | Max items per sync push request (default 500) |
-| `RATE_LIMIT_SYNC_PER_MINUTE` | Sync endpoint rate limit per API key (default 30) |
+| `MAX_BATCH_SIZE` | Max items per sync push request (default 5000) |
+| `RATE_LIMIT_SYNC_PER_MINUTE` | Sync endpoint rate limit per API key (default 120) |
 
 To edit production config:
 ```bash

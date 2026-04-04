@@ -78,6 +78,12 @@ public struct PullResult: Sendable {
 @Observable
 public final class CloudSyncManager: @unchecked Sendable {
 
+  // MARK: - Constants
+
+  /// Number of entries per push batch. Server allows up to 5000.
+  /// Tuned for balance between throughput and progress update granularity.
+  public static let pushBatchSize = 2500
+
   // MARK: - Observable State (MainActor-isolated for SwiftUI)
 
   /// Timestamp of the last successful sync completion.
@@ -471,7 +477,7 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     // Keyset pagination: loop batches until a short page is returned.
     // Resume from saved cursor to avoid re-uploading the entire database.
-    let batchSize = 500
+    let batchSize = Self.pushBatchSize
     var afterTimestamp: Int? = config.lastPushTimestamp
     var afterEntryId: String? = config.lastPushEntryId
     var syncSessionId = config.lastPushSessionId ?? UUID().uuidString
