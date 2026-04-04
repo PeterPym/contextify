@@ -1,5 +1,6 @@
 #if os(macOS)
 import ContextifyCore
+import ContextifyCloudCommands
 #else
 import ContextifyQueryCore
 #endif
@@ -120,6 +121,7 @@ struct ContextifyQueryCLI {
     case stats
     case version
     case tag
+    case cloud
     #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
@@ -209,6 +211,17 @@ struct ContextifyQueryCLI {
     do {
       var options = Options()
       let args = Array(allArgs.dropFirst())
+
+      #if os(macOS)
+      // Cloud commands use ArgumentParser and manage their own arg parsing,
+      // so dispatch before the hand-rolled option parser runs. This ensures
+      // flags like --help are forwarded to CloudCommand, not consumed here.
+      if let first = args.first, first == "cloud" {
+        let cloudArgs = Array(args.dropFirst())
+        CloudCommandBridge.run(cloudArgs)
+        return
+      }
+      #endif
 
       // Parse global flags anywhere (before/after the command).
       var remaining: [String] = []
@@ -417,6 +430,12 @@ struct ContextifyQueryCLI {
         return
 
       #if os(macOS)
+      case .cloud:
+        // Cloud commands use ArgumentParser and manage their own DB/network
+        let cloudArgs = Array(CommandLine.arguments.dropFirst(2))
+        CloudCommandBridge.run(cloudArgs)
+        return
+
       default:
         break
       #endif
@@ -847,7 +866,7 @@ struct ContextifyQueryCLI {
       case .tag:
         try runTag(commandArgs: commandArgs, options: options, service: service)
 
-      case .installPlugin, .uninstallPlugin, .doctor:
+      case .installPlugin, .uninstallPlugin, .doctor, .cloud:
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
@@ -1122,6 +1141,7 @@ struct ContextifyQueryCLI {
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
+        cloud <subcommand>   Cloud sync (setup, status, push, pull, sync, search)
         install-plugin       Install Claude Code and Codex CLI skills
         uninstall-plugin     Remove Claude Code and Codex CLI skills
         doctor               Check CLI installation health
