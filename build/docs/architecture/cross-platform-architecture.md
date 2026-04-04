@@ -181,6 +181,7 @@ The CLI implements this with `CLIEventSink` for human-readable or JSONL output.
 | **Project discovery** | Yes | Yes (lightweight) |
 | **Total Recall skill** | Yes | Yes |
 | **contextify-query CLI** | Yes | Yes |
+| **Cloud commands (setup/push/pull/sync/search)** | Yes | Yes |
 | **Real-time file watching** | Yes | No |
 | **LLM summaries** | Yes (macOS 26+) | No |
 | **Timeline cache generation** | Yes | No |

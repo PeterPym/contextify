@@ -53,10 +53,10 @@ While testing the Settings > CLI tab Enable/Disable toggle, we found:
 
 The problem is compounded on Linux:
 
-- `contextify-query` is not built for Linux (macOS-only target)
+- ~~`contextify-query` is not built for Linux (macOS-only target)~~ (resolved in v1.1.0 - Linux ships `contextify-query` as a symlink to the unified binary)
 - Linux users can run `contextify-ingest` to create databases
-- But they cannot use Total Recall (the primary feature)
-- No way to install or verify skills on Linux
+- Total Recall and cloud commands are available on Linux via the unified `contextify` binary
+- `contextify-query install-skill` installs skills on Linux
 
 ---
 
