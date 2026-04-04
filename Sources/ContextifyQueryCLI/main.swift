@@ -224,10 +224,18 @@ struct ContextifyQueryCLI {
       #endif
 
       // Parse global flags anywhere (before/after the command).
+      // Track if flags were consumed before the first positional token,
+      // so cloud dispatch can reject them instead of silently ignoring.
       var remaining: [String] = []
+      var sawFirstPositional = false
+      var consumedOuterFlagBeforeCommand = false
       var index = 0
       while index < args.count {
         let arg = args[index]
+        // Track flags consumed before any positional (command) token
+        if arg.hasPrefix("-") && arg != "--" && !sawFirstPositional {
+          consumedOuterFlagBeforeCommand = true
+        }
         switch arg {
         case "--":
           let restIndex = index + 1
@@ -405,6 +413,7 @@ struct ContextifyQueryCLI {
             )
           }
           remaining.append(arg)
+          sawFirstPositional = true
         }
         index += 1
       }
@@ -432,26 +441,8 @@ struct ContextifyQueryCLI {
       #if os(macOS)
       case .cloud:
         // Cloud commands use ArgumentParser and manage their own parsing.
-        // Reject global flags that the outer parser consumed but cannot
-        // forward, so users get a clear error instead of silent ignore.
-        let defaults = Options()
-        if options.jsonOutput != defaults.jsonOutput
-            || options.dbPath != defaults.dbPath
-            || options.dbDir != defaults.dbDir
-            || options.projectId != defaults.projectId
-            || options.project != defaults.project
-            || options.transcriptId != defaults.transcriptId
-            || options.since != defaults.since
-            || options.until != defaults.until
-            || options.days != defaults.days
-            || options.hours != defaults.hours
-            || options.includeHidden != defaults.includeHidden
-            || options.noContent != defaults.noContent
-            || options.fullContent != defaults.fullContent
-            || options.countOnly != defaults.countOnly
-            || options.anchorGit != defaults.anchorGit
-            || options.device != defaults.device
-            || options.thisWorktreeOnly != defaults.thisWorktreeOnly {
+        // Reject any outer-parser flags consumed before the command token.
+        if consumedOuterFlagBeforeCommand {
           throw CLIError(
             code: "invalidArgs",
             message: "Put cloud-command options after `cloud`, not before it.",
