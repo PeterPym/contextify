@@ -13,6 +13,7 @@
 			D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
 				D4C0B0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0B0012E77AAAA00747100 /* main.swift */; };
 				D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0B0062E77AAAA00747100 /* ContextifyCore */; };
+				D4CLOUD0010000000000001 /* ContextifyCloudCommands in Frameworks */ = {isa = PBXBuildFile; productRef = D4CLOUD0010000000000002 /* ContextifyCloudCommands */; };
 				D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */ = {isa = PBXBuildFile; fileRef = D4C0B0072E77AAAA00747100 /* contextify-query */; };
 				D4C0B0212E77AAAA00747100 /* user-skill in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0202E77AAAA00747100 /* user-skill */; };
 				D4C0B0222E77AAAA00747100 /* user-skill in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0202E77AAAA00747100 /* user-skill */; };
@@ -238,6 +239,7 @@
 					buildActionMask = 2147483647;
 					files = (
 						D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */,
+						D4CLOUD0010000000000001 /* ContextifyCloudCommands in Frameworks */,
 					);
 					runOnlyForDeploymentPostprocessing = 0;
 				};
@@ -414,6 +416,7 @@
 					name = "contextify-query";
 					packageProductDependencies = (
 						D4C0B0062E77AAAA00747100 /* ContextifyCore */,
+						D4CLOUD0010000000000002 /* ContextifyCloudCommands */,
 					);
 					productName = "contextify-query";
 					productReference = D4C0B0072E77AAAA00747100 /* contextify-query */;
@@ -1219,6 +1222,11 @@
 				isa = XCSwiftPackageProductDependency;
 				package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
 				productName = ContextifyCore;
+			};
+			D4CLOUD0010000000000002 /* ContextifyCloudCommands */ = {
+				isa = XCSwiftPackageProductDependency;
+				package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
+				productName = ContextifyCloudCommands;
 			};
 /* End XCSwiftPackageProductDependency section */
 	};

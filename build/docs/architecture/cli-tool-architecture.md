@@ -415,6 +415,18 @@ contextify-query tag <id> [<tag>]    # Add tag to transcript; --remove to remove
 
 **FTS5 hyphen preprocessing:** The `search` command automatically rewrites hyphenated terms before passing them to FTS5. For example, `ct-708` becomes `"ct 708"` (quoted phrase) and `cli-ai-setup` becomes `"cli ai setup"`. This prevents FTS5 from misinterpreting hyphens as column references. Hints are written to stderr when ambiguous cases are detected.
 
+### Cloud Commands
+```bash
+contextify cloud setup               # Configure cloud sync (API key, tenant)
+contextify cloud status              # Show cloud sync status
+contextify cloud push                # Push local entries to cloud
+contextify cloud pull                # Pull remote entries to local DB
+contextify cloud sync                # Bidirectional sync (push + pull)
+contextify cloud search "query"      # Search across all cloud-synced machines
+```
+
+Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud ...` dispatches directly to the shared `ContextifyCloudCommands` library target when `cloud` is the first token, so cloud subcommand flags are parsed by ArgumentParser. Flags placed before `cloud` are rejected with a clear error.
+
 ### Plugin Commands
 ```bash
 contextify-query install-plugin      # Install skills for all supported CLIs
@@ -464,3 +476,4 @@ On Linux, doctor checks skills only (no shim/manifest - binary runs directly).
 | 1.0.0 | 2025-Q4 | Initial release, Claude Code only |
 | 1.1.0 | 2026-01 | Added Codex CLI support, doctor command, Linux support |
 | 1.1.x | 2026-03 | FTS5 hyphen preprocessing, --project name-based lookup, shim TTY gating for multi-install warning |
+| 1.2.x | 2026-04 | Cloud commands available on macOS via shared ContextifyCloudCommands target (ct-848) |
