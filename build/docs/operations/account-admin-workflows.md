@@ -16,6 +16,73 @@
 
 ---
 
+## 0. Switching to a QA Account for Testing
+
+**Status:** Manual procedure. Critical to follow before any QA validation against a non-personal account.
+
+The Contextify app and CLI share `~/.config/contextify/cloud.json`. The running
+app's CloudSyncManager will overwrite this file with its own credentials during
+background sync cycles. If you change cloud.json to a QA key while the app is
+running, the app will silently revert it, causing test data to be pushed to
+your personal account instead of the QA account.
+
+### Before QA testing with a non-personal account
+
+1. **Quit the Contextify app** (Cmd+Q or `pkill -f Contextify.app`). Verify
+   it is not running:
+
+   ```bash
+   ps aux | grep Contextify | grep -v grep
+   ```
+
+2. **Back up your personal config:**
+
+   ```bash
+   cp ~/.config/contextify/cloud.json ~/.config/contextify/cloud.json.bak-personal
+   ```
+
+3. **Configure the QA account:**
+
+   ```bash
+   contextify cloud setup --key <qa-key> --url https://cloud.contextify.sh
+   ```
+
+4. **Verify you are on the QA account:**
+
+   ```bash
+   contextify cloud status
+   ```
+
+   Confirm the device name, entry count, and device list match the QA tenant,
+   not your personal account.
+
+5. **Run your QA tests** (push, pull, search, etc.).
+
+### After QA testing
+
+1. **Restore your personal config:**
+
+   ```bash
+   cp ~/.config/contextify/cloud.json.bak-personal ~/.config/contextify/cloud.json
+   ```
+
+2. **Restart the Contextify app.**
+
+3. **Verify personal account is active:**
+
+   ```bash
+   contextify cloud status
+   ```
+
+### Why this matters
+
+During ct-883 validation, the running Contextify app overwrote the QA config
+back to the personal account mid-test, causing 200k entries to be pushed to
+the QA tenant under the personal device ID. This is confusing and can
+contaminate QA data with personal conversation history.
+
+---
+
 ## 1. API Key Reset (lost key recovery)
 
 **Status:** Manual SSH method only. No admin UI or CLI.
