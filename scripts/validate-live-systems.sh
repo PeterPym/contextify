@@ -236,6 +236,8 @@ build_json_array() {
 }
 
 # ── Section A: Cloud Health & Security ─────────────────────────────────────────
+# Note: /cloud/sync and /api/v1/sync/status require authentication (Bearer token)
+# and are intentionally excluded from these public-endpoint checks.
 
 run_cloud_checks() {
   section_header "A" "Cloud Health & Security"
