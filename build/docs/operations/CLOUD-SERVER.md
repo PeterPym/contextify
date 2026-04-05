@@ -79,10 +79,12 @@ The `deploy` user's SSH key was set up during provisioning. Root SSH login is di
 
 ## Deploy Procedure
 
-There is no automated deploy script for the cloud server yet. Deploy manually:
+CI auto-deploys to production on every green push to `main` via `.github/workflows/ci.yml`. The deploy job checks out the exact commit SHA, rebuilds the Docker image, and runs a health check + post-deploy smoke test.
+
+For manual deploy (e.g., hotfix or CI bypass):
 
 ```bash
-ssh deploy@174.138.94.110 "cd /opt/contextify-cloud && git pull origin main && docker compose build --no-cache api && docker compose up -d --wait"
+ssh deploy@174.138.94.110 "cd /opt/contextify-cloud && git fetch origin && git checkout --force <commit-sha> && docker compose -f docker-compose.prod.yml up -d --build"
 ```
 
 Verify after deploy:
@@ -90,15 +92,16 @@ Verify after deploy:
 curl https://cloud.contextify.sh/api/v1/health
 ```
 
-Expected response: `{"status":"ok","version":"0.1.0","database":"connected"}`
+Expected response: `{"status":"ok"}`
+
+For full deploy/rollback procedures, see `docs/ops/deploy-and-rollback.md` in the contextify-cloud repo.
 
 ### What happens during deploy
 
-1. `git pull` fetches latest from `github.com/banagale/contextify-cloud` main branch
-2. `docker compose build --no-cache api` rebuilds the API container (installs deps via uv, copies source)
-3. `docker compose up -d --wait` restarts the API container, waits for health check
-4. Alembic migrations run automatically on container startup via `entrypoint.sh`
-5. The PostgreSQL container (`db`) is NOT rebuilt, only restarted if needed
+1. `git fetch` + `git checkout --force <sha>` checks out the exact commit
+2. `docker compose -f docker-compose.prod.yml up -d --build` rebuilds the API container and restarts
+3. Alembic migrations run automatically on container startup via `entrypoint.sh`
+4. The PostgreSQL container (`db`) is NOT rebuilt, only restarted if needed
 
 ### Deploy does NOT affect
 
