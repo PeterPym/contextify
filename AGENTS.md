@@ -46,6 +46,7 @@ These cause real problems when violated:
     ---
     ```
 16. **Linux builds require `/linux-env` skill** - Before ANY Docker, Colima, or Linux compilation work, invoke the `/linux-env` skill first. It contains critical architecture rules (arm64 native vs x86_64 CI-only), Colima profile management, and Docker context verification that prevent slow/broken builds. Never run `docker-linux-build.sh` or start Colima manually without consulting this skill. On ARM Mac: local builds must use arm64 profile; x86_64 builds go through GitHub CI only.
+17. **CLI parity between macOS and Linux** - The macOS CLI (`ContextifyQueryCLI`) and Linux CLI (`ContextifyCLI`) are two separate binaries with independent command dispatch. When adding a new subcommand, it must be registered in both `Sources/ContextifyQueryCLI/main.swift` (macOS) and `Sources/ContextifyCLI/main.swift` (Linux). CI validates this via `cloud --help` checks in `linux-build.yml` and `linux-release.yml`. See `build/docs/architecture/cli-tool-architecture.md` for dispatch details.
 
 ---
 

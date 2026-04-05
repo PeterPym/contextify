@@ -427,6 +427,8 @@ contextify cloud search "query"      # Search across all cloud-synced machines
 
 Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud ...` dispatches directly to the shared `ContextifyCloudCommands` library target when `cloud` is the first token, so cloud subcommand flags are parsed by ArgumentParser. Flags placed before `cloud` are rejected with a clear error.
 
+**Parity rule (ct-1048):** New CLI subcommands must be registered in both `ContextifyQueryCLI` (macOS, `Sources/ContextifyQueryCLI/main.swift`) and `ContextifyCLI` (Linux, `Sources/ContextifyCLI/main.swift`). These are two separate binaries with independent dispatch. CI validates parity by checking `cloud --help` in `linux-build.yml`, `linux-release.yml`, and `docker-linux-build.sh --install-test`. If a subcommand exists on one platform but not the other, CI will catch it.
+
 ### Plugin Commands
 ```bash
 contextify-query install-plugin      # Install skills for all supported CLIs
