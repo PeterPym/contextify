@@ -1,5 +1,6 @@
 #if os(macOS)
 import ContextifyCore
+import ContextifyCloudCommands
 #else
 import ContextifyQueryCore
 #endif
@@ -120,6 +121,7 @@ struct ContextifyQueryCLI {
     case stats
     case version
     case tag
+    case cloud
     #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
@@ -210,11 +212,30 @@ struct ContextifyQueryCLI {
       var options = Options()
       let args = Array(allArgs.dropFirst())
 
+      #if os(macOS)
+      // Cloud commands use ArgumentParser and manage their own arg parsing.
+      // Fast-path: when `cloud` is the first token, dispatch immediately.
+      // When global flags precede `cloud`, the hand-rolled parser consumes
+      // them normally and the `case .cloud` branch handles dispatch.
+      if let first = args.first, first == "cloud" {
+        CloudCommandBridge.run(Array(args.dropFirst()))
+        return
+      }
+      #endif
+
       // Parse global flags anywhere (before/after the command).
+      // Track if flags were consumed before the first positional token,
+      // so cloud dispatch can reject them instead of silently ignoring.
       var remaining: [String] = []
+      var sawFirstPositional = false
+      var consumedOuterFlagBeforeCommand = false
       var index = 0
       while index < args.count {
         let arg = args[index]
+        // Track flags consumed before any positional (command) token
+        if arg.hasPrefix("-") && arg != "--" && !sawFirstPositional {
+          consumedOuterFlagBeforeCommand = true
+        }
         switch arg {
         case "--":
           let restIndex = index + 1
@@ -392,6 +413,7 @@ struct ContextifyQueryCLI {
             )
           }
           remaining.append(arg)
+          sawFirstPositional = true
         }
         index += 1
       }
@@ -417,6 +439,20 @@ struct ContextifyQueryCLI {
         return
 
       #if os(macOS)
+      case .cloud:
+        // Cloud commands use ArgumentParser and manage their own parsing.
+        // Reject any outer-parser flags consumed before the command token.
+        if consumedOuterFlagBeforeCommand {
+          throw CLIError(
+            code: "invalidArgs",
+            message: "Put cloud-command options after `cloud`, not before it.",
+            exitCode: .invalidArgs,
+            hint: "Example: contextify cloud status --json"
+          )
+        }
+        CloudCommandBridge.run(commandArgs)
+        return
+
       default:
         break
       #endif
@@ -847,7 +883,7 @@ struct ContextifyQueryCLI {
       case .tag:
         try runTag(commandArgs: commandArgs, options: options, service: service)
 
-      case .installPlugin, .uninstallPlugin, .doctor:
+      case .installPlugin, .uninstallPlugin, .doctor, .cloud:
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
@@ -1122,6 +1158,7 @@ struct ContextifyQueryCLI {
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
+        cloud <subcommand>   Cloud sync (setup, status, push, pull, sync, search)
         install-plugin       Install Claude Code and Codex CLI skills
         uninstall-plugin     Remove Claude Code and Codex CLI skills
         doctor               Check CLI installation health

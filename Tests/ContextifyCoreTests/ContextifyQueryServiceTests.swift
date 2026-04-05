@@ -343,6 +343,94 @@ final class ContextifyQueryServiceTests: XCTestCase {
     }
   }
 
+  /// ct-374: After a pull remap (cloud-project -> local-project), a subsequent
+  /// exportForCloudPush uses the local project ID. The server handles merging
+  /// via repo_group_key, so the client correctly sends its canonical local ID.
+  func testRoundTrip_pullRemapThenPushExportsLocalProjectId() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-roundtrip-identity-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Setup: local project exists
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('local-project', 'Contextify', '/Users/rob/code/projects/contextify', 1, 0, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Step 1: Pull from cloud with different project ID for same root_path
+    let pullResult = try service.importFromCloudPull(
+      projects: [[
+        "id": "cloud-project",
+        "name": "Contextify",
+        "root_path": "/Users/rob/code/projects/contextify",
+      ]],
+      transcripts: [[
+        "id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "file_path": "/Users/rob/.claude/projects/contextify/transcript.jsonl",
+        "provider": "claude.code",
+        "line_count": 1,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      entries: [[
+        "id": "cloud-entry",
+        "transcript_id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "provider": "claude.code",
+        "kind": "user",
+        "timestamp": 100,
+        "content": "hello from cloud",
+        "content_sha256": "sha-cloud-roundtrip",
+        "display_in_timeline": true,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      summaries: []
+    )
+
+    // Pull remap should have remapped cloud-project -> local-project
+    XCTAssertEqual(pullResult.projectsImported, 0, "Should not create a new project")
+    XCTAssertEqual(pullResult.entriesImported, 1)
+
+    // Step 2: Export for push - should use local-project ID, not cloud-project
+    let pushExport = try service.exportForCloudPush()
+
+    // All exported entries should reference local-project
+    XCTAssertFalse(pushExport.entries.isEmpty, "Should have entries to push")
+    for entry in pushExport.entries {
+      XCTAssertEqual(entry.projectId, "local-project",
+        "Push export should use the local project ID, not the cloud one")
+    }
+
+    // All exported transcripts should reference local-project
+    for transcript in pushExport.transcripts {
+      XCTAssertEqual(transcript.projectId, "local-project",
+        "Transcript should reference local project ID")
+    }
+
+    // Only one project should be exported (the local one)
+    XCTAssertEqual(pushExport.projects.count, 1,
+      "Should export exactly one project (no duplicates)")
+    XCTAssertEqual(pushExport.projects.first?.id, "local-project",
+      "Exported project should be the local one")
+
+    // Verify: still only one project row in the database
+    try pool.read { db in
+      let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects")
+      XCTAssertEqual(projectCount, 1, "Database should have exactly one project")
+    }
+  }
+
   /// Regression test for ct-834: pull must not crash when a transcript already
   /// exists locally with a different ID but the same (project_id, file_path).
   func testImportFromCloudPull_skipsTranscriptWithDuplicateProjectIdAndFilePath() throws {
