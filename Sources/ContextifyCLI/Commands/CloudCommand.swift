@@ -815,8 +815,8 @@ struct CloudPushCommand: ParsableCommand {
   @Option(name: .long, help: "Path to the SQLite database file")
   var db: String?
 
-  @Option(name: .long, help: "Maximum entries per batch (default: 500)")
-  var limit: Int = 500
+  @Option(name: .long, help: "Maximum entries per batch (default: 2500)")
+  var limit: Int = 2500
 
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
@@ -1160,10 +1160,9 @@ struct CloudSyncCommand: ParsableCommand {
     var pushError: String?
 
     if !json { print("\n\(CLIStyle.header("Push"))") }
-    var push = CloudPushCommand()
-    push.db = dbPath
-    push.limit = 500
-    push.json = false  // Suppress push's own JSON; sync emits envelope
+    var pushArgs = ["--db", dbPath]
+    // json is suppressed; sync emits its own envelope
+    var push = try CloudPushCommand.parse(pushArgs)
     do {
       pushResult = try push.execute(emitOutput: !json)
     } catch {
@@ -1193,10 +1192,10 @@ struct CloudSyncCommand: ParsableCommand {
     }
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
-    var pull = CloudPullCommand()
-    pull.db = dbPath
-    pull.project = project
-    pull.json = false  // Suppress pull's own JSON; sync emits envelope
+    var pullArgs = ["--db", dbPath]
+    if let project { pullArgs += ["--project", project] }
+    // json is suppressed; sync emits its own envelope
+    var pull = try CloudPullCommand.parse(pullArgs)
     let pullResult = try pull.execute(emitOutput: !json)
 
     if json {
