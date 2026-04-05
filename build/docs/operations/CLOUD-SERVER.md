@@ -162,6 +162,8 @@ Rate limiting at Nginx level:
 
 ## Monitoring
 
+The `live-systems-validation.yml` GitHub Actions workflow in the `contextify` repo runs 25 cloud, Sparkle, Linux, and consistency checks daily (14:00 UTC) and on manual dispatch. It opens a GitHub issue automatically if any check fails. See `scripts/validate-live-systems.sh` to run checks locally.
+
 ### Container status
 ```bash
 ssh deploy@174.138.94.110 "cd /opt/contextify-cloud && docker compose ps"
