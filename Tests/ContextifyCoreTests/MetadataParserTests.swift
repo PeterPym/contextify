@@ -69,7 +69,7 @@ final class MetadataParserTests: XCTestCase {
       "type": "summary",
       "timestamp": "2025-01-15T10:30:00.000Z",
       "summary": "Implemented metadata storage system",
-      "leaf_uuid": "leaf-123",
+      "leafUuid": "leaf-123",
       "cwd": "/Users/rob/code/project"
     }
     """

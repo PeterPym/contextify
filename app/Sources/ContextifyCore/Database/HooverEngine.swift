@@ -138,6 +138,9 @@ public struct EntryInsert {
   public let agentId: String?
   public let toolInvocations: [ToolInvocationInsert]
   public let toolResultData: [ToolResultData]
+  // Session-level metadata (CC v2.1.82+): passed through for transcript table update
+  public let slug: String?
+  public let entrypoint: String?
 
   public init(
     id: String,
@@ -158,7 +161,9 @@ public struct EntryInsert {
     isSidechain: Bool = false,
     agentId: String? = nil,
     toolInvocations: [ToolInvocationInsert] = [],
-    toolResultData: [ToolResultData] = []
+    toolResultData: [ToolResultData] = [],
+    slug: String? = nil,
+    entrypoint: String? = nil
   ) {
     self.id = id
     self.transcriptId = transcriptId
@@ -179,6 +184,8 @@ public struct EntryInsert {
     self.agentId = agentId
     self.toolInvocations = toolInvocations
     self.toolResultData = toolResultData
+    self.slug = slug
+    self.entrypoint = entrypoint
   }
 
   /// Returns a copy with an updated projectId
@@ -202,7 +209,9 @@ public struct EntryInsert {
       isSidechain: isSidechain,
       agentId: agentId,
       toolInvocations: toolInvocations,
-      toolResultData: toolResultData
+      toolResultData: toolResultData,
+      slug: slug,
+      entrypoint: entrypoint
     )
   }
 
@@ -1454,9 +1463,27 @@ public final class HooverEngine {
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
       }
+
+      // v40: Update session-level metadata (slug, entrypoint) from entry fields
+      // These fields appear on every user/assistant record; write-once (IS NULL guard)
+      for entry in entries {
+        if let slug = entry.slug {
+          try db.execute(
+            sql: "UPDATE transcripts SET slug = ? WHERE id = ? AND slug IS NULL",
+            arguments: [slug, entry.transcriptId]
+          )
+        }
+        if let entrypoint = entry.entrypoint {
+          try db.execute(
+            sql: "UPDATE transcripts SET entrypoint = ? WHERE id = ? AND entrypoint IS NULL",
+            arguments: [entrypoint, entry.transcriptId]
+          )
+        }
+      }
+
       // FK-safe usage insert: atomic CTE-based check+insert with request_id normalization
       for usage in metadata.assistantUsages {
-        // Normalize request_id: empty string → entry_id fallback
+        // Normalize request_id: empty string -> entry_id fallback
         let normalizedRequestId: String = {
           let trimmed = usage.requestId.trimmingCharacters(in: .whitespacesAndNewlines)
           return trimmed.isEmpty ? usage.entryId : trimmed
@@ -1821,6 +1848,22 @@ public final class HooverEngine {
       }
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
+      }
+
+      // v40: Update session-level metadata (slug, entrypoint) from entry fields
+      for entry in entries {
+        if let slug = entry.slug {
+          try db.execute(
+            sql: "UPDATE transcripts SET slug = ? WHERE id = ? AND slug IS NULL",
+            arguments: [slug, entry.transcriptId]
+          )
+        }
+        if let entrypoint = entry.entrypoint {
+          try db.execute(
+            sql: "UPDATE transcripts SET entrypoint = ? WHERE id = ? AND entrypoint IS NULL",
+            arguments: [entrypoint, entry.transcriptId]
+          )
+        }
       }
 
       // FK-safe usage insert

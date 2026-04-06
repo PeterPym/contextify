@@ -12,7 +12,14 @@ private let metadataRecordTypes: Set<String> = [
   "file-history-snapshot",
   "summary",
   "timeline-state",
-  "queue-operation-result"
+  "queue-operation-result",
+  "attachment",
+  "last-prompt",
+  "permission-mode",
+  "progress",
+  "agent-name",
+  "custom-title",
+  "pr-link",
 ]
 
 // MARK: - Shared ISO8601 Date Formatters (Performance)
@@ -153,6 +160,12 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     // Skip structural metadata records (no conversation content)
     if metadataRecordTypes.contains(type) {
       throw ParserError.skipEntry
+    }
+
+    // Handle compound system/* record types (CC v2.1.82+)
+    // These use "system/turn_duration" format instead of type="system" + subtype
+    if type.hasPrefix("system/") {
+      throw ParserError.skipEntry  // Metadata-only, no conversation content
     }
 
     guard let uuid = json["uuid"] as? String else {
@@ -336,6 +349,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     let gitCommit = json["gitCommit"] as? String
     let cwd = json["cwd"] as? String
     let providerSessionId = json["sessionId"] as? String ?? sessionId
+    // Session-level metadata (CC v2.1.82+): present on every user/assistant record
+    let slug = json["slug"] as? String
+    let entrypoint = json["entrypoint"] as? String
 
     // Map kind - agent results display as "assistant" for proper attribution
     let effectiveType = isAgentResult ? "assistant" : type
@@ -365,7 +381,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
       isSidechain: isSidechain,
       agentId: agentId,
       toolInvocations: toolInvocations,
-      toolResultData: toolResultData
+      toolResultData: toolResultData,
+      slug: slug,
+      entrypoint: entrypoint
     )
   }
 
@@ -1210,7 +1228,7 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
         id: UUID().uuidString,
         transcriptId: transcriptId,
         summary: summaryText,
-        leafUuid: json["leaf_uuid"] as? String,
+        leafUuid: json["leafUuid"] as? String,
         cwd: json["cwd"] as? String,
         createdAt: now
       )
