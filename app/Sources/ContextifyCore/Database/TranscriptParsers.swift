@@ -1228,7 +1228,7 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
         id: UUID().uuidString,
         transcriptId: transcriptId,
         summary: summaryText,
-        leafUuid: json["leafUuid"] as? String,
+        leafUuid: (json["leafUuid"] as? String) ?? (json["leaf_uuid"] as? String),
         cwd: json["cwd"] as? String,
         createdAt: now
       )

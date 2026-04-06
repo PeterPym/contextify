@@ -91,6 +91,32 @@ final class MetadataParserTests: XCTestCase {
     XCTAssertEqual(result.transcriptSummary?.cwd, "/Users/rob/code/project")
   }
 
+  func testParseTranscriptSummary_LegacyLeafUuidKey() throws {
+    let json = """
+    {
+      "uuid": "summary-uuid",
+      "type": "summary",
+      "timestamp": "2025-01-15T10:30:00.000Z",
+      "summary": "Implemented metadata storage system",
+      "leaf_uuid": "leaf-legacy-123",
+      "cwd": "/Users/rob/code/project"
+    }
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json,
+      lineNumber: 1,
+      transcriptId: "test-transcript",
+      projectId: "test-project",
+      provider: "claude.code",
+      entryId: nil
+    )
+
+    XCTAssertNotNil(result.transcriptSummary)
+    XCTAssertEqual(result.transcriptSummary?.leafUuid, "leaf-legacy-123")
+  }
+
   // MARK: - System Event Parsing
 
   func testParseSystemEvent() throws {

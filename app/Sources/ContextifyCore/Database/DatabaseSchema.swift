@@ -1233,10 +1233,17 @@ public enum DatabaseSchema {
     migrator.registerMigration("v40_transcript_format_drift") { db in
       logger.info("[MIGRATION-v40] Adding transcript metadata columns for format drift")
 
-      // Session-level metadata extracted from new Claude Code fields (CC v2.1.82+)
-      try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN slug TEXT")
-      try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN entrypoint TEXT")
-      try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN custom_title TEXT")
+      // Session-level metadata extracted from new Claude Code fields
+      let cols = try db.columns(in: "transcripts")
+      if !cols.contains(where: { $0.name == "slug" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN slug TEXT")
+      }
+      if !cols.contains(where: { $0.name == "entrypoint" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN entrypoint TEXT")
+      }
+      if !cols.contains(where: { $0.name == "custom_title" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN custom_title TEXT")
+      }
 
       // Index for slug-based lookups (sparse - only non-NULL values)
       try db.execute(sql: """
@@ -1347,6 +1354,10 @@ public enum DatabaseSchema {
       t.column("content_length", .integer)
       t.column("mtime_ms", .integer)
       t.column("content_sha256", .text)
+      // v40: Session-level metadata from transcript fields
+      t.column("slug", .text)
+      t.column("entrypoint", .text)
+      t.column("custom_title", .text)
       // Bookkeeping
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()

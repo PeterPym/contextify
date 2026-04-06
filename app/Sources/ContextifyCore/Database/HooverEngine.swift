@@ -1465,20 +1465,21 @@ public final class HooverEngine {
       }
 
       // v40: Update session-level metadata (slug, entrypoint) from entry fields
-      // These fields appear on every user/assistant record; write-once (IS NULL guard)
-      for entry in entries {
-        if let slug = entry.slug {
-          try db.execute(
-            sql: "UPDATE transcripts SET slug = ? WHERE id = ? AND slug IS NULL",
-            arguments: [slug, entry.transcriptId]
-          )
-        }
-        if let entrypoint = entry.entrypoint {
-          try db.execute(
-            sql: "UPDATE transcripts SET entrypoint = ? WHERE id = ? AND entrypoint IS NULL",
-            arguments: [entrypoint, entry.transcriptId]
-          )
-        }
+      // Collapsed to per-batch: take the last non-nil value and update only if changed
+      let latestSlug = entries.lazy.compactMap(\.slug).last
+      let latestEntrypoint = entries.lazy.compactMap(\.entrypoint).last
+
+      if let latestSlug {
+        try db.execute(
+          sql: "UPDATE transcripts SET slug = ?, updated_at = ? WHERE id = ? AND COALESCE(slug, '') != ?",
+          arguments: [latestSlug, now, transcriptId, latestSlug]
+        )
+      }
+      if let latestEntrypoint {
+        try db.execute(
+          sql: "UPDATE transcripts SET entrypoint = ?, updated_at = ? WHERE id = ? AND COALESCE(entrypoint, '') != ?",
+          arguments: [latestEntrypoint, now, transcriptId, latestEntrypoint]
+        )
       }
 
       // FK-safe usage insert: atomic CTE-based check+insert with request_id normalization
@@ -1851,19 +1852,21 @@ public final class HooverEngine {
       }
 
       // v40: Update session-level metadata (slug, entrypoint) from entry fields
-      for entry in entries {
-        if let slug = entry.slug {
-          try db.execute(
-            sql: "UPDATE transcripts SET slug = ? WHERE id = ? AND slug IS NULL",
-            arguments: [slug, entry.transcriptId]
-          )
-        }
-        if let entrypoint = entry.entrypoint {
-          try db.execute(
-            sql: "UPDATE transcripts SET entrypoint = ? WHERE id = ? AND entrypoint IS NULL",
-            arguments: [entrypoint, entry.transcriptId]
-          )
-        }
+      // Collapsed to per-batch: take the last non-nil value and update only if changed
+      let latestSlugFast = entries.lazy.compactMap(\.slug).last
+      let latestEntrypointFast = entries.lazy.compactMap(\.entrypoint).last
+
+      if let latestSlugFast {
+        try db.execute(
+          sql: "UPDATE transcripts SET slug = ?, updated_at = ? WHERE id = ? AND COALESCE(slug, '') != ?",
+          arguments: [latestSlugFast, now, transcriptId, latestSlugFast]
+        )
+      }
+      if let latestEntrypointFast {
+        try db.execute(
+          sql: "UPDATE transcripts SET entrypoint = ?, updated_at = ? WHERE id = ? AND COALESCE(entrypoint, '') != ?",
+          arguments: [latestEntrypointFast, now, transcriptId, latestEntrypointFast]
+        )
       }
 
       // FK-safe usage insert

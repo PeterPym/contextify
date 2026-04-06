@@ -337,12 +337,14 @@ public actor ProjectDiscoveryService {
                 files.append(entry)
               } else if (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 let subagentsDir = entry.appendingPathComponent("subagents")
-                if let subFiles = try? FileManager.default.contentsOfDirectory(
+                if let enumerator = FileManager.default.enumerator(
                   at: subagentsDir,
                   includingPropertiesForKeys: [.contentModificationDateKey],
-                  options: [.skipsHiddenFiles]
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants]
                 ) {
-                  files.append(contentsOf: subFiles.filter { $0.pathExtension == "jsonl" })
+                  for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+                    files.append(url)
+                  }
                 }
               }
             }

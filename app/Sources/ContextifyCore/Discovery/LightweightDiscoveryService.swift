@@ -283,14 +283,16 @@ public actor LightweightDiscoveryService {
         if entry.pathExtension == "jsonl" {
           files.append(entry)
         } else if (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-          // Check for subagents/ subdirectory (Claude Code v2.1.82+ layout)
+          // Recursively scan subagents/ subdirectory for .jsonl files
           let subagentsDir = entry.appendingPathComponent("subagents")
-          if let subagentFiles = try? FileManager.default.contentsOfDirectory(
+          if let enumerator = FileManager.default.enumerator(
             at: subagentsDir,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
           ) {
-            files.append(contentsOf: subagentFiles.filter { $0.pathExtension == "jsonl" })
+            for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+              files.append(url)
+            }
           }
         }
       }
