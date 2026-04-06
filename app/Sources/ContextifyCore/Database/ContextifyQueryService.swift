@@ -2118,6 +2118,7 @@ public struct ContextifyQueryService: Sendable {
             SELECT entry_id, content_sha256, window_sha256, present_form, past_form,
                    disposition, generated_at
             FROM timeline_cache WHERE entry_id IN (\(placeholders))
+            ORDER BY entry_id, generated_at
             """,
           arguments: StatementArguments(entryIds))
         summaries = summaryRows.map { row in
@@ -2138,6 +2139,7 @@ public struct ContextifyQueryService: Sendable {
             SELECT entry_id, request_id, model, input_tokens, output_tokens,
                    cache_creation_tokens, cache_read_tokens
             FROM assistant_usage WHERE entry_id IN (\(placeholders))
+            ORDER BY entry_id, request_id
             """,
           arguments: StatementArguments(entryIds))
         usageRecords = usageRows.map { row in
@@ -2159,6 +2161,7 @@ public struct ContextifyQueryService: Sendable {
             SELECT id, entry_id, transcript_id, tool_name, tool_key, status,
                    started_at, completed_at, metadata_json, created_at, updated_at
             FROM tool_invocations WHERE entry_id IN (\(placeholders))
+            ORDER BY entry_id, started_at, id
             """,
           arguments: StatementArguments(entryIds))
         toolInvocations = tiRows.map { row in
@@ -2181,6 +2184,7 @@ public struct ContextifyQueryService: Sendable {
             SELECT transcript_id, project_id, title, description, topics,
                    confidence, generated_at, model, created_at, updated_at
             FROM transcript_metadata WHERE transcript_id IN (\(placeholders))
+            ORDER BY transcript_id
             """,
           arguments: StatementArguments(transcriptIds))
         transcriptMeta = tmRows.map { row in

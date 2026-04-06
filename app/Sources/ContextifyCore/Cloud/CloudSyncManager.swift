@@ -604,7 +604,7 @@ public final class CloudSyncManager: @unchecked Sendable {
             startedAt: ti.startedAt, completedAt: ti.completedAt,
             metadataJson: ti.metadataJson.flatMap { jsonStr in
               guard let data = jsonStr.data(using: .utf8),
-                    let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+                    let dict = try? JSONDecoder().decode([String: JSONValue].self, from: data)
               else { return nil }
               return dict
             },
@@ -615,10 +615,13 @@ public final class CloudSyncManager: @unchecked Sendable {
             transcriptId: tm.transcriptId, projectId: tm.projectId,
             title: tm.title, description: tm.description,
             topics: {
-              guard let data = tm.topics.data(using: .utf8),
-                    let arr = try? JSONSerialization.jsonObject(with: data) as? [String]
-              else { return [] }
-              return arr
+              guard let data = tm.topics.data(using: .utf8) else { return [] }
+              do {
+                return try JSONDecoder().decode([String].self, from: data)
+              } catch {
+                log.error("Invalid transcript_metadata.topics transcriptId=\(tm.transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                return []
+              }
             }(),
             confidence: tm.confidence, generatedAt: tm.generatedAt,
             model: tm.model, createdAt: tm.createdAt, updatedAt: tm.updatedAt)
