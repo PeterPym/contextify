@@ -1973,6 +1973,21 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  /// Count all timeline-visible entries regardless of `cloud_sync_enabled`.
+  ///
+  /// Used alongside `countEntriesForCloudPush` to diagnose whether projects are
+  /// being excluded from sync via the `cloud_sync_enabled = 0` filter.
+  ///
+  /// - Returns: Total number of `display_in_timeline = 1` entries across all projects.
+  public func countAllTimelineEntries() throws -> Int {
+    try pool.read { db in
+      try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE display_in_timeline = 1"
+      ) ?? 0
+    }
+  }
+
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
   ///

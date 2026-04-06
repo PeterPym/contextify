@@ -234,8 +234,8 @@ struct StatusBarView: View {
                             Contextify needs access to CLI transcript folders to monitor your Claude Code or Codex sessions.
 
                             Grant access to at least one:
-                            • ~/.claude/projects/ (Claude Code)
-                            • ~/.codex/sessions/ (Codex CLI)
+                            \u{2022} ~/.claude/projects/ (Claude Code)
+                            \u{2022} ~/.codex/sessions/ (Codex CLI)
 
                             Click "Grant Access" to open Settings.
                             """,
@@ -504,9 +504,9 @@ struct StatusBarView: View {
 
 
         How Contextify handles errors:
-        • Failed entries won't be retried automatically
-        • Errors auto-clear after 3 successful generations
-        • Summaries are optional - entries remain accessible
+        \u{2022} Failed entries won't be retried automatically
+        \u{2022} Errors auto-clear after 3 successful generations
+        \u{2022} Summaries are optional - entries remain accessible
         """
 
         return message
@@ -625,6 +625,7 @@ private extension StatusBarView {
         case stalled
         case offline
         case needsAttention
+        case pendingPush
         case error
         case disabled
     }
@@ -670,6 +671,7 @@ private extension StatusBarView {
 
         if cloudSyncManager.syncState == .syncing { return .syncing }
         if case .error = cloudSyncManager.syncState { return .error }
+        if cloudSyncManager.localEntriesPendingPush > 0 { return .pendingPush }
         return .upToDate
     }
 
@@ -797,6 +799,8 @@ private extension StatusBarView {
         switch cloudDisplayState {
         case .upToDate:
             return "checkmark.circle.fill"
+        case .pendingPush:
+            return "arrow.up.circle"
         case .stalled:
             return "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90"
         case .offline:
@@ -816,6 +820,8 @@ private extension StatusBarView {
         switch cloudDisplayState {
         case .upToDate:
             return Color(red: 0.318, green: 0.659, blue: 0.420)
+        case .pendingPush:
+            return Color(red: 0.85, green: 0.65, blue: 0.15)
         case .syncing:
             return .secondary
         case .stalled, .offline, .needsAttention:
@@ -831,6 +837,8 @@ private extension StatusBarView {
         switch cloudDisplayState {
         case .upToDate:
             return "Cloud up to date"
+        case .pendingPush:
+            return "\(cloudSyncManager.localEntriesPendingPush) entries pending"
         case .syncing:
             if let session = visibleCloudActiveSession,
                let total = session.entriesTotal,
@@ -857,6 +865,8 @@ private extension StatusBarView {
         switch cloudDisplayState {
         case .upToDate:
             return "Cloud sync is up to date"
+        case .pendingPush:
+            return "\(cloudSyncManager.localEntriesPendingPush) entries waiting to sync to cloud"
         case .syncing:
             return "Cloud sync in progress"
         case .stalled:
@@ -873,6 +883,11 @@ private extension StatusBarView {
     }
 
     var cloudPrimaryActionLabel: String {
+        // Show "Sync queued" when a manual request is pending while a sync is already running.
+        if cloudSyncManager.syncState == .syncing,
+           cloudSyncManager.hasPendingSyncRequest {
+            return "Sync queued..."
+        }
         switch cloudDisplayState {
         case .offline, .stalled, .error, .needsAttention:
             return "Retry now"
