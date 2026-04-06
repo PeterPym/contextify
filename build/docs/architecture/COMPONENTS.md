@@ -445,6 +445,7 @@ Key information in transcript-formats.md:
 
 **ConversationSources** (`Contextify/Contextify/ConversationSources.swift`):
 - Provider-specific session discovery (Claude Code, Codex CLI)
+- **Planned (Phase 0, ct-1043):** The provider abstraction (`TranscriptProviderID`, `DiscoveredProject.Provider`, `TimelineModels.Provider`) will be refactored to support N providers before any new provider is added. The ct-1050 audit identified 12 hardcoded binary provider assumptions across the codebase (database CHECK constraints, binary ternary fallbacks, parallel enum types, hardcoded `claudeRoot`/`codexRoot` access-provider properties) that must be resolved first. See `/tmp/ct-1051-design-spec.md` Phase 0 for the full change list.
 
 **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`):
 - Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics)

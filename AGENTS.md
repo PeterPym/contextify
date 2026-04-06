@@ -103,7 +103,7 @@ Write docs in the present tense; describe current behavior, not the act of updat
 
 ## Project Overview
 
-Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries, puts them in a single database which the user can search through. 
+Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries, puts them in a single database which the user can search through. A formal evaluation of six additional transcript providers (Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, Windsurf) was completed in ct-1043; Gemini CLI and OpenCode are planned for a future release.
 
 Contextify is built with Swift 6 + SwiftUI on Xcode 16.
 

@@ -161,6 +161,8 @@ description: Contextify Total Recall - Search past conversations
 | Codex CLI (Linux) | `~/.codex/skills/` | No | Tarball | Planned | **P0 v1.1.0** |
 | Gemini CLI | TBD | TBD | TBD | TBD | Not started |
 
+**Note on future platform expansion:** A formal evaluation of Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, and Windsurf was completed in ct-1043. Gemini CLI and OpenCode were rated GO for implementation; Aider and Copilot CLI are GO-DEFERRED; Cursor and Windsurf are NO-GO. The skill installation architecture above applies to JSONL-based CLIs that support skill directories; project-local providers (Aider, OpenCode) and non-skill providers (Gemini CLI) require a separate discovery and ingestion path rather than a skill install step. See `/tmp/ct-1053-recommendation.md` for the full roadmap and `/tmp/ct-1049-research.json` for per-provider format research.
+
 ### Platform-Specific Notes
 
 **Claude Code:**
