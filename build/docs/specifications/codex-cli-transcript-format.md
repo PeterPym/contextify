@@ -267,7 +267,11 @@ Declares session-level context at the start. **Contains project path in `payload
   - `cwd` (string) — **Current working directory (PROJECT PATH)**
   - `originator` (string) — `"codex_cli_rs"` for interactive, `"codex_exec"` for exec runs
   - `cli_version` (string)
-  - `instructions` (nullable string) — May be large, multiline (AGENTS.md content)
+  - `base_instructions` (object, nullable) — Session instructions. Shape: `{ "text": "..." }`. Renamed from `instructions` (plain string) in Codex v0.88.0. Older sessions have `instructions` (string); newer sessions have `base_instructions` (object).
+  - `model_provider` (string, optional) — Model provider identifier (e.g., `"openai"`). Added in Codex v0.64.0.
+  - `agent_nickname` (string, optional) — Custom agent nickname.
+  - `agent_role` (string, optional) — Agent role descriptor.
+  - `forked_from_id` (string, uuid, optional) — Session ID this session was forked from.
   - `source` (string) — **REQUIRED:** `"cli"`, `"vscode"`, or `"exec"` (only cli/vscode appear in `codex resume`)
   - `git` (optional object):
     - `commit_hash` (string)
@@ -284,8 +288,9 @@ Declares session-level context at the start. **Contains project path in `payload
     "timestamp": "2025-11-03T17:49:46.885Z",
     "cwd": "/Users/rob/code/projects/contextify",
     "originator": "codex_cli_rs",
-    "cli_version": "0.48.0",
-    "instructions": "# Repository Guidelines\n\n...",
+    "cli_version": "0.88.0",
+    "base_instructions": { "text": "# Repository Guidelines\n\n..." },
+    "model_provider": "openai",
     "source": "cli",
     "git": {
       "commit_hash": "ccb37c4d313423f9d849ee011e668b879e0889d7",
