@@ -149,7 +149,7 @@ final class MetadataParserTests: XCTestCase {
     XCTAssertEqual(result.customTitle, "")
   }
 
-  func testParseCustomTitle_MissingKeyMarksPresence() throws {
+  func testParseCustomTitle_MissingKeyDoesNotClear() throws {
     let json = """
     {"type":"custom-title","sessionId":"abc-123"}
     """
@@ -160,7 +160,7 @@ final class MetadataParserTests: XCTestCase {
       provider: "claude.code", entryId: nil
     )
 
-    XCTAssertTrue(result.sawCustomTitle, "Record type presence should mark saw even without key")
+    XCTAssertFalse(result.sawCustomTitle, "Missing key should be no-op, not a clear")
     XCTAssertNil(result.customTitle)
   }
 

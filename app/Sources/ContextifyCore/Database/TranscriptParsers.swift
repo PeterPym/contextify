@@ -1134,11 +1134,12 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
     let now = Int(Date().timeIntervalSince1970)
 
     // custom-title: user-set session title
-    // Always set sawCustomTitle so empty titles can clear a previous value
+    // Only mark sawCustomTitle when the key is present (missing key = malformed, not clear)
     if type == "custom-title" {
+      let sawKey = json.keys.contains("customTitle")
       return MetadataParseResult(
         customTitle: json["customTitle"] as? String,
-        sawCustomTitle: true
+        sawCustomTitle: sawKey
       )
     }
 
