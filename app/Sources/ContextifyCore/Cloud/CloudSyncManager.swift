@@ -230,6 +230,10 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// Task handle for the auto-sync loop.
   @MainActor private var autoSyncTask: Task<Void, Never>?
 
+  /// Task handle for the ingest-wait-then-sync follow-up.
+  /// Created when a sync request arrives while ingest is active.
+  @MainActor private var ingestWaitTask: Task<Void, Never>?
+
   /// Observer token for system wake notifications (macOS only).
   #if os(macOS)
   @MainActor private var wakeObserver: NSObjectProtocol?
@@ -337,7 +341,6 @@ public final class CloudSyncManager: @unchecked Sendable {
     if ingestActive {
       await MainActor.run { self.syncState = .waitingForIngest }
       log.info("Sync skipped: ingest is active, waiting for completion")
-      await drainPendingSyncRequest(using: queryService)
       return
     }
 
@@ -409,7 +412,6 @@ public final class CloudSyncManager: @unchecked Sendable {
         await MainActor.run { self.syncState = .deferred }
         log.info("Sync deferred: ingest is active, will retry next cycle")
         await refreshStatusFromServer()
-        await drainPendingSyncRequest(using: queryService)
         return
       }
 
@@ -443,8 +445,9 @@ public final class CloudSyncManager: @unchecked Sendable {
       await refreshStatusFromServer()
     }
 
-    // Refresh local pending count after push (success or failure)
-    await refreshLocalPendingCount()
+    // Refresh local pending count after push (success or failure).
+    // Use the same query service as the active sync for consistency.
+    await refreshLocalPendingCount(using: queryService)
 
     let endState = await MainActor.run { String(describing: self.syncState) }
     log.info("sync() exit: state=\(endState, privacy: .public) origin=\(origin, privacy: .public)")
@@ -486,12 +489,17 @@ public final class CloudSyncManager: @unchecked Sendable {
   ///
   /// Called event-driven: after push completes, after configure (startup),
   /// and when connection-scoped state is cleared. Not called on a timer.
-  public func refreshLocalPendingCount() async {
+  public func refreshLocalPendingCount(using providedService: ContextifyQueryService? = nil) async {
     do {
-      let dbURL = try DatabaseManager.shared.databasePath()
-      let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: true)
+      let service: ContextifyQueryService
+      if let providedService {
+        service = providedService
+      } else {
+        let dbURL = try DatabaseManager.shared.databasePath()
+        service = try ContextifyQueryService(databaseURL: dbURL, readOnly: true)
+      }
       let (ts, eid) = await MainActor.run { (self.config?.lastPushTimestamp, self.config?.lastPushEntryId) }
-      let count = try queryService.countEntriesForCloudPush(afterTimestamp: ts, afterEntryId: eid)
+      let count = try service.countEntriesForCloudPush(afterTimestamp: ts, afterEntryId: eid)
       await MainActor.run { self.localEntriesPendingPush = count }
     } catch {
       log.debug("Failed to refresh pending count: \(error.localizedDescription, privacy: .public)")
@@ -950,6 +958,18 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   // MARK: - Private Helpers
 
+  /// Called when the ingest-wait task completes. Clears the task handle and
+  /// dispatches any pending sync request (or a default postIngest sync).
+  @MainActor
+  private func handleIngestWaitComplete() {
+    ingestWaitTask = nil
+    guard syncState != .disabled else { return }
+    let nextOrigin = pendingSyncRequest ?? .postIngest
+    pendingSyncRequest = nil
+    log.info("Ingest complete, dispatching queued sync: \(nextOrigin)")
+    requestSync(origin: nextOrigin)
+  }
+
   /// Check for a coalesced pending sync request and, if present, drain it
   /// by starting a new sync cycle. This prevents requests from being silently
   /// dropped when they arrive while a sync is already in progress.
@@ -1175,6 +1195,8 @@ public final class CloudSyncManager: @unchecked Sendable {
     pushEstimatedSecondsRemaining = nil
     pushStartTime = nil
     pendingSyncRequest = nil
+    ingestWaitTask?.cancel()
+    ingestWaitTask = nil
     localEntriesPendingPush = 0
   }
 
@@ -1211,16 +1233,34 @@ public final class CloudSyncManager: @unchecked Sendable {
     switch syncState {
     case .disabled:
       return
-    case .syncing, .waitingForIngest:
+    case .syncing:
       // Coalesce: manual dominates auto/postIngest
       if pendingSyncRequest == nil || origin == .manual {
         pendingSyncRequest = origin
       }
-      let currentState = String(describing: syncState)
       if origin == .manual {
-        log.warning("Manual sync requested while busy (state: \(currentState)); queued")
+        log.warning("Manual sync requested while syncing; queued")
       } else {
-        log.info("Sync requested (\(origin)) while busy; queued")
+        log.info("Sync requested (\(origin)) while syncing; queued")
+      }
+      return
+    case .waitingForIngest:
+      // Coalesce pending request
+      if pendingSyncRequest == nil || origin == .manual {
+        pendingSyncRequest = origin
+      }
+      if origin == .manual {
+        log.warning("Manual sync requested while waiting for ingest; queued with ingest waiter")
+      } else {
+        log.info("Sync requested (\(origin)) while waiting for ingest; queued")
+      }
+      // Spawn a single waiter task that fires when ingest completes
+      guard ingestWaitTask == nil else { return }
+      ingestWaitTask = Task.detached(priority: .utility) {
+        await DatabaseWriteCoordinator.shared.waitForIngestComplete()
+        // Small delay to let final writes settle
+        try? await Task.sleep(for: .milliseconds(200))
+        await self.handleIngestWaitComplete()
       }
       return
     default:

@@ -125,7 +125,8 @@ struct StatusBarView: View {
         }
         .onReceive(cloudStatusTimer) { tick in
             cloudStatusNow = tick
-            Task { await cloudSyncManager.refreshStatusFromServer() }
+            // Status polling is handled by CloudSyncManager.startStatusPollingIfNeeded()
+            // (15s when syncing, 60s otherwise). This timer only updates relative-time UI.
         }
         .onChange(of: viewModel?.recentErrorCount) { _, newCount in
             // Trigger bounce animation on new errors
