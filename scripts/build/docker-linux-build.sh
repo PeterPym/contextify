@@ -161,12 +161,14 @@ TRANSCRIPT
       rm -rf "$TARBALL_DIR"
       mkdir -p "$TARBALL_DIR/dist"
 
-      cp /workspace/.build-linux/debug/contextify-query "$TARBALL_DIR/dist/"
-      cp /workspace/.build-linux/debug/contextify-ingest "$TARBALL_DIR/dist/"
+      cp /workspace/.build-linux/debug/contextify "$TARBALL_DIR/dist/"
+      # Create backwards-compat symlinks (matches release workflow)
+      ln -sf contextify "$TARBALL_DIR/dist/contextify-ingest"
+      ln -sf contextify "$TARBALL_DIR/dist/contextify-query"
       cp -R /workspace/contextify-query/user-skill "$TARBALL_DIR/dist/"
 
       cd "$TARBALL_DIR/dist"
-      tar -czvf "$TARBALL_DIR/contextify-linux-test.tar.gz" contextify-query contextify-ingest user-skill
+      tar -czvf "$TARBALL_DIR/contextify-linux-test.tar.gz" contextify contextify-ingest contextify-query user-skill
       echo "Created tarball at $TARBALL_DIR/contextify-linux-test.tar.gz"
 
       # Step 2: Extract tarball like a user would
@@ -185,12 +187,13 @@ TRANSCRIPT
       echo ""
       echo "--- Step 3: Installing to ~/.local/bin ---"
       mkdir -p ~/.local/bin
+      mv "$EXTRACT_DIR/contextify" ~/.local/bin/
       mv "$EXTRACT_DIR/contextify-query" ~/.local/bin/
       mv "$EXTRACT_DIR/contextify-ingest" ~/.local/bin/
       mv "$EXTRACT_DIR/user-skill" ~/.local/bin/
 
       echo "Installed binaries to ~/.local/bin/"
-      ls -la ~/.local/bin/contextify-*
+      ls -la ~/.local/bin/contextify*
       ls -la ~/.local/bin/user-skill/
 
       # Step 4: Add to PATH
@@ -199,24 +202,44 @@ TRANSCRIPT
       export PATH="$HOME/.local/bin:$PATH"
       echo "PATH now includes: $HOME/.local/bin"
 
-      # Step 5: Run contextify-query --version from PATH
+      # Step 5: Run contextify --version from PATH
       echo ""
-      echo "--- Step 5: Running contextify-query --version ---"
-      if contextify-query --version; then
-        echo "PASS: contextify-query --version works"
+      echo "--- Step 5: Running contextify --version ---"
+      if contextify --version; then
+        echo "PASS: contextify --version works"
       else
-        echo "FAIL: contextify-query --version failed"
+        echo "FAIL: contextify --version failed"
         exit 1
       fi
 
-      # Step 6: Run install-plugin
+      # Step 5b: Verify cloud subcommand exists (parity with macOS CLI, ct-1048)
+      echo ""
+      echo "--- Step 5b: Verifying cloud subcommand parity ---"
+      if contextify cloud --help > /dev/null 2>&1; then
+        echo "PASS: contextify cloud --help works"
+      else
+        echo "FAIL: contextify cloud --help failed (missing cloud subcommand)"
+        exit 1
+      fi
+
+      # Step 5c: Verify backwards-compat symlink works
+      echo ""
+      echo "--- Step 5c: Verifying backwards-compat symlink ---"
+      if contextify-query --version; then
+        echo "PASS: contextify-query symlink works"
+      else
+        echo "FAIL: contextify-query symlink failed"
+        exit 1
+      fi
+
+      # Step 6: Run install-skill
       # The CLI finds user-skill sibling to the binary (resolved via PATH lookup)
       echo ""
-      echo "--- Step 6: Running contextify-query install-plugin ---"
-      if contextify-query install-plugin; then
-        echo "PASS: install-plugin completed"
+      echo "--- Step 6: Running contextify install-skill ---"
+      if contextify install-skill; then
+        echo "PASS: install-skill completed"
       else
-        echo "FAIL: install-plugin failed"
+        echo "FAIL: install-skill failed"
         exit 1
       fi
 
@@ -250,10 +273,10 @@ TRANSCRIPT
         exit 1
       fi
 
-      # Step 8: Run contextify-query doctor
+      # Step 8: Run contextify doctor
       echo ""
-      echo "--- Step 8: Running contextify-query doctor ---"
-      contextify-query doctor || true  # Allow non-zero exit (degraded status expected without database)
+      echo "--- Step 8: Running contextify doctor ---"
+      contextify doctor || true  # Allow non-zero exit (degraded status expected without database)
 
       echo ""
       echo "=== Install Test PASSED ==="

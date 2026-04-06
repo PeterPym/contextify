@@ -282,6 +282,9 @@ jobs:
             echo "Testing install-service --help..."
             /app/contextify install-service --help
             echo ""
+            echo "Testing cloud --help (parity with macOS CLI)..."
+            /app/contextify cloud --help
+            echo ""
             echo "All subcommand tests passed!"
           '
           echo "Minimal container test passed (x86_64)!"
@@ -341,6 +344,9 @@ jobs:
               echo ""
               echo "Testing install-service --help..."
               /app/contextify install-service --help
+              echo ""
+              echo "Testing cloud --help (parity with macOS CLI)..."
+              /app/contextify cloud --help
               echo ""
               echo "All subcommand tests passed!"
             '

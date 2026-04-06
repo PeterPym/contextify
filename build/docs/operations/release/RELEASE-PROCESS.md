@@ -316,6 +316,7 @@ After release:
 - [ ] Test installation on fresh Mac (or clean test account)
 - [ ] Verify app launches without Gatekeeper warnings
 - [ ] Verify core functionality works
+- [ ] Run live systems validation: `./scripts/validate-live-systems.sh`
 - [ ] Announce release (optional)
 
 ## Troubleshooting
