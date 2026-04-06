@@ -581,11 +581,52 @@ public final class CloudSyncManager: @unchecked Sendable {
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt
           )
+        },
+        summaries: exportData.summaries.map { s in
+          CloudPushSummary(
+            entryId: s.entryId, contentSha256: s.contentSha256,
+            windowSha256: s.windowSha256, presentForm: s.presentForm,
+            pastForm: s.pastForm, disposition: s.disposition,
+            generatedAt: s.generatedAt)
+        },
+        usage: exportData.usage.map { u in
+          CloudPushUsage(
+            entryId: u.entryId, requestId: u.requestId,
+            model: u.model, inputTokens: u.inputTokens,
+            outputTokens: u.outputTokens,
+            cacheCreationTokens: u.cacheCreationTokens,
+            cacheReadTokens: u.cacheReadTokens)
+        },
+        toolInvocations: exportData.toolInvocations.map { ti in
+          CloudPushToolInvocation(
+            id: ti.id, entryId: ti.entryId, transcriptId: ti.transcriptId,
+            toolName: ti.toolName, toolKey: ti.toolKey, status: ti.status,
+            startedAt: ti.startedAt, completedAt: ti.completedAt,
+            metadataJson: ti.metadataJson.flatMap { jsonStr in
+              guard let data = jsonStr.data(using: .utf8),
+                    let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+              else { return nil }
+              return dict
+            },
+            createdAt: ti.createdAt, updatedAt: ti.updatedAt)
+        },
+        transcriptMetadata: exportData.transcriptMetadata.map { tm in
+          CloudPushTranscriptMetadata(
+            transcriptId: tm.transcriptId, projectId: tm.projectId,
+            title: tm.title, description: tm.description,
+            topics: {
+              guard let data = tm.topics.data(using: .utf8),
+                    let arr = try? JSONSerialization.jsonObject(with: data) as? [String]
+              else { return [] }
+              return arr
+            }(),
+            confidence: tm.confidence, generatedAt: tm.generatedAt,
+            model: tm.model, createdAt: tm.createdAt, updatedAt: tm.updatedAt)
         }
       )
 
       log.info(
-        "Pushing batch seq=\(batchSeq, privacy: .public): \(payload.entries.count, privacy: .public) entries session=\(syncSessionId, privacy: .public)")
+        "Pushing batch seq=\(batchSeq, privacy: .public): \(payload.entries.count, privacy: .public) entries, \(payload.summaries.count, privacy: .public) summaries, \(payload.usage.count, privacy: .public) usage, \(payload.toolInvocations.count, privacy: .public) tool_invocations, \(payload.transcriptMetadata.count, privacy: .public) transcript_metadata session=\(syncSessionId, privacy: .public)")
       let response: CloudPushResponse
       do {
         response = try await client.push(payload)
@@ -605,7 +646,11 @@ public final class CloudSyncManager: @unchecked Sendable {
           device: payload.device,
           projects: payload.projects,
           transcripts: payload.transcripts,
-          entries: payload.entries
+          entries: payload.entries,
+          summaries: payload.summaries,
+          usage: payload.usage,
+          toolInvocations: payload.toolInvocations,
+          transcriptMetadata: payload.transcriptMetadata
         )
         response = try await client.push(retryPayload)
       } catch CloudSyncError.serverError(statusCode: 429, let body) {
