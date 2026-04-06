@@ -1973,6 +1973,21 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  /// Count all timeline-visible entries regardless of `cloud_sync_enabled`.
+  ///
+  /// Used alongside `countEntriesForCloudPush` to diagnose whether projects are
+  /// being excluded from sync via the `cloud_sync_enabled = 0` filter.
+  ///
+  /// - Returns: Total number of `display_in_timeline = 1` entries across all projects.
+  public func countAllTimelineEntries() throws -> Int {
+    try pool.read { db in
+      try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE display_in_timeline = 1"
+      ) ?? 0
+    }
+  }
+
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
   ///
@@ -1990,6 +2005,23 @@ public struct ContextifyQueryService: Sendable {
     limit: Int = 2500
   ) throws -> CloudPushExport {
     try pool.read { db in
+      // SQLite default SQLITE_MAX_VARIABLE_NUMBER is 999. Use 900 for headroom.
+      let paramLimitSafe = 900
+
+      /// Fetch rows in chunks to stay under SQLite's parameter limit.
+      func fetchChunked(db: Database, ids: [String], sql: (String) -> String) throws -> [Row] {
+        guard !ids.isEmpty else { return [] }
+        var allRows: [Row] = []
+        for start in stride(from: 0, to: ids.count, by: paramLimitSafe) {
+          let end = min(start + paramLimitSafe, ids.count)
+          let chunk = Array(ids[start..<end])
+          let placeholders = chunk.map { _ in "?" }.joined(separator: ",")
+          let rows = try Row.fetchAll(db, sql: sql(placeholders), arguments: StatementArguments(chunk))
+          allRows.append(contentsOf: rows)
+        }
+        return allRows
+      }
+
       // Get entries (ordered by timestamp, id for stable keyset paging)
       // v37: JOIN projects to exclude cloud_sync_enabled = 0
       var sql = """
@@ -2037,24 +2069,20 @@ public struct ContextifyQueryService: Sendable {
       let transcriptIds = Array(Set(entries.map { $0.transcriptId }))
 
       // Fetch transcripts first (needed to discover transcript-referenced project IDs)
-      var transcripts: [CloudPushExport.Transcript] = []
-      if !transcriptIds.isEmpty {
-        let placeholders = transcriptIds.map { _ in "?" }.joined(separator: ",")
-        let txRows = try Row.fetchAll(db,
-          sql: """
-            SELECT id, project_id, file_path, provider, provider_session_id,
-                   line_count, created_at, updated_at
-            FROM transcripts WHERE id IN (\(placeholders))
-            """,
-          arguments: StatementArguments(transcriptIds))
-        transcripts = txRows.map { row in
-          CloudPushExport.Transcript(
-            id: row["id"], projectId: row["project_id"],
-            filePath: row["file_path"], provider: row["provider"],
-            providerSessionId: row["provider_session_id"],
-            lineCount: row["line_count"] ?? 0,
-            createdAt: row["created_at"], updatedAt: row["updated_at"])
-        }
+      let txRows = try fetchChunked(db: db, ids: transcriptIds) { placeholders in
+        """
+        SELECT id, project_id, file_path, provider, provider_session_id,
+               line_count, created_at, updated_at
+        FROM transcripts WHERE id IN (\(placeholders))
+        """
+      }
+      let transcripts = txRows.map { row in
+        CloudPushExport.Transcript(
+          id: row["id"], projectId: row["project_id"],
+          filePath: row["file_path"], provider: row["provider"],
+          providerSessionId: row["provider_session_id"],
+          lineCount: row["line_count"] ?? 0,
+          createdAt: row["created_at"], updatedAt: row["updated_at"])
       }
 
       // Collect project IDs from BOTH entries and transcripts.
@@ -2066,16 +2094,12 @@ public struct ContextifyQueryService: Sendable {
       ))
 
       // Fetch projects
-      var projects: [CloudPushExport.Project] = []
-      if !projectIds.isEmpty {
-        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
-        let projRows = try Row.fetchAll(db,
-          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
-          arguments: StatementArguments(projectIds))
-        projects = projRows.map { row in
-          CloudPushExport.Project(
-            id: row["id"], name: row["name"], rootPath: row["root_path"])
-        }
+      let projRows = try fetchChunked(db: db, ids: projectIds) { placeholders in
+        "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))"
+      }
+      let projects = projRows.map { row in
+        CloudPushExport.Project(
+          id: row["id"], name: row["name"], rootPath: row["root_path"])
       }
 
       let enrichedProjects: [CloudPushExport.Project] = projects.map { project in
@@ -2108,10 +2132,88 @@ public struct ContextifyQueryService: Sendable {
         #endif
       }
 
+      // Fetch summaries from timeline_cache for the exported entries
+      let entryIds = entries.map { $0.id }
+      let summaryRows = try fetchChunked(db: db, ids: entryIds) { placeholders in
+        """
+        SELECT entry_id, content_sha256, window_sha256, present_form, past_form,
+               disposition, generated_at
+        FROM timeline_cache WHERE entry_id IN (\(placeholders))
+        ORDER BY entry_id, generated_at
+        """
+      }
+      let summaries = summaryRows.map { row in
+        CloudPushExport.Summary(
+          entryId: row["entry_id"], contentSha256: row["content_sha256"],
+          windowSha256: row["window_sha256"], presentForm: row["present_form"],
+          pastForm: row["past_form"], disposition: row["disposition"],
+          generatedAt: row["generated_at"])
+      }
+
+      // Fetch LLM usage records for the exported entries
+      let usageRows = try fetchChunked(db: db, ids: entryIds) { placeholders in
+        """
+        SELECT entry_id, request_id, model, input_tokens, output_tokens,
+               cache_creation_tokens, cache_read_tokens
+        FROM assistant_usage WHERE entry_id IN (\(placeholders))
+        ORDER BY entry_id, request_id
+        """
+      }
+      let usageRecords = usageRows.map { row in
+        CloudPushExport.Usage(
+          entryId: row["entry_id"], requestId: row["request_id"],
+          model: row["model"], inputTokens: row["input_tokens"],
+          outputTokens: row["output_tokens"],
+          cacheCreationTokens: row["cache_creation_tokens"],
+          cacheReadTokens: row["cache_read_tokens"])
+      }
+
+      // Fetch tool invocations for the exported entries
+      let tiRows = try fetchChunked(db: db, ids: entryIds) { placeholders in
+        """
+        SELECT id, entry_id, transcript_id, tool_name, tool_key, status,
+               started_at, completed_at, metadata_json, created_at, updated_at
+        FROM tool_invocations WHERE entry_id IN (\(placeholders))
+        ORDER BY entry_id, started_at, id
+        """
+      }
+      let toolInvocations = tiRows.map { row in
+        CloudPushExport.ToolInvocation(
+          id: row["id"], entryId: row["entry_id"],
+          transcriptId: row["transcript_id"], toolName: row["tool_name"],
+          toolKey: row["tool_key"], status: row["status"],
+          startedAt: row["started_at"], completedAt: row["completed_at"],
+          metadataJson: row["metadata_json"],
+          createdAt: row["created_at"], updatedAt: row["updated_at"])
+      }
+
+      // Fetch transcript metadata for the exported transcripts
+      let tmRows = try fetchChunked(db: db, ids: transcriptIds) { placeholders in
+        """
+        SELECT transcript_id, project_id, title, description, topics,
+               confidence, generated_at, model, created_at, updated_at
+        FROM transcript_metadata WHERE transcript_id IN (\(placeholders))
+        ORDER BY transcript_id
+        """
+      }
+      let transcriptMeta = tmRows.map { row in
+        CloudPushExport.TranscriptMeta(
+          transcriptId: row["transcript_id"], projectId: row["project_id"],
+          title: row["title"], description: row["description"],
+          topics: row["topics"] ?? "[]",
+          confidence: row["confidence"],
+          generatedAt: row["generated_at"], model: row["model"],
+          createdAt: row["created_at"], updatedAt: row["updated_at"])
+      }
+
       return CloudPushExport(
         projects: enrichedProjects,
         transcripts: transcripts,
-        entries: entries)
+        entries: entries,
+        summaries: summaries,
+        usage: usageRecords,
+        toolInvocations: toolInvocations,
+        transcriptMetadata: transcriptMeta)
     }
   }
 
@@ -2518,6 +2620,28 @@ public struct CloudPushExport: Sendable {
   public let projects: [Project]
   public let transcripts: [Transcript]
   public let entries: [Entry]
+  public let summaries: [Summary]
+  public let usage: [Usage]
+  public let toolInvocations: [ToolInvocation]
+  public let transcriptMetadata: [TranscriptMeta]
+
+  public init(
+    projects: [Project],
+    transcripts: [Transcript],
+    entries: [Entry],
+    summaries: [Summary] = [],
+    usage: [Usage] = [],
+    toolInvocations: [ToolInvocation] = [],
+    transcriptMetadata: [TranscriptMeta] = []
+  ) {
+    self.projects = projects
+    self.transcripts = transcripts
+    self.entries = entries
+    self.summaries = summaries
+    self.usage = usage
+    self.toolInvocations = toolInvocations
+    self.transcriptMetadata = transcriptMetadata
+  }
 
   public struct Project: Sendable {
     public let id: String
@@ -2632,5 +2756,52 @@ public struct CloudPushExport: Sendable {
       if let c = cwd { d["cwd"] = c }
       return d
     }
+  }
+
+  public struct Summary: Sendable {
+    public let entryId: String
+    public let contentSha256: String
+    public let windowSha256: String
+    public let presentForm: String
+    public let pastForm: String
+    public let disposition: String?
+    public let generatedAt: Int
+  }
+
+  public struct Usage: Sendable {
+    public let entryId: String
+    public let requestId: String
+    public let model: String
+    public let inputTokens: Int
+    public let outputTokens: Int
+    public let cacheCreationTokens: Int
+    public let cacheReadTokens: Int
+  }
+
+  public struct ToolInvocation: Sendable {
+    public let id: String
+    public let entryId: String
+    public let transcriptId: String
+    public let toolName: String
+    public let toolKey: String?
+    public let status: String
+    public let startedAt: Int?
+    public let completedAt: Int?
+    public let metadataJson: String?
+    public let createdAt: Int
+    public let updatedAt: Int
+  }
+
+  public struct TranscriptMeta: Sendable {
+    public let transcriptId: String
+    public let projectId: String
+    public let title: String
+    public let description: String?
+    public let topics: String
+    public let confidence: Double
+    public let generatedAt: Int
+    public let model: String
+    public let createdAt: Int
+    public let updatedAt: Int
   }
 }

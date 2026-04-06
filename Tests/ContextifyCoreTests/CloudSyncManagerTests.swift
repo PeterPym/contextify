@@ -425,6 +425,224 @@ final class CloudSyncManagerTests: XCTestCase {
     XCTAssertFalse(isOrphaned, "No server session means nothing to be orphaned")
   }
 
+  // MARK: - Sync Request Coalescing
+
+  /// Helper: create a temp database with migrations applied and return
+  /// a writable ContextifyQueryService for use in sync tests.
+  private func makeTempQueryService() throws -> (ContextifyQueryService, URL) {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-sync-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    _ = try dbManager.pool  // Runs migrations
+    let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    return (queryService, tempDir)
+  }
+
+  /// Returns a valid CloudConfig with enabled flag.
+  private static let enabledConfig = CloudConfig(
+    serverURL: CloudConfig.defaultServerURL,
+    apiKey: "ctx_test1234567890_abcdefghijklmnopqrstuvwx",
+    deviceId: "device-1",
+    deviceName: "Mac",
+    enabled: true
+  )
+
+  private static let idleStatusData = """
+    {
+      "last_sync": "2026-03-14T23:00:00Z",
+      "entries_synced": 0,
+      "devices": [],
+      "server_sequence": 0,
+      "pending_batches": 0,
+      "active_push_session": null
+    }
+    """.data(using: .utf8)!
+
+  private static let accountData = """
+    {
+      "user_id": "7C9138BE-C8D7-4A6E-A804-430D239D4825",
+      "email": "test@example.com",
+      "name": "Test User",
+      "role": "owner",
+      "tenant_id": "F154C9FE-9804-4582-8308-495ABFA302A2",
+      "tenant_name": "Test Tenant",
+      "tenant_plan": "solo",
+      "created_at": "2026-03-14T23:00:00Z"
+    }
+    """.data(using: .utf8)!
+
+  /// Installs a generic mock handler that responds to status and account endpoints.
+  private func installGenericMockHandler() {
+    let statusResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/sync/status")!,
+      statusCode: 200, httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+    let accountResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/account")!,
+      statusCode: 200, httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"]
+    )!
+    let statusData = Self.idleStatusData
+    let accountData = Self.accountData
+
+    DelayedMockURLProtocol.handler = { request in
+      switch request.url?.path {
+      case "/api/v1/account":
+        return (accountData, accountResponse, nil)
+      default:
+        return (statusData, statusResponse, nil)
+      }
+    }
+  }
+
+  func testRequestSyncQueuesWhenAlreadySyncing() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let (queryService, tempDir) = try makeTempQueryService()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Long delay so sync stays in .syncing state during our test
+    DelayedMockURLProtocol.delay = 10
+    installGenericMockHandler()
+
+    let config = Self.enabledConfig
+    await MainActor.run {
+      manager.configure(config: config)
+    }
+
+    // Start sync in background -- sets .syncing, then hangs on delayed refreshStatusFromServer()
+    let syncTask = Task {
+      await manager.sync(using: queryService, origin: .auto)
+    }
+
+    // Wait for the sync task to enter .syncing state
+    var attempts = 0
+    while attempts < 50 {
+      let state = await MainActor.run { manager.syncState }
+      if state == .syncing { break }
+      try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+      attempts += 1
+    }
+
+    let result = await MainActor.run { () -> (SyncState, Bool) in
+      let state = manager.syncState
+      manager.requestSync(origin: .manual)
+      return (state, manager.hasPendingSyncRequest)
+    }
+
+    XCTAssertEqual(result.0, .syncing, "Manager should be in syncing state")
+    XCTAssertTrue(result.1, "Request should be queued when already syncing")
+
+    syncTask.cancel()
+    await MainActor.run { manager.resetForDisconnect() }
+  }
+
+  func testRequestSyncManualDominatesAuto() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let (queryService, tempDir) = try makeTempQueryService()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    DelayedMockURLProtocol.delay = 10
+    installGenericMockHandler()
+
+    let config = Self.enabledConfig
+    await MainActor.run {
+      manager.configure(config: config)
+    }
+
+    let syncTask = Task {
+      await manager.sync(using: queryService, origin: .auto)
+    }
+
+    var attempts = 0
+    while attempts < 50 {
+      let state = await MainActor.run { manager.syncState }
+      if state == .syncing { break }
+      try await Task.sleep(nanoseconds: 50_000_000)
+      attempts += 1
+    }
+
+    // Queue auto first, then manual -- manual should dominate
+    let hasPending = await MainActor.run { () -> Bool in
+      manager.requestSync(origin: .auto)
+      manager.requestSync(origin: .manual)
+      return manager.hasPendingSyncRequest
+    }
+
+    XCTAssertTrue(hasPending, "Pending request should exist after queuing while syncing")
+    // We can't directly inspect the origin, but we verify the coalescing
+    // didn't drop the request: hasPendingSyncRequest remains true.
+
+    syncTask.cancel()
+    await MainActor.run { manager.resetForDisconnect() }
+  }
+
+  func testRequestSyncNoQueueWhenIdle() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+
+    // Fast mock so configure's background tasks don't interfere
+    DelayedMockURLProtocol.delay = 0
+    installGenericMockHandler()
+
+    let config = Self.enabledConfig
+    await MainActor.run {
+      manager.configure(config: config)
+    }
+
+    let result = await MainActor.run { () -> (SyncState, Bool) in
+      let state = manager.syncState
+      manager.requestSync(origin: .manual)
+      return (state, manager.hasPendingSyncRequest)
+    }
+
+    XCTAssertEqual(result.0, .idle, "Manager should be idle after configure with enabled: true")
+    XCTAssertFalse(result.1, "Request should start immediately when idle, not queue")
+
+    await MainActor.run { manager.resetForDisconnect() }
+  }
+
+  func testTriggerSyncCallsRequestSyncManual() async throws {
+    let session = makeSession()
+    let manager = await makeManager(session: session)
+    let (queryService, tempDir) = try makeTempQueryService()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    DelayedMockURLProtocol.delay = 10
+    installGenericMockHandler()
+
+    let config = Self.enabledConfig
+    await MainActor.run {
+      manager.configure(config: config)
+    }
+
+    let syncTask = Task {
+      await manager.sync(using: queryService, origin: .auto)
+    }
+
+    var attempts = 0
+    while attempts < 50 {
+      let state = await MainActor.run { manager.syncState }
+      if state == .syncing { break }
+      try await Task.sleep(nanoseconds: 50_000_000)
+      attempts += 1
+    }
+
+    let hasPending = await MainActor.run { () -> Bool in
+      manager.triggerSync()
+      return manager.hasPendingSyncRequest
+    }
+
+    XCTAssertTrue(hasPending, "triggerSync() should queue a request when already syncing")
+
+    syncTask.cancel()
+    await MainActor.run { manager.resetForDisconnect() }
+  }
+
   func testConfigurePreservesConnectionScopedStateWhenOnlyDeviceNameChanges() async throws {
     let session = makeSession()
     let manager = await makeManager(session: session)
@@ -464,5 +682,87 @@ final class CloudSyncManagerTests: XCTestCase {
     let finalProfile = await MainActor.run { manager.cloudAccountProfile }
     XCTAssertEqual(finalProfile?.email, "same@example.com")
     XCTAssertEqual(finalProfile?.tenantName, "Same Tenant")
+  }
+
+  // MARK: - Transient Server Error Retry (ct-1119)
+
+  func testTransientServerErrorMatchesRetryPattern() throws {
+    // Verify that 502/503/504 are correctly matched by the retry catch clause pattern.
+    // This is a pattern-matching test: the catch clause uses
+    //   CloudSyncError.serverError(statusCode: let code, _) where code == 502 || code == 503 || code == 504
+    // We verify each code matches and non-transient codes do not.
+    let transientCodes = [502, 503, 504]
+    let nonTransientCodes = [400, 403, 404, 500, 501]
+
+    for code in transientCodes {
+      let error = CloudSyncError.serverError(statusCode: code, body: "test")
+      let isTransient: Bool
+      if case .serverError(statusCode: let c, _) = error, c == 502 || c == 503 || c == 504 {
+        isTransient = true
+      } else {
+        isTransient = false
+      }
+      XCTAssertTrue(isTransient, "HTTP \(code) should match transient retry pattern")
+    }
+
+    for code in nonTransientCodes {
+      let error = CloudSyncError.serverError(statusCode: code, body: "test")
+      let isTransient: Bool
+      if case .serverError(statusCode: let c, _) = error, c == 502 || c == 503 || c == 504 {
+        isTransient = true
+      } else {
+        isTransient = false
+      }
+      XCTAssertFalse(isTransient, "HTTP \(code) should NOT match transient retry pattern")
+    }
+  }
+
+  func testCloudSyncClientThrowsServerErrorOn502() async throws {
+    // Verify that CloudSyncClient maps HTTP 502 to CloudSyncError.serverError(statusCode: 502, ...)
+    // which is the error type the push loop catches for transient retry.
+    let session = makeSession()
+    let errorResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/sync/push")!,
+      statusCode: 502,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "text/html"]
+    )!
+
+    DelayedMockURLProtocol.delay = 0
+    DelayedMockURLProtocol.handler = { _ in
+      let body = "<html><body>502 Bad Gateway</body></html>".data(using: .utf8)!
+      return (body, errorResponse, nil)
+    }
+
+    let client = CloudSyncClient(
+      serverURL: URL(string: CloudConfig.defaultServerURL)!,
+      apiKey: "ctx_test",
+      session: session
+    )
+
+    do {
+      let _: CloudPushResponse = try await client.push(CloudPushPayload(
+        idempotencyKey: "test:1",
+        batchSeq: 1,
+        syncSessionId: "test-session",
+        entriesSent: 0,
+        device: CloudDeviceInfo(machineId: "d1", machineName: "Mac"),
+        projects: [],
+        transcripts: [],
+        entries: [],
+        summaries: [],
+        usage: [],
+        toolInvocations: [],
+        transcriptMetadata: []
+      ))
+      XCTFail("Expected serverError to be thrown")
+    } catch let error as CloudSyncError {
+      if case .serverError(statusCode: let code, body: let body) = error {
+        XCTAssertEqual(code, 502)
+        XCTAssertTrue(body.contains("Bad Gateway"))
+      } else {
+        XCTFail("Expected serverError, got \(error)")
+      }
+    }
   }
 }

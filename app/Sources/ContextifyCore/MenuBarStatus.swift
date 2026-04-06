@@ -53,7 +53,8 @@ public enum MenuBarStatusDeriver {
     cloudStatus: CloudSyncStatus?,
     cloudStatusError: String?,
     backgroundIngestMessage: String?,
-    isActiveSessionOrphaned: Bool = false
+    isActiveSessionOrphaned: Bool = false,
+    pendingPushCount: Int = 0
   ) -> MenuBarPresentation {
     let localActivityText = normalizedLocalActivityText(backgroundIngestMessage)
     let cloudText = normalizedCloudText(
@@ -61,7 +62,8 @@ public enum MenuBarStatusDeriver {
       cloudOffline: cloudOffline,
       cloudStatus: cloudStatus,
       cloudStatusError: cloudStatusError,
-      isActiveSessionOrphaned: isActiveSessionOrphaned
+      isActiveSessionOrphaned: isActiveSessionOrphaned,
+      pendingPushCount: pendingPushCount
     )
 
     let displayState: MenuBarDisplayState
@@ -138,7 +140,8 @@ public enum MenuBarStatusDeriver {
     cloudOffline: Bool,
     cloudStatus: CloudSyncStatus?,
     cloudStatusError: String?,
-    isActiveSessionOrphaned: Bool
+    isActiveSessionOrphaned: Bool,
+    pendingPushCount: Int = 0
   ) -> String {
     let configured = isCloudConfigured(syncState: syncState, cloudStatus: cloudStatus, cloudStatusError: cloudStatusError)
     guard configured else {
@@ -169,6 +172,10 @@ public enum MenuBarStatusDeriver {
         return "Cloud syncing \(resolved)/\(total) entries"
       }
       return "Cloud syncing"
+    }
+
+    if pendingPushCount > 0 {
+      return "\(pendingPushCount) entries pending sync"
     }
 
     if let lastSync = cloudStatus?.lastSync, !lastSync.isEmpty {
