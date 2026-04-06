@@ -1055,6 +1055,7 @@ public struct MetadataParseResult {
   public let assistantUsage: AssistantUsage?
   public let queueOperations: [QueueOperation]
   public let customTitle: String?
+  public let sawCustomTitle: Bool
 
   public init(
     fileSnapshot: FileSnapshot? = nil,
@@ -1063,7 +1064,8 @@ public struct MetadataParseResult {
     systemEvent: SystemEvent? = nil,
     assistantUsage: AssistantUsage? = nil,
     queueOperations: [QueueOperation] = [],
-    customTitle: String? = nil
+    customTitle: String? = nil,
+    sawCustomTitle: Bool = false
   ) {
     self.fileSnapshot = fileSnapshot
     self.trackedFiles = trackedFiles
@@ -1072,10 +1074,11 @@ public struct MetadataParseResult {
     self.assistantUsage = assistantUsage
     self.queueOperations = queueOperations
     self.customTitle = customTitle
+    self.sawCustomTitle = sawCustomTitle
   }
 
   public var hasMetadata: Bool {
-    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil || !queueOperations.isEmpty || customTitle != nil
+    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil || !queueOperations.isEmpty || sawCustomTitle
   }
 }
 
@@ -1130,12 +1133,13 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
 
     let now = Int(Date().timeIntervalSince1970)
 
-    // custom-title: user-set session title (CC v2.1.82+)
+    // custom-title: user-set session title
+    // Always set sawCustomTitle so empty titles can clear a previous value
     if type == "custom-title" {
-      if let title = json["customTitle"] as? String, !title.isEmpty {
-        return MetadataParseResult(customTitle: title)
-      }
-      return MetadataParseResult()
+      return MetadataParseResult(
+        customTitle: json["customTitle"] as? String,
+        sawCustomTitle: true
+      )
     }
 
     // queue-operation metadata (remove/popAll/dequeue)

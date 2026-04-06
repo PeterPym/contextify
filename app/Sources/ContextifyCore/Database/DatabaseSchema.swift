@@ -1383,6 +1383,11 @@ public enum DatabaseSchema {
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
     """)
+    // v40: sparse index for slug-based lookups
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_transcripts_slug ON transcripts(slug)
+      WHERE slug IS NOT NULL
+    """)
 
     // Fast-path ingestion: efficiently find partial transcripts
     try db.execute(sql: """

@@ -276,6 +276,7 @@ private struct MetadataBatch {
   var assistantUsages: [AssistantUsage] = []
   var queueOperations: [QueueOperation] = []
   var customTitle: String?
+  var sawCustomTitle = false
 
   mutating func add(_ result: MetadataParseResult) {
     if let snapshot = result.fileSnapshot {
@@ -292,8 +293,9 @@ private struct MetadataBatch {
       assistantUsages.append(usage)
     }
     queueOperations.append(contentsOf: result.queueOperations)
-    if let title = result.customTitle {
-      customTitle = title
+    if result.sawCustomTitle {
+      sawCustomTitle = true
+      customTitle = result.customTitle
     }
   }
 
@@ -305,10 +307,11 @@ private struct MetadataBatch {
     assistantUsages.removeAll()
     queueOperations.removeAll()
     customTitle = nil
+    sawCustomTitle = false
   }
 
   var isEmpty: Bool {
-    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty && customTitle == nil
+    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty && !sawCustomTitle
   }
 }
 
@@ -1486,11 +1489,12 @@ public final class HooverEngine {
           arguments: [latestEntrypoint, now, transcriptId, latestEntrypoint]
         )
       }
-      // custom_title from custom-title metadata records (latest wins)
-      if let customTitle = metadata.customTitle {
+      // custom_title from custom-title metadata records
+      // sawCustomTitle distinguishes "no record" from "empty clear"
+      if metadata.sawCustomTitle {
         try db.execute(
-          sql: "UPDATE transcripts SET custom_title = ?, updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != ?",
-          arguments: [customTitle, now, transcriptId, customTitle]
+          sql: "UPDATE transcripts SET custom_title = NULLIF(?, ''), updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != COALESCE(?, '')",
+          arguments: [metadata.customTitle ?? "", now, transcriptId, metadata.customTitle ?? ""]
         )
       }
 
@@ -1880,10 +1884,10 @@ public final class HooverEngine {
           arguments: [latestEntrypointFast, now, transcriptId, latestEntrypointFast]
         )
       }
-      if let customTitleFast = metadata.customTitle {
+      if metadata.sawCustomTitle {
         try db.execute(
-          sql: "UPDATE transcripts SET custom_title = ?, updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != ?",
-          arguments: [customTitleFast, now, transcriptId, customTitleFast]
+          sql: "UPDATE transcripts SET custom_title = NULLIF(?, ''), updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != COALESCE(?, '')",
+          arguments: [metadata.customTitle ?? "", now, transcriptId, metadata.customTitle ?? ""]
         )
       }
 
