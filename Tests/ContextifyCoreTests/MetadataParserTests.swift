@@ -117,6 +117,53 @@ final class MetadataParserTests: XCTestCase {
     XCTAssertEqual(result.transcriptSummary?.leafUuid, "leaf-legacy-123")
   }
 
+  // MARK: - Custom Title Parsing
+
+  func testParseCustomTitle_NonEmpty() throws {
+    let json = """
+    {"type":"custom-title","customTitle":"My Session","sessionId":"abc-123"}
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json, lineNumber: 1, transcriptId: "t", projectId: "p",
+      provider: "claude.code", entryId: nil
+    )
+
+    XCTAssertTrue(result.sawCustomTitle)
+    XCTAssertEqual(result.customTitle, "My Session")
+  }
+
+  func testParseCustomTitle_EmptyStringMarksPresence() throws {
+    let json = """
+    {"type":"custom-title","customTitle":"","sessionId":"abc-123"}
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json, lineNumber: 1, transcriptId: "t", projectId: "p",
+      provider: "claude.code", entryId: nil
+    )
+
+    XCTAssertTrue(result.sawCustomTitle, "Empty title should still mark presence for clearing")
+    XCTAssertEqual(result.customTitle, "")
+  }
+
+  func testParseCustomTitle_MissingKeyMarksPresence() throws {
+    let json = """
+    {"type":"custom-title","sessionId":"abc-123"}
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json, lineNumber: 1, transcriptId: "t", projectId: "p",
+      provider: "claude.code", entryId: nil
+    )
+
+    XCTAssertTrue(result.sawCustomTitle, "Record type presence should mark saw even without key")
+    XCTAssertNil(result.customTitle)
+  }
+
   // MARK: - System Event Parsing
 
   func testParseSystemEvent() throws {
