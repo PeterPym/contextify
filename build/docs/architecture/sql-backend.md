@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v39 current)
+**Status:** Post-Implementation (v40 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 39 (latest: transcript_tags table for purpose labeling)
+**Schema Version:** 40 (latest: slug/entrypoint/custom_title columns on transcripts)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v39 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v39).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v40 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v40).
 
 ---
 
@@ -54,6 +54,9 @@ transcripts
 ├── provider_session_id
 ├── last_modified + file_size + line_count
 ├── bookmark (security-scoped bookmark data)
+├── slug (TEXT, v40+, human-readable session identifier, write-once)
+├── entrypoint (TEXT, v40+, session origin "cli"/"sdk-cli", write-once)
+├── custom_title (TEXT, v40+, user-assigned title from custom-title records)
 ├── ingestion_state
 │   ├── last_processed_line
 │   ├── last_processed_entry_id (v2+: resume checkpoint)
@@ -651,6 +654,12 @@ generator.queueMisses([miss])  // Async processing
 - CLI: `contextify tag <transcript-id> [<tag>] [--remove]` lists, adds, or removes tags
 - CLI search: `contextify search --exclude-tags <csv>` excludes entries from tagged transcripts
 - Benchmark: `prepare-snapshot.sh` auto-excludes transcripts tagged "benchmark" or "evaluation" (override with `--no-exclude-tags`)
+
+**v40: Transcript Identity Fields**
+- Add `slug` (TEXT) to transcripts — human-readable session identifier extracted from user/assistant records (e.g., `"streamed-beaming-pumpkin"`); write-once on first non-null value
+- Add `entrypoint` (TEXT) to transcripts — session origin (`"cli"` or `"sdk-cli"`); write-once
+- Add `custom_title` (TEXT) to transcripts — user-assigned session title from `custom-title` records
+- Fixed leafUuid extraction in metadata parser (was reading `leaf_uuid` snake_case; actual JSON field is `leafUuid` camelCase)
 
 ---
 

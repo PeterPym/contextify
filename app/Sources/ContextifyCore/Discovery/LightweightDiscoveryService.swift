@@ -271,11 +271,31 @@ public actor LightweightDiscoveryService {
       let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
 
       // Scan for .jsonl files (need full URLs for JIT ingestion)
-      let files = (try? FileManager.default.contentsOfDirectory(
+      // Includes both top-level files AND files in <session-uuid>/subagents/ subdirectories
+      let topLevelEntries = (try? FileManager.default.contentsOfDirectory(
         at: dir,
-        includingPropertiesForKeys: nil,
+        includingPropertiesForKeys: [.isDirectoryKey],
         options: [.skipsHiddenFiles]
-      ))?.filter { $0.pathExtension == "jsonl" } ?? []
+      )) ?? []
+
+      var files: [URL] = []
+      for entry in topLevelEntries {
+        if entry.pathExtension == "jsonl" {
+          files.append(entry)
+        } else if (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+          // Recursively scan subagents/ subdirectory for .jsonl files
+          let subagentsDir = entry.appendingPathComponent("subagents")
+          if let enumerator = FileManager.default.enumerator(
+            at: subagentsDir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+          ) {
+            for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+              files.append(url)
+            }
+          }
+        }
+      }
 
       let hashFolder = dir.lastPathComponent
 

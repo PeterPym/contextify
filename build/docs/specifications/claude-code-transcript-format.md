@@ -17,9 +17,10 @@ Claude Code stores conversation history in **JSONL** (JSON Lines) format, with o
 
 **Filename Convention:**
 - **Main session:** `{sessionId}.jsonl` (UUID format)
-- **Subagent/sidechain:** `agent-{agentId}.jsonl` (e.g., `agent-10bae299.jsonl`)
+- **Subagent/sidechain (current):** `{sessionId}/subagents/agent-{agentId}.jsonl` (nested under a per-session directory, since CC v2.1.82)
+- **Subagent/sidechain (legacy):** `agent-{agentId}.jsonl` alongside the main session file (pre-CC v2.0.42; no files exist in this format on disk anymore, but the database may contain historical records)
 
-When Claude Code spawns subagents (via the Task tool), each creates its own transcript file with the `agent-` prefix. These files contain `isSidechain: true` records and typically have minimal content (single assistant response). See [Sidechain Transcript Files](#sidechain-transcript-files) section for details.
+When Claude Code spawns subagents (via the Task tool), each creates its own transcript file in the `{sessionId}/subagents/` directory (or at the flat sibling level in older versions). These files contain `isSidechain: true` records and typically have minimal content. A `.meta.json` sidecar file describes the agent's role. See [Sidechain Transcript Files](#sidechain-transcript-files) section for details.
 
 **Key Characteristics:**
 - **Append-only:** New records appended as session progresses
@@ -38,11 +39,20 @@ From analysis of 18,589 records across 43 transcripts:
 | `assistant` | 11,188 | 60.1% | Claude responses with usage metadata |
 | `user` | 6,391 | 34.3% | User inputs, commands, tool results |
 | `file-history-snapshot` | 907 | 4.9% | File backup/version tracking |
-| `system` | 55 | 0.3% | System events, commands, errors |
+| `system` | 55 | 0.3% | System events, commands, errors (uses compound `system/{subtype}` format) |
 | `summary` | 48 | 0.3% | Session summaries for navigation |
 | `queue-operation` | varies | <0.1% | Message queue lifecycle events |
 | `timeline-state` | varies | <0.1% | UI timeline state snapshots (skipped) |
 | `queue-operation-result` | varies | <0.1% | Queue operation results (skipped) |
+| `custom-title` | varies | <0.1% | User-assigned session title (skipped) |
+| `agent-name` | varies | <0.1% | Named agent identifier (skipped) |
+| `pr-link` | varies | <0.1% | Pull request creation event (skipped) |
+| `attachment` | varies | <0.1% | File attachment metadata (skipped) |
+| `permission-mode` | varies | <0.1% | Permission mode change (skipped) |
+| `progress` | varies | <0.1% | Hook execution progress (skipped) |
+| `last-prompt` | varies | <0.1% | Last prompt for session resume (skipped) |
+
+Note: The record counts above reflect the original 43-transcript sample (2025-10-23). Newer record types were not present in that sample.
 
 ---
 
@@ -60,11 +70,15 @@ From analysis of 18,589 records across 43 transcripts:
   timestamp: string,         // ISO 8601 (e.g., "2025-10-19T04:10:40.044Z")
   parentUuid: string | null, // Parent message for threading
   sessionId: string,         // Session UUID
-  version: string,           // Claude Code version (e.g., "2.0.22")
+  version: string,           // Claude Code version (e.g., "2.1.77")
   userType: "external",      // Always "external" in observed data
   cwd: string,               // Current working directory
   gitBranch: string,         // Active git branch
-  slug: string?,             // Session slug identifier (e.g., "woolly-purring-liskov")
+  slug: string?,             // Human-readable session slug (e.g., "woolly-purring-liskov"). Present since ~CC v2.1.63.
+  entrypoint: string?,       // Session origin: "cli" or "sdk-cli". Present since ~CC v2.1.77.
+  promptId: string?,         // UUID grouping records from the same prompt submission. Present since ~CC v2.1.72.
+  sourceToolAssistantUUID: string?,  // Links a tool result back to the originating assistant message (on user records with tool_result blocks).
+  permissionMode: string?,   // Current permission mode (e.g., "bypassPermissions").
   isSidechain: boolean,      // True = warmup/non-conversational
   isMeta: boolean?,          // True = meta/command wrapper (optional)
   message: {
@@ -140,7 +154,8 @@ type ContentBlock =
   isSidechain: boolean,
   requestId: string?,         // API request ID for tracking (top-level)
   isApiErrorMessage: boolean?,  // True if this is an error message
-  slug: string?,              // Session slug identifier (e.g., "woolly-purring-liskov")
+  slug: string?,              // Human-readable session slug. Present since ~CC v2.1.63.
+  entrypoint: string?,        // Session origin: "cli" or "sdk-cli". Present since ~CC v2.1.77.
   message: {
     id: string,          // Message ID from API (distinct from requestId)
     type: "message",
@@ -260,7 +275,7 @@ type ContentBlock =
 }
 ```
 
-**Parser Bug:** The JSON field is `leafUuid` (camelCase), but `TranscriptParsers.swift` reads `json["leaf_uuid"]` (snake_case), causing this field to always be nil. The database column is `leaf_uuid`.
+**Parser note:** The JSON field is `leafUuid` (camelCase) and the database column is `leaf_uuid`. The parser was updated in v40 to read the correct camelCase key.
 
 **Examples:**
 - `"Claude Code Contextify Project Navigation Warmup"`
@@ -295,24 +310,24 @@ type ContentBlock =
   isSidechain: boolean,
   isMeta: boolean?,
   slug: string?,            // Session slug identifier
-  subtype: "local_command" | "compact_boundary" | "api_error",
+  subtype: "local_command" | "compact_boundary" | "api_error" | "turn_duration" | "bridge_status" | "informational" | "stop_hook_summary",
   level: "info" | "error",
-  content: string?,         // Message content (for local_command, compact_boundary)
+  content: string?,         // Message content (for local_command, compact_boundary, bridge_status, informational)
   logicalParentUuid: string?,  // For compact mode threading
   compactMetadata: CompactMetadata?,  // Compact mode metadata (see below)
-  error: ApiError?,         // Error object (for api_error subtype)
+  error: ApiError?,         // Structured error object (for api_error subtype)
   retryAttempt: number?,    // Retry attempt number (for api_error)
   maxRetries: number?,      // Max retry attempts (for api_error)
   retryInMs: number?        // Retry delay in milliseconds (for api_error)
 }
 
-// CompactMetadata structure (for compact_boundary subtype)
+// CompactMetadata structure (for compact_boundary subtype) - object, not a plain string
 type CompactMetadata = {
   trigger: "auto" | "manual",
   preTokens: number        // Token count before compaction
 }
 
-// ApiError structure (for api_error subtype)
+// ApiError structure (for api_error subtype) - structured object, not a plain string
 type ApiError = {
   status: number,          // HTTP status code (e.g., 521)
   headers: object,         // Response headers
@@ -789,6 +804,14 @@ class QueueStateTracker {
 - `isMeta: true` - Meta/command wrappers (skipped from entries, not metadata)
 - `timeline-state` - UI state snapshots (fully skipped)
 - `queue-operation-result` - Queue operation results (fully skipped)
+- `custom-title` - User-assigned session title; value stored in `transcripts.custom_title` instead
+- `agent-name` - Named agent identifier (fully skipped)
+- `pr-link` - Pull request creation event (fully skipped)
+- `attachment` - File attachment metadata (fully skipped)
+- `permission-mode` - Permission mode change (fully skipped)
+- `progress` - Hook execution progress (fully skipped)
+- `last-prompt` - Last prompt for session resume (fully skipped)
+- Compound `system/*` subtypes not in the handled set (matched by `hasPrefix("system/")`)
 - Empty content - Messages with no displayable text or tool markers
 
 **What we parse into metadata tables:**

@@ -151,6 +151,10 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
   public var unreadApproxConfidence: String?
   public var unreadApproxUpdatedAt: Int?
   public var lastActivityDetectedAt: Int?
+  // v40: Session-level metadata from Claude Code format drift
+  public var slug: String?
+  public var entrypoint: String?
+  public var customTitle: String?
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -180,6 +184,9 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
     case unreadApproxConfidence = "unread_approx_confidence"
     case unreadApproxUpdatedAt = "unread_approx_updated_at"
     case lastActivityDetectedAt = "last_activity_detected_at"
+    case slug
+    case entrypoint
+    case customTitle = "custom_title"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }

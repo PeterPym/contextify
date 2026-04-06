@@ -12,7 +12,14 @@ private let metadataRecordTypes: Set<String> = [
   "file-history-snapshot",
   "summary",
   "timeline-state",
-  "queue-operation-result"
+  "queue-operation-result",
+  "attachment",
+  "last-prompt",
+  "permission-mode",
+  "progress",
+  "agent-name",
+  "custom-title",
+  "pr-link",
 ]
 
 // MARK: - Shared ISO8601 Date Formatters (Performance)
@@ -153,6 +160,12 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     // Skip structural metadata records (no conversation content)
     if metadataRecordTypes.contains(type) {
       throw ParserError.skipEntry
+    }
+
+    // Handle compound system/* record types (CC v2.1.82+)
+    // These use "system/turn_duration" format instead of type="system" + subtype
+    if type.hasPrefix("system/") {
+      throw ParserError.skipEntry  // Metadata-only, no conversation content
     }
 
     guard let uuid = json["uuid"] as? String else {
@@ -336,6 +349,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     let gitCommit = json["gitCommit"] as? String
     let cwd = json["cwd"] as? String
     let providerSessionId = json["sessionId"] as? String ?? sessionId
+    // Session-level metadata (CC v2.1.82+): present on every user/assistant record
+    let slug = json["slug"] as? String
+    let entrypoint = json["entrypoint"] as? String
 
     // Map kind - agent results display as "assistant" for proper attribution
     let effectiveType = isAgentResult ? "assistant" : type
@@ -365,7 +381,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
       isSidechain: isSidechain,
       agentId: agentId,
       toolInvocations: toolInvocations,
-      toolResultData: toolResultData
+      toolResultData: toolResultData,
+      slug: slug,
+      entrypoint: entrypoint
     )
   }
 
@@ -1036,6 +1054,8 @@ public struct MetadataParseResult {
   public let systemEvent: SystemEvent?
   public let assistantUsage: AssistantUsage?
   public let queueOperations: [QueueOperation]
+  public let customTitle: String?
+  public let sawCustomTitle: Bool
 
   public init(
     fileSnapshot: FileSnapshot? = nil,
@@ -1043,7 +1063,9 @@ public struct MetadataParseResult {
     transcriptSummary: TranscriptSummary? = nil,
     systemEvent: SystemEvent? = nil,
     assistantUsage: AssistantUsage? = nil,
-    queueOperations: [QueueOperation] = []
+    queueOperations: [QueueOperation] = [],
+    customTitle: String? = nil,
+    sawCustomTitle: Bool = false
   ) {
     self.fileSnapshot = fileSnapshot
     self.trackedFiles = trackedFiles
@@ -1051,10 +1073,12 @@ public struct MetadataParseResult {
     self.systemEvent = systemEvent
     self.assistantUsage = assistantUsage
     self.queueOperations = queueOperations
+    self.customTitle = customTitle
+    self.sawCustomTitle = sawCustomTitle
   }
 
   public var hasMetadata: Bool {
-    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil || !queueOperations.isEmpty
+    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil || !queueOperations.isEmpty || sawCustomTitle
   }
 }
 
@@ -1108,6 +1132,16 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
     }
 
     let now = Int(Date().timeIntervalSince1970)
+
+    // custom-title: user-set session title
+    // Only mark sawCustomTitle when the key is present (missing key = malformed, not clear)
+    if type == "custom-title" {
+      let sawKey = json.keys.contains("customTitle")
+      return MetadataParseResult(
+        customTitle: json["customTitle"] as? String,
+        sawCustomTitle: sawKey
+      )
+    }
 
     // queue-operation metadata (remove/popAll/dequeue)
     if type == "queue-operation" {
@@ -1210,7 +1244,7 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
         id: UUID().uuidString,
         transcriptId: transcriptId,
         summary: summaryText,
-        leafUuid: json["leaf_uuid"] as? String,
+        leafUuid: (json["leafUuid"] as? String) ?? (json["leaf_uuid"] as? String),
         cwd: json["cwd"] as? String,
         createdAt: now
       )
