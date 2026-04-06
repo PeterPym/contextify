@@ -1553,4 +1553,505 @@ final class ContextifyQueryServiceTests: XCTestCase {
     try service.addTag(transcriptId: "t1", tag: "BENCHMARK")
     XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark"])
   }
+
+  // MARK: - ct-835: Cloud push export includes summaries, usage, tool_invocations, transcript_metadata
+
+  /// ct-835: exportForCloudPush includes summaries from timeline_cache scoped to batch entries.
+  func testExportForCloudPush_includesSummaries() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-summaries-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/push-summaries', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test content', 'sha-1', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO timeline_cache (content_sha256, window_sha256, entry_id,
+          generator_signature, disposition, present_form, past_form, selected_form,
+          generated_at, user_edited)
+        VALUES ('sha-1', 'win-1', 'entry-1', 'test-gen', 'action',
+          'Adding tests', 'Added tests', 'past', 1000, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.entries.count, 1)
+    XCTAssertEqual(export.summaries.count, 1)
+    XCTAssertEqual(export.summaries.first?.entryId, "entry-1")
+    XCTAssertEqual(export.summaries.first?.presentForm, "Adding tests")
+    XCTAssertEqual(export.summaries.first?.pastForm, "Added tests")
+    XCTAssertEqual(export.summaries.first?.disposition, "action")
+  }
+
+  /// ct-835: exportForCloudPush includes usage records from assistant_usage scoped to batch entries.
+  func testExportForCloudPush_includesUsage() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-usage-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/push-usage', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test content', 'sha-usage', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO assistant_usage (entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens)
+        VALUES ('entry-1', 'req-1', 'claude-sonnet-4-6', 500, 1200, 100, 50)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.usage.count, 1)
+    XCTAssertEqual(export.usage.first?.entryId, "entry-1")
+    XCTAssertEqual(export.usage.first?.requestId, "req-1")
+    XCTAssertEqual(export.usage.first?.model, "claude-sonnet-4-6")
+    XCTAssertEqual(export.usage.first?.inputTokens, 500)
+    XCTAssertEqual(export.usage.first?.outputTokens, 1200)
+    XCTAssertEqual(export.usage.first?.cacheCreationTokens, 100)
+    XCTAssertEqual(export.usage.first?.cacheReadTokens, 50)
+  }
+
+  /// ct-835: exportForCloudPush includes tool invocations scoped to batch entries.
+  func testExportForCloudPush_includesToolInvocations() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-tools-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/push-tools', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test content', 'sha-tools', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO tool_invocations (id, entry_id, transcript_id, tool_name, tool_key,
+          status, started_at, completed_at, metadata_json, is_contextify, created_at, updated_at)
+        VALUES ('ti-1', 'entry-1', 'tx-1', 'Read', 'read_file', 'completed',
+          1000, 1001, '{"path":"/tmp/test.swift"}', 0, 1000, 1001)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.toolInvocations.count, 1)
+    XCTAssertEqual(export.toolInvocations.first?.id, "ti-1")
+    XCTAssertEqual(export.toolInvocations.first?.toolName, "Read")
+    XCTAssertEqual(export.toolInvocations.first?.status, "completed")
+    XCTAssertEqual(export.toolInvocations.first?.metadataJson, "{\"path\":\"/tmp/test.swift\"}")
+  }
+
+  /// ct-835: exportForCloudPush includes transcript metadata scoped to batch transcripts.
+  func testExportForCloudPush_includesTranscriptMetadata() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-metadata-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/push-metadata', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test content', 'sha-meta', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_metadata (transcript_id, project_id, title, description,
+          topics, confidence, may_contain_hallucinations, needs_review, generated_at,
+          model, prompt_version, generator_version, transcript_sha256, message_count,
+          strategy, llm_calls, latency_ms, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', 'Cloud Push Test Session', 'Testing cloud push wiring',
+          '["cloud","testing","sync"]', 0.95, 0, 0, 1000,
+          'claude-sonnet-4-6', 1, 1, 'sha-transcript', 10,
+          'full', 1, 500, 1000, 1000)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.transcriptMetadata.count, 1)
+    XCTAssertEqual(export.transcriptMetadata.first?.transcriptId, "tx-1")
+    XCTAssertEqual(export.transcriptMetadata.first?.title, "Cloud Push Test Session")
+    XCTAssertEqual(export.transcriptMetadata.first?.topics, "[\"cloud\",\"testing\",\"sync\"]")
+    XCTAssertEqual(export.transcriptMetadata.first?.confidence, 0.95)
+    XCTAssertEqual(export.transcriptMetadata.first?.model, "claude-sonnet-4-6")
+  }
+
+  /// ct-835: exportForCloudPush returns empty arrays for new types when no related data exists.
+  func testExportForCloudPush_emptyWhenNoRelatedData() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-empty-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/push-empty', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test content', 'sha-empty', 1, 1000, 1000)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.entries.count, 1, "Should have the entry")
+    XCTAssertTrue(export.summaries.isEmpty, "No timeline_cache rows for this entry")
+    XCTAssertTrue(export.usage.isEmpty, "No assistant_usage rows for this entry")
+    XCTAssertTrue(export.toolInvocations.isEmpty, "No tool_invocations rows for this entry")
+    XCTAssertTrue(export.transcriptMetadata.isEmpty, "No transcript_metadata rows for this transcript")
+  }
+
+  /// ct-835: exportForCloudPush does not include data from entries outside the batch (cloud_sync_enabled=0).
+  func testExportForCloudPush_scopesToBatchOnly() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-scope-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      // Project with sync enabled
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-sync', 'Synced', '/test/synced', 1, 0, 0, 0)
+      """)
+      // Project with sync disabled
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-nosync', 'NoSync', '/test/nosync', 0, 0, 0, 0)
+      """)
+      // Transcript + entry for synced project
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-sync', 'proj-sync', '/test/sync.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-sync', 'tx-sync', 'proj-sync', 'claude.code', 'assistant',
+          1000, 'synced content', 'sha-sync', 1, 1000, 1000)
+      """)
+      // Transcript + entry for non-synced project
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-nosync', 'proj-nosync', '/test/nosync.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-nosync', 'tx-nosync', 'proj-nosync', 'claude.code', 'assistant',
+          1000, 'not synced', 'sha-nosync', 1, 1000, 1000)
+      """)
+      // Add usage to BOTH entries
+      try db.execute(sql: """
+        INSERT INTO assistant_usage (entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens)
+        VALUES ('entry-sync', 'req-sync', 'claude-sonnet-4-6', 100, 200, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO assistant_usage (entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens)
+        VALUES ('entry-nosync', 'req-nosync', 'claude-sonnet-4-6', 300, 400, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    // Only synced entry should be in the batch
+    XCTAssertEqual(export.entries.count, 1)
+    XCTAssertEqual(export.entries.first?.id, "entry-sync")
+
+    // Only usage from the synced entry should appear
+    XCTAssertEqual(export.usage.count, 1)
+    XCTAssertEqual(export.usage.first?.entryId, "entry-sync")
+  }
+
+  // MARK: - ct-835: Serialization edge cases (R1, R2, R4)
+
+  /// ct-835 R1: JSONValue round-trips nested/mixed-type JSON correctly.
+  func testJSONValue_roundTripsNestedJSON() throws {
+    let original: [String: JSONValue] = [
+      "path": .string("/tmp/test.swift"),
+      "attempt": .number(2),
+      "ok": .bool(true),
+      "args": .array([.string("a"), .string("b")]),
+      "nested": .object(["k": .string("v"), "n": .number(42)]),
+    ]
+
+    let encoded = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode([String: JSONValue].self, from: encoded)
+
+    XCTAssertEqual(decoded["path"], .string("/tmp/test.swift"))
+    XCTAssertEqual(decoded["attempt"], .number(2))
+    XCTAssertEqual(decoded["ok"], .bool(true))
+    XCTAssertEqual(decoded["args"], .array([.string("a"), .string("b")]))
+    XCTAssertEqual(decoded["nested"], .object(["k": .string("v"), "n": .number(42)]))
+  }
+
+  /// ct-835 R1: CloudPushToolInvocation with nested metadata serializes correctly for the server.
+  func testCloudPushToolInvocation_nestedMetadataSerializesCorrectly() throws {
+    let invocation = CloudPushToolInvocation(
+      id: "ti-1", entryId: "e-1", transcriptId: "tx-1",
+      toolName: "Read", status: "completed",
+      metadataJson: [
+        "path": .string("/tmp/test.swift"),
+        "attempt": .number(2),
+        "ok": .bool(true),
+        "args": .array([.string("a")]),
+      ],
+      createdAt: 1000, updatedAt: 1000)
+
+    let data = try JSONEncoder().encode(invocation)
+    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    let metadata = json?["metadata_json"] as? [String: Any]
+
+    XCTAssertNotNil(metadata, "metadata_json should be a dict in the JSON output")
+    XCTAssertEqual(metadata?["path"] as? String, "/tmp/test.swift")
+    XCTAssertEqual(metadata?["attempt"] as? Double, 2)
+    XCTAssertEqual(metadata?["ok"] as? Bool, true)
+    XCTAssertEqual(metadata?["args"] as? [String], ["a"])
+  }
+
+  /// ct-835 R1: Tool invocations with nested metadata_json survive export.
+  func testExportForCloudPush_nestedToolMetadataPreserved() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-nested-meta-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let nestedJson = #"{"path":"/tmp/x","attempt":2,"ok":true,"args":["a"],"nested":{"k":"v"}}"#
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/nested-meta', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test', 'sha-nested', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO tool_invocations (id, entry_id, transcript_id, tool_name, tool_key,
+          status, started_at, completed_at, metadata_json, is_contextify, created_at, updated_at)
+        VALUES ('ti-1', 'entry-1', 'tx-1', 'Read', 'read_file', 'completed',
+          1000, 1001, '\(nestedJson)', 0, 1000, 1001)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    XCTAssertEqual(export.toolInvocations.count, 1)
+    // The raw JSON string should be preserved in the export
+    XCTAssertEqual(export.toolInvocations.first?.metadataJson, nestedJson)
+  }
+
+  /// ct-835 R1: Malformed metadata_json is exported as-is (handled at mapping layer).
+  func testExportForCloudPush_malformedToolMetadataExported() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-bad-meta-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/bad-meta', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test', 'sha-badmeta', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO tool_invocations (id, entry_id, transcript_id, tool_name, tool_key,
+          status, started_at, completed_at, metadata_json, is_contextify, created_at, updated_at)
+        VALUES ('ti-1', 'entry-1', 'tx-1', 'Read', 'read_file', 'completed',
+          1000, 1001, 'not valid json', 0, 1000, 1001)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    // Raw malformed string is preserved in export; CloudSyncManager mapping will null it
+    XCTAssertEqual(export.toolInvocations.count, 1)
+    XCTAssertEqual(export.toolInvocations.first?.metadataJson, "not valid json")
+  }
+
+  /// ct-835 R2: Malformed topics in transcript_metadata is exported as-is (logged at mapping layer).
+  func testExportForCloudPush_malformedTopicsExported() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-bad-topics-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-1', 'Test', '/test/bad-topics', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', '/test/transcript.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+          timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+        VALUES ('entry-1', 'tx-1', 'proj-1', 'claude.code', 'assistant',
+          1000, 'test', 'sha-badtopics', 1, 1000, 1000)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_metadata (transcript_id, project_id, title, description,
+          topics, confidence, may_contain_hallucinations, needs_review, generated_at,
+          model, prompt_version, generator_version, transcript_sha256, message_count,
+          strategy, llm_calls, latency_ms, created_at, updated_at)
+        VALUES ('tx-1', 'proj-1', 'Test', 'desc',
+          'not a json array', 0.9, 0, 0, 1000,
+          'claude-sonnet-4-6', 1, 1, 'sha-tx', 10,
+          'full', 1, 500, 1000, 1000)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush()
+
+    // Malformed topics string is preserved in the export; mapping layer logs and defaults to []
+    XCTAssertEqual(export.transcriptMetadata.count, 1)
+    XCTAssertEqual(export.transcriptMetadata.first?.topics, "not a json array")
+  }
 }
