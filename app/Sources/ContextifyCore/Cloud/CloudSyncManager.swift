@@ -777,6 +777,13 @@ public final class CloudSyncManager: @unchecked Sendable {
           "Push 429 rate limited on batch \(batchSeq, privacy: .public): \(body, privacy: .public). Waiting 30s.")
         try await Task.sleep(for: .seconds(30))
         response = try await client.push(payload)
+      } catch CloudSyncError.serverError(statusCode: let code, let body)
+      where code == 502 || code == 503 || code == 504 {
+        // Transient server error (deploy, overload, gateway timeout): back off and retry.
+        log.warning(
+          "Push \(code, privacy: .public) on batch \(batchSeq, privacy: .public): \(body.prefix(200), privacy: .public). Waiting 10s.")
+        try await Task.sleep(for: .seconds(10))
+        response = try await client.push(payload)
       }
 
       if let returnedSession = response.syncSessionId, !returnedSession.isEmpty {
