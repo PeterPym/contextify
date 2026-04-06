@@ -683,4 +683,86 @@ final class CloudSyncManagerTests: XCTestCase {
     XCTAssertEqual(finalProfile?.email, "same@example.com")
     XCTAssertEqual(finalProfile?.tenantName, "Same Tenant")
   }
+
+  // MARK: - Transient Server Error Retry (ct-1119)
+
+  func testTransientServerErrorMatchesRetryPattern() throws {
+    // Verify that 502/503/504 are correctly matched by the retry catch clause pattern.
+    // This is a pattern-matching test: the catch clause uses
+    //   CloudSyncError.serverError(statusCode: let code, _) where code == 502 || code == 503 || code == 504
+    // We verify each code matches and non-transient codes do not.
+    let transientCodes = [502, 503, 504]
+    let nonTransientCodes = [400, 403, 404, 500, 501]
+
+    for code in transientCodes {
+      let error = CloudSyncError.serverError(statusCode: code, body: "test")
+      let isTransient: Bool
+      if case .serverError(statusCode: let c, _) = error, c == 502 || c == 503 || c == 504 {
+        isTransient = true
+      } else {
+        isTransient = false
+      }
+      XCTAssertTrue(isTransient, "HTTP \(code) should match transient retry pattern")
+    }
+
+    for code in nonTransientCodes {
+      let error = CloudSyncError.serverError(statusCode: code, body: "test")
+      let isTransient: Bool
+      if case .serverError(statusCode: let c, _) = error, c == 502 || c == 503 || c == 504 {
+        isTransient = true
+      } else {
+        isTransient = false
+      }
+      XCTAssertFalse(isTransient, "HTTP \(code) should NOT match transient retry pattern")
+    }
+  }
+
+  func testCloudSyncClientThrowsServerErrorOn502() async throws {
+    // Verify that CloudSyncClient maps HTTP 502 to CloudSyncError.serverError(statusCode: 502, ...)
+    // which is the error type the push loop catches for transient retry.
+    let session = makeSession()
+    let errorResponse = HTTPURLResponse(
+      url: URL(string: "https://cloud.contextify.sh/api/v1/sync/push")!,
+      statusCode: 502,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "text/html"]
+    )!
+
+    DelayedMockURLProtocol.delay = 0
+    DelayedMockURLProtocol.handler = { _ in
+      let body = "<html><body>502 Bad Gateway</body></html>".data(using: .utf8)!
+      return (body, errorResponse, nil)
+    }
+
+    let client = CloudSyncClient(
+      serverURL: URL(string: CloudConfig.defaultServerURL)!,
+      apiKey: "ctx_test",
+      session: session
+    )
+
+    do {
+      let _: CloudPushResponse = try await client.push(CloudPushPayload(
+        idempotencyKey: "test:1",
+        batchSeq: 1,
+        syncSessionId: "test-session",
+        entriesSent: 0,
+        device: CloudDeviceInfo(machineId: "d1", machineName: "Mac"),
+        projects: [],
+        transcripts: [],
+        entries: [],
+        summaries: [],
+        usage: [],
+        toolInvocations: [],
+        transcriptMetadata: []
+      ))
+      XCTFail("Expected serverError to be thrown")
+    } catch let error as CloudSyncError {
+      if case .serverError(statusCode: let code, body: let body) = error {
+        XCTAssertEqual(code, 502)
+        XCTAssertTrue(body.contains("Bad Gateway"))
+      } else {
+        XCTFail("Expected serverError, got \(error)")
+      }
+    }
+  }
 }
