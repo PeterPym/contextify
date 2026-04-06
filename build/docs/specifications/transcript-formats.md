@@ -2,7 +2,7 @@
 
 **Complete technical specification for conversation transcript formats**
 
-> **Platform expansion note:** This document covers the two currently shipped transcript providers (Claude Code and Codex CLI). A formal evaluation of six additional providers was completed in ct-1043. For format research on Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, and Windsurf see `/tmp/ct-1049-research.json`. For the integration roadmap and provider verdicts see `/tmp/ct-1053-recommendation.md`.
+> **Platform expansion note:** This document covers the two currently shipped transcript providers (Claude Code and Codex CLI). A formal evaluation of six additional providers (Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, Windsurf) was completed in ct-1043. Gemini CLI and OpenCode are planned for future implementation. Format research and the integration roadmap are attached to the ct-1043 bloon task.
 
 ---
 
