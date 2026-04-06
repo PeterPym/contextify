@@ -86,7 +86,7 @@ struct GeminiLogsParser {
 struct GeminiCheckpointParser {
   /// Parse a checkpoint file content into entries.
   /// Detects format by checking if top-level is array (legacy) or object (current).
-  func parse(data: Data, checkpointTag: String) throws -> [GeminiParsedEntry] {
+  func parse(data: Data, sessionId: String) throws -> [GeminiParsedEntry] {
     let json = try JSONSerialization.jsonObject(with: data)
 
     let contentArray: [[String: Any]]
@@ -123,7 +123,10 @@ struct GeminiCheckpointParser {
           let args = functionCall["args"] as? [String: Any]
           toolCalls.append(GeminiToolCall(name: name, args: args))
         }
-        // functionResponse parts are informational; skip for content extraction
+        if let functionResponse = part["functionResponse"] as? [String: Any] {
+          let name = (functionResponse["name"] as? String) ?? "tool"
+          textParts.append("[Tool Result: \(name)]")
+        }
       }
 
       let combinedText = textParts.joined(separator: "\n")
@@ -143,8 +146,8 @@ struct GeminiCheckpointParser {
       }
 
       return GeminiParsedEntry(
-        id: "gemini-\(checkpointTag)-\(index)",
-        sessionId: checkpointTag,
+        id: "gemini-\(sessionId)-\(index)",
+        sessionId: sessionId,
         role: mappedRole,
         content: displayContent,
         timestamp: nil,  // Checkpoints have no per-message timestamps
@@ -165,18 +168,18 @@ struct GeminiCLIParser {
   /// Falls back to logs.json (user-only) otherwise.
   func parseProject(
     logsData: Data?,
-    checkpoints: [(tag: String, data: Data)]
+    checkpoints: [(sessionId: String, data: Data)]
   ) throws -> [GeminiParsedEntry] {
     var allEntries: [GeminiParsedEntry] = []
     var sessionsWithCheckpoints = Set<String>()
 
     // Parse checkpoints first (they have full conversations)
-    for (tag, data) in checkpoints {
-      let entries = try checkpointParser.parse(data: data, checkpointTag: tag)
+    for (sessionId, data) in checkpoints {
+      let entries = try checkpointParser.parse(data: data, sessionId: sessionId)
       allEntries.append(contentsOf: entries)
       // Track which sessions have checkpoints so we can skip duplicate logs
       if !entries.isEmpty {
-        sessionsWithCheckpoints.insert(tag)
+        sessionsWithCheckpoints.insert(sessionId)
       }
     }
 
@@ -462,7 +465,7 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let parser = GeminiCheckpointParser()
     let entries = try parser.parse(
       data: GeminiTestData.checkpointCurrent,
-      checkpointTag: "session-abc-123"
+      sessionId: "session-abc-123"
     )
 
     XCTAssertEqual(entries.count, 4)
@@ -491,7 +494,7 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let parser = GeminiCheckpointParser()
     let entries = try parser.parse(
       data: GeminiTestData.checkpointLegacy,
-      checkpointTag: "legacy-session"
+      sessionId: "legacy-session"
     )
 
     XCTAssertEqual(entries.count, 2)
@@ -507,14 +510,11 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let parser = GeminiCheckpointParser()
     let entries = try parser.parse(
       data: GeminiTestData.checkpointWithToolCalls,
-      checkpointTag: "tool-session"
+      sessionId: "tool-session"
     )
 
-    // 3 entries: user ask, model tool call, model answer.
-    // The functionResponse entry (user role) is skipped because it has
-    // no text parts and no functionCall parts (functionResponse is not
-    // extracted as content).
-    XCTAssertEqual(entries.count, 3)
+    // 4 entries: user ask, model tool call, user tool result, model answer
+    XCTAssertEqual(entries.count, 4)
 
     // Second entry (model) should have a tool call
     let toolCallEntry = entries[1]
@@ -523,9 +523,37 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     XCTAssertEqual(toolCallEntry.toolCalls[0].name, "list_files")
     XCTAssertEqual(toolCallEntry.content, "[Tool: list_files]")
 
-    // Third entry (model text response after tool use)
-    XCTAssertEqual(entries[2].role, "assistant")
-    XCTAssertTrue(entries[2].content.contains("three files"))
+    // Third entry preserves tool result instead of dropping it
+    XCTAssertEqual(entries[2].role, "user")
+    XCTAssertEqual(entries[2].content, "[Tool Result: list_files]")
+
+    // Fourth entry (model text response after tool use)
+    XCTAssertEqual(entries[3].role, "assistant")
+    XCTAssertTrue(entries[3].content.contains("three files"))
+  }
+
+  func testParseCheckpoint_functionResponseOnlyPartSurvives() throws {
+    let parser = GeminiCheckpointParser()
+    let data = """
+    {
+      "history": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "read_file",
+                "response": {"result": "file contents here"}
+              }
+            }
+          ]
+        }
+      ]
+    }
+    """.data(using: .utf8)!
+    let entries = try parser.parse(data: data, sessionId: "fr-only")
+    XCTAssertEqual(entries.count, 1, "Entry with only functionResponse should survive")
+    XCTAssertEqual(entries[0].content, "[Tool Result: read_file]")
   }
 
   // MARK: - Edge Cases
@@ -534,7 +562,7 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let parser = GeminiCheckpointParser()
     let entries = try parser.parse(
       data: GeminiTestData.checkpointSparse,
-      checkpointTag: "sparse"
+      sessionId: "sparse"
     )
 
     // Model entry with empty parts should be skipped
@@ -547,7 +575,7 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let parser = GeminiCheckpointParser()
     let entries = try parser.parse(
       data: GeminiTestData.checkpointMixedParts,
-      checkpointTag: "mixed"
+      sessionId: "mixed"
     )
 
     XCTAssertEqual(entries.count, 2)
@@ -559,14 +587,14 @@ final class GeminiCLIParserPoCTests: XCTestCase {
   func testParseCheckpoint_invalidJSONThrows() {
     let parser = GeminiCheckpointParser()
     let badData = "<<<not json>>>".data(using: .utf8)!
-    XCTAssertThrowsError(try parser.parse(data: badData, checkpointTag: "bad"))
+    XCTAssertThrowsError(try parser.parse(data: badData, sessionId: "bad"))
   }
 
   func testParseCheckpoint_wrongStructureThrows() {
     let parser = GeminiCheckpointParser()
     // A JSON object without "history" key and not an array
     let badStructure = "{\"something\": \"else\"}".data(using: .utf8)!
-    XCTAssertThrowsError(try parser.parse(data: badStructure, checkpointTag: "bad")) { error in
+    XCTAssertThrowsError(try parser.parse(data: badStructure, sessionId: "bad")) { error in
       let geminiError = error as? GeminiParserError
       XCTAssertNotNil(geminiError)
     }
@@ -594,6 +622,24 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     // Verify the checkpoint entries include assistant turns
     let assistantEntries = sessionABC.filter { $0.role == "assistant" }
     XCTAssertEqual(assistantEntries.count, 2, "Checkpoint should provide assistant turns")
+  }
+
+  func testCombinedParser_noDedup_whenSessionIdsDiffer() throws {
+    let parser = GeminiCLIParser()
+    // Checkpoint uses a different sessionId than any logs.json sessionId,
+    // so dedup should NOT filter anything - both sources are kept.
+    let entries = try parser.parseProject(
+      logsData: GeminiTestData.logsJSON,
+      checkpoints: [("unrelated-checkpoint-id", GeminiTestData.checkpointCurrent)]
+    )
+
+    // logs: 3 entries (session-abc-123 x2, session-def-456 x1)
+    // checkpoint: 4 entries (unrelated-checkpoint-id)
+    // No overlap because sessionIds differ, so all 7 survive
+    let fromLogs = entries.filter { $0.sessionId == "session-abc-123" || $0.sessionId == "session-def-456" }
+    let fromCheckpoint = entries.filter { $0.sessionId == "unrelated-checkpoint-id" }
+    XCTAssertEqual(fromLogs.count, 3, "All log entries survive when checkpoint sessionId does not match")
+    XCTAssertEqual(fromCheckpoint.count, 4, "Checkpoint entries also survive")
   }
 
   func testCombinedParser_logsOnlyWhenNoCheckpoints() throws {
@@ -654,7 +700,7 @@ final class GeminiCLIParserPoCTests: XCTestCase {
     let logEntries = try logsParser.parse(data: GeminiTestData.logsJSON)
     let checkpointEntries = try checkpointParser.parse(
       data: GeminiTestData.checkpointCurrent,
-      checkpointTag: "test"
+      sessionId: "test"
     )
 
     for entry in logEntries + checkpointEntries {

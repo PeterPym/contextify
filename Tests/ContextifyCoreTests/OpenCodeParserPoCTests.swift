@@ -72,7 +72,7 @@ struct OpenCodeParser {
         SELECT id, title, message_count, prompt_tokens, completion_tokens,
                cost, created_at, updated_at
         FROM sessions
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, id ASC
         """)
 
       return rows.map { row in
@@ -97,7 +97,7 @@ struct OpenCodeParser {
         SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at
         FROM messages
         WHERE session_id = ?
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, id ASC
         """, arguments: [sessionId])
 
       return rows.compactMap { row -> OpenCodeParsedEntry? in
@@ -163,7 +163,7 @@ struct OpenCodeParser {
 
     var textParts: [String] = []
     var toolCalls: [OpenCodeToolCall] = []
-    var reasoningText: String? = nil
+    var reasoningParts: [String] = []
 
     for part in parts {
       guard let type = part["type"] as? String,
@@ -179,7 +179,7 @@ struct OpenCodeParser {
 
       case "reasoning":
         if let thinking = partData["thinking"] as? String, !thinking.isEmpty {
-          reasoningText = thinking
+          reasoningParts.append(thinking)
         }
 
       case "tool-call":
@@ -213,7 +213,8 @@ struct OpenCodeParser {
       }
     }
 
-    return (textParts.joined(separator: "\n"), toolCalls, reasoningText)
+    let reasoning = reasoningParts.isEmpty ? nil : reasoningParts.joined(separator: "\n")
+    return (textParts.joined(separator: "\n"), toolCalls, reasoning)
   }
 }
 
@@ -688,6 +689,49 @@ final class OpenCodeParserPoCTests: XCTestCase {
       userEntry?.content.contains("\"type\"") ?? true,
       "Content should be extracted text, not raw JSON"
     )
+  }
+
+  // MARK: - Ordering Determinism
+
+  func testParseMessages_sameTimestampUsesStableTieBreak() throws {
+    try dbQueue.write { db in
+      let parts = #"[{"type":"text","data":{"text":"same ts"}}]"#
+      try db.execute(sql: """
+        INSERT INTO messages (id, session_id, role, parts, model, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+        """, arguments: [
+          "msg-010", "sess-001", "user", parts, nil, 1704067400000 as Int64, 1704067400000 as Int64,
+          "msg-009", "sess-001", "assistant", parts, nil, 1704067400000 as Int64, 1704067400000 as Int64
+        ])
+    }
+    let entries = try parser.parseMessages(from: dbQueue, sessionId: "sess-001")
+    // Filter to just the two tie-break entries
+    let tied = entries.filter { $0.id == "opencode-msg-009" || $0.id == "opencode-msg-010" }
+    // id ASC means msg-009 comes before msg-010
+    XCTAssertEqual(tied.map(\.id), ["opencode-msg-009", "opencode-msg-010"])
+  }
+
+  // MARK: - Multiple Reasoning Parts
+
+  func testParseMessages_multipleReasoningPartsAccumulated() throws {
+    try dbQueue.write { db in
+      let parts = """
+      [{"type":"reasoning","data":{"thinking":"First thought."}},{"type":"reasoning","data":{"thinking":"Second thought."}},{"type":"text","data":{"text":"Final answer."}}]
+      """
+      try db.execute(sql: """
+        INSERT INTO messages (id, session_id, role, parts, model, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, arguments: [
+          "msg-multi-reason", "sess-001", "assistant", parts, nil,
+          1704067500000 as Int64, 1704067500000 as Int64
+        ])
+    }
+    let entries = try parser.parseMessages(from: dbQueue, sessionId: "sess-001")
+    let entry = entries.first { $0.id == "opencode-msg-multi-reason" }
+    XCTAssertNotNil(entry)
+    XCTAssertEqual(entry?.content, "Final answer.")
+    XCTAssertTrue(entry?.reasoning?.contains("First thought.") ?? false, "First reasoning part should be preserved")
+    XCTAssertTrue(entry?.reasoning?.contains("Second thought.") ?? false, "Second reasoning part should be preserved")
   }
 
   // MARK: - Mixed Part Types in Single Message
