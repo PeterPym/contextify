@@ -275,6 +275,7 @@ private struct MetadataBatch {
   var systemEvents: [SystemEvent] = []
   var assistantUsages: [AssistantUsage] = []
   var queueOperations: [QueueOperation] = []
+  var customTitle: String?
 
   mutating func add(_ result: MetadataParseResult) {
     if let snapshot = result.fileSnapshot {
@@ -291,6 +292,9 @@ private struct MetadataBatch {
       assistantUsages.append(usage)
     }
     queueOperations.append(contentsOf: result.queueOperations)
+    if let title = result.customTitle {
+      customTitle = title
+    }
   }
 
   mutating func clear() {
@@ -300,10 +304,11 @@ private struct MetadataBatch {
     systemEvents.removeAll()
     assistantUsages.removeAll()
     queueOperations.removeAll()
+    customTitle = nil
   }
 
   var isEmpty: Bool {
-    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty
+    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty && customTitle == nil
   }
 }
 
@@ -1481,6 +1486,13 @@ public final class HooverEngine {
           arguments: [latestEntrypoint, now, transcriptId, latestEntrypoint]
         )
       }
+      // custom_title from custom-title metadata records (latest wins)
+      if let customTitle = metadata.customTitle {
+        try db.execute(
+          sql: "UPDATE transcripts SET custom_title = ?, updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != ?",
+          arguments: [customTitle, now, transcriptId, customTitle]
+        )
+      }
 
       // FK-safe usage insert: atomic CTE-based check+insert with request_id normalization
       for usage in metadata.assistantUsages {
@@ -1866,6 +1878,12 @@ public final class HooverEngine {
         try db.execute(
           sql: "UPDATE transcripts SET entrypoint = ?, updated_at = ? WHERE id = ? AND COALESCE(entrypoint, '') != ?",
           arguments: [latestEntrypointFast, now, transcriptId, latestEntrypointFast]
+        )
+      }
+      if let customTitleFast = metadata.customTitle {
+        try db.execute(
+          sql: "UPDATE transcripts SET custom_title = ?, updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != ?",
+          arguments: [customTitleFast, now, transcriptId, customTitleFast]
         )
       }
 
