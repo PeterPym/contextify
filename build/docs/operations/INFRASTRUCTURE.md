@@ -73,3 +73,9 @@ curl https://cloud.contextify.sh/api/v1/health
 ```bash
 curl -H "Authorization: Bearer <api-key>" https://cloud.contextify.sh/api/v1/sync/status
 ```
+
+### Run live systems validation
+```bash
+./scripts/validate-live-systems.sh
+# Or via GitHub Actions: workflow_dispatch on live-systems-validation.yml
+```

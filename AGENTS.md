@@ -46,6 +46,7 @@ These cause real problems when violated:
     ---
     ```
 16. **Linux builds require `/linux-env` skill** - Before ANY Docker, Colima, or Linux compilation work, invoke the `/linux-env` skill first. It contains critical architecture rules (arm64 native vs x86_64 CI-only), Colima profile management, and Docker context verification that prevent slow/broken builds. Never run `docker-linux-build.sh` or start Colima manually without consulting this skill. On ARM Mac: local builds must use arm64 profile; x86_64 builds go through GitHub CI only.
+17. **CLI parity between macOS and Linux** - The macOS CLI (`ContextifyQueryCLI`) and Linux CLI (`ContextifyCLI`) are two separate binaries with independent command dispatch. When adding a new subcommand, it must be registered in both `Sources/ContextifyQueryCLI/main.swift` (macOS) and `Sources/ContextifyCLI/main.swift` (Linux). CI validates this via `cloud --help` checks in `linux-build.yml` and `linux-release.yml`. See `build/docs/architecture/cli-tool-architecture.md` for dispatch details.
 
 ---
 
@@ -103,7 +104,7 @@ Write docs in the present tense; describe current behavior, not the act of updat
 
 ## Project Overview
 
-Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries, puts them in a single database which the user can search through. 
+Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries, puts them in a single database which the user can search through. A formal evaluation of six additional transcript providers (Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, Windsurf) was completed in ct-1043; Gemini CLI and OpenCode are planned for a future release.
 
 Contextify is built with Swift 6 + SwiftUI on Xcode 16.
 

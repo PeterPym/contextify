@@ -161,6 +161,8 @@ description: Contextify Total Recall - Search past conversations
 | Codex CLI (Linux) | `~/.codex/skills/` | No | Tarball | Planned | **P0 v1.1.0** |
 | Gemini CLI | TBD | TBD | TBD | TBD | Not started |
 
+**Note on future platform expansion:** A formal evaluation of Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, Cursor, and Windsurf was completed in ct-1043. Gemini CLI and OpenCode were rated GO for implementation; Aider and Copilot CLI are GO-DEFERRED; Cursor and Windsurf are NO-GO. The skill installation architecture above applies to JSONL-based CLIs that support skill directories; project-local providers (Aider, OpenCode) and non-skill providers (Gemini CLI) require a separate discovery and ingestion path rather than a skill install step. Full roadmap and per-provider format research are attached to the ct-1043 bloon task.
+
 ### Platform-Specific Notes
 
 **Claude Code:**
@@ -426,6 +428,8 @@ contextify cloud search "query"      # Search across all cloud-synced machines
 ```
 
 Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud ...` dispatches directly to the shared `ContextifyCloudCommands` library target when `cloud` is the first token, so cloud subcommand flags are parsed by ArgumentParser. Flags placed before `cloud` are rejected with a clear error.
+
+**Parity rule (ct-1048):** New CLI subcommands must be registered in both `ContextifyQueryCLI` (macOS, `Sources/ContextifyQueryCLI/main.swift`) and `ContextifyCLI` (Linux, `Sources/ContextifyCLI/main.swift`). These are two separate binaries with independent dispatch. CI validates parity by checking `cloud --help` in `linux-build.yml`, `linux-release.yml`, and `docker-linux-build.sh --install-test`. If a subcommand exists on one platform but not the other, CI will catch it.
 
 ### Plugin Commands
 ```bash

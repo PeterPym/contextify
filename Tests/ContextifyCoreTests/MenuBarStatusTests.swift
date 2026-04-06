@@ -192,6 +192,65 @@ final class MenuBarStatusTests: XCTestCase {
     XCTAssertEqual(presentation.displayState, MenuBarDisplayState.idle)
   }
 
+  // MARK: - Pending Push Count
+
+  func testPendingPushCountShowsInCloudText() {
+    let presentation = MenuBarStatusDeriver.derivePresentation(
+      syncState: .idle,
+      cloudOffline: false,
+      cloudStatus: CloudSyncStatus(lastSync: nil, entriesSynced: 0),
+      cloudStatusError: nil,
+      backgroundIngestMessage: nil,
+      pendingPushCount: 42
+    )
+
+    XCTAssertEqual(presentation.cloudText, "42 entries pending sync")
+  }
+
+  func testPendingPushCountNotShownWhenSyncing() {
+    let session = CloudActivePushSessionStatus(
+      serverSessionId: "sync-1",
+      phase: "syncing",
+      entriesResolved: 5,
+      entriesTotal: 20,
+      progressPercent: 25,
+      throughputEntriesPerMin: nil,
+      etaSeconds: nil,
+      checkpointSafe: nil,
+      completionState: "in_progress",
+      needsAttentionCount: 0,
+      lastBatchAt: nil
+    )
+    let status = CloudSyncStatus(activePushSession: session)
+
+    let presentation = MenuBarStatusDeriver.derivePresentation(
+      syncState: .syncing,
+      cloudOffline: false,
+      cloudStatus: status,
+      cloudStatusError: nil,
+      backgroundIngestMessage: nil,
+      pendingPushCount: 10
+    )
+
+    XCTAssertEqual(presentation.displayState, .cloudSyncing)
+    XCTAssertEqual(presentation.cloudText, "Cloud syncing 5/20 entries",
+      "Cloud text should show syncing progress, not pending count")
+  }
+
+  func testZeroPendingPushShowsNormalStatus() {
+    let presentation = MenuBarStatusDeriver.derivePresentation(
+      syncState: .idle,
+      cloudOffline: false,
+      cloudStatus: CloudSyncStatus(lastSync: "2026-04-01T00:00:00Z"),
+      cloudStatusError: nil,
+      backgroundIngestMessage: nil,
+      pendingPushCount: 0
+    )
+
+    XCTAssertEqual(presentation.cloudText, "Cloud synced recently",
+      "Zero pending should not show pending text, should fall through to normal status")
+  }
+
   func testDerivePresentationShowsIdleWhenNothingIsActive() {
     let presentation = MenuBarStatusDeriver.derivePresentation(
       syncState: .disabled,
