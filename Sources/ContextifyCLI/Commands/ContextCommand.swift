@@ -114,6 +114,17 @@ public struct ContextCommand: ParsableCommand {
           XDGPaths.writeStderr("Error: No entry with id '\(id)'\n")
         }
         throw ExitCode(1)
+      case .ambiguousId(let prefix, _, let totalMatches):
+        if json {
+          emitJSON([
+            "type": "error",
+            "code": "ambiguous_id",
+            "message": "ID prefix '\(prefix)' matches \(totalMatches) entries. Use a longer prefix."
+          ])
+        } else {
+          XDGPaths.writeStderr("Error: ID prefix '\(prefix)' matches \(totalMatches) entries. Use a longer prefix.\n")
+        }
+        throw ExitCode(1)
       }
     }
   }

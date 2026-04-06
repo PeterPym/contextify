@@ -648,10 +648,6 @@ public struct ContextifyQueryService: Sendable {
     let maxDistance = normalized.count <= 5 ? 1 : 2
 
     return try pool.read { db in
-      // ct-795: Scan ALL visible projects, not just 100 most recent.
-      // The previous limit caused silent false negatives for older projects.
-      let candidates = try allVisibleProjectSuggestions(db)
-
       struct ScoredMatch {
         let suggestion: ProjectSuggestion
         let distance: Int  // 0 = substring match, 1+ = edit distance
@@ -662,33 +658,47 @@ public struct ContextifyQueryService: Sendable {
       // when the input is something unrelated like "contextify-api-server".
       let minReverseLen = max(4, normalized.count / 2)
 
-      let matches: [ScoredMatch] = candidates.compactMap { candidate in
-        let name = (candidate.name ?? "").lowercased()
-        let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
+      func score(_ candidates: [ProjectSuggestion]) -> [ScoredMatch] {
+        candidates.compactMap { candidate in
+          let name = (candidate.name ?? "").lowercased()
+          let dirName = URL(fileURLWithPath: candidate.rootPath).lastPathComponent.lowercased()
 
-        // Forward substring: input appears in the candidate name (always valid)
-        if name.contains(normalized) || dirName.contains(normalized) {
-          return ScoredMatch(suggestion: candidate, distance: 0)
+          // Forward substring: input appears in the candidate name (always valid)
+          if name.contains(normalized) || dirName.contains(normalized) {
+            return ScoredMatch(suggestion: candidate, distance: 0)
+          }
+
+          // Reverse substring: candidate name appears in the input.
+          // Only count this if the candidate name is long enough relative to the input
+          // to avoid short-name noise (e.g. "api" matching "my-api-server").
+          if (name.count >= minReverseLen && normalized.contains(name))
+            || (dirName.count >= minReverseLen && normalized.contains(dirName))
+          {
+            return ScoredMatch(suggestion: candidate, distance: 0)
+          }
+
+          // Edit distance match (bounded for performance)
+          let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
+          let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
+          let bestDist = min(nameDist, dirDist)
+          if bestDist <= maxDistance {
+            return ScoredMatch(suggestion: candidate, distance: bestDist)
+          }
+
+          return nil
         }
+      }
 
-        // Reverse substring: candidate name appears in the input.
-        // Only count this if the candidate name is long enough relative to the input
-        // to avoid short-name noise (e.g. "api" matching "my-api-server").
-        if (name.count >= minReverseLen && normalized.contains(name))
-          || (dirName.count >= minReverseLen && normalized.contains(dirName))
-        {
-          return ScoredMatch(suggestion: candidate, distance: 0)
-        }
-
-        // Edit distance match (bounded for performance)
-        let nameDist = Self.editDistance(normalized, name, maxDistance: maxDistance)
-        let dirDist = Self.editDistance(normalized, dirName, maxDistance: maxDistance)
-        let bestDist = min(nameDist, dirDist)
-        if bestDist <= maxDistance {
-          return ScoredMatch(suggestion: candidate, distance: bestDist)
-        }
-
-        return nil
+      // Fast path: score recent projects first. Only fall back to the full
+      // visible-project scan if the recent window produces no matches.
+      let recentCandidates = try recentProjectSuggestions(db, limit: 500)
+      let recentMatches = score(recentCandidates)
+      let matches: [ScoredMatch]
+      if recentMatches.isEmpty {
+        let allCandidates = try allVisibleProjectSuggestions(db)
+        matches = score(allCandidates)
+      } else {
+        matches = recentMatches
       }
 
       // T3: Stable sort by distance, then alphabetically by name
@@ -873,7 +883,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool,
     timeRange: QueryTimeRange,
     kinds: [String]?,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) -> FTSFilterClause {
     var whereParts: [String] = []
     var args: [DatabaseValueConvertible] = [query]
@@ -923,6 +934,20 @@ public struct ContextifyQueryService: Sendable {
       args.append(device)
       args.append(device)
     }
+    if let excludeTags, !excludeTags.isEmpty {
+      // Exclude entries from transcripts that have any of the specified tags.
+      // Uses the indexed transcript_tags table for efficient filtering.
+      let sortedTags = Array(Set(excludeTags)).sorted()
+      let placeholders = sortedTags.map { _ in "?" }.joined(separator: ", ")
+      whereParts.append("""
+        NOT EXISTS (
+          SELECT 1 FROM transcript_tags tt
+          WHERE tt.transcript_id = e.transcript_id
+          AND tt.tag IN (\(placeholders))
+        )
+        """)
+      args.append(contentsOf: sortedTags)
+    }
 
     let whereSQL = whereParts.isEmpty ? "" : " AND " + whereParts.joined(separator: " AND ")
     return FTSFilterClause(whereSQL: whereSQL, arguments: args, emptyResult: false)
@@ -939,7 +964,8 @@ public struct ContextifyQueryService: Sendable {
     kinds: [String]? = nil,
     snippetTokens: Int = 10,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [SearchHit] {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
@@ -951,7 +977,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return [] }
 
@@ -1059,7 +1086,8 @@ public struct ContextifyQueryService: Sendable {
     includeHidden: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> [String: Int]? {
     let terms = Self.parseORTerms(query)
     guard terms.count >= 2 else { return nil }
@@ -1079,7 +1107,8 @@ public struct ContextifyQueryService: Sendable {
         timeRange: timeRange,
         kinds: kinds,
         treatAsFTS: true,
-        device: device
+        device: device,
+        excludeTags: excludeTags
       )
       result[term] = count
     }
@@ -1134,7 +1163,8 @@ public struct ContextifyQueryService: Sendable {
     timeRange: QueryTimeRange = QueryTimeRange(),
     kinds: [String]? = nil,
     treatAsFTS: Bool = false,
-    device: String? = nil
+    device: String? = nil,
+    excludeTags: [String]? = nil
   ) throws -> Int {
     let safeQuery = treatAsFTS ? query : FTSQueryBuilder.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return 0 }
@@ -1146,7 +1176,8 @@ public struct ContextifyQueryService: Sendable {
       includeHidden: includeHidden,
       timeRange: timeRange,
       kinds: kinds,
-      device: device
+      device: device,
+      excludeTags: excludeTags
     )
     guard !filter.emptyResult else { return 0 }
 
@@ -1853,6 +1884,60 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  // MARK: - Transcript Tags
+
+  private func ensureTranscriptExists(_ transcriptId: String, db: Database) throws {
+    let exists = try Bool.fetchOne(
+      db,
+      sql: "SELECT EXISTS(SELECT 1 FROM transcripts WHERE id = ?)",
+      arguments: [transcriptId]
+    ) ?? false
+    guard exists else {
+      throw QueryError.featureUnavailable(
+        feature: "tag",
+        message: "Transcript not found: \(transcriptId)"
+      )
+    }
+  }
+
+  /// Add a tag to a transcript. Uses dedicated transcript_tags table.
+  public func addTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    guard !trimmed.isEmpty else { return }
+    try pool.write { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      let now = Int(Date().timeIntervalSince1970)
+      try db.execute(
+        sql: "INSERT OR IGNORE INTO transcript_tags (transcript_id, tag, created_at) VALUES (?, ?, ?)",
+        arguments: [transcriptId, trimmed, now]
+      )
+    }
+  }
+
+  /// Get the tags for a transcript.
+  public func getTags(transcriptId: String) throws -> [String] {
+    try pool.read { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      return try String.fetchAll(
+        db,
+        sql: "SELECT tag FROM transcript_tags WHERE transcript_id = ? ORDER BY tag",
+        arguments: [transcriptId]
+      )
+    }
+  }
+
+  /// Remove a tag from a transcript.
+  public func removeTag(transcriptId: String, tag: String) throws {
+    let trimmed = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    try pool.write { db in
+      try ensureTranscriptExists(transcriptId, db: db)
+      try db.execute(
+        sql: "DELETE FROM transcript_tags WHERE transcript_id = ? AND tag = ?",
+        arguments: [transcriptId, trimmed]
+      )
+    }
+  }
+
   // MARK: - Cloud Push Export
 
   /// Count entries remaining for cloud push from the given cursor position.
@@ -1888,6 +1973,21 @@ public struct ContextifyQueryService: Sendable {
     }
   }
 
+  /// Count all timeline-visible entries regardless of `cloud_sync_enabled`.
+  ///
+  /// Used alongside `countEntriesForCloudPush` to diagnose whether projects are
+  /// being excluded from sync via the `cloud_sync_enabled = 0` filter.
+  ///
+  /// - Returns: Total number of `display_in_timeline = 1` entries across all projects.
+  public func countAllTimelineEntries() throws -> Int {
+    try pool.read { db in
+      try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE display_in_timeline = 1"
+      ) ?? 0
+    }
+  }
+
   /// Export entries for cloud push. Returns projects, transcripts, and entries
   /// ready for serialization into the cloud API push payload.
   ///
@@ -1898,11 +1998,11 @@ public struct ContextifyQueryService: Sendable {
   /// - Parameters:
   ///   - afterTimestamp: Resume after this timestamp (keyset cursor).
   ///   - afterEntryId: Resume after this entry ID (keyset tiebreaker).
-  ///   - limit: Maximum entries per batch (default 500).
+  ///   - limit: Maximum entries per batch (default 2500).
   public func exportForCloudPush(
     afterTimestamp: Int? = nil,
     afterEntryId: String? = nil,
-    limit: Int = 500
+    limit: Int = 2500
   ) throws -> CloudPushExport {
     try pool.read { db in
       // Get entries (ordered by timestamp, id for stable keyset paging)
@@ -1948,24 +2048,10 @@ public struct ContextifyQueryService: Sendable {
         )
       }
 
-      // Collect referenced project and transcript IDs
-      let projectIds = Array(Set(entries.map { $0.projectId }))
+      // Collect referenced transcript IDs from entries
       let transcriptIds = Array(Set(entries.map { $0.transcriptId }))
 
-      // Fetch projects
-      var projects: [CloudPushExport.Project] = []
-      if !projectIds.isEmpty {
-        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
-        let projRows = try Row.fetchAll(db,
-          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
-          arguments: StatementArguments(projectIds))
-        projects = projRows.map { row in
-          CloudPushExport.Project(
-            id: row["id"], name: row["name"], rootPath: row["root_path"])
-        }
-      }
-
-      // Fetch transcripts
+      // Fetch transcripts first (needed to discover transcript-referenced project IDs)
       var transcripts: [CloudPushExport.Transcript] = []
       if !transcriptIds.isEmpty {
         let placeholders = transcriptIds.map { _ in "?" }.joined(separator: ",")
@@ -1983,6 +2069,27 @@ public struct ContextifyQueryService: Sendable {
             providerSessionId: row["provider_session_id"],
             lineCount: row["line_count"] ?? 0,
             createdAt: row["created_at"], updatedAt: row["updated_at"])
+        }
+      }
+
+      // Collect project IDs from BOTH entries and transcripts.
+      // These can differ: entries get cwd-resolved UUIDs via HooverEngine's
+      // resolveProjectId(), while transcripts keep the original discovery-phase
+      // project ID. Both must be exported for server FK integrity.
+      let projectIds = Array(Set(
+        entries.map { $0.projectId } + transcripts.map { $0.projectId }
+      ))
+
+      // Fetch projects
+      var projects: [CloudPushExport.Project] = []
+      if !projectIds.isEmpty {
+        let placeholders = projectIds.map { _ in "?" }.joined(separator: ",")
+        let projRows = try Row.fetchAll(db,
+          sql: "SELECT id, name, root_path FROM projects WHERE id IN (\(placeholders))",
+          arguments: StatementArguments(projectIds))
+        projects = projRows.map { row in
+          CloudPushExport.Project(
+            id: row["id"], name: row["name"], rootPath: row["root_path"])
         }
       }
 
@@ -2246,7 +2353,8 @@ public struct ContextifyQueryService: Sendable {
         return (enabledGroupCounts[key] ?? 0) == 0 ? id : nil  // All excluded: exclude
       })
 
-      // Upsert transcripts
+      // Upsert transcripts (with ID remap for entries that reference them)
+      var transcriptIdRemap = [String: String]()
       for tx in transcripts {
         guard let id = tx["id"] as? String,
               let rawProjectId = tx["project_id"] as? String,
@@ -2264,25 +2372,35 @@ public struct ContextifyQueryService: Sendable {
           skipped += 1
           continue
         }
-        let exists = try Int.fetchOne(db, sql:
-          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id])
-        if exists == nil {
-          let lineCount = tx["line_count"] as? Int ?? 0
-          let createdAt = tx["created_at"] as? Int ?? now
-          let updatedAt = tx["updated_at"] as? Int ?? now
-          try db.execute(sql: """
-            INSERT INTO transcripts (id, project_id, file_path, provider,
-              provider_session_id, last_modified, line_count,
-              last_processed_line, parser_version, status, ingest_state,
-              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
-            """, arguments: [
-              id, projectId, filePath, provider,
-              tx["provider_session_id"] as? String,
-              updatedAt, lineCount, createdAt, updatedAt,
-            ])
-          transcriptsImported += 1
+        if try Int.fetchOne(db, sql:
+          "SELECT 1 FROM transcripts WHERE id = ?", arguments: [id]) != nil {
+          transcriptIdRemap[id] = id
+          continue
         }
+        // ct-834: Check by (project_id, file_path) since local ingest
+        // creates transcripts with different IDs for the same file path
+        if let localId = try String.fetchOne(db, sql:
+          "SELECT id FROM transcripts WHERE project_id = ? AND file_path = ?",
+          arguments: [projectId, filePath]) {
+          transcriptIdRemap[id] = localId
+          continue
+        }
+        let lineCount = tx["line_count"] as? Int ?? 0
+        let createdAt = tx["created_at"] as? Int ?? now
+        let updatedAt = tx["updated_at"] as? Int ?? now
+        try db.execute(sql: """
+          INSERT INTO transcripts (id, project_id, file_path, provider,
+            provider_session_id, last_modified, line_count,
+            last_processed_line, parser_version, status, ingest_state,
+            created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'active', 'complete', ?, ?)
+          """, arguments: [
+            id, projectId, filePath, provider,
+            tx["provider_session_id"] as? String,
+            updatedAt, lineCount, createdAt, updatedAt,
+          ])
+        transcriptIdRemap[id] = id
+        transcriptsImported += 1
       }
 
       // Insert entries (skip existing by id)
@@ -2305,10 +2423,12 @@ public struct ContextifyQueryService: Sendable {
           continue
         }
 
-        // Validate transcript exists locally before inserting entry
+        // Resolve transcript ID through remap (ct-834: local ingest may
+        // have created the transcript with a different ID)
+        let localTranscriptId = transcriptIdRemap[transcriptId] ?? transcriptId
         let transcriptExists = try Int.fetchOne(db,
           sql: "SELECT 1 FROM transcripts WHERE id = ?",
-          arguments: [transcriptId])
+          arguments: [localTranscriptId])
         guard transcriptExists != nil else {
           #if canImport(OSLog)
           Logger(subsystem: "dev.contextify", category: "CloudPullImport")
@@ -2348,7 +2468,7 @@ public struct ContextifyQueryService: Sendable {
             created_at, updated_at, created_ts, source_device_id, source_device_name)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
-            id, transcriptId, projectId,
+            id, localTranscriptId, projectId,
             entry["session_id"] as? String,
             provider, kind, timestamp, content, contentSha256,
             displayInTimeline ? 1 : 0,
@@ -2357,8 +2477,8 @@ public struct ContextifyQueryService: Sendable {
             entry["cwd"] as? String,
             createdAt, updatedAt,
             Double(timestamp),
-            entry["source_device_id"] as? String,
-            entry["source_device_name"] as? String,
+            entry["source_device_id"] as? String ?? entry["uploaded_by_device_id"] as? String,
+            entry["source_device_name"] as? String ?? entry["uploaded_by_device_name"] as? String,
           ])
         entriesImported += 1
       }

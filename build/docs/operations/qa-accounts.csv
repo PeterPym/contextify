@@ -1,0 +1,3 @@
+tenant_slug,tenant_id,email,user_id,role,api_key_id,plan,purpose
+qa_linux_ci,87f6fee8-ba06-4f89-8063-2e7297f325f6,qa-linux-ci@contextify.sh,a9913498-76f3-4ab9-ae2f-9a1316f42f7f,owner,a65e784f06e4390f,pro,Primary QA account for Linux CLI cloud testing (ct-402)
+qa_linux_ci,87f6fee8-ba06-4f89-8063-2e7297f325f6,qa-user2@contextify.sh,f48ac4ab-b0b8-4b1a-8d92-6f76ac5a76b7,member,3d4526008f2897c8,pro,Second user for multi-user sync validation (ct-832)

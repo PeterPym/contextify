@@ -30,6 +30,7 @@ import PackageDescription
 // Unified CLI: 'contextify' is primary, 'contextify-query' kept for backwards compat
 let products: [Product] = [
   .library(name: "ContextifyCore", targets: ["ContextifyCore"]),
+  .library(name: "ContextifyCloudCommands", targets: ["ContextifyCloudCommands"]),
   .executable(name: "TranscriptValidatorCLI", targets: ["TranscriptValidatorCLI"]),
   .executable(name: "contextify", targets: ["ContextifyQueryCLI"]),
   .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
@@ -48,6 +49,18 @@ let targets: [Target] = [
       .define("SWIFT_PACKAGE"),
     ]
   ),
+  // Shared cloud commands library - exposes CloudCommand (ArgumentParser-based)
+  // via CloudCommandBridge to ContextifyQueryCLI on macOS.
+  // On Linux, CloudCommand.swift is compiled as part of ContextifyCLI directly.
+  .target(
+    name: "ContextifyCloudCommands",
+    dependencies: [
+      "ContextifyCore",
+      .product(name: "ArgumentParser", package: "swift-argument-parser"),
+    ],
+    path: "Sources/ContextifyCLI",
+    sources: ["Commands/CloudCommand.swift", "CLIStyle.swift", "CloudCommandBridge.swift"]
+  ),
   .executableTarget(
     name: "TranscriptValidatorCLI",
     dependencies: ["ContextifyCore"],
@@ -55,7 +68,10 @@ let targets: [Target] = [
   ),
   .executableTarget(
     name: "ContextifyQueryCLI",
-    dependencies: ["ContextifyCore"],
+    dependencies: [
+      "ContextifyCore",
+      "ContextifyCloudCommands",
+    ],
     path: "Sources/ContextifyQueryCLI"
   ),
   // Cross-platform CLI - on macOS, depends on ContextifyCore
@@ -99,6 +115,7 @@ let linuxIngestionSources: [String] = [
   "Platform/CrossPlatformLock.swift",
   "Platform/CrossPlatformLogger.swift",
   "Platform/IngestionEventSink.swift",
+  "Platform/MachineID.swift",
   "Platform/PlatformSandbox.swift",
   "Platform/XDGPaths.swift",
   // Database layer (ingestion only - no OSLog privacy modifiers)

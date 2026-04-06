@@ -4,6 +4,10 @@
 import Foundation
 import GRDB
 
+#if os(macOS)
+import AppKit
+#endif
+
 #if canImport(OSLog)
 import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "CloudSyncManager")
@@ -30,6 +34,24 @@ public enum SyncState: Sendable, Equatable {
       return a == b
     default:
       return false
+    }
+  }
+}
+
+// MARK: - Sync Request Origin
+
+/// Identifies what triggered a sync request, used by the coalescing
+/// request model to prioritize manual requests over automatic ones.
+public enum SyncRequestOrigin: Sendable, CustomStringConvertible {
+  case auto       // From the 5-minute auto-sync loop
+  case manual     // From user clicking "Sync Now"
+  case postIngest // Triggered after ingest completion
+
+  public var description: String {
+    switch self {
+    case .auto: return "auto"
+    case .manual: return "manual"
+    case .postIngest: return "postIngest"
     }
   }
 }
@@ -78,6 +100,12 @@ public struct PullResult: Sendable {
 @Observable
 public final class CloudSyncManager: @unchecked Sendable {
 
+  // MARK: - Constants
+
+  /// Number of entries per push batch. Server allows up to 5000.
+  /// Tuned for balance between throughput and progress update granularity.
+  public static let pushBatchSize = 2500
+
   // MARK: - Observable State (MainActor-isolated for SwiftUI)
 
   /// Timestamp of the last successful sync completion.
@@ -118,6 +146,12 @@ public final class CloudSyncManager: @unchecked Sendable {
    public private(set) var cloudSmoothedThroughputEntriesPerMin: Double?
    public private(set) var cloudSmoothedEtaSeconds: Int?
 
+  /// Number of local entries beyond the push cursor that have not yet been
+  /// pushed to the cloud server. Drives the "entries pending" chip in the
+  /// status bar so the UI shows truthful sync state instead of "up to date"
+  /// when work is queued locally.
+  @MainActor public private(set) var localEntriesPendingPush: Int = 0
+
   /// The push session ID this client is currently using or last used.
   /// Exposed so the UI can compare against the server's active push session
   /// to detect orphaned/stalled sessions from previous connections.
@@ -140,6 +174,12 @@ public final class CloudSyncManager: @unchecked Sendable {
       return true
     }
     return serverSessionId != clientSessionId
+  }
+
+  /// True when a sync has been coalesced and is waiting for the current sync to finish.
+  /// Used by the UI to show "Sync queued..." on the button instead of "Sync now".
+  @MainActor public var hasPendingSyncRequest: Bool {
+    pendingSyncRequest != nil
   }
 
   // MARK: - Push Progress Tracking (MainActor-isolated for SwiftUI)
@@ -165,6 +205,11 @@ public final class CloudSyncManager: @unchecked Sendable {
   @MainActor private var client: CloudSyncClient?
   @MainActor private var config: CloudConfig?
 
+  /// Coalescing pending sync request. When a sync is requested while another
+  /// is in-flight, the request is stored here and drained after the current
+  /// sync completes. Manual requests dominate auto/postIngest requests.
+  @MainActor private var pendingSyncRequest: SyncRequestOrigin?
+
   /// The configured cloud server base URL (e.g. "https://cloud.contextify.sh").
   /// Nil when cloud sync is not configured.
   @MainActor public var configuredServerURL: String? { config?.serverURL }
@@ -184,6 +229,15 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   /// Task handle for the auto-sync loop.
   @MainActor private var autoSyncTask: Task<Void, Never>?
+
+  /// Task handle for the ingest-wait-then-sync follow-up.
+  /// Created when a sync request arrives while ingest is active.
+  @MainActor private var ingestWaitTask: Task<Void, Never>?
+
+  /// Observer token for system wake notifications (macOS only).
+  #if os(macOS)
+  @MainActor private var wakeObserver: NSObjectProtocol?
+  #endif
 
   /// Task handle for lightweight cloud status polling used by UI surfaces.
   @MainActor private var statusPollTask: Task<Void, Never>?
@@ -223,6 +277,7 @@ public final class CloudSyncManager: @unchecked Sendable {
       Task.detached(priority: .utility) { [weak self] in
         await self?.refreshStatusFromServer()
         await self?.refreshAccountProfileFromServer()
+        await self?.refreshLocalPendingCount()
       }
     } else {
       syncState = .disabled
@@ -273,8 +328,13 @@ public final class CloudSyncManager: @unchecked Sendable {
   /// `.error` upon completion. Results are available via `lastPushResult` and
   /// `lastPullResult`.
   ///
-  /// - Parameter queryService: The query service for database export/import.
-  public func sync(using queryService: ContextifyQueryService) async {
+  /// After the sync completes (success, error, or deferred), any coalesced
+  /// pending request is drained automatically.
+  ///
+  /// - Parameters:
+  ///   - queryService: The query service for database export/import.
+  ///   - origin: What triggered this sync (auto, manual, or postIngest).
+  public func sync(using queryService: ContextifyQueryService, origin: SyncRequestOrigin = .auto) async {
     // Pre-flight: if ingest is active, don't even start. No network calls,
     // no payload assembly. Show a neutral waiting state and return.
     let ingestActive = await DatabaseWriteCoordinator.shared.isIngestActive
@@ -304,11 +364,37 @@ public final class CloudSyncManager: @unchecked Sendable {
         default: return "unknown"
         }
       }
-      log.info("Sync skipped: \(reason, privacy: .public)")
+      if reason == "disabled" {
+        log.debug("Sync skipped: \(reason, privacy: .public)")
+      } else {
+        log.info("Sync skipped: \(reason, privacy: .public)")
+      }
       return
     }
+
+    let startState = await MainActor.run { String(describing: self.syncState) }
+    log.info("sync() enter: state=\(startState, privacy: .public) origin=\(origin, privacy: .public)")
     await refreshStatusFromServer()
     log.info("Starting full sync cycle")
+
+    // Origin-scoped App Nap prevention (manual/postIngest only).
+    // Prevents the system from throttling a user-initiated or post-ingest
+    // sync that the user is actively waiting on.
+    #if os(macOS)
+    let activity: NSObjectProtocol?
+    switch origin {
+    case .manual, .postIngest:
+      activity = ProcessInfo.processInfo.beginActivity(
+        options: .userInitiatedAllowingIdleSystemSleep,
+        reason: "Cloud sync in progress (\(origin))"
+      )
+    case .auto:
+      activity = nil
+    }
+    defer {
+      if let activity { ProcessInfo.processInfo.endActivity(activity) }
+    }
+    #endif
 
     do {
       let pushResult = try await push(using: queryService)
@@ -358,6 +444,16 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
       await refreshStatusFromServer()
     }
+
+    // Refresh local pending count after push (success or failure).
+    // Use the same query service as the active sync for consistency.
+    await refreshLocalPendingCount(using: queryService)
+
+    let endState = await MainActor.run { String(describing: self.syncState) }
+    log.info("sync() exit: state=\(endState, privacy: .public) origin=\(origin, privacy: .public)")
+
+    // Drain any coalesced sync request that arrived while we were busy.
+    await drainPendingSyncRequest(using: queryService)
   }
 
   /// Fetches cloud status snapshot for UI state projection.
@@ -386,6 +482,27 @@ public final class CloudSyncManager: @unchecked Sendable {
         self.cloudOffline = offline
       }
       log.warning("Status refresh failed: \(message, privacy: .public)")
+    }
+  }
+
+  /// Refresh the count of local entries beyond the push cursor.
+  ///
+  /// Called event-driven: after push completes, after configure (startup),
+  /// and when connection-scoped state is cleared. Not called on a timer.
+  public func refreshLocalPendingCount(using providedService: ContextifyQueryService? = nil) async {
+    do {
+      let service: ContextifyQueryService
+      if let providedService {
+        service = providedService
+      } else {
+        let dbURL = try DatabaseManager.shared.databasePath()
+        service = try ContextifyQueryService(databaseURL: dbURL, readOnly: true)
+      }
+      let (ts, eid) = await MainActor.run { (self.config?.lastPushTimestamp, self.config?.lastPushEntryId) }
+      let count = try service.countEntriesForCloudPush(afterTimestamp: ts, afterEntryId: eid)
+      await MainActor.run { self.localEntriesPendingPush = count }
+    } catch {
+      log.debug("Failed to refresh pending count: \(error.localizedDescription, privacy: .public)")
     }
   }
 
@@ -471,7 +588,7 @@ public final class CloudSyncManager: @unchecked Sendable {
 
     // Keyset pagination: loop batches until a short page is returned.
     // Resume from saved cursor to avoid re-uploading the entire database.
-    let batchSize = 500
+    let batchSize = Self.pushBatchSize
     var afterTimestamp: Int? = config.lastPushTimestamp
     var afterEntryId: String? = config.lastPushEntryId
     var syncSessionId = config.lastPushSessionId ?? UUID().uuidString
@@ -499,7 +616,8 @@ public final class CloudSyncManager: @unchecked Sendable {
       self.pushStartTime = pushStartTime
     }
 
-    log.info("Push: \(totalEntriesToPush, privacy: .public) entries remaining, ~\(estimatedTotalBatches, privacy: .public) batches estimated")
+    let totalAllTimelineEntries = (try? queryService.countAllTimelineEntries()) ?? -1
+    log.info("Push: \(totalEntriesToPush, privacy: .public) sync-eligible entries remaining (total display_in_timeline across all projects: \(totalAllTimelineEntries, privacy: .public)), ~\(estimatedTotalBatches, privacy: .public) batches estimated")
 
     if let ts = afterTimestamp {
       log.info("Push: resuming from saved cursor timestamp=\(ts, privacy: .public)")
@@ -692,6 +810,7 @@ public final class CloudSyncManager: @unchecked Sendable {
     }
 
     log.info("Push complete: accepted=\(totalAccepted, privacy: .public), duplicates=\(totalDupes, privacy: .public), batches=\(batchesCompletedLocal, privacy: .public), duration=\(String(format: "%.1f", pushDuration), privacy: .public)s")
+    log.info("Push cursor: timestamp=\(afterTimestamp ?? 0, privacy: .public) serverSequence=\(lastServerSequence, privacy: .public)")
 
     return PushResult(
       entriesPushed: totalAccepted,
@@ -839,6 +958,33 @@ public final class CloudSyncManager: @unchecked Sendable {
 
   // MARK: - Private Helpers
 
+  /// Called when the ingest-wait task completes. Clears the task handle and
+  /// dispatches any pending sync request (or a default postIngest sync).
+  @MainActor
+  private func handleIngestWaitComplete() {
+    ingestWaitTask = nil
+    guard syncState != .disabled else { return }
+    let nextOrigin = pendingSyncRequest ?? .postIngest
+    pendingSyncRequest = nil
+    log.info("Ingest complete, dispatching queued sync: \(nextOrigin)")
+    requestSync(origin: nextOrigin)
+  }
+
+  /// Check for a coalesced pending sync request and, if present, drain it
+  /// by starting a new sync cycle. This prevents requests from being silently
+  /// dropped when they arrive while a sync is already in progress.
+  private func drainPendingSyncRequest(using queryService: ContextifyQueryService) async {
+    let nextRequest = await MainActor.run { () -> SyncRequestOrigin? in
+      let pending = self.pendingSyncRequest
+      self.pendingSyncRequest = nil
+      return pending
+    }
+    if let nextRequest {
+      log.info("Draining queued sync request: \(nextRequest)")
+      await sync(using: queryService, origin: nextRequest)
+    }
+  }
+
   /// Map CloudSyncError to a user-friendly message string.
   private func userFriendlyMessage(for error: Error) -> String {
     if let syncError = error as? CloudSyncError {
@@ -932,13 +1078,34 @@ public final class CloudSyncManager: @unchecked Sendable {
     autoSyncEnabled = true
     log.info("Starting app-level auto-sync")
 
+    // Register wake observer so we sync immediately after system sleep (idempotent)
+    #if os(macOS)
+    if wakeObserver == nil {
+      wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didWakeNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        guard let self else { return }
+        log.info("System wake detected, requesting immediate sync")
+        Task { @MainActor in
+          self.requestSync(origin: .auto)
+        }
+      }
+    }
+    #endif
+
     autoSyncTask = Task.detached(priority: .background) { [weak self] in
       guard let self else { return }
+      var lastIterationTime = Date()
       while !Task.isCancelled {
+        let elapsed = Date().timeIntervalSince(lastIterationTime)
+        lastIterationTime = Date()
+        log.info("Auto-sync loop iteration starting (interval: \(String(format: "%.1f", elapsed), privacy: .public)s)")
         do {
           let dbURL = try DatabaseManager.shared.databasePath()
           let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
-          await self.sync(using: queryService)
+          await self.sync(using: queryService, origin: .auto)
         } catch {
           await self.setErrorForUI("Auto-sync failed to open local database.")
         }
@@ -985,6 +1152,12 @@ public final class CloudSyncManager: @unchecked Sendable {
     autoSyncTask?.cancel()
     autoSyncTask = nil
     autoSyncEnabled = false
+    #if os(macOS)
+    if let observer = wakeObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(observer)
+      wakeObserver = nil
+    }
+    #endif
     stopStatusPolling()
     log.info("Stopped app-level auto-sync")
   }
@@ -1021,6 +1194,10 @@ public final class CloudSyncManager: @unchecked Sendable {
     pushBatchesCompleted = 0
     pushEstimatedSecondsRemaining = nil
     pushStartTime = nil
+    pendingSyncRequest = nil
+    ingestWaitTask?.cancel()
+    ingestWaitTask = nil
+    localEntriesPendingPush = 0
   }
 
   /// Toggle auto-sync on/off. For use by Settings UI.
@@ -1045,19 +1222,69 @@ public final class CloudSyncManager: @unchecked Sendable {
     }
   }
 
-  /// Trigger a one-shot sync. Returns immediately; sync runs in background.
+  /// Unified entry point for requesting a sync. Coalesces overlapping requests:
+  /// if a sync is already in-flight, the request is queued and drained when the
+  /// current sync completes. Manual requests dominate auto/postIngest requests
+  /// so the user's explicit action is never silently dropped.
+  ///
+  /// - Parameter origin: What triggered this sync request.
   @MainActor
-  public func triggerSync() {
-    Task.detached(priority: .userInitiated) { [weak self] in
+  public func requestSync(origin: SyncRequestOrigin = .manual) {
+    switch syncState {
+    case .disabled:
+      return
+    case .syncing:
+      // Coalesce: manual dominates auto/postIngest
+      if pendingSyncRequest == nil || origin == .manual {
+        pendingSyncRequest = origin
+      }
+      if origin == .manual {
+        log.warning("Manual sync requested while syncing; queued")
+      } else {
+        log.info("Sync requested (\(origin)) while syncing; queued")
+      }
+      return
+    case .waitingForIngest:
+      // Coalesce pending request
+      if pendingSyncRequest == nil || origin == .manual {
+        pendingSyncRequest = origin
+      }
+      if origin == .manual {
+        log.warning("Manual sync requested while waiting for ingest; queued with ingest waiter")
+      } else {
+        log.info("Sync requested (\(origin)) while waiting for ingest; queued")
+      }
+      // Spawn a single waiter task that fires when ingest completes
+      guard ingestWaitTask == nil else { return }
+      ingestWaitTask = Task.detached(priority: .utility) { [weak self] in
+        await DatabaseWriteCoordinator.shared.waitForIngestComplete()
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let self else { return }
+        await self.handleIngestWaitComplete()
+      }
+      return
+    default:
+      break
+    }
+    // Not busy, start immediately
+    pendingSyncRequest = nil
+    Task.detached(priority: origin == .manual ? .userInitiated : .utility) { [weak self] in
       guard let self else { return }
       do {
         let dbURL = try DatabaseManager.shared.databasePath()
         let queryService = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
-        await self.sync(using: queryService)
+        await self.sync(using: queryService, origin: origin)
       } catch {
         await self.setErrorForUI("Failed to open local database for sync.")
       }
     }
+  }
+
+  /// Trigger a one-shot sync. Returns immediately; sync runs in background.
+  /// Thin wrapper around `requestSync(origin:)` for backward compatibility.
+  @MainActor
+  public func triggerSync() {
+    requestSync(origin: .manual)
   }
 }
 

@@ -185,7 +185,7 @@ enum CLIStyle {
         // Strip carriage returns from remote content to prevent
         // terminal line-overwrite attacks (e.g. "safe\rMALICIOUS")
         i = text.index(after: i)
-      } else if c.unicodeScalars.allSatisfy({ $0.properties.isControl }) {
+      } else if c.unicodeScalars.allSatisfy({ $0.value < 0x20 || ($0.value >= 0x7F && $0.value <= 0x9F) }) {
         // Skip control characters
         i = text.index(after: i)
       } else {

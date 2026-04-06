@@ -374,7 +374,7 @@ struct CloudSettingsView: View {
           .progressViewStyle(.linear)
 
         let totalEntries = syncManager.pushTotalEntries
-        let entriesDone = batchesDone * 500  // approximate
+        let entriesDone = batchesDone * CloudSyncManager.pushBatchSize
         Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -425,7 +425,7 @@ struct CloudSettingsView: View {
       ProgressView(value: Double(batchesDone), total: Double(totalBatches))
         .progressViewStyle(.linear)
 
-      let entriesDone = batchesDone * 500
+      let entriesDone = batchesDone * CloudSyncManager.pushBatchSize
       Text("\(formatCount(min(entriesDone, totalEntries))) / \(formatCount(totalEntries)) entries (\(formatPercent(resolved: batchesDone, total: totalBatches)))")
         .font(.caption)
         .foregroundStyle(.secondary)

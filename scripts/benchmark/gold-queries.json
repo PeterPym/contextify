@@ -12,6 +12,7 @@
       "efficiency_budget": 2,
       "difficulty": "easy",
       "verified": true,
+      "diagnostic": "meta-entry-mrr",
       "relevant_entry_ids": [
         "2957c86f-fb11-42ec-9231-7783d80e2be9",
         "27a7d952-733e-4b16-9eed-20fd9dd6a272",
@@ -93,6 +94,7 @@
       "efficiency_budget": 2,
       "difficulty": "easy",
       "verified": true,
+      "diagnostic": "meta-entry-mrr",
       "relevant_entry_ids": [
         "2496081a-e612-4357-a056-2c26bc97a9b7",
         "0014c2d1-5594-4a55-b550-c15eb1ce1e87"
@@ -167,6 +169,7 @@
       "efficiency_budget": 2,
       "difficulty": "medium",
       "verified": true,
+      "diagnostic": "meta-entry-mrr",
       "relevant_entry_ids": [
         "afcb69d4-e34a-48af-ba96-09eeeefac8dd",
         "c09634e4-27fb-45a3-9af7-01cca9506a85",
@@ -182,6 +185,7 @@
       "efficiency_budget": 3,
       "difficulty": "medium",
       "verified": true,
+      "diagnostic": "meta-entry-mrr",
       "relevant_entry_ids": [
         "5d319882-13b5-41be-b7e1-e79c22a40541",
         "def6da96-555f-4573-9e6f-0a6966c9e5bc"
@@ -209,6 +213,7 @@
       "efficiency_budget": 2,
       "difficulty": "medium",
       "verified": true,
+      "diagnostic": "meta-entry-mrr",
       "relevant_entry_ids": [
         "b758a299-bd6a-461a-9b33-ea94f6bd353f",
         "eeeaa51e-5766-4325-8181-3284cb17e07e"
@@ -285,8 +290,7 @@
       "verified": true,
       "relevant_entry_ids": [
         "8ba4e9a1-b2de-4e9d-b0fe-f5ac35fb9095",
-        "87b504a1-be4d-4117-afb9-1ba9810118e2",
-        "21448e5f-6e35-4286-9ff6-3d09d4471703"
+        "87b504a1-be4d-4117-afb9-1ba9810118e2"
       ]
     },
     {
@@ -314,7 +318,6 @@
       "relevant_entry_ids": [
         "dbab7b35-c114-4e2f-84f1-d1fb7ad8c694",
         "f7e06549-d9aa-4ca8-ace3-12d96f465efb",
-        "c442005b-d715-47e6-b3e8-b21ac8576179",
         "ab7b8c4f-62ff-4e46-bcc2-d86e787612aa"
       ]
     },
@@ -328,8 +331,7 @@
       "difficulty": "medium",
       "verified": true,
       "relevant_entry_ids": [
-        "41ca2b4f-7fe4-422f-868d-078fef0b52a5",
-        "4c2c4555-f182-4cbd-8eb8-b9b494298412"
+        "41ca2b4f-7fe4-422f-868d-078fef0b52a5"
       ]
     },
     {
@@ -342,8 +344,7 @@
       "difficulty": "medium",
       "verified": true,
       "relevant_entry_ids": [
-        "fcdb645e-28ca-4bac-adf2-5afd4b639ae9",
-        "3afd8a52-aa6a-4531-9e2e-d46b4fdd161a"
+        "fcdb645e-28ca-4bac-adf2-5afd4b639ae9"
       ]
     },
     {
@@ -357,8 +358,7 @@
       "verified": true,
       "relevant_entry_ids": [
         "e7404bb4-8044-4f7c-a01d-d10ea386174c",
-        "8493f1a5-e92d-4652-a7f5-579e4ccf7245",
-        "42ddbfb6-7378-4708-ba3f-d2719cc2fe52"
+        "8493f1a5-e92d-4652-a7f5-579e4ccf7245"
       ]
     },
     {
@@ -392,7 +392,7 @@
       "id": "gq-27",
       "category": "session-opener",
       "natural_question": "Has the Linux CLI been shipped? What version and what architectures are available?",
-      "search_terms": "Linux CLI shipped v1.1.0 x86_64 arm64 tarball",
+      "search_terms": "Linux CLI shipped v1.1.0 x86_64 arm64",
       "content_fingerprint": "Linux CLI v1 shipped",
       "efficiency_budget": 2,
       "difficulty": "easy",
@@ -429,8 +429,7 @@
       "diagnostic": "morphology",
       "relevant_entry_ids": [
         "ab289bc0-589a-4f91-b5df-868214785ca1",
-        "e5888538-0778-4072-8b8e-f699d7f752ab",
-        "53ad13fc-d4b8-4a93-8ab3-6f2023966e9e"
+        "e5888538-0778-4072-8b8e-f699d7f752ab"
       ]
     },
     {
@@ -505,8 +504,7 @@
       "verified": true,
       "relevant_entry_ids": [
         "53ad13fc-d4b8-4a93-8ab3-6f2023966e9e",
-        "74a6169e-0acd-429c-9b8f-4421344bb4e2",
-        "145bd0f2-7ec4-4524-99df-9c3e2c9632d9"
+        "74a6169e-0acd-429c-9b8f-4421344bb4e2"
       ]
     }
   ]

@@ -644,6 +644,7 @@ public final class MetadataRepositoryImpl: MetadataRepository {
         .map { $0.transcriptId }
     }
   }
+
 }
 
 // MARK: - Cache Repository

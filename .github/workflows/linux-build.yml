@@ -118,6 +118,9 @@ jobs:
           .build/debug/contextify --help
           .build/debug/contextify --version
           .build/debug/contextify install-skill --help
+          # Cloud commands parity check (ct-1048: must match macOS CLI)
+          .build/debug/contextify cloud --help
+          .build/debug/contextify cloud setup --help
           # doctor returns exit 2 when unconfigured (expected in CI)
           .build/debug/contextify doctor || [ $? -eq 2 ]
           .build/debug/contextify doctor --json || [ $? -eq 2 ]

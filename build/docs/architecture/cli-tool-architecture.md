@@ -403,7 +403,10 @@ contextify-query projects            # List projects
 contextify-query transcripts         # List transcripts
 contextify-query entry <uuid>        # Get specific entry
 contextify-query context <uuid>      # Get context around entry
+contextify-query tag <id> [<tag>]    # Add tag to transcript; --remove to remove it
 ```
+
+**`--exclude-tags` flag:** The `search` command accepts `--exclude-tags <csv>` to exclude transcripts that have any of the specified tags. Comma-separated list of tag names (e.g., `--exclude-tags archived,noise`).
 
 **`--project` flag:** Most commands accept `--project <value>` to scope results to a project. The value can be:
 - A project name (e.g., `--project contextify`) - resolved via name-based lookup
@@ -411,6 +414,20 @@ contextify-query context <uuid>      # Get context around entry
 - A file path - matches by path prefix
 
 **FTS5 hyphen preprocessing:** The `search` command automatically rewrites hyphenated terms before passing them to FTS5. For example, `ct-708` becomes `"ct 708"` (quoted phrase) and `cli-ai-setup` becomes `"cli ai setup"`. This prevents FTS5 from misinterpreting hyphens as column references. Hints are written to stderr when ambiguous cases are detected.
+
+### Cloud Commands
+```bash
+contextify cloud setup               # Configure cloud sync (API key, tenant)
+contextify cloud status              # Show cloud sync status
+contextify cloud push                # Push local entries to cloud
+contextify cloud pull                # Pull remote entries to local DB
+contextify cloud sync                # Bidirectional sync (push + pull)
+contextify cloud search "query"      # Search across all cloud-synced machines
+```
+
+Cloud commands are available on both macOS and Linux. On macOS, `contextify cloud ...` dispatches directly to the shared `ContextifyCloudCommands` library target when `cloud` is the first token, so cloud subcommand flags are parsed by ArgumentParser. Flags placed before `cloud` are rejected with a clear error.
+
+**Parity rule (ct-1048):** New CLI subcommands must be registered in both `ContextifyQueryCLI` (macOS, `Sources/ContextifyQueryCLI/main.swift`) and `ContextifyCLI` (Linux, `Sources/ContextifyCLI/main.swift`). These are two separate binaries with independent dispatch. CI validates parity by checking `cloud --help` in `linux-build.yml`, `linux-release.yml`, and `docker-linux-build.sh --install-test`. If a subcommand exists on one platform but not the other, CI will catch it.
 
 ### Plugin Commands
 ```bash
@@ -461,3 +478,4 @@ On Linux, doctor checks skills only (no shim/manifest - binary runs directly).
 | 1.0.0 | 2025-Q4 | Initial release, Claude Code only |
 | 1.1.0 | 2026-01 | Added Codex CLI support, doctor command, Linux support |
 | 1.1.x | 2026-03 | FTS5 hyphen preprocessing, --project name-based lookup, shim TTY gating for multi-install warning |
+| 1.2.x | 2026-04 | Cloud commands available on macOS via shared ContextifyCloudCommands target (ct-848) |

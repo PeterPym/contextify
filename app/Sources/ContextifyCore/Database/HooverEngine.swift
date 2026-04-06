@@ -198,7 +198,11 @@ public struct EntryInsert {
       gitCommit: gitCommit,
       cwd: cwd,
       hasTextContent: hasTextContent,
-      isQueued: isQueued
+      isQueued: isQueued,
+      isSidechain: isSidechain,
+      agentId: agentId,
+      toolInvocations: toolInvocations,
+      toolResultData: toolResultData
     )
   }
 

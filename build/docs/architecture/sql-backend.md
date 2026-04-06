@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v33 current)
+**Status:** Post-Implementation (v39 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 33 (latest: ingestion_runs table for CLI debugging)
+**Schema Version:** 39 (latest: transcript_tags table for purpose labeling)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v33 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v33).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v39 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v39).
 
 ---
 
@@ -168,6 +168,12 @@ ingestion_runs (v33+)
 ├── transcripts_processed + entries_inserted + errors_encountered
 ├── duration_seconds + status (running|completed|failed)
 └── cli_version + timestamps
+
+transcript_tags (v39+)
+├── transcript_id (FK → transcripts, CASCADE)
+├── tag (TEXT)
+└── (transcript_id, tag) COMPOSITE PK
+    Purpose: Purpose/category labels for transcripts (e.g., "benchmark", "evaluation")
 ```
 
 ### Schema Evolution
@@ -638,6 +644,13 @@ generator.queueMisses([miss])  // Async processing
 - Create `ingestion_runs` table for CLI debugging and diagnostics
 - Tracks ingestion performance metrics, errors, and outcomes per transcript
 - Purpose: Support debugging of ingestion issues and performance monitoring
+
+**v39: Transcript Tags**
+- Create `transcript_tags` table with composite PK `(transcript_id, tag)`
+- Supports purpose/category labeling for transcripts
+- CLI: `contextify tag <transcript-id> [<tag>] [--remove]` lists, adds, or removes tags
+- CLI search: `contextify search --exclude-tags <csv>` excludes entries from tagged transcripts
+- Benchmark: `prepare-snapshot.sh` auto-excludes transcripts tagged "benchmark" or "evaluation" (override with `--no-exclude-tags`)
 
 ---
 

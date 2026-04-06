@@ -21,6 +21,29 @@ final class GitAnchorSearchTests: XCTestCase {
     XCTAssertTrue(cues.contains { $0.kind == .symbol && $0.normalized == "sync-parent" })
   }
 
+  func testExtractCues_literalFilenames_stillExtractedForAnchorGitFallback() {
+    // Regression: --anchor-git with literal filenames must still extract file cues.
+    // This path remains the backwards-compatible fallback when --anchor-files is not used.
+    let cues = GitAnchorSearch.extractCues(
+      from: "DatabaseSchema.swift migration changes"
+    )
+
+    XCTAssertTrue(cues.contains { $0.kind == .file && $0.normalized == "DatabaseSchema.swift" },
+      "Literal filenames in query must still be extracted as .file cues for --anchor-git fallback")
+  }
+
+  func testExtractCues_keywordQuery_extractsNoFileCues() {
+    // Validates the architecture gap: keyword queries don't produce useful file cues.
+    // This is why --anchor-files exists - the AI must pass files explicitly.
+    let cues = GitAnchorSearch.extractCues(
+      from: "database schema migration decision"
+    )
+
+    let fileCues = cues.filter { $0.kind == .file }
+    XCTAssertTrue(fileCues.isEmpty,
+      "Pure keyword queries should not produce file cues - this is the gap --anchor-files fills")
+  }
+
   func testRerank_prefersCommitAndFileMentions() {
     let baselineHits = [
       ContextifyQueryService.SearchHit(

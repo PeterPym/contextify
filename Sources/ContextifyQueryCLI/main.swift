@@ -1,5 +1,6 @@
 #if os(macOS)
 import ContextifyCore
+import ContextifyCloudCommands
 #else
 import ContextifyQueryCore
 #endif
@@ -119,6 +120,8 @@ struct ContextifyQueryCLI {
     case summaries
     case stats
     case version
+    case tag
+    case cloud
     #endif
     case installPlugin = "install-plugin"
     case uninstallPlugin = "uninstall-plugin"
@@ -163,6 +166,7 @@ struct ContextifyQueryCLI {
     var countOnly: Bool = false
     var termCounts: Bool = false
     var anchorGit: Bool = false
+    var anchorFiles: String?
 
     // Device filter
     var device: String?
@@ -170,6 +174,9 @@ struct ContextifyQueryCLI {
     // Worktree options
     var thisWorktreeOnly: Bool = false
     var exclude: String?
+
+    // Tag filtering
+    var excludeTags: String?
   }
 
   struct StateSidecar: Decodable {
@@ -205,11 +212,30 @@ struct ContextifyQueryCLI {
       var options = Options()
       let args = Array(allArgs.dropFirst())
 
+      #if os(macOS)
+      // Cloud commands use ArgumentParser and manage their own arg parsing.
+      // Fast-path: when `cloud` is the first token, dispatch immediately.
+      // When global flags precede `cloud`, the hand-rolled parser consumes
+      // them normally and the `case .cloud` branch handles dispatch.
+      if let first = args.first, first == "cloud" {
+        CloudCommandBridge.run(Array(args.dropFirst()))
+        return
+      }
+      #endif
+
       // Parse global flags anywhere (before/after the command).
+      // Track if flags were consumed before the first positional token,
+      // so cloud dispatch can reject them instead of silently ignoring.
       var remaining: [String] = []
+      var sawFirstPositional = false
+      var consumedOuterFlagBeforeCommand = false
       var index = 0
       while index < args.count {
         let arg = args[index]
+        // Track flags consumed before any positional (command) token
+        if arg.hasPrefix("-") && arg != "--" && !sawFirstPositional {
+          consumedOuterFlagBeforeCommand = true
+        }
         switch arg {
         case "--":
           let restIndex = index + 1
@@ -359,6 +385,10 @@ struct ContextifyQueryCLI {
           options.termCounts = true
         case "--anchor-git":
           options.anchorGit = true
+        case "--anchor-files":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --anchor-files", exitCode: .invalidArgs) }
+          options.anchorFiles = args[index]
         case "--device":
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --device", exitCode: .invalidArgs) }
@@ -369,6 +399,10 @@ struct ContextifyQueryCLI {
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude", exitCode: .invalidArgs) }
           options.exclude = args[index]
+        case "--exclude-tags":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --exclude-tags", exitCode: .invalidArgs) }
+          options.excludeTags = args[index]
         case "--help", "-h":
           usage(nil)
         default:
@@ -379,6 +413,7 @@ struct ContextifyQueryCLI {
             )
           }
           remaining.append(arg)
+          sawFirstPositional = true
         }
         index += 1
       }
@@ -404,6 +439,20 @@ struct ContextifyQueryCLI {
         return
 
       #if os(macOS)
+      case .cloud:
+        // Cloud commands use ArgumentParser and manage their own parsing.
+        // Reject any outer-parser flags consumed before the command token.
+        if consumedOuterFlagBeforeCommand {
+          throw CLIError(
+            code: "invalidArgs",
+            message: "Put cloud-command options after `cloud`, not before it.",
+            exitCode: .invalidArgs,
+            hint: "Example: contextify cloud status --json"
+          )
+        }
+        CloudCommandBridge.run(commandArgs)
+        return
+
       default:
         break
       #endif
@@ -412,7 +461,8 @@ struct ContextifyQueryCLI {
       #if os(macOS)
       // All other commands need database (macOS only)
       let dbURL = try resolveDatabaseURL(options: options)
-      let service = try ContextifyQueryService(databaseURL: dbURL)
+      let needsWrite = command == .tag
+      let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: !needsWrite)
       let versionInfo = try service.versionInfo()
       let timeRange = try parseTimeRange(options: options)
 
@@ -461,9 +511,10 @@ struct ContextifyQueryCLI {
         let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
         let projectIds = scope.projectIds.isEmpty ? nil : scope.projectIds
 
-        // ct-591: Fetch scope summary for search context
+        // ct-591: Database-wide summary for operator context.
+        // This is intentionally NOT filtered by the active search scope.
         let dbCounts = try service.counts()
-        let scopeSummary: [String: JSONValue] = [
+        let databaseSummary: [String: JSONValue] = [
           "entryCount": .number(Double(dbCounts.entryCount)),
           "projectCount": .number(Double(dbCounts.projectCount)),
           "deviceCount": .number(Double(dbCounts.deviceCount))
@@ -471,11 +522,12 @@ struct ContextifyQueryCLI {
         if !options.jsonOutput {
           let deviceSuffix = dbCounts.deviceCount > 1 ? " (\(dbCounts.deviceCount) devices)" : ""
           let entryStr = NumberFormatter.localizedString(from: NSNumber(value: dbCounts.entryCount), number: .decimal)
-          fputs("Searching \(entryStr) entries across \(dbCounts.projectCount) projects\(deviceSuffix)\n", stderr)
+          fputs("Database: \(entryStr) entries across \(dbCounts.projectCount) projects\(deviceSuffix)\n", stderr)
         }
 
         if options.countOnly {
           // Count-only mode: return total count (and term counts for OR queries) without result bodies
+          let countExcludeTagsList = parseCSV(options.excludeTags)?.map { $0.lowercased() }
           let totalCount = try service.searchCount(
             query: query,
             projectIds: projectIds,
@@ -484,12 +536,13 @@ struct ContextifyQueryCLI {
             timeRange: timeRange,
             kinds: kinds,
             treatAsFTS: true,
-            device: options.device
+            device: options.device,
+            excludeTags: countExcludeTagsList
           )
 
           var metadataDict: [String: JSONValue] = [
             "totalCount": .number(Double(totalCount)),
-            "scopeSummary": .object(scopeSummary)
+            "databaseSummary": .object(databaseSummary)
           ]
 
           if options.termCounts {
@@ -500,7 +553,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: countExcludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -528,24 +582,39 @@ struct ContextifyQueryCLI {
           // Normal mode: fetch results with metadata
           let requestedLimit = options.limit
           let requestedOffset = options.offset
-          let anchorCues = options.anchorGit ? GitAnchorSearch.extractCues(from: rawQuery) : []
-          let anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
 
-          if options.anchorGit {
+          // Resolve git anchor plan: --anchor-files (explicit) takes precedence over --anchor-git (regex)
+          let anchorPlan: GitAnchorPlan?
+          let anchorCues: [GitAnchorCue]
+          if let anchorFilesArg = options.anchorFiles {
+            anchorCues = []
+            anchorPlan = try resolveFileAnchorPlan(files: anchorFilesArg, options: options, service: service)
+          } else if options.anchorGit {
+            anchorCues = GitAnchorSearch.extractCues(from: rawQuery)
+            anchorPlan = try anchorCues.isEmpty ? nil : resolveGitAnchorPlan(cues: anchorCues, options: options, service: service)
+          } else {
+            anchorCues = []
+            anchorPlan = nil
+          }
+
+          // User-visible output when git-accelerated retrieval activates
+          if options.anchorFiles != nil || options.anchorGit {
             if let anchorPlan {
               let fileLabels = anchorPlan.fileLabels
               if !fileLabels.isEmpty {
-                fputs("Using git anchors from: \(fileLabels.joined(separator: ", "))\n", stderr)
+                fputs("Using git-accelerated context retrieval: found \(anchorPlan.commits.count) commits touching \(fileLabels.joined(separator: ", "))\n", stderr)
               } else {
                 fputs("Using git anchors from query cues: \(anchorPlan.triggerKinds.joined(separator: ", "))\n", stderr)
               }
-              fputs("Found \(anchorPlan.commits.count) relevant commits, narrowing search to nearby conversations\n", stderr)
+            } else if options.anchorFiles != nil {
+              fputs("Git-accelerated retrieval: no commits found for specified files, continuing with broad text search\n", stderr)
             } else if !anchorCues.isEmpty {
               fputs("Git anchor path found no strong commit signal, continuing with broad text search\n", stderr)
             }
           }
 
           let fetchLimit = anchorPlan == nil ? requestedLimit + 1 : min(max(requestedLimit * 3, 25), 100)
+          let excludeTagsList = parseCSV(options.excludeTags)?.map { $0.lowercased() }
           let results = try service.search(
             query: query,
             projectIds: projectIds,
@@ -557,7 +626,8 @@ struct ContextifyQueryCLI {
             kinds: kinds,
             snippetTokens: options.snippetTokens ?? 50,
             treatAsFTS: true,
-            device: options.device
+            device: options.device,
+            excludeTags: excludeTagsList
           )
           let anchorResult = anchorPlan.map {
             GitAnchorSearch.rerank(hits: results, using: $0, requestedLimit: requestedLimit)
@@ -584,7 +654,8 @@ struct ContextifyQueryCLI {
               timeRange: timeRange,
               kinds: kinds,
               treatAsFTS: true,
-              device: options.device
+              device: options.device,
+              excludeTags: excludeTagsList
             )
           } else {
             totalCount = trimmedResults.count
@@ -596,7 +667,7 @@ struct ContextifyQueryCLI {
             "offset": .number(Double(requestedOffset)),
             "hasMore": .bool(hasMore),
             "totalCount": .number(Double(totalCount)),
-            "scopeSummary": .object(scopeSummary)
+            "databaseSummary": .object(databaseSummary)
           ]
 
           // Add per-term counts for OR queries (opt-in via --term-counts)
@@ -608,7 +679,8 @@ struct ContextifyQueryCLI {
               includeHidden: options.includeHidden,
               timeRange: timeRange,
               kinds: kinds,
-              device: options.device
+              device: options.device,
+              excludeTags: excludeTagsList
             ) {
               metadataDict["termCounts"] = .object(
                 termCounts.reduce(into: [String: JSONValue]()) { dict, pair in
@@ -659,7 +731,7 @@ struct ContextifyQueryCLI {
 
           let metadata: JSONValue = .object(metadataDict)
           try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
-            printSearchHits(trimmedResults)
+            printSearchHits(trimmedResults, totalCount: totalCount, hasMore: hasMore)
           }
         }
 
@@ -808,7 +880,10 @@ struct ContextifyQueryCLI {
           printVersionInfo(versionInfo)
         }
 
-      case .installPlugin, .uninstallPlugin, .doctor:
+      case .tag:
+        try runTag(commandArgs: commandArgs, options: options, service: service)
+
+      case .installPlugin, .uninstallPlugin, .doctor, .cloud:
         // Handled above (before database connection)
         fatalError("Unreachable")
       }
@@ -1066,6 +1141,8 @@ struct ContextifyQueryCLI {
         --count-only         Search: return only totalCount (no result bodies)
         --term-counts        Search: include per-term counts for OR queries (opt-in)
         --anchor-git         Search: use local git history as an additive ranking signal
+        --anchor-files <csv> Search: boost results near commits touching these files
+        --exclude-tags <csv> Search: exclude entries from transcripts with matching tags
         --json               Emit JSON output
 
       Commands:
@@ -1075,11 +1152,13 @@ struct ContextifyQueryCLI {
         transcripts          List transcripts for a project
         entry <uuid>         Fetch an entry by id (UUID)
         context <uuid>       Fetch context around an entry (UUID)
+        tag <id> [<tag>]     List/add/remove transcript tags (--remove to delete)
         status               Show database status
         feedback             Record or manage CLI feedback
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
+        cloud <subcommand>   Cloud sync (setup, status, push, pull, sync, search)
         install-plugin       Install Claude Code and Codex CLI skills
         uninstall-plugin     Remove Claude Code and Codex CLI skills
         doctor               Check CLI installation health
@@ -1386,6 +1465,60 @@ private func resolveGitAnchorPlan(
   return GitAnchorPlan(cues: cues, files: files, commits: commits)
 }
 
+private func resolveFileAnchorPlan(
+  files anchorFilesArg: String,
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService? = nil
+) throws -> GitAnchorPlan? {
+  let fileTokens = anchorFilesArg
+    .split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty }
+  guard !fileTokens.isEmpty else { return nil }
+
+  let basePath = try resolveAnchorBasePath(options: options, service: service)
+  guard
+    let repoRoot = runProcess("/usr/bin/env", arguments: ["git", "-C", basePath, "rev-parse", "--show-toplevel"])?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+    !repoRoot.isEmpty
+  else {
+    return nil
+  }
+
+  // Resolve file tokens against tracked files (supports basenames, relative paths, and globs)
+  let trackedFiles = trackedGitFiles(repoRoot: repoRoot)
+  var resolvedFiles: [String] = []
+  var seen = Set<String>()
+
+  for token in fileTokens {
+    for path in trackedFiles {
+      let basename = URL(fileURLWithPath: path).lastPathComponent
+      let matches = path == token
+        || path.hasSuffix("/\(token)")
+        || basename == token
+        || (token.contains("/") && path.contains(token))
+      if matches, seen.insert(path).inserted {
+        resolvedFiles.append(path)
+      }
+    }
+    if resolvedFiles.count >= 8 { break }
+  }
+
+  guard !resolvedFiles.isEmpty else { return nil }
+
+  let absolutePaths = Array(resolvedFiles.prefix(8)).map { relativePath in
+    URL(fileURLWithPath: repoRoot).appendingPathComponent(relativePath).path
+  }
+
+  let commits = resolveGitAnchorCommits(files: absolutePaths, repoRoot: repoRoot)
+  guard !commits.isEmpty else { return nil }
+
+  let cues = fileTokens.prefix(8).map {
+    GitAnchorCue(rawValue: $0, normalized: $0, kind: .file)
+  }
+  return GitAnchorPlan(cues: cues, files: absolutePaths, commits: commits)
+}
+
 private func trackedGitFiles(repoRoot: String) -> [String] {
   guard let output = runProcess("/usr/bin/env", arguments: ["git", "-C", repoRoot, "ls-files"]) else {
     return []
@@ -1481,20 +1614,109 @@ private func runProcess(_ executable: String, arguments: [String]) -> String? {
   process.executableURL = URL(fileURLWithPath: executable)
   process.arguments = arguments
   let stdout = Pipe()
-  let stderrPipe = Pipe()
   process.standardOutput = stdout
-  process.standardError = stderrPipe
+  // Discard stderr: this helper only returns stdout and maps non-zero exit
+  // to nil. Leaving stderr piped-but-unread risks the same pipe-buffer
+  // deadlock we are fixing for stdout.
+  process.standardError = FileHandle.nullDevice
 
   do {
     try process.run()
-    process.waitUntilExit()
   } catch {
     return nil
   }
 
-  guard process.terminationStatus == 0 else { return nil }
+  // Drain stdout before waitUntilExit so large payloads (e.g. git ls-files
+  // in repos with >1000 tracked files) do not block on the pipe buffer.
   let data = stdout.fileHandleForReading.readDataToEndOfFile()
+  process.waitUntilExit()
+
+  guard process.terminationStatus == 0 else { return nil }
   return String(data: data, encoding: .utf8)
+}
+
+private func runTag(
+  commandArgs: [String],
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService
+) throws {
+  // Usage: contextify tag <transcript-id> <tag> [--remove]
+  //        contextify tag <transcript-id>          (list tags)
+  let supportedFlags: Set<String> = ["--remove", "--json"]
+  if let unknown = commandArgs.first(where: { $0.hasPrefix("--") && !supportedFlags.contains($0) }) {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Unknown option: \(unknown)",
+      exitCode: .invalidArgs,
+      hint: "Usage: contextify tag <transcript-id> [<tag>] [--remove]"
+    )
+  }
+
+  let positional = commandArgs.filter { !$0.hasPrefix("--") }
+  let isRemove = commandArgs.contains("--remove")
+
+  guard let transcriptId = positional.first else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Usage: contextify tag <transcript-id> [<tag>] [--remove]",
+      exitCode: .invalidArgs,
+      hint: "Example: contextify tag abc123 benchmark"
+    )
+  }
+
+  if positional.count == 1 && !isRemove {
+    // List tags
+    let tags = try service.getTags(transcriptId: transcriptId)
+    struct TagListResult: Encodable {
+      let transcriptId: String
+      let tags: [String]
+    }
+    try ContextifyQueryCLI.printResponse(
+      type: "tags", data: TagListResult(transcriptId: transcriptId, tags: tags),
+      json: options.jsonOutput
+    ) {
+      if tags.isEmpty {
+        print("No tags on transcript \(transcriptId)")
+      } else {
+        print("Tags: \(tags.joined(separator: ", "))")
+      }
+    }
+    return
+  }
+
+  guard positional.count == 2 else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: isRemove ? "Usage: contextify tag <transcript-id> <tag> --remove" : "Usage: contextify tag <transcript-id> <tag>",
+      exitCode: .invalidArgs,
+      hint: "Example: contextify tag abc123 benchmark"
+    )
+  }
+
+  let tagValue = positional[1]
+
+  if isRemove {
+    try service.removeTag(transcriptId: transcriptId, tag: tagValue)
+    fputs("Removed tag '\(tagValue)' from transcript \(transcriptId)\n", stderr)
+  } else {
+    try service.addTag(transcriptId: transcriptId, tag: tagValue)
+    fputs("Added tag '\(tagValue)' to transcript \(transcriptId)\n", stderr)
+  }
+
+  let tags = try service.getTags(transcriptId: transcriptId)
+  struct TagResult: Encodable {
+    let transcriptId: String
+    let tags: [String]
+    let action: String
+    let tag: String
+  }
+  try ContextifyQueryCLI.printResponse(
+    type: "tags",
+    data: TagResult(transcriptId: transcriptId, tags: tags, action: isRemove ? "removed" : "added", tag: tagValue),
+    json: options.jsonOutput
+  ) {
+    // Human output already printed above via fputs
+  }
 }
 
 private func runFeedback(
@@ -1859,16 +2081,42 @@ private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptL
   }
 }
 
-private func printSearchHits(_ hits: [ContextifyQueryService.SearchHit]) {
+private func printSearchHits(
+  _ hits: [ContextifyQueryService.SearchHit],
+  totalCount: Int,
+  hasMore: Bool
+) {
   if hits.isEmpty {
     print("(no results)")
     return
   }
-  for hit in hits {
+
+  let projects = Set(hits.compactMap { $0.projectName }).sorted()
+  let projectSummary = projects.isEmpty ? "unknown" : projects.joined(separator: ", ")
+  print("\(totalCount) results across \(projectSummary)")
+  if totalCount > hits.count {
+    print("Showing \(hits.count) of \(totalCount)")
+  }
+  print("")
+
+  let formatter = DateFormatter()
+  formatter.dateFormat = "MMM dd, yyyy HH:mm"
+
+  for (index, hit) in hits.enumerated() {
     let projectLabel = hit.projectName?.isEmpty == false ? hit.projectName! : hit.projectId
-    let transcriptLabel = hit.transcriptTitle?.isEmpty == false ? hit.transcriptTitle! : hit.transcriptId
-    print("[\(hit.timestamp)] \(projectLabel) / \(transcriptLabel)  \(hit.kind)  score=\(hit.score)")
-    print("  \(hit.contentSnippet)")
+    let date = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(hit.timestamp)))
+    let entryPrefix = String(hit.id.prefix(8))
+    print("\(index + 1). [\(hit.kind)] \(projectLabel) · \(date)  entry:\(entryPrefix)")
+    print("   \(hit.contentSnippet)")
+    if index < hits.count - 1 { print("") }
+  }
+
+  print("")
+  print("Drill down:")
+  print("  contextify context <entry-id> --before 5 --after 15    # surrounding conversation")
+  print("  contextify entry <entry-id>                             # full entry text")
+  if hasMore {
+    print("  Add --offset \(hits.count) to see the next page")
   }
 }
 

@@ -204,7 +204,8 @@ final class StatusItemController: NSObject {
       cloudStatus: cloudSync.cloudStatus,
       cloudStatusError: cloudSync.cloudStatusError,
       backgroundIngestMessage: MenuBarActivityModel.shared.backgroundIngestMessage,
-      isActiveSessionOrphaned: cloudSync.isActiveSessionOrphaned
+      isActiveSessionOrphaned: cloudSync.isActiveSessionOrphaned,
+      pendingPushCount: cloudSync.localEntriesPendingPush
     )
 
     // Keep the branded logomark as the icon; update only the tooltip
@@ -389,7 +390,8 @@ private struct StatusItemPopoverContent: View {
       cloudStatus: cloudSyncManager.cloudStatus,
       cloudStatusError: cloudSyncManager.cloudStatusError,
       backgroundIngestMessage: activityModel.backgroundIngestMessage,
-      isActiveSessionOrphaned: cloudSyncManager.isActiveSessionOrphaned
+      isActiveSessionOrphaned: cloudSyncManager.isActiveSessionOrphaned,
+      pendingPushCount: cloudSyncManager.localEntriesPendingPush
     )
   }
 

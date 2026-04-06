@@ -4,6 +4,14 @@
 import ArgumentParser
 import Foundation
 
+#if canImport(FoundationNetworking)
+@preconcurrency import FoundationNetworking
+#endif
+
+#if canImport(Glibc)
+@preconcurrency import Glibc
+#endif
+
 #if os(macOS)
 import ContextifyCore
 #else
@@ -136,30 +144,7 @@ private func cloudRequest(
   request.httpBody = body
   request.timeoutInterval = timeoutSeconds
 
-  let semaphore = DispatchSemaphore(value: 0)
-  var responseData: Data?
-  var statusCode: Int = 0
-  var requestError: Error?
-
-  let task = URLSession.shared.dataTask(with: request) { data, response, error in
-    responseData = data
-    statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-    requestError = error
-    semaphore.signal()
-  }
-  task.resume()
-  let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds + 5)
-  if waitResult == .timedOut {
-    task.cancel()
-    throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
-  }
-
-  if let error = requestError {
-    throw CloudError.networkError(error.localizedDescription)
-  }
-  guard let data = responseData else {
-    throw CloudError.networkError("No response received")
-  }
+  let (data, statusCode) = try syncHTTPRequest(request, timeoutSeconds: timeoutSeconds)
   return (data, statusCode)
 }
 
@@ -180,15 +165,44 @@ private func unauthenticatedRequest(
   request.httpBody = body
   request.timeoutInterval = timeoutSeconds
 
+  let (data, statusCode) = try syncHTTPRequest(request, timeoutSeconds: timeoutSeconds)
+  return (data, statusCode)
+}
+
+/// Thread-safe container for URLSession callback results.
+/// Uses NSLock to synchronize writes (callback thread) and reads (waiting thread).
+private final class HTTPResultBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _data: Data?
+  private var _statusCode: Int = 0
+  private var _error: Error?
+
+  func store(data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    _data = data
+    _statusCode = statusCode
+    _error = error
+    lock.unlock()
+  }
+
+  func snapshot() -> (data: Data?, statusCode: Int, error: Error?) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (_data, _statusCode, _error)
+  }
+}
+
+/// Execute a URLRequest synchronously using a semaphore.
+private func syncHTTPRequest(_ request: URLRequest, timeoutSeconds: TimeInterval) throws -> (Data, Int) {
+  let box = HTTPResultBox()
   let semaphore = DispatchSemaphore(value: 0)
-  var responseData: Data?
-  var statusCode: Int = 0
-  var requestError: Error?
 
   let task = URLSession.shared.dataTask(with: request) { data, response, error in
-    responseData = data
-    statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-    requestError = error
+    box.store(
+      data: data,
+      statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0,
+      error: error
+    )
     semaphore.signal()
   }
   task.resume()
@@ -198,13 +212,14 @@ private func unauthenticatedRequest(
     throw CloudError.networkError("Request timed out after \(Int(timeoutSeconds))s")
   }
 
-  if let error = requestError {
+  let result = box.snapshot()
+  if let error = result.error {
     throw CloudError.networkError(error.localizedDescription)
   }
-  guard let data = responseData else {
+  guard let data = result.data else {
     throw CloudError.networkError("No response received")
   }
-  return (data, statusCode)
+  return (data, result.statusCode)
 }
 
 // MARK: - Device Flow Types
@@ -295,8 +310,7 @@ private func pollForDeviceToken(
     // Show spinner progress
     if CLIStyle.isStyled {
       let frame = spinnerFrames[frameIndex % spinnerFrames.count]
-      print("\r  \(frame) Waiting for browser authorization...", terminator: "")
-      fflush(stdout)
+      writeStdout("\r  \(frame) Waiting for browser authorization...")
       frameIndex += 1
     }
 
@@ -319,8 +333,7 @@ private func pollForDeviceToken(
     if statusCode == 200 {
       // Clear spinner line
       if CLIStyle.isStyled {
-        print("\r\u{001B}[2K", terminator: "")
-        fflush(stdout)
+        writeStdout("\r\u{001B}[2K")
       }
       return try JSONDecoder().decode(DeviceTokenResponse.self, from: data)
     }
@@ -335,20 +348,17 @@ private func pollForDeviceToken(
         continue
       case "expired_token":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization timed out. The code has expired. Please run setup again.")
       case "access_denied":
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError("Authorization was denied by the user.")
       default:
         if CLIStyle.isStyled {
-          print("\r\u{001B}[2K", terminator: "")
-          fflush(stdout)
+          writeStdout("\r\u{001B}[2K")
         }
         throw CloudError.networkError(
           errorResponse.errorDescription ?? "Unknown error: \(errorResponse.error)")
@@ -357,8 +367,7 @@ private func pollForDeviceToken(
 
     // Unexpected status code
     if CLIStyle.isStyled {
-      print("\r\u{001B}[2K", terminator: "")
-      fflush(stdout)
+      writeStdout("\r\u{001B}[2K")
     }
     let respBody = String(data: data, encoding: .utf8) ?? ""
     throw CloudError.apiError(statusCode, respBody)
@@ -366,8 +375,7 @@ private func pollForDeviceToken(
 
   // Expired by local deadline
   if CLIStyle.isStyled {
-    print("\r\u{001B}[2K", terminator: "")
-    fflush(stdout)
+    writeStdout("\r\u{001B}[2K")
   }
   throw CloudError.networkError("Authorization timed out after \(expiresIn) seconds.")
 }
@@ -783,6 +791,13 @@ struct CloudStatusCommand: ParsableCommand {
 // MARK: - Push Command
 
 struct CloudPushCommand: ParsableCommand {
+  struct Result {
+    let accepted: Int
+    let duplicatesSkipped: Int
+    let errors: [String]
+    let batches: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "push",
     abstract: "Push local entries to cloud",
@@ -800,14 +815,27 @@ struct CloudPushCommand: ParsableCommand {
   @Option(name: .long, help: "Path to the SQLite database file")
   var db: String?
 
-  @Option(name: .long, help: "Maximum entries per batch (default: 500)")
-  var limit: Int = 500
+  @Option(name: .long, help: "Maximum entries per batch (default: 2500)")
+  var limit: Int = 2500
 
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
-    var config = try CLICloudConfig.load()
+  func execute(emitOutput: Bool = true) throws -> Result {
+    let config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
+      }
+      throw ExitCode(1)
+    }
+    var mutableConfig = config
 
     // Resolve database path using same logic as other commands
     let dbPath = resolveDbPath()
@@ -824,15 +852,15 @@ struct CloudPushCommand: ParsableCommand {
     #else
     let osName = "linux"
     #endif
-    let machineId = normalizedCLICloudDeviceID(config.deviceId)
-    if machineId != config.deviceId {
-      config.deviceId = machineId
-      try config.save()
+    let machineId = normalizedCLICloudDeviceID(mutableConfig.deviceId)
+    if machineId != mutableConfig.deviceId {
+      mutableConfig.deviceId = machineId
+      try mutableConfig.save()
     }
 
     // Keyset pagination: resume from saved cursor for incremental push
-    var afterTimestamp: Int? = config.lastPushTimestamp
-    var afterEntryId: String? = config.lastPushEntryId
+    var afterTimestamp: Int? = mutableConfig.lastPushTimestamp
+    var afterEntryId: String? = mutableConfig.lastPushEntryId
     var totalAccepted = 0
     var totalDuplicates = 0
     var totalErrors: [String] = []
@@ -846,12 +874,8 @@ struct CloudPushCommand: ParsableCommand {
       )
 
       if exportData.entries.isEmpty {
-        if batchCount == 0 {
-          if json {
-            print(#"{"accepted":0,"duplicates_skipped":0,"errors":[]}"#)
-          } else {
-            print(CLIStyle.dimText("No entries to push."))
-          }
+        if batchCount == 0 && emitOutput && !json {
+          print(CLIStyle.dimText("No entries to push."))
         }
         break
       }
@@ -860,17 +884,17 @@ struct CloudPushCommand: ParsableCommand {
       let payload = buildPushPayload(
         exportData: exportData,
         machineId: machineId,
-        machineName: config.deviceName.isEmpty ? nil : config.deviceName,
+        machineName: mutableConfig.deviceName.isEmpty ? nil : mutableConfig.deviceName,
         osName: osName
       )
       let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-      if !json {
-        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(config.serverURL))...")
+      if emitOutput && !json {
+        print("Pushing batch \(CLIStyle.boldText("\(batchCount)")): \(exportData.entries.count) entries to \(CLIStyle.cyanText(mutableConfig.serverURL))...")
       }
 
       let (responseData, status) = try cloudRequest(
-        config: config, method: "POST", path: "/api/v1/sync/push", body: bodyData)
+        config: mutableConfig, method: "POST", path: "/api/v1/sync/push", body: bodyData)
 
       guard status == 200 else {
         let body = String(data: responseData, encoding: .utf8) ?? "unknown"
@@ -882,8 +906,14 @@ struct CloudPushCommand: ParsableCommand {
         totalDuplicates += result["duplicates_skipped"] as? Int ?? 0
         let batchErrors = result["errors"] as? [String] ?? []
         totalErrors.append(contentsOf: batchErrors)
-        // Fail closed: checkpoint cursor at last successful batch, then stop
+        // Fail closed: do NOT advance cursor past errors so entries
+        // can be retried. ct-810 cursor-skip needs a server protocol
+        // change to distinguish permanent vs transient failures.
         if !batchErrors.isEmpty {
+          if emitOutput && !json {
+            print(CLIStyle.warning("Batch \(batchCount) had \(batchErrors.count) error\(batchErrors.count == 1 ? "" : "s"):"))
+            for e in batchErrors.prefix(3) { print("  \(CLIStyle.redText("-")) \(e)") }
+          }
           break
         }
       }
@@ -897,9 +927,9 @@ struct CloudPushCommand: ParsableCommand {
       // Checkpoint cursor after each successful batch so retries
       // resume from here instead of replaying all prior batches
       if let ts = afterTimestamp, let eid = afterEntryId {
-        config.lastPushTimestamp = ts
-        config.lastPushEntryId = eid
-        try config.save()
+        mutableConfig.lastPushTimestamp = ts
+        mutableConfig.lastPushEntryId = eid
+        try mutableConfig.save()
       }
 
       // Short page means we have exported everything
@@ -908,27 +938,35 @@ struct CloudPushCommand: ParsableCommand {
       }
     }
 
-    // Print final summary
-    if batchCount > 0 {
-      if json {
-        let output: [String: Any] = [
-          "accepted": totalAccepted,
-          "duplicates_skipped": totalDuplicates,
-          "errors": Array(totalErrors.prefix(10)),
-          "batches": batchCount,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
-        print(String(data: data, encoding: .utf8) ?? "{}")
-      } else {
-        print(CLIStyle.success("Push complete: \(totalAccepted) accepted, \(totalDuplicates) duplicates (\(batchCount) batch\(batchCount == 1 ? "" : "es"))"))
-        if !totalErrors.isEmpty {
-          print(CLIStyle.error("Errors: \(totalErrors.count)"))
-          for e in totalErrors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
-        }
+    return Result(
+      accepted: totalAccepted,
+      duplicatesSkipped: totalDuplicates,
+      errors: totalErrors,
+      batches: batchCount
+    )
+  }
+
+  func run() throws {
+    let result = try execute()
+
+    if json {
+      let output: [String: Any] = [
+        "accepted": result.accepted,
+        "duplicates_skipped": result.duplicatesSkipped,
+        "errors": Array(result.errors.prefix(10)),
+        "batches": result.batches,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8) ?? "{}")
+    } else if result.batches > 0 {
+      print(CLIStyle.success("Push complete: \(result.accepted) accepted, \(result.duplicatesSkipped) duplicates (\(result.batches) batch\(result.batches == 1 ? "" : "es"))"))
+      if !result.errors.isEmpty {
+        print(CLIStyle.error("Errors: \(result.errors.count)"))
+        for e in result.errors.prefix(5) { print("  \(CLIStyle.redText("-")) \(e)") }
       }
     }
 
-    if !totalErrors.isEmpty { throw ExitCode(1) }
+    if !result.errors.isEmpty { throw ExitCode(1) }
   }
 
   private func resolveDbPath() -> String {
@@ -940,6 +978,12 @@ struct CloudPushCommand: ParsableCommand {
 // MARK: - Pull Command
 
 struct CloudPullCommand: ParsableCommand {
+  struct Result {
+    let pulled: Int
+    let imported: Int
+    let cursor: Int
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "pull",
     abstract: "Pull entries from other devices",
@@ -962,18 +1006,30 @@ struct CloudPullCommand: ParsableCommand {
   @Flag(name: .long, help: "Output as JSON")
   var json: Bool = false
 
-  func run() throws {
-    var config = try CLICloudConfig.load()
+  func execute(emitOutput: Bool = true) throws -> Result {
+    var config: CLICloudConfig
+    do {
+      config = try CLICloudConfig.load()
+    } catch {
+      if emitOutput {
+        if json {
+          print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+        } else {
+          print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+        }
+      }
+      throw ExitCode(1)
+    }
 
     let dbPath = resolveDbPath()
-    let queryService = try ContextifyQueryService(databasePath: dbPath)
+    let queryService = try ContextifyQueryService(databaseURL: URL(fileURLWithPath: dbPath), readOnly: false)
 
     var totalPulled = 0
     var totalImported = 0
     var cursor = config.lastPullSequence
     var hasMore = true
 
-    if !json {
+    if emitOutput && !json {
       print("Pulling from \(CLIStyle.cyanText(config.serverURL)) \(CLIStyle.dimText("(cursor: \(cursor))"))...")
     }
 
@@ -1023,7 +1079,7 @@ struct CloudPullCommand: ParsableCommand {
         )
         totalImported += importResult.entriesImported
 
-        if !json {
+        if emitOutput && !json {
           print(CLIStyle.dimText("  Received \(entries.count) entries, imported \(importResult.entriesImported), skipped \(importResult.entriesSkipped) (cursor: \(cursor))"))
         }
       }
@@ -1032,14 +1088,20 @@ struct CloudPullCommand: ParsableCommand {
     config.lastPullSequence = cursor
     try config.save()
 
+    return Result(pulled: totalPulled, imported: totalImported, cursor: cursor)
+  }
+
+  func run() throws {
+    let result = try execute()
+
     if json {
       let output: [String: Any] = [
-        "pulled": totalPulled, "imported": totalImported, "cursor": cursor,
+        "pulled": result.pulled, "imported": result.imported, "cursor": result.cursor,
       ]
       let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
       print(String(data: data, encoding: .utf8)!)
     } else {
-      print(CLIStyle.success("Pull complete: \(totalPulled) received, \(totalImported) imported, cursor at \(cursor)"))
+      print(CLIStyle.success("Pull complete: \(result.pulled) received, \(result.imported) imported, cursor at \(result.cursor)"))
     }
   }
 
@@ -1073,21 +1135,110 @@ struct CloudSyncCommand: ParsableCommand {
   var json: Bool = false
 
   func run() throws {
+    // Preflight: fail fast on local preconditions (missing config,
+    // missing DB) before invoking push/pull subcommands. This prevents
+    // pull from creating a writable DB at a typo path when push fails
+    // on the same bad path.
+    let dbPath = db.map(XDGPaths.expandTilde) ?? XDGPaths.databasePath.path
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+      throw ValidationError("Database not found at \(dbPath)")
+    }
+
+    do {
+      _ = try CLICloudConfig.load()
+    } catch {
+      if json {
+        print(#"{"error":"not_configured","message":"Cloud not configured. Run 'contextify cloud setup' first."}"#)
+      } else {
+        print(CLIStyle.error("Cloud not configured. Run '\(CLIStyle.cyanText("contextify cloud setup"))' first."))
+      }
+      throw ExitCode(1)
+    }
+
+    var pushFailed = false
+    var pushResult: CloudPushCommand.Result?
+    var pushError: String?
+
     if !json { print("\n\(CLIStyle.header("Push"))") }
-    var push = CloudPushCommand()
-    push.db = db
-    push.limit = 500
-    push.json = json
-    try push.run()
+    var pushArgs = ["--db", dbPath]
+    // json is suppressed; sync emits its own envelope
+    var push = try CloudPushCommand.parse(pushArgs)
+    do {
+      pushResult = try push.execute(emitOutput: !json)
+    } catch {
+      // Only continue to pull for recoverable push failures (network/server).
+      // Fail fast for auth, validation, and programming errors.
+      let recoverable: Bool
+      if let cloudError = error as? CloudError {
+        switch cloudError {
+        case .networkError:
+          recoverable = true
+        case .apiError(let code, _):
+          recoverable = code >= 500
+        default:
+          recoverable = false
+        }
+      } else {
+        recoverable = false
+      }
+      guard recoverable else { throw error }
+
+      pushFailed = true
+      pushError = "\(error)"
+      if !json {
+        print(CLIStyle.warning("Push failed: \(error)"))
+        print(CLIStyle.dimText("Continuing with pull..."))
+      }
+    }
 
     if !json { print("\n\(CLIStyle.header("Pull"))") }
-    var pull = CloudPullCommand()
-    pull.db = db
-    pull.project = project
-    pull.json = json
-    try pull.run()
+    var pullArgs = ["--db", dbPath]
+    if let project { pullArgs += ["--project", project] }
+    // json is suppressed; sync emits its own envelope
+    var pull = try CloudPullCommand.parse(pullArgs)
+    let pullResult = try pull.execute(emitOutput: !json)
 
-    if !json { print("\n" + CLIStyle.success("Sync complete.")) }
+    if json {
+      // ct-824: Single structured JSON envelope for sync results
+      var pushDict: [String: Any] = [
+        "accepted": 0,
+        "duplicates_skipped": 0,
+        "errors": [String](),
+        "batches": 0,
+        "failed": false,
+      ]
+      if let pr = pushResult {
+        pushDict["accepted"] = pr.accepted
+        pushDict["duplicates_skipped"] = pr.duplicatesSkipped
+        pushDict["errors"] = Array(pr.errors.prefix(10))
+        pushDict["batches"] = pr.batches
+      }
+      if pushFailed {
+        pushDict["failed"] = true
+        pushDict["error"] = pushError ?? "unknown"
+      }
+
+      let output: [String: Any] = [
+        "push": pushDict,
+        "pull": [
+          "pulled": pullResult.pulled,
+          "imported": pullResult.imported,
+          "cursor": pullResult.cursor,
+        ],
+        "partial": pushFailed,
+      ]
+      let data = try JSONSerialization.data(withJSONObject: output, options: .prettyPrinted)
+      print(String(data: data, encoding: .utf8)!)
+    } else {
+      print(CLIStyle.success("Pull complete: \(pullResult.pulled) received, \(pullResult.imported) imported, cursor at \(pullResult.cursor)"))
+      if pushFailed {
+        print("\n" + CLIStyle.warning("Sync partially complete (push failed, pull succeeded)."))
+      } else {
+        print("\n" + CLIStyle.success("Sync complete."))
+      }
+    }
+
+    if pushFailed { throw ExitCode(1) }
   }
 }
 
@@ -1268,37 +1419,26 @@ struct CloudSearchCommand: ParsableCommand {
 
 // MARK: - Helpers
 
-/// Stable machine identifier for device registration
-private func getStableMachineId() -> String {
-  #if os(macOS)
-  return MachineID.current()
-  #else
-  if let id = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8)
-    .trimmingCharacters(in: .whitespacesAndNewlines) {
-    return id
-  }
-  return ProcessInfo.processInfo.hostName
-  #endif
+/// Write directly to stdout, bypassing Swift's print buffer.
+/// Avoids Swift 6 concurrency warnings for the global `stdout` symbol
+/// and ensures immediate output for interactive progress (spinners, line clearing).
+private func writeStdout(_ text: String) {
+  guard let data = text.data(using: .utf8) else { return }
+  try? FileHandle.standardOutput.write(contentsOf: data)
 }
 
-/// Get a human-readable machine name for device identity
+/// Stable machine identifier for device registration (delegates to cross-platform MachineID)
+private func getStableMachineId() -> String {
+  MachineID.current()
+}
+
+/// Get a human-readable machine name for device identity (delegates to cross-platform DeviceName)
 private func getLocalMachineName() -> String {
-  #if os(macOS)
-  return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-  #else
-  return ProcessInfo.processInfo.hostName
-  #endif
+  DeviceName.current()
 }
 
 private func normalizedCLICloudDeviceID(_ storedID: String?) -> String {
-  #if os(macOS)
-  return MachineID.normalizedCloudDeviceID(storedID)
-  #else
-  guard let storedID, !storedID.isEmpty else {
-    return getStableMachineId()
-  }
-  return storedID
-  #endif
+  MachineID.normalizedCloudDeviceID(storedID)
 }
 
 /// Build push payload from exported data
@@ -1313,11 +1453,7 @@ private func buildPushPayload(
   if let name = machineName, !name.isEmpty {
     resolvedName = name
   } else {
-    #if os(macOS)
-    resolvedName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-    #else
-    resolvedName = ProcessInfo.processInfo.hostName
-    #endif
+    resolvedName = DeviceName.current()
   }
 
   return [

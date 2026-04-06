@@ -343,6 +343,175 @@ final class ContextifyQueryServiceTests: XCTestCase {
     }
   }
 
+  /// ct-374: After a pull remap (cloud-project -> local-project), a subsequent
+  /// exportForCloudPush uses the local project ID. The server handles merging
+  /// via repo_group_key, so the client correctly sends its canonical local ID.
+  func testRoundTrip_pullRemapThenPushExportsLocalProjectId() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-roundtrip-identity-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Setup: local project exists
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('local-project', 'Contextify', '/Users/rob/code/projects/contextify', 1, 0, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Step 1: Pull from cloud with different project ID for same root_path
+    let pullResult = try service.importFromCloudPull(
+      projects: [[
+        "id": "cloud-project",
+        "name": "Contextify",
+        "root_path": "/Users/rob/code/projects/contextify",
+      ]],
+      transcripts: [[
+        "id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "file_path": "/Users/rob/.claude/projects/contextify/transcript.jsonl",
+        "provider": "claude.code",
+        "line_count": 1,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      entries: [[
+        "id": "cloud-entry",
+        "transcript_id": "cloud-transcript",
+        "project_id": "cloud-project",
+        "provider": "claude.code",
+        "kind": "user",
+        "timestamp": 100,
+        "content": "hello from cloud",
+        "content_sha256": "sha-cloud-roundtrip",
+        "display_in_timeline": true,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      summaries: []
+    )
+
+    // Pull remap should have remapped cloud-project -> local-project
+    XCTAssertEqual(pullResult.projectsImported, 0, "Should not create a new project")
+    XCTAssertEqual(pullResult.entriesImported, 1)
+
+    // Step 2: Export for push - should use local-project ID, not cloud-project
+    let pushExport = try service.exportForCloudPush()
+
+    // All exported entries should reference local-project
+    XCTAssertFalse(pushExport.entries.isEmpty, "Should have entries to push")
+    for entry in pushExport.entries {
+      XCTAssertEqual(entry.projectId, "local-project",
+        "Push export should use the local project ID, not the cloud one")
+    }
+
+    // All exported transcripts should reference local-project
+    for transcript in pushExport.transcripts {
+      XCTAssertEqual(transcript.projectId, "local-project",
+        "Transcript should reference local project ID")
+    }
+
+    // Only one project should be exported (the local one)
+    XCTAssertEqual(pushExport.projects.count, 1,
+      "Should export exactly one project (no duplicates)")
+    XCTAssertEqual(pushExport.projects.first?.id, "local-project",
+      "Exported project should be the local one")
+
+    // Verify: still only one project row in the database
+    try pool.read { db in
+      let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects")
+      XCTAssertEqual(projectCount, 1, "Database should have exactly one project")
+    }
+  }
+
+  /// Regression test for ct-834: pull must not crash when a transcript already
+  /// exists locally with a different ID but the same (project_id, file_path).
+  func testImportFromCloudPull_skipsTranscriptWithDuplicateProjectIdAndFilePath() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-cloud-pull-dup-transcript-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Seed a project and transcript as if local ingest created them
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('local-proj', 'TestProject', '/test/cloud-push', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('local-transcript', 'local-proj',
+          '/root/.claude/projects/test-hash/session.jsonl', 'claude.code',
+          100, 3, 3, 1, 'active', 'complete', 100, 100)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Pull delivers the same transcript with a DIFFERENT id but same
+    // project_id + file_path. Before ct-834 fix this caused a UNIQUE
+    // constraint violation.
+    let result = try service.importFromCloudPull(
+      projects: [[
+        "id": "local-proj",
+        "name": "TestProject",
+        "root_path": "/test/cloud-push",
+      ]],
+      transcripts: [[
+        "id": "cloud-transcript-different-id",
+        "project_id": "local-proj",
+        "file_path": "/root/.claude/projects/test-hash/session.jsonl",
+        "provider": "claude.code",
+        "line_count": 3,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      entries: [[
+        "id": "cloud-entry-1",
+        "transcript_id": "cloud-transcript-different-id",
+        "project_id": "local-proj",
+        "provider": "claude.code",
+        "kind": "user",
+        "timestamp": 100,
+        "content": "test entry for ct-834",
+        "content_sha256": "sha-ct834",
+        "display_in_timeline": true,
+        "created_at": 100,
+        "updated_at": 100,
+      ]],
+      summaries: []
+    )
+
+    // Transcript should be skipped (already exists), not crash
+    XCTAssertEqual(result.transcriptsImported, 0)
+    // Entry should still import (remapped to the local transcript ID)
+    XCTAssertEqual(result.entriesImported, 1)
+
+    try pool.read { db in
+      let transcriptCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts")
+      XCTAssertEqual(transcriptCount, 1, "Should still have only the original transcript")
+
+      // Entry should reference the LOCAL transcript ID, not the cloud one
+      let entryTranscriptId = try String.fetchOne(
+        db, sql: "SELECT transcript_id FROM transcript_entries WHERE id = 'cloud-entry-1'")
+      XCTAssertEqual(entryTranscriptId, "local-transcript",
+        "Entry should be remapped to local transcript ID")
+    }
+  }
+
   // MARK: - FTS Search Correctness & Query Plan Guards (ct-178)
 
   /// Verifies OR queries return correct results through search, searchCount, and searchTermCounts.
@@ -716,6 +885,91 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertNil(apiMatch, "Short name 'api' must not match unrelated long input via reverse-substring")
   }
 
+  // MARK: - ct-93 regression: status includes newestEntryTimestamp
+
+  func testCounts_includesNewestEntryTimestamp() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-counts-ts-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    let project = Project(
+      id: "proj-ts", name: "test-project",
+      rootPath: "/Users/test/code/test-project",
+      rootBookmark: nil, lastViewedTs: 0, hidden: false,
+      displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+      createdAt: 0, updatedAt: 0
+    )
+    try pool.write { db in
+      try project.insert(db)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('tx-ts', 'proj-ts', '/tmp/test.jsonl', 'claude.code', 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, content, content_sha256,
+          timestamp, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES
+          ('e1', 'tx-ts', 'proj-ts', 'claude.code', 'user', 'first entry', 'sha1', 1000, 1, 0, 0, 0, 0),
+          ('e2', 'tx-ts', 'proj-ts', 'claude.code', 'assistant', 'second entry', 'sha2', 5000, 1, 0, 0, 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let counts = try service.counts()
+    XCTAssertEqual(counts.newestEntryTimestamp, 5000)
+    XCTAssertEqual(counts.entryCount, 2)
+    XCTAssertEqual(counts.deviceCount, 0)  // no source_device_id set
+  }
+
+  // MARK: - Review feedback: fuzzy fast-path fallback still finds old projects
+
+  func testFuzzyProjectSuggestions_fallbackToFullScan_beyond500() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-fuzzy-fallback-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      // Target project with oldest lastViewedTs (outside recent-500 window)
+      let target = Project(
+        id: "proj-old-target", name: "my-rare-project",
+        rootPath: "/Users/test/code/my-rare-project",
+        rootBookmark: nil, lastViewedTs: 0, hidden: false,
+        displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+        createdAt: 0, updatedAt: 0
+      )
+      try target.insert(db)
+
+      for i in 1...500 {
+        let filler = Project(
+          id: "proj-fill-\(i)", name: "filler-project-\(i)",
+          rootPath: "/Users/test/code/filler-\(i)",
+          rootBookmark: nil, lastViewedTs: Double(i), hidden: false,
+          displayOrder: nil, isOrphaned: false, orphanedSince: nil,
+          createdAt: 0, updatedAt: 0
+        )
+        try filler.insert(db)
+      }
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Typo of the oldest project should trigger full-scan fallback
+    let result = try service.fuzzyProjectSuggestions("my-rar-project")
+    XCTAssertFalse(result.isEmpty, "Fallback to full scan must find project beyond recent-500")
+    XCTAssertEqual(result.first?.name, "my-rare-project")
+  }
+
   /// Query plan guard: FTS JOIN must use PK index, not partial index scan.
   /// Before ct-178: SQLite chose idx_entries_cursor (SCAN 483K rows, 64s).
   /// After ct-178: INDEXED BY forces PK lookup (SEARCH by id, 7ms).
@@ -1038,5 +1292,265 @@ final class ContextifyQueryServiceTests: XCTestCase {
     }
 
     return try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+  }
+
+  // MARK: - ct-796: CLI contract tests (databaseSummary shape, non-path resolution)
+
+  /// Verify counts() returns all fields needed for databaseSummary metadata.
+  /// The CLI wraps this as the "databaseSummary" key in search JSON responses.
+  func testCounts_returnsDatabaseSummaryFields() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-dbsummary-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'alpha', '/test/alpha', 0, 0, 100),
+               ('p2', 'beta', '/test/beta', 0, 0, 50)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider, last_modified, line_count, last_processed_line, parser_version, status, ingest_state, created_at, updated_at)
+        VALUES ('t1', 'p1', '/tmp/t1.jsonl', 'claude.code', 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, content, content_sha256,
+          timestamp, display_in_timeline, is_sidechain, created_at, updated_at, is_queued,
+          source_device_id
+        ) VALUES
+          ('e1', 't1', 'p1', 'claude.code', 'user', 'hello', 'sha1', 1000, 1, 0, 0, 0, 0, 'device-a'),
+          ('e2', 't1', 'p1', 'claude.code', 'assistant', 'world', 'sha2', 2000, 1, 0, 0, 0, 0, 'device-b')
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let counts = try service.counts()
+
+    // All fields that back databaseSummary must be present and correct
+    XCTAssertEqual(counts.entryCount, 2)
+    XCTAssertEqual(counts.projectCount, 2)
+    XCTAssertEqual(counts.deviceCount, 2)
+    XCTAssertEqual(counts.newestEntryTimestamp, 2000)
+  }
+
+  /// Verify that databaseSummary counts are global, not filtered by project.
+  /// This was the P1 issue from the ChatGPT review: scopeSummary reported global
+  /// counts while claiming to describe the filtered search scope.
+  func testCounts_areGlobal_notFilteredByProject() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-global-counts-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'alpha', '/test/alpha', 0, 0, 100),
+               ('p2', 'beta', '/test/beta', 0, 0, 50),
+               ('p3', 'gamma', '/test/gamma', 0, 0, 25)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // counts() always returns global totals regardless of any filtering
+    let counts = try service.counts()
+    XCTAssertEqual(counts.projectCount, 3, "counts() must return ALL projects, not a filtered subset")
+  }
+
+  /// Verify resolveProjectByName returns nil for an unknown name,
+  /// enabling the caller to terminate without filesystem fallback.
+  func testResolveProjectByName_unknownName_returnsNil() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-resolve-nil-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'real-project', '/test/real-project', 0, 0, 100)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    // Name lookup for unknown project returns nil (not an error, not a path)
+    let result = try service.resolveProjectByName("totally-unknown-project")
+    XCTAssertNil(result, "Unknown project name must return nil, not fall through to path resolution")
+
+    // Fuzzy suggestions for a completely unrelated name should be empty
+    let fuzzy = try service.fuzzyProjectSuggestions("zzzzz-no-match")
+    XCTAssertTrue(fuzzy.isEmpty, "Completely unrelated name must produce no fuzzy suggestions")
+  }
+
+  // MARK: - Transcript Tag Tests
+
+  /// Tags can be added, listed, and removed via the query service.
+  func testTagOperations_addListRemove() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-tags-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'h1', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Initially no tags
+    let initial = try service.getTags(transcriptId: "t1")
+    XCTAssertTrue(initial.isEmpty)
+
+    // Add a tag
+    try service.addTag(transcriptId: "t1", tag: "benchmark")
+    let afterAdd = try service.getTags(transcriptId: "t1")
+    XCTAssertEqual(afterAdd, ["benchmark"])
+
+    // Add same tag again (idempotent)
+    try service.addTag(transcriptId: "t1", tag: "benchmark")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark"])
+
+    // Add second tag
+    try service.addTag(transcriptId: "t1", tag: "evaluation")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark", "evaluation"])
+
+    // Remove a tag
+    try service.removeTag(transcriptId: "t1", tag: "benchmark")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["evaluation"])
+
+    // Remove last tag
+    try service.removeTag(transcriptId: "t1", tag: "evaluation")
+    XCTAssertTrue(try service.getTags(transcriptId: "t1").isEmpty)
+  }
+
+  /// Search with --exclude-tags filters out entries from tagged transcripts.
+  func testSearch_excludeTags_filtersTaggedTranscripts() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-excl-tags-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      // Two transcripts: one will be tagged, one won't
+      for (tid, path) in [("t-real", "/test/real.jsonl"), ("t-bench", "/test/bench.jsonl")] {
+        try db.execute(sql: """
+          INSERT INTO transcripts (
+            id, project_id, file_path, normalized_path, path_hash, provider,
+            last_modified, file_size, content_length, mtime_ms,
+            line_count, last_processed_line, parser_version, status, ingest_state,
+            created_at, updated_at
+          ) VALUES (?, 'p1', ?, ?, ?, 'claude.code', 0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+        """, arguments: [tid, path, path, "h-\(tid)"])
+      }
+      // Both have entries matching "deploy pipeline"
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, timestamp, content,
+          content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES
+          ('e-real', 't-real', 'p1', 'claude.code', 'user', 100, 'fix the deploy pipeline', 'sha-r', 1, 0, 100, 100, 0),
+          ('e-bench', 't-bench', 'p1', 'claude.code', 'user', 200, 'search for deploy pipeline issues', 'sha-b', 1, 0, 200, 200, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    // Without excludeTags, both results appear
+    let allResults = try service.search(query: "deploy pipeline", limit: 10)
+    XCTAssertEqual(allResults.count, 2, "Without tag filter, both entries match")
+
+    // Tag the benchmark transcript
+    try service.addTag(transcriptId: "t-bench", tag: "benchmark")
+
+    // With excludeTags=["benchmark"], only the real entry appears
+    let filtered = try service.search(query: "deploy pipeline", limit: 10, excludeTags: ["benchmark"])
+    XCTAssertEqual(filtered.count, 1, "With --exclude-tags benchmark, only non-tagged entry matches")
+    XCTAssertEqual(filtered.first?.id, "e-real")
+
+    // searchCount also respects the filter
+    let filteredCount = try service.searchCount(query: "deploy pipeline", excludeTags: ["benchmark"])
+    XCTAssertEqual(filteredCount, 1)
+
+    // Untagged transcript is never affected
+    let noFilter = try service.search(query: "deploy pipeline", limit: 10, excludeTags: ["nonexistent"])
+    XCTAssertEqual(noFilter.count, 2, "Excluding a tag that no transcript has should return all results")
+  }
+
+  /// Tags are normalized to lowercase.
+  func testTags_normalizedToLowercase() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-tag-norm-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test', '/test', 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'h1', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+
+    try service.addTag(transcriptId: "t1", tag: "Benchmark")
+    let tags = try service.getTags(transcriptId: "t1")
+    XCTAssertEqual(tags, ["benchmark"], "Tags should be normalized to lowercase")
+
+    // Adding same tag with different case should be idempotent
+    try service.addTag(transcriptId: "t1", tag: "BENCHMARK")
+    XCTAssertEqual(try service.getTags(transcriptId: "t1"), ["benchmark"])
   }
 }
