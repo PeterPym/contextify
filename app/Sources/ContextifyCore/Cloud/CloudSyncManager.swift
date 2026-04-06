@@ -1256,10 +1256,10 @@ public final class CloudSyncManager: @unchecked Sendable {
       }
       // Spawn a single waiter task that fires when ingest completes
       guard ingestWaitTask == nil else { return }
-      ingestWaitTask = Task.detached(priority: .utility) {
+      ingestWaitTask = Task.detached(priority: .utility) { [weak self] in
         await DatabaseWriteCoordinator.shared.waitForIngestComplete()
-        // Small delay to let final writes settle
         try? await Task.sleep(for: .milliseconds(200))
+        guard let self else { return }
         await self.handleIngestWaitComplete()
       }
       return
