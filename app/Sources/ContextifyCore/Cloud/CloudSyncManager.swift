@@ -603,10 +603,13 @@ public final class CloudSyncManager: @unchecked Sendable {
             toolName: ti.toolName, toolKey: ti.toolKey, status: ti.status,
             startedAt: ti.startedAt, completedAt: ti.completedAt,
             metadataJson: ti.metadataJson.flatMap { jsonStr in
-              guard let data = jsonStr.data(using: .utf8),
-                    let dict = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-              else { return nil }
-              return dict
+              guard let data = jsonStr.data(using: .utf8) else { return nil }
+              do {
+                return try JSONDecoder().decode([String: JSONValue].self, from: data)
+              } catch {
+                log.error("Invalid tool_invocations.metadata_json id=\(ti.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                return nil
+              }
             },
             createdAt: ti.createdAt, updatedAt: ti.updatedAt)
         },
