@@ -33,24 +33,44 @@
 
 ### Sidechain/Subagent Transcripts
 
-When Claude Code spawns subagents (via the Task tool), each subagent creates its own transcript file with a distinct naming pattern.
+When Claude Code spawns subagents (via the Task tool), each subagent creates its own transcript file inside a per-session subdirectory.
 
-**Filename convention:**
+**Directory layout:**
 - **Main session:** `{sessionId}.jsonl` (UUID format, e.g., `343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl`)
-- **Subagent:** `agent-{agentId}.jsonl` (e.g., `agent-10bae299.jsonl`)
+- **Session directory:** `{sessionId}/` contains subagent transcripts and raw tool output
+- **Subagent transcript:** `{sessionId}/subagents/agent-{agentId}.jsonl`
+- **Subagent metadata:** `{sessionId}/subagents/agent-{agentId}.meta.json`
+- **Tool result blobs:** `{sessionId}/tool-results/*.txt`
 
 **Structure:**
 ```
 ~/.claude/projects/-Users-rob-code-projects-example/
-├── 343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl  # Main conversation (31KB)
-├── agent-10bae299.jsonl                         # Subagent sidechain (851 bytes)
-├── agent-30cc28b5.jsonl                         # Subagent sidechain (851 bytes)
-├── agent-4ff1bfb1.jsonl                         # Subagent sidechain (851 bytes)
-└── ...
+├── 343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl           # Main session
+├── 343a0493-bc8b-43de-8ca6-5ae9c7394fa2/                # Session directory
+│   ├── subagents/
+│   │   ├── agent-a67d80dc480dd18d4.jsonl                 # Subagent transcript
+│   │   ├── agent-a67d80dc480dd18d4.meta.json             # Subagent metadata
+│   │   └── ...
+│   └── tool-results/                                     # Raw tool output blobs
+│       └── *.txt
+└── session-memory/                                        # Session memory (if enabled)
+    └── summary.md
+```
+
+**Legacy layout note:** Before ~CC v2.0.42, subagent files lived as flat siblings of the main session file (`agent-{agentId}.jsonl` alongside `{sessionId}.jsonl`). No files exist on disk in this format anymore, but the database may contain historical records. Discovery code must only look for the new nested format.
+
+**Subagent metadata files (`.meta.json`):**
+
+Each subagent transcript has a sidecar metadata file describing the agent's role:
+```json
+{
+  "agentType": "research-agent",
+  "description": "Research current transcript formats"
+}
 ```
 
 **Identification (inside the file):**
-- `agentId` field matches the filename suffix (e.g., `"agentId": "10bae299"`)
+- `agentId` field matches the filename suffix (e.g., `"agentId": "a67d80dc480dd18d4"`)
 - `sessionId` points to the parent main session UUID
 - `isSidechain: true` on all records
 
@@ -63,7 +83,7 @@ When Claude Code spawns subagents (via the Task tool), each subagent creates its
 **Example sidechain file content:**
 ```json
 {
-  "agentId": "10bae299",
+  "agentId": "a67d80dc480dd18d4",
   "sessionId": "343a0493-bc8b-43de-8ca6-5ae9c7394fa2",
   "isSidechain": true,
   "type": "assistant",
@@ -75,6 +95,7 @@ When Claude Code spawns subagents (via the Task tool), each subagent creates its
 - Sidechain files should be deprioritized during ingestion (they produce 0 timeline entries)
 - Main session files contain the user-visible conversation
 - FastPath ingestion prioritizes non-`agent-*` files first
+- Discovery scans `{sessionId}/subagents/` for nested subagent files
 
 ### Format Overview
 
@@ -107,6 +128,11 @@ User-originated messages with metadata.
 - `uuid` (uuid) — Unique message identifier
 - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING**
 - `thinkingMetadata` (object) — `{ level: "none", disabled: true, triggers: [] }`
+- `slug` (string) — Human-readable session identifier (e.g., `"streamed-beaming-pumpkin"`). Present since ~CC v2.1.63.
+- `entrypoint` (string) — Session origin. Values: `"cli"`, `"sdk-cli"`. Present since ~CC v2.1.77.
+- `promptId` (string, uuid) — Groups records from the same prompt submission. Present since ~CC v2.1.72.
+- `sourceToolAssistantUUID` (string, uuid, optional) — Links a tool result back to the originating assistant message. Present on user records containing `tool_result` blocks.
+- `permissionMode` (string, optional) — Current permission mode (e.g., `"bypassPermissions"`)
 
 **Example:**
 ```json
@@ -116,9 +142,12 @@ User-originated messages with metadata.
   "userType": "external",
   "cwd": "/Users/rob/code/projects/contextify",
   "sessionId": "ce6e090b-...",
-  "version": "2.0.26",
+  "version": "2.1.77",
   "gitBranch": "main",
   "type": "user",
+  "slug": "streamed-beaming-pumpkin",
+  "entrypoint": "cli",
+  "promptId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "message": {
     "role": "user",
     "content": "Fix the bug in the parser"
@@ -154,6 +183,8 @@ Model-generated responses.
 - `type` (string) — Always `"assistant"`
 - `uuid` (uuid)
 - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING**
+- `slug` (string) — Human-readable session identifier (same value as on user records). Present since ~CC v2.1.63.
+- `entrypoint` (string) — Session origin (same value as on user records). Present since ~CC v2.1.77.
 
 **Note:** Assistant `message.content` is always an **array**. User `message.content` is usually a string for plain text input, but Claude Code CLI (v2.0+) emits tool call relays as **arrays** where each block has `type: "tool_result"` referencing an earlier assistant `tool_use` ID.
 
@@ -285,13 +316,13 @@ System-level events like command execution, API errors, and compact mode boundar
 - `timestamp` (ISO string)
 - `subtype` (string) — Event type (e.g., `"local_command"`, `"api_error"`, `"compact_boundary"`)
 - `level` (string) — `"info"` or `"error"` (defaults to `"info"`)
-- `error` (string, optional) — Error message for api_error subtype
+- `error` (object, optional) — Structured error information for api_error subtype
 - `retryAttempt` (int, optional) — Retry attempt number
 - `maxRetries` (int, optional) — Maximum retry attempts
 - `retryInMs` (int, optional) — Retry delay in milliseconds
 - `parentUuid` (string, optional) — Parent message UUID
 - `logicalParentUuid` (string, optional) — Logical parent for compact mode threading
-- `compactMetadata` (string, optional) — Compact mode metadata
+- `compactMetadata` (object, optional) — Compact mode metadata with shape `{ trigger: string, preTokens: int }`
 
 #### `summary` (Session Summaries)
 
@@ -326,6 +357,201 @@ User messages sent while Claude is executing tools are queued for later processi
 #### `timeline-state` / `queue-operation-result` (Internal Metadata)
 
 Internal metadata records used by Claude Code for state tracking. Skipped during parsing.
+
+#### `custom-title` (User-Set Session Title)
+
+Records a user-assigned session title.
+
+**Fields:**
+- `type` (string) — Always `"custom-title"`
+- `customTitle` (string) — The title set by the user
+- `sessionId` (uuid) — Session identifier
+
+**Example:**
+```json
+{
+  "type": "custom-title",
+  "customTitle": "Refactor parser module",
+  "sessionId": "ce6e090b-603e-484a-977e-546214573964"
+}
+```
+
+#### `agent-name` (Named Agent Identifier)
+
+Records the agent name for sessions using named agents.
+
+**Fields:**
+- `type` (string) — Always `"agent-name"`
+- `agentName` (string) — Agent name (e.g., `"wb1"`)
+- `sessionId` (uuid) — Session identifier
+
+**Example:**
+```json
+{
+  "type": "agent-name",
+  "agentName": "wb1",
+  "sessionId": "ce6e090b-603e-484a-977e-546214573964"
+}
+```
+
+#### `pr-link` (PR Creation Event)
+
+Records a pull request created during the session.
+
+**Fields:**
+- `type` (string) — Always `"pr-link"`
+- `prNumber` (int) — Pull request number
+- `prUrl` (string) — Full URL to the pull request
+- `prRepository` (string) — Repository identifier (e.g., `"owner/repo"`)
+- `sessionId` (uuid) — Session identifier
+- `timestamp` (ISO string) — When the PR was created
+
+**Example:**
+```json
+{
+  "type": "pr-link",
+  "prNumber": 42,
+  "prUrl": "https://github.com/owner/repo/pull/42",
+  "prRepository": "owner/repo",
+  "sessionId": "ce6e090b-603e-484a-977e-546214573964",
+  "timestamp": "2025-12-01T14:30:00.000Z"
+}
+```
+
+#### `attachment` (Tool Availability Delta)
+
+Records changes to available tools. This is metadata, not conversation content.
+
+**Fields:**
+- `type` (string) — Always `"attachment"`
+- `attachment` (object):
+  - `type` (string) — e.g., `"deferred_tools_delta"`
+  - `addedNames` (array of string) — Tool names added
+  - `removedNames` (array of string) — Tool names removed
+
+**Example:**
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "deferred_tools_delta",
+    "addedNames": ["Bash", "Read"],
+    "removedNames": []
+  }
+}
+```
+
+#### `permission-mode` (Permission Mode Change)
+
+Records a change in the session's permission mode.
+
+**Fields:**
+- `type` (string) — Always `"permission-mode"`
+- `permissionMode` (string) — New permission mode (e.g., `"default"`, `"bypassPermissions"`)
+- `sessionId` (uuid) — Session identifier
+
+**Example:**
+```json
+{
+  "type": "permission-mode",
+  "permissionMode": "bypassPermissions",
+  "sessionId": "ce6e090b-603e-484a-977e-546214573964"
+}
+```
+
+#### `progress` (Hook Execution Progress)
+
+Records progress from hook execution.
+
+**Fields:**
+- `type` (string) — Always `"progress"`
+- `data` (object):
+  - `type` (string) — e.g., `"hook_progress"`
+  - `hookEvent` (string) — Hook event name
+  - `hookName` (string) — Hook identifier
+  - `command` (string) — Command being executed
+- `parentToolUseID` (string) — ID of the parent tool use block
+
+**Example:**
+```json
+{
+  "type": "progress",
+  "data": {
+    "type": "hook_progress",
+    "hookEvent": "PostToolUse",
+    "hookName": "lint-check",
+    "command": "eslint --fix"
+  },
+  "parentToolUseID": "toolu_abc123"
+}
+```
+
+#### `last-prompt` (Last Prompt for Session Resume)
+
+Stores the last prompt for session resume functionality.
+
+**Fields:**
+- `type` (string) — Always `"last-prompt"`
+- `lastPrompt` (string) — The last user prompt text
+- `sessionId` (uuid) — Session identifier
+
+**Example:**
+```json
+{
+  "type": "last-prompt",
+  "lastPrompt": "Fix the failing test",
+  "sessionId": "ce6e090b-603e-484a-977e-546214573964"
+}
+```
+
+### System Subtypes
+
+The `system` record type uses a compound `type` field with the format `system/{subtype}` to distinguish event categories.
+
+#### `system/turn_duration` (Turn Timing)
+
+Records the duration of a conversation turn.
+
+**Fields:**
+- `type` (string) — Always `"system"`
+- `subtype` (string) — `"turn_duration"`
+- `durationMs` (int) — Turn duration in milliseconds
+
+#### `system/bridge_status` (Remote Control Notification)
+
+Notifications from the remote control bridge.
+
+**Fields:**
+- `type` (string) — Always `"system"`
+- `subtype` (string) — `"bridge_status"`
+- `content` (string) — Bridge status message
+
+#### `system/informational` (Informational/Warning Messages)
+
+General informational or warning messages from the system.
+
+**Fields:**
+- `type` (string) — Always `"system"`
+- `subtype` (string) — `"informational"`
+- `content` (string) — Message text
+- `level` (string) — `"warning"` or `"info"`
+
+#### `system/stop_hook_summary` (Post-Stop Hook Summary)
+
+Summary of hooks executed after a stop event.
+
+**Fields:**
+- `type` (string) — Always `"system"`
+- `subtype` (string) — `"stop_hook_summary"`
+- `hookCount` (int) — Number of hooks executed
+- `hookErrors` (array) — Errors from hook execution
+- `hookInfos` (array) — Informational output from hooks
+- `hasOutput` (bool) — Whether any hooks produced output
+
+#### System Subtype Corrections
+
+- `system/api_error`: The `error` field is an **object** (not a string). Contains structured error information from the API.
+- `system/compact_boundary`: The `compactMetadata` field is an **object** with shape `{ trigger: string, preTokens: int }` (not a plain string).
 
 ### Message Threading
 
@@ -438,8 +664,12 @@ Declares session-level context at the start. **Contains project path in `payload
   - `cwd` (string) — **Current working directory (PROJECT PATH)**
   - `originator` (string, e.g., `"codex_cli_rs"` or `"claude_code_converter"`)
   - `cli_version` (string)
-  - `instructions` (nullable string) — May be large, multiline
+  - `base_instructions` (object, nullable) — Session instructions. Shape: `{ text: "..." }`. Renamed from `instructions` (plain string) in Codex v0.88.0.
   - `source` (string) — **REQUIRED:** Must be `"cli"` or `"vscode"` to appear in session picker
+  - `model_provider` (string, optional) — Model provider identifier (e.g., `"openai"`). Added in Codex v0.64.0.
+  - `agent_nickname` (string, optional) — Custom agent nickname
+  - `agent_role` (string, optional) — Agent role descriptor
+  - `forked_from_id` (string, uuid, optional) — Session ID this session was forked from
   - `git` (optional object):
     - `commit_hash` (string)
     - `branch` (string)
@@ -455,9 +685,10 @@ Declares session-level context at the start. **Contains project path in `payload
     "timestamp": "2025-11-03T17:49:46.885Z",
     "cwd": "/Users/rob/code/projects/contextify",
     "originator": "codex_cli_rs",
-    "cli_version": "0.48.0",
-    "instructions": "# Repository Guidelines\n\n...",
+    "cli_version": "0.88.0",
+    "base_instructions": { "text": "# Repository Guidelines\n\n..." },
     "source": "cli",
+    "model_provider": "openai",
     "git": {
       "commit_hash": "ccb37c4d313423f9d849ee011e668b879e0889d7",
       "branch": "feature/quick-wins-ui-consistency",
@@ -672,16 +903,19 @@ Codex CLI automatically injects context (AGENTS.md + environment) at conversatio
 |---|---|---|
 | **Storage** | `~/.claude/projects/<project-hash>/` | `~/.codex/sessions/YYYY/MM/DD/` |
 | **Project grouping** | Directory per project | Global directory, `cwd` in `session_meta` |
+| **Subagent layout** | Nested: `{sessionId}/subagents/agent-*.jsonl` | N/A |
 | **Message linking** | `uuid` + `parentUuid` (threading), `sessionId` | `call_id` for tools; conversation by file; `session_meta.payload.id` for session |
 | **CWD / Repo** | `cwd` per message; `gitBranch` at message-level | `session_meta.payload.cwd`; `payload.git.{commit_hash,branch,repository_url}` |
-| **Record taxonomy** | `user`, `assistant`, `system`, `summary`, `file-history-snapshot`, `queue-operation`, `timeline-state`, `queue-operation-result` | `session_meta`, `response_item` (subtypes: `message`, `function_call`, `function_call_output`, `reasoning`), `event_msg`, `turn_context` |
+| **Record taxonomy** | `user`, `assistant`, `system` (with subtypes), `summary`, `file-history-snapshot`, `queue-operation`, `timeline-state`, `queue-operation-result`, `custom-title`, `agent-name`, `pr-link`, `attachment`, `permission-mode`, `progress`, `last-prompt` | `session_meta`, `response_item` (subtypes: `message`, `function_call`, `function_call_output`, `reasoning`), `event_msg`, `turn_context` |
+| **Session metadata fields** | `slug`, `entrypoint`, `promptId` on user/assistant records | `base_instructions`, `model_provider`, `agent_nickname`, `agent_role`, `forked_from_id` in `session_meta.payload` |
 | **Content envelope** | `message: { role, content }` (string for user, array for assistant) | `payload: { type, role, content: [ {type, text} ] }` (typed segments) |
 | **Content block types** | `text`, `tool_use`, `tool_result`, `thinking`, `image` | `input_text` (user), `output_text` (assistant) |
-| **File snapshots** | Yes — `trackedFileBackups` per path with versions/timestamps | No equivalent (tool outputs/logs instead) |
+| **File snapshots** | Yes -- `trackedFileBackups` per path with versions/timestamps | No equivalent (tool outputs/logs instead) |
 | **Internal thoughts** | `thinking` blocks in assistant messages | `reasoning` records with `encrypted_content` |
 | **Tool I/O** | `tool_use` / `tool_result` blocks in assistant messages | First-class: `function_call` / `function_call_output` records |
 | **Queued input** | Transcript-visible via `queue-operation` records | TUI-visible upstream, but no confirmed queue record in observed JSONL |
-| **Session preamble** | Implicit via early `user` meta and snapshots | Explicit `session_meta` with all environment/git/instructions |
+| **Session preamble** | Implicit via early `user` meta and snapshots | Explicit `session_meta` with `base_instructions` and environment/git context |
+| **System events** | Compound `system/{subtype}` format: `api_error`, `compact_boundary`, `turn_duration`, `bridge_status`, `informational`, `stop_hook_summary` | N/A |
 | **Timestamps** | ISO strings (**MUST BE MONOTONIC**) on each record | ISO strings (**MUST BE MONOTONIC**) on each record |
 
 ---

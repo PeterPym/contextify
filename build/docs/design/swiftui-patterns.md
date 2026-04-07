@@ -2152,8 +2152,16 @@ Button("Next") { }
 - **SwiftUI State Management:** https://developer.apple.com/documentation/swiftui/state-and-data-flow
 - **Swift Concurrency:** https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
 
+### FileManager.enumerator Unavailable in Async Contexts
+
+**Problem:** `FileManager.default.enumerator(at:...)` returns `NSDirectoryEnumerator` whose `makeIterator()` is unavailable from async contexts in Swift 6. Using `for case let url as URL in enumerator` inside an `async` function produces: "Instance method 'makeIterator' is unavailable from asynchronous contexts."
+
+**Workaround:** Use `FileManager.default.contentsOfDirectory(at:...)` instead for single-level listing. For recursive needs in async code, call the enumerator from a synchronous helper or use `contentsOfDirectory` with manual recursion.
+
+**Reference:** `ProjectActivityMonitor.swift:548` uses `contentsOfDirectory` for subagents/ scanning because the discovery methods are async.
+
 ---
 
 **Document Status:** ✅ Complete
-**Last Code Verification:** 2026-01-03 (added anti-patterns 6-8 from MarkdownUI caching implementation)
+**Last Code Verification:** 2026-04-06 (added FileManager.enumerator async quirk from ct-1041)
 **Next Review:** After SwiftUI architecture changes or Swift 6 migration tasks

@@ -138,6 +138,9 @@ public struct EntryInsert {
   public let agentId: String?
   public let toolInvocations: [ToolInvocationInsert]
   public let toolResultData: [ToolResultData]
+  // Session-level metadata (CC v2.1.82+): passed through for transcript table update
+  public let slug: String?
+  public let entrypoint: String?
 
   public init(
     id: String,
@@ -158,7 +161,9 @@ public struct EntryInsert {
     isSidechain: Bool = false,
     agentId: String? = nil,
     toolInvocations: [ToolInvocationInsert] = [],
-    toolResultData: [ToolResultData] = []
+    toolResultData: [ToolResultData] = [],
+    slug: String? = nil,
+    entrypoint: String? = nil
   ) {
     self.id = id
     self.transcriptId = transcriptId
@@ -179,6 +184,8 @@ public struct EntryInsert {
     self.agentId = agentId
     self.toolInvocations = toolInvocations
     self.toolResultData = toolResultData
+    self.slug = slug
+    self.entrypoint = entrypoint
   }
 
   /// Returns a copy with an updated projectId
@@ -202,7 +209,9 @@ public struct EntryInsert {
       isSidechain: isSidechain,
       agentId: agentId,
       toolInvocations: toolInvocations,
-      toolResultData: toolResultData
+      toolResultData: toolResultData,
+      slug: slug,
+      entrypoint: entrypoint
     )
   }
 
@@ -266,6 +275,8 @@ private struct MetadataBatch {
   var systemEvents: [SystemEvent] = []
   var assistantUsages: [AssistantUsage] = []
   var queueOperations: [QueueOperation] = []
+  var customTitle: String?
+  var sawCustomTitle = false
 
   mutating func add(_ result: MetadataParseResult) {
     if let snapshot = result.fileSnapshot {
@@ -282,6 +293,10 @@ private struct MetadataBatch {
       assistantUsages.append(usage)
     }
     queueOperations.append(contentsOf: result.queueOperations)
+    if result.sawCustomTitle {
+      sawCustomTitle = true
+      customTitle = result.customTitle
+    }
   }
 
   mutating func clear() {
@@ -291,10 +306,12 @@ private struct MetadataBatch {
     systemEvents.removeAll()
     assistantUsages.removeAll()
     queueOperations.removeAll()
+    customTitle = nil
+    sawCustomTitle = false
   }
 
   var isEmpty: Bool {
-    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty
+    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty && !sawCustomTitle
   }
 }
 
@@ -1454,9 +1471,36 @@ public final class HooverEngine {
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
       }
+
+      // v40: Update session-level metadata (slug, entrypoint) from entry fields
+      // Collapsed to per-batch: take the last non-nil value and update only if changed
+      let latestSlug = entries.lazy.compactMap(\.slug).last
+      let latestEntrypoint = entries.lazy.compactMap(\.entrypoint).last
+
+      if let latestSlug {
+        try db.execute(
+          sql: "UPDATE transcripts SET slug = ?, updated_at = ? WHERE id = ? AND COALESCE(slug, '') != ?",
+          arguments: [latestSlug, now, transcriptId, latestSlug]
+        )
+      }
+      if let latestEntrypoint {
+        try db.execute(
+          sql: "UPDATE transcripts SET entrypoint = ?, updated_at = ? WHERE id = ? AND COALESCE(entrypoint, '') != ?",
+          arguments: [latestEntrypoint, now, transcriptId, latestEntrypoint]
+        )
+      }
+      // custom_title from custom-title metadata records
+      // sawCustomTitle distinguishes "no record" from "empty clear"
+      if metadata.sawCustomTitle {
+        try db.execute(
+          sql: "UPDATE transcripts SET custom_title = NULLIF(?, ''), updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != COALESCE(?, '')",
+          arguments: [metadata.customTitle ?? "", now, transcriptId, metadata.customTitle ?? ""]
+        )
+      }
+
       // FK-safe usage insert: atomic CTE-based check+insert with request_id normalization
       for usage in metadata.assistantUsages {
-        // Normalize request_id: empty string → entry_id fallback
+        // Normalize request_id: empty string -> entry_id fallback
         let normalizedRequestId: String = {
           let trimmed = usage.requestId.trimmingCharacters(in: .whitespacesAndNewlines)
           return trimmed.isEmpty ? usage.entryId : trimmed
@@ -1821,6 +1865,30 @@ public final class HooverEngine {
       }
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
+      }
+
+      // v40: Update session-level metadata (slug, entrypoint) from entry fields
+      // Collapsed to per-batch: take the last non-nil value and update only if changed
+      let latestSlugFast = entries.lazy.compactMap(\.slug).last
+      let latestEntrypointFast = entries.lazy.compactMap(\.entrypoint).last
+
+      if let latestSlugFast {
+        try db.execute(
+          sql: "UPDATE transcripts SET slug = ?, updated_at = ? WHERE id = ? AND COALESCE(slug, '') != ?",
+          arguments: [latestSlugFast, now, transcriptId, latestSlugFast]
+        )
+      }
+      if let latestEntrypointFast {
+        try db.execute(
+          sql: "UPDATE transcripts SET entrypoint = ?, updated_at = ? WHERE id = ? AND COALESCE(entrypoint, '') != ?",
+          arguments: [latestEntrypointFast, now, transcriptId, latestEntrypointFast]
+        )
+      }
+      if metadata.sawCustomTitle {
+        try db.execute(
+          sql: "UPDATE transcripts SET custom_title = NULLIF(?, ''), updated_at = ? WHERE id = ? AND COALESCE(custom_title, '') != COALESCE(?, '')",
+          arguments: [metadata.customTitle ?? "", now, transcriptId, metadata.customTitle ?? ""]
+        )
       }
 
       // FK-safe usage insert

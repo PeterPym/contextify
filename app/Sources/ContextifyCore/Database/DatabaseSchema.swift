@@ -5,7 +5,7 @@ import OSLog
 #endif
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v39 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild, v39: transcript tags)
+/// Current version: v40 (v34: tab grouping, v35: P5 index cleanup, v36: device provenance, v37: project cloud sync privacy, v38: porter stemming FTS rebuild, v39: transcript tags, v40: transcript format drift metadata)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -13,7 +13,7 @@ import OSLog
 /// - Fractional timestamps (created_ts, last_viewed_ts): Epoch seconds (Double) for sub-second precision in unread tracking
 /// - Latency (latency_ms): Milliseconds as Int for performance metrics
 public enum DatabaseSchema {
-  public static let version = 39
+  public static let version = 40
   public static let currentVersion = version  // Alias for CLI access
   #if canImport(OSLog)
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
@@ -1227,6 +1227,33 @@ public enum DatabaseSchema {
       logger.info("[MIGRATION-v39] Transcript tags table created")
     }
 
+    // ========================================================================
+    // v40: Transcript format drift - session-level metadata from new CC fields
+    // ========================================================================
+    migrator.registerMigration("v40_transcript_format_drift") { db in
+      logger.info("[MIGRATION-v40] Adding transcript metadata columns for format drift")
+
+      // Session-level metadata extracted from new Claude Code fields
+      let cols = try db.columns(in: "transcripts")
+      if !cols.contains(where: { $0.name == "slug" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN slug TEXT")
+      }
+      if !cols.contains(where: { $0.name == "entrypoint" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN entrypoint TEXT")
+      }
+      if !cols.contains(where: { $0.name == "custom_title" }) {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN custom_title TEXT")
+      }
+
+      // Index for slug-based lookups (sparse - only non-NULL values)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_slug ON transcripts(slug)
+        WHERE slug IS NOT NULL
+      """)
+
+      logger.info("[MIGRATION-v40] Transcript metadata columns added")
+    }
+
     return migrator
   }
 
@@ -1327,6 +1354,10 @@ public enum DatabaseSchema {
       t.column("content_length", .integer)
       t.column("mtime_ms", .integer)
       t.column("content_sha256", .text)
+      // v40: Session-level metadata from transcript fields
+      t.column("slug", .text)
+      t.column("entrypoint", .text)
+      t.column("custom_title", .text)
       // Bookkeeping
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
@@ -1351,6 +1382,11 @@ public enum DatabaseSchema {
     """)
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
+    """)
+    // v40: sparse index for slug-based lookups
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_transcripts_slug ON transcripts(slug)
+      WHERE slug IS NOT NULL
     """)
 
     // Fast-path ingestion: efficiently find partial transcripts

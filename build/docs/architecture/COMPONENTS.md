@@ -30,7 +30,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v39** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v40** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -42,6 +42,7 @@ This document provides detailed information about Contextify's architecture and 
 - **v21**: Database access metadata for multi-machine conflict detection
 - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
 - **v23**: Active transcript follow (project_follow_policy table)
+- **v40**: slug, entrypoint, custom_title columns added to transcripts table
 
 ### Key Components
 
@@ -70,7 +71,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v39)
+- SQL schema definitions and versioned migrations (v1-v40)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -88,6 +89,7 @@ This document provides detailed information about Contextify's architecture and 
 - **v32**: lazy watcher baseline tracking (`transcripts.known_last_entry_ts`, `known_file_size`, `unread_approx_count`, `unread_approx_confidence`, `unread_approx_updated_at`, `last_activity_detected_at`, `projects.last_activity_detected_at`)
 - **v33**: ingestion_runs table for CLI debugging
 - **v39**: transcript_tags table (composite PK: transcript_id, tag) for transcript tagging
+- **v40**: slug, entrypoint, custom_title columns added to transcripts table; leafUuid extraction fixed in metadata parser
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
@@ -279,6 +281,7 @@ The ImageExtractor maintains a memory-efficient cache with two constraints:
 - Goal: <200ms for typical setup (19 projects, 663 transcripts)
 - Returns `LightweightProject` structs sorted by last activity
 - Actor-based for thread safety
+- Scans `{sessionId}/subagents/` subdirectories for sidechain transcripts (CC v2.1.82+ nested layout)
 
 **LightweightProject** (`app/Sources/ContextifyCore/Projects/ProjectModels.swift#LightweightProject`):
 - Sendable, lightweight project metadata (no database required)

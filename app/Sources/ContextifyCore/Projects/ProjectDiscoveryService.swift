@@ -324,13 +324,31 @@ public actor ProjectDiscoveryService {
               continue
             }
 
-            guard let files = try? FileManager.default.contentsOfDirectory(
+            // Scan top-level .jsonl files AND files in <session-uuid>/subagents/ subdirs
+            let topEntries = (try? FileManager.default.contentsOfDirectory(
               at: claudeDir,
-              includingPropertiesForKeys: [.contentModificationDateKey],
+              includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
               options: [.skipsHiddenFiles]
-            ).filter({ $0.pathExtension == "jsonl" }), !files.isEmpty else {
-              continue
+            )) ?? []
+
+            var files: [URL] = []
+            for entry in topEntries {
+              if entry.pathExtension == "jsonl" {
+                files.append(entry)
+              } else if (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                let subagentsDir = entry.appendingPathComponent("subagents")
+                if let enumerator = FileManager.default.enumerator(
+                  at: subagentsDir,
+                  includingPropertiesForKeys: [.contentModificationDateKey],
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                ) {
+                  for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+                    files.append(url)
+                  }
+                }
+              }
             }
+            guard !files.isEmpty else { continue }
 
             let filesWithMtimes = files.compactMap { file -> (URL, Date)? in
               guard let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {

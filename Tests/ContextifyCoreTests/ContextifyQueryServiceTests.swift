@@ -2054,4 +2054,79 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertEqual(export.transcriptMetadata.count, 1)
     XCTAssertEqual(export.transcriptMetadata.first?.topics, "not a json array")
   }
+
+  /// ct-1117: exportForCloudPush handles >900 entries by chunking IN() clauses
+  /// to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER (999) limit.
+  func testExportForCloudPush_chunksLargeINClause() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-push-chunk-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert 1000 entries across 2 transcripts to exceed the 900 param limit
+    let entryCount = 1000
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, cloud_sync_enabled, created_at, updated_at, last_viewed_ts)
+        VALUES ('proj-chunk', 'ChunkTest', '/test/chunk', 1, 0, 0, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-chunk-1', 'proj-chunk', '/test/chunk1.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+      try db.execute(sql: """
+        INSERT INTO transcripts (id, project_id, file_path, provider,
+          last_modified, line_count, last_processed_line, parser_version,
+          status, ingest_state, created_at, updated_at)
+        VALUES ('tx-chunk-2', 'proj-chunk', '/test/chunk2.jsonl', 'claude.code',
+          100, 10, 10, 1, 'active', 'complete', 100, 100)
+      """)
+
+      for i in 0..<entryCount {
+        let txId = i < 500 ? "tx-chunk-1" : "tx-chunk-2"
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (id, transcript_id, project_id, provider, kind,
+            timestamp, content, content_sha256, display_in_timeline, created_at, updated_at)
+          VALUES ('entry-\(i)', '\(txId)', 'proj-chunk', 'claude.code', 'assistant',
+            \(1000 + i), 'content \(i)', 'sha-\(i)', 1, \(1000 + i), \(1000 + i))
+        """)
+      }
+
+      // Add a summary and usage record for a subset to verify they're fetched across chunks
+      try db.execute(sql: """
+        INSERT INTO timeline_cache (content_sha256, window_sha256, entry_id,
+          generator_signature, disposition, present_form, past_form, selected_form,
+          generated_at, user_edited)
+        VALUES ('sha-950', 'win-950', 'entry-950', 'test-gen', 'action',
+          'Testing chunk', 'Tested chunk', 'past', 1950, 0)
+      """)
+      try db.execute(sql: """
+        INSERT INTO assistant_usage (entry_id, request_id, model, input_tokens, output_tokens)
+        VALUES ('entry-999', 'req-999', 'claude-4', 100, 50)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL, readOnly: false)
+    let export = try service.exportForCloudPush(limit: entryCount)
+
+    // All 1000 entries should be returned (requires chunking since 1000 > 900)
+    XCTAssertEqual(export.entries.count, entryCount)
+    // Both transcripts should be fetched
+    XCTAssertEqual(export.transcripts.count, 2)
+    // The project should be fetched
+    XCTAssertEqual(export.projects.count, 1)
+    // Summary for entry in second chunk (index 950 > 900) should be present
+    XCTAssertEqual(export.summaries.count, 1)
+    XCTAssertEqual(export.summaries.first?.entryId, "entry-950")
+    // Usage for entry in second chunk (index 999 > 900) should be present
+    XCTAssertEqual(export.usage.count, 1)
+    XCTAssertEqual(export.usage.first?.entryId, "entry-999")
+  }
 }

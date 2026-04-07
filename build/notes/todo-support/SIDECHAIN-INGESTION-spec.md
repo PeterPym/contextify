@@ -3,9 +3,11 @@ todo_id: SIDECHAIN-INGESTION
 title: Ingest Agent Sidechain Transcripts
 type: spec
 date: 2025-12-21
-status: draft
+status: historical
 description: Add ingestion of agent-*.jsonl sidechain transcripts to preserve subagent conversation data.
 ---
+
+> **Historical note (ct-1041, 2026-04):** This spec was written when subagent files lived as flat siblings of the main session file (`agent-{agentId}.jsonl` next to `{sessionId}.jsonl`). Claude Code v2.1.82+ moved sidechain files to a nested layout: `{sessionId}/subagents/agent-{agentId}.jsonl`. Discovery code was updated in ct-1041 to scan the `subagents/` subdirectory. The database may still contain historical records using the old flat path format. All component analysis, schema design, and implementation guidance in this spec remains valid; only the file path patterns and directory structure examples reflect the old layout.
 
 # Sidechain Transcript Ingestion
 
@@ -42,6 +44,8 @@ All 63 missing agent files were:
 Claude Code actively cleans up agent transcripts within days. Without ingestion, this data is permanently lost.
 
 ### Agent Transcript Characteristics
+
+> Note: File paths below use the old flat layout (`agent-*.jsonl` as siblings). Current layout is `{sessionId}/subagents/agent-*.jsonl`.
 
 | Metric | Value |
 |--------|-------|

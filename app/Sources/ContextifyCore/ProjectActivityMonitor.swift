@@ -539,13 +539,24 @@ public actor ProjectActivityMonitor {
         ).projectId
 
         // Discover and hoover all transcript files for this project
-        let transcriptFiles = try FileManager.default.contentsOfDirectory(
+        // Includes both top-level .jsonl AND files in <session-uuid>/subagents/ subdirs
+        let topLevelItems = try FileManager.default.contentsOfDirectory(
           at: directory,
-          includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+          includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey],
           options: [.skipsHiddenFiles]
         )
-        .filter { $0.pathExtension == "jsonl" }
-        .sorted { url1, url2 in
+        var transcriptFiles: [URL] = topLevelItems.filter { $0.pathExtension == "jsonl" }
+        for item in topLevelItems where (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+          let subagentsDir = item.appendingPathComponent("subagents")
+          if let subFiles = try? FileManager.default.contentsOfDirectory(
+            at: subagentsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+          ) {
+            transcriptFiles.append(contentsOf: subFiles.filter { $0.pathExtension == "jsonl" })
+          }
+        }
+        transcriptFiles.sort { url1, url2 in
           // Sort by modification time, newest first (for faster time-to-first-data)
           let date1 = (try? url1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
           let date2 = (try? url2.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
@@ -586,11 +597,22 @@ public actor ProjectActivityMonitor {
           // Try to extract project path from transcripts to mark as orphaned
           do {
             // Try to extract CWD from transcript files even if directory is invalid
-            let transcriptFiles = try FileManager.default.contentsOfDirectory(
+            let orphanItems = try FileManager.default.contentsOfDirectory(
               at: directory,
-              includingPropertiesForKeys: [.fileSizeKey],
+              includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
               options: [.skipsHiddenFiles]
-            ).filter { $0.pathExtension == "jsonl" }
+            )
+            var transcriptFiles: [URL] = orphanItems.filter { $0.pathExtension == "jsonl" }
+            for item in orphanItems where (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+              let subagentsDir = item.appendingPathComponent("subagents")
+              if let subFiles = try? FileManager.default.contentsOfDirectory(
+                at: subagentsDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+              ) {
+                transcriptFiles.append(contentsOf: subFiles.filter { $0.pathExtension == "jsonl" })
+              }
+            }
 
             if let firstTranscript = transcriptFiles.first,
                let projectPath = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(firstTranscript) {

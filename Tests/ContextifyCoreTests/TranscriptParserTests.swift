@@ -367,4 +367,130 @@ final class TranscriptParserTests: XCTestCase {
     XCTAssertFalse(entry.hasTextContent, "Regular user shell output should be hidden")
     XCTAssertEqual(entry.kind, "user", "Regular user should remain as user")
   }
+
+  // MARK: - Format Drift Tests (ct-1095)
+
+  func testNewMetadataRecordTypes_AreSkipped() throws {
+    let parser = ClaudeCodeLineParser()
+    let newTypes = [
+      "attachment",
+      "last-prompt",
+      "permission-mode",
+      "progress",
+      "agent-name",
+      "custom-title",
+      "pr-link",
+    ]
+
+    for recordType in newTypes {
+      let line = """
+      {"type":"\(recordType)","uuid":"skip-\(recordType)","timestamp":"2025-01-01T00:00:00Z","message":{"content":[{"type":"text","text":"should be skipped"}]}}
+      """
+      XCTAssertThrowsError(
+        try parser.parse(
+          line: line,
+          lineNumber: 1,
+          transcriptId: transcriptId,
+          projectId: projectId,
+          provider: "claude.code",
+          sessionId: nil
+        ),
+        "Record type '\(recordType)' should be skipped"
+      ) { error in
+        guard case ParserError.skipEntry = error else {
+          XCTFail("Expected ParserError.skipEntry for '\(recordType)', got \(error)")
+          return
+        }
+      }
+    }
+  }
+
+  func testCompoundSystemTypes_AreSkipped() throws {
+    let parser = ClaudeCodeLineParser()
+    let compoundTypes = [
+      "system/turn_duration",
+      "system/usage_summary",
+      "system/other_subtype",
+    ]
+
+    for recordType in compoundTypes {
+      let line = """
+      {"type":"\(recordType)","uuid":"sys-\(recordType)","timestamp":"2025-01-01T00:00:00Z"}
+      """
+      XCTAssertThrowsError(
+        try parser.parse(
+          line: line,
+          lineNumber: 1,
+          transcriptId: transcriptId,
+          projectId: projectId,
+          provider: "claude.code",
+          sessionId: nil
+        ),
+        "Compound system type '\(recordType)' should be skipped"
+      ) { error in
+        guard case ParserError.skipEntry = error else {
+          XCTFail("Expected ParserError.skipEntry for '\(recordType)', got \(error)")
+          return
+        }
+      }
+    }
+  }
+
+  func testSlugAndEntrypoint_ExtractedFromUserRecord() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"user","uuid":"slug-test","timestamp":"2025-01-01T00:00:00Z","slug":"my-project-slug","entrypoint":"my-entrypoint","message":{"content":"Hello world"}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertEqual(entry.slug, "my-project-slug")
+    XCTAssertEqual(entry.entrypoint, "my-entrypoint")
+    XCTAssertEqual(entry.content, "Hello world")
+  }
+
+  func testSlugAndEntrypoint_ExtractedFromAssistantRecord() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"slug-assist","timestamp":"2025-01-01T00:00:00Z","slug":"assist-slug","entrypoint":"assist-entry","message":{"content":[{"type":"text","text":"Response"}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertEqual(entry.slug, "assist-slug")
+    XCTAssertEqual(entry.entrypoint, "assist-entry")
+  }
+
+  func testSlugAndEntrypoint_NilWhenAbsent() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"user","uuid":"no-slug","timestamp":"2025-01-01T00:00:00Z","message":{"content":"No slug here"}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertNil(entry.slug)
+    XCTAssertNil(entry.entrypoint)
+  }
 }
