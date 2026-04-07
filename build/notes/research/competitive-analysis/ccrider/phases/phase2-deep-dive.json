@@ -1,0 +1,402 @@
+{
+  "session_id": "research-phase2-ct1165",
+  "date": "2026-04-06",
+  "project": "contextify",
+  "branch": "main",
+  "status": "ready-for-review",
+  "issue_summary": "Deep technical architecture analysis of ccrider (Go CLI/TUI) across 12 domains for competitive intelligence vs Contextify.",
+  "domains": {
+    "1_data_model": {
+      "approach": "Single SQLite file at ~/.config/ccrider/sessions.db. Six core tables: sessions, messages, tool_uses, import_log, plus derived tables session_summaries, summary_chunks, session_issues, session_files. Two FTS5 virtual tables: messages_fts (porter stemming for NL search) and messages_fts_code (unicode61, no stemming, for code identifiers). WAL mode enabled, foreign keys enforced, single connection (MaxOpenConns=1). Pure Go SQLite driver (modernc.org/sqlite, no CGO).",
+      "key_files": [
+        "internal/core/db/schema.go",
+        "internal/core/db/db.go",
+        "internal/core/db/migrations.go",
+        "internal/core/db/sessions.go",
+        "internal/core/models/session.go"
+      ],
+      "notable_patterns": [
+        "Dual FTS5 tables with different tokenizers: messages_fts uses porter+unicode61, messages_fts_code uses unicode61 only — explicitly to preserve code symbols and camelCase identifiers",
+        "Session file uses FILENAME as DB key (not parsed sessionId): 'Use filename as DB key (not parsed sessionId which points to previous file in resumed session chains, causing hash thrashing)'",
+        "Derived tables (session_summaries, summary_chunks, session_issues, session_files) are populated via explicit ccrider summarize command, not on import",
+        "FTS kept in sync via AFTER INSERT/UPDATE/DELETE triggers on messages table",
+        "DB connection uses pragmas in DSN string: foreign_keys(1), journal_mode(WAL), synchronous(NORMAL), busy_timeout(5000)",
+        "Migration 005 deleted all Codex messages and re-imported with new response_item parser, using a parser_version column as idempotency marker",
+        "ListSessions has a heavy SQL query with COALESCE fallback chain for summary: one_line_summary -> llm_summary -> native summary -> first user message text",
+        "Sessions with no meaningful user messages are filtered out in ListSessions via complex subquery",
+        "Hierarchical summarization uses separate session_summaries + summary_chunks tables with UPSERT semantics"
+      ],
+      "strengths": [
+        "Dual FTS5 design is architecturally distinct — NL search vs code search uses appropriate tokenizer per use case",
+        "No CGO dependency for SQLite (modernc.org/sqlite) enables truly static binary distribution",
+        "File tracking with inode+device+mtime+size+BLAKE3 hash gives multiple layers of change detection",
+        "Session exclusion filter in ListSessions is sophisticated (warmup sessions, resume boilerplate, empty summaries)",
+        "Import log table provides audit trail of all file imports with status tracking"
+      ],
+      "weaknesses": [
+        "Single writer connection (MaxOpenConns=1) creates bottleneck for concurrent tool access",
+        "Heavy COALESCE fallback chain in ListSessions is complex SQL that's hard to maintain",
+        "Derived metadata tables only populated on explicit summarize command, not automatically on sync",
+        "No versioned schema migrations table — migrations are idempotent ADD COLUMN checks using pragma_table_info, which is fragile",
+        "tool_uses table exists in schema but appears unused — no code populates or queries it"
+      ]
+    },
+    "2_transcript_parsing": {
+      "approach": "Two separate parsers behind a common ParseFunc interface. Claude Code: pkg/ccsessions/parser.go. Codex: pkg/codexsessions/parser.go. Both return *ccsessions.ParsedSession. Uses bufio.NewReaderSize(1MB) with ReadBytes loop to handle arbitrarily large lines (avoiding bufio.Scanner's 64MB limit). Codex parser maintains dual message buffers (response_item vs event_msg) and picks whichever captured more messages.",
+      "key_files": [
+        "pkg/ccsessions/parser.go",
+        "pkg/codexsessions/parser.go"
+      ],
+      "notable_patterns": [
+        "Claude Code parser handles both array (newer) and string (older) formats for user message content field via JSON unmarshal fallback pattern",
+        "Codex parser uses BLAKE3 hash for deterministic UUID generation: deterministicUUID() hashes sessionID+sequence number to produce stable UUIDs across re-imports",
+        "Codex dual-buffer strategy: collects response_item messages AND event_msg messages independently, then at EOF picks whichever has more, because different CLI versions emit different event types",
+        "isSystemBoilerplate() filters Codex system messages injected as role=user (AGENTS.md content, environment_context, system-reminder tags)",
+        "Claude Code tool_result blocks extracted from nested content[].content[] structure",
+        "Malformed JSON lines: Codex parser silently continues (continue), Claude Code parser returns error for malformed lines",
+        "Summary extraction: Claude reads from explicit 'summary' type JSONL entry; Codex falls back to first human message truncated to 120 runes",
+        "Session ID: derived from filename by default, overridden by parsed sessionId field if found"
+      ],
+      "strengths": [
+        "Dual-buffer strategy for Codex is pragmatic and solves real version compatibility issues (migration 005 comment explains 16% message loss from missing response_item parser)",
+        "1MB buffer avoids the well-known bufio.Scanner 64MB line limit for large transcripts",
+        "BLAKE3 for UUID generation is stable across re-imports — same session produces same message UUIDs",
+        "System boilerplate detection prevents AGENTS.md and environment injection from polluting search results",
+        "Common ParseFunc interface allows importer to be provider-agnostic"
+      ],
+      "weaknesses": [
+        "No explicit format version detection — relies on structural duck-typing (try array, fall back to string)",
+        "Malformed line handling is inconsistent: Claude Code returns error on bad JSON, Codex silently skips — different UX",
+        "Codex tool use output not extracted (only text from input_text/output_text content items)",
+        "No streaming/incremental parse — entire file read into memory as slice of ParsedMessages",
+        "Legacy extractProjectPath() uses dash-substitution heuristic: 'This is buggy for paths with dashes/underscores'"
+      ]
+    },
+    "3_llm_integration": {
+      "approach": "Provider interface with two implementations: AnthropicProvider (direct API via langchaingo) and BedrockProvider (AWS Bedrock via langchaingo + AWS SDK v2). HierarchicalSummarizer does chunk-based summarization: sessions <= 100 messages get single-pass direct summarization; longer sessions get chunked (100 msgs, 10-msg overlap) then combined. Both providers default to claude-haiku-4-5-20251001. Summarization is triggered explicitly via 'ccrider summarize' command, not on import.",
+      "key_files": [
+        "internal/core/llm/provider.go",
+        "internal/core/llm/summarizer.go",
+        "internal/core/llm/anthropic.go",
+        "internal/core/llm/bedrock.go",
+        "internal/core/llm/extractor.go",
+        "internal/interface/cli/summarize.go"
+      ],
+      "notable_patterns": [
+        "Prompts use 'Problem->Solution' framing with explicit BAD/GOOD examples and rules against meta-language ('worked on', 'investigated', 'the user')",
+        "Output format requires structured ONE_LINE: / FULL: response, parsed via regex with fallback",
+        "cleanSummary() strips 12 hardcoded meta-prefixes like 'Based on the conversation,', 'The user '",
+        "Temperature 0.3, MaxTokens 1024 for all providers — deterministic and concise",
+        "Token estimation uses rough len(text)/4 approximation, not a real tokenizer",
+        "MetadataExtractor uses regex patterns to extract JIRA-style issue IDs (A-Z{2-10}-\\d+) and file paths from messages — no LLM calls",
+        "Auto-detection of provider from env vars: ANTHROPIC_API_KEY triggers anthropic, AWS_ACCESS_KEY_ID or AWS_PROFILE triggers bedrock",
+        "CCRIDER_AWS_* env var variants allow Bedrock credentials separate from default AWS creds"
+      ],
+      "strengths": [
+        "Hierarchical chunking solves context window limits for long sessions cleanly",
+        "Provider abstraction allows switching between API and Bedrock without code changes",
+        "Explicit prompt engineering to avoid meta-language summaries shows domain awareness",
+        "Extract-only mode (--extract-only) does metadata without LLM API calls — useful for local use",
+        "Minimum 5 messages threshold avoids summarizing trivial sessions"
+      ],
+      "weaknesses": [
+        "Summarization is NOT integrated into sync — requires explicit 'ccrider summarize' command",
+        "No caching layer — same session can be re-summarized on every force run",
+        "Token estimation is a rough approximation (len/4) not real tiktoken counting",
+        "langchaingo adds dependency overhead; direct Anthropic SDK would be lighter",
+        "No rate limiting or backoff logic for API calls — can hit rate limits on large batches",
+        "No streaming response support — waits for full response before processing"
+      ]
+    },
+    "4_search": {
+      "approach": "Dual FTS5 tables: messages_fts with porter+unicode61 for natural language, messages_fts_code with unicode61-only for code identifiers. SearchWithFilters() consolidates business logic used by TUI, CLI, and MCP. FTS query results are collected then scored with calculateRelevanceScore() (10 pts/match + 50 pt summary boost + 0-20 pt recency using exponential decay with 168h half-life). Query parser in filters.go supports project:, after:, before:, date: syntax with natural language date parsing via 'when' library.",
+      "key_files": [
+        "internal/core/search/search.go",
+        "internal/core/search/filters.go",
+        "internal/core/db/schema.go"
+      ],
+      "notable_patterns": [
+        "escapeFTS5Query() wraps each whitespace-delimited token in double quotes, preserving trailing * for prefix search — handles commas, @, #, hyphens that FTS5 treats as operators",
+        "Explicit phrase search preserved: if user wraps in quotes, inner quotes are escaped and outer preserved",
+        "Filter-only search (no text query, just date/project filters) uses separate filterOnlySessions() code path that bypasses FTS entirely",
+        "Date parsing waterfall: Go duration (3h) -> ISO formats -> hyphen-to-space conversion -> 'when' NLP library",
+        "Recency scoring: score += 20.0 * math.Exp(-ageHours/168.0) — logarithmic decay over 1 week",
+        "Summary presence boost: +50 points if query string appears in session one_line_summary (case-insensitive)",
+        "SQL uses snippet() FTS5 function with 64 token limit for match highlighting",
+        "FTS results ordered by timestamp DESC before re-scoring by relevance — initial ordering matters"
+      ],
+      "strengths": [
+        "Dual-tokenizer design is a genuine differentiator for code search vs prose search",
+        "escapeFTS5Query() is well-tested with 15 named test cases covering edge cases",
+        "Natural language date parsing ('yesterday', 'last week', '3 days ago') via when library is user-friendly",
+        "SearchWithFilters() as single entry point prevents logic drift between TUI/CLI/MCP",
+        "Recency boost prevents stale high-match sessions from dominating"
+      ],
+      "weaknesses": [
+        "Relevance scoring is ad-hoc (10/match, 50 for summary, 20 for recency) with no principled ranking model",
+        "FTS returns results ordered by timestamp, not FTS rank score — BM25 ranking from FTS5 is unused",
+        "No highlighting of matched text within messages in list view",
+        "Filter-only mode fetches up to 500 sessions then filters in Go — not using DB date indices",
+        "Date filtering for FTS results done in Go memory loop, not pushed to SQL WHERE clause"
+      ]
+    },
+    "5_realtime_monitoring": {
+      "approach": "No file watching / inotify. Pull-based: sync runs at TUI startup via syncSessions() command, and before every MCP tool call via syncDatabase(). Two-tier change detection: fast path checks mtime+size (skips if both match within 1 second tolerance); slow path computes BLAKE3 hash to catch cloud-drive mtime drift. inode+device stored for identity across renames. Progress reported via Go channel (channelProgressReporter) rather than polling.",
+      "key_files": [
+        "internal/core/importer/importer.go",
+        "internal/core/importer/sync.go",
+        "internal/core/importer/progress.go",
+        "internal/core/importer/file_identity_unix.go",
+        "internal/core/importer/file_identity_windows.go"
+      ],
+      "notable_patterns": [
+        "Pre-loads ALL session metadata in a single SELECT before walking files: 'Pre-load all session metadata for fast lookups (avoids N queries)'",
+        "mtime tolerance: mtimeDiff < time.Second to handle filesystem precision differences",
+        "Cloud drive awareness: 'BLAKE3 hash check — catches unchanged files even when mtime drifts (cloud drives)'",
+        "subagent filtering: skips files in /subagents/ directories and agent-* prefixed files for Claude",
+        "Progress via channel with 100-element buffer, closed on completion — TUI subscribes via tea.Cmd pattern",
+        "SyncAll() runs both claude and codex sources; Codex source only added if ~/.codex/sessions/ exists",
+        "NeedsMigrationSync() checks if <50% of sessions have inode data to trigger one-time re-sync",
+        "File identity abstracted via build tags: file_identity_unix.go and file_identity_windows.go"
+      ],
+      "strengths": [
+        "Pre-loading all metadata then processing locally is efficient for large session counts",
+        "BLAKE3 is significantly faster than SHA-256 for file hashing",
+        "Cloud drive resilience is explicitly designed in",
+        "Channel-based progress reporting integrates cleanly with Bubbletea's message loop",
+        "Cross-platform file identity (inode on Unix, stub on Windows)"
+      ],
+      "weaknesses": [
+        "No real-time watching — sync is only triggered at startup and before MCP calls",
+        "Active sessions being written to during TUI use won't refresh without restart",
+        "Walking entire directory tree on every sync even when most files are unchanged",
+        "No background goroutine to poll for changes while TUI is open",
+        "No configurable sync interval — always manual or startup"
+      ]
+    },
+    "6_state_management": {
+      "approach": "Bubbletea Elm Architecture: single Model struct with viewMode int enum (listView, detailView, searchView, helpView, terminalFallbackView, exportDialogView). All async operations return tea.Cmd functions that produce typed message structs. Search uses sequence number (searchSeq uint64) to discard stale results. TUI stays alive after session launch (does not quit) to allow launching multiple sessions.",
+      "key_files": [
+        "internal/interface/tui/model.go",
+        "internal/interface/tui/messages.go",
+        "internal/interface/tui/list_view.go",
+        "internal/interface/tui/search_view.go",
+        "internal/interface/tui/detail_view.go"
+      ],
+      "notable_patterns": [
+        "viewMode iota enum drives View() dispatch — clean separation per mode",
+        "searchSeq uint64 prevents displaying stale results: 'Only accept results if sequence matches current search (discard stale results)'",
+        "LaunchSessionID/LaunchProjectPath/etc. stored on Model — set on successful launch, then TUI quits and CLI reads these fields to exec claude",
+        "savedCursorIndex preserves list position during sync refresh",
+        "in-session search has two sub-modes: inSessionSearchMode (typing) and inSessionNavigationMode (n/p to cycle matches)",
+        "matchOccurrenceInfo tracks both line number AND occurrence-within-line for accurate viewport scrolling to match",
+        "Debug logging to /tmp/ccrider-debug.log in Init() — hardcoded path, likely development artifact",
+        "Error display uses string prefix hacks: 'NoClipboard: ', 'Command: ' to distinguish info vs error messages"
+      ],
+      "strengths": [
+        "Bubbletea's Elm-style unidirectional data flow prevents state mutation bugs",
+        "Sequence number for search prevents common async race condition",
+        "In-session search with n/p navigation is a polished UX feature",
+        "Cursor preservation during sync refresh is a good UX detail"
+      ],
+      "weaknesses": [
+        "Hardcoded /tmp/ccrider-debug.log in production Init() code is a code quality issue",
+        "Error message string prefix hack ('NoClipboard:', 'success:', 'Command:') is fragile — should use typed message variants",
+        "Model struct is large (30+ fields) — could benefit from sub-models per view mode",
+        "No state persistence between sessions — cursor position, last search, etc. reset on restart",
+        "Terminal fallback view (when no terminal can be spawned) duplicates much of the launch state"
+      ]
+    },
+    "7_distribution": {
+      "approach": "GoReleaser v2 for cross-platform release automation. CGO_ENABLED=0 (pure Go, no C dependencies). Targets: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64. Distribution via: Homebrew tap (neilberkman/homebrew-tap), Scoop bucket (neilberkman/scoop-ccrider), Linux packages (.deb, .rpm, .apk via nfpm). Version injected via ldflags: -X main.Version={{.Version}}. Single binary, no runtime dependencies.",
+      "key_files": [
+        ".goreleaser.yml",
+        "Makefile",
+        "go.mod"
+      ],
+      "notable_patterns": [
+        "CGO_ENABLED=0 is the key enabler for static binary — modernc.org/sqlite is a pure Go port",
+        "GoReleaser auto-updates Homebrew formula and Scoop manifest on release",
+        "Archive format: tar.gz for Linux/macOS, zip for Windows",
+        "checksums.txt published for all artifacts",
+        "Snapshot builds use version_template: incpatch .Version + '-next'",
+        "Changelog filters exclude docs:, test:, chore: commits",
+        "Linux packages via nfpm include README.md in /usr/share/doc/ccrider/",
+        "Makefile has race detector enabled in tests: go test ./... -v -race"
+      ],
+      "strengths": [
+        "Pure Go with no CGO means truly static, portable binaries with no shared library dependencies",
+        "Full cross-platform support including Windows arm64",
+        "Multiple distribution channels covers most user types (Homebrew, Scoop, .deb/.rpm/.apk)",
+        "GoReleaser automates the entire release pipeline from single config"
+      ],
+      "weaknesses": [
+        "No code signing for macOS binaries (Gatekeeper may flag first run)",
+        "No auto-update mechanism built into the binary itself",
+        "Windows support untested in visible CI configuration",
+        "No sandbox/entitlements — requires direct filesystem access to ~/.claude/projects/"
+      ]
+    },
+    "8_cli_architecture": {
+      "approach": "Cobra CLI with root command defaulting to TUI (RunE delegates to tuiCmd.RunE). Global --db flag for database path. Subcommands: sync, search, list, summarize, stats, export, mcp, tui, debug-prompt. Root command registered in cli/ package, entry point at cmd/ccrider/main.go injects version via SetVersion(). MCP server launched as subprocess via 'ccrider mcp' subcommand.",
+      "key_files": [
+        "cmd/ccrider/main.go",
+        "internal/interface/cli/root.go",
+        "internal/interface/cli/search.go",
+        "internal/interface/cli/sync.go",
+        "internal/interface/cli/summarize.go",
+        "internal/interface/cli/list.go",
+        "internal/interface/cli/tui.go",
+        "internal/interface/cli/mcp.go",
+        "internal/interface/cli/export.go",
+        "internal/interface/cli/stats.go"
+      ],
+      "notable_patterns": [
+        "Default behavior (bare ccrider) launches TUI — tool is primarily a TUI with CLI as secondary interface",
+        "All subcommands open their own db.New() connection — no shared DB handle across commands",
+        "search command joins all args with space: 'query := strings.Join(args, \" \")' — no quoting needed",
+        "summarize command has --extract-only mode that skips LLM calls entirely",
+        "go-humanize for relative timestamps in search output",
+        "debug-prompt command for prompt template testing (internal use)",
+        "mcp command launches the MCP server via server.ServeStdio()"
+      ],
+      "strengths": [
+        "Cobra is industry standard for Go CLIs — familiar to contributors",
+        "TUI-first with full CLI fallback covers both interactive and scripting use cases",
+        "Shared search logic between CLI and TUI via SearchWithFilters() — no duplication",
+        "Natural query parsing (project:, after:, etc.) available from CLI too"
+      ],
+      "weaknesses": [
+        "Each subcommand opens its own DB connection — no connection reuse or pooling",
+        "No shell completion generation configured in Cobra",
+        "No man page generation",
+        "debug-prompt command is visible to users but is an internal development tool"
+      ]
+    },
+    "9_mcp_server": {
+      "approach": "MCP server via mark3labs/mcp-go library, served over stdio (ServeStdio). Four tools: search_sessions, list_recent_sessions, get_session_messages, generate_session_anchor. Every tool call triggers syncDatabase() before querying. Token budget enforcement: MaxResponseTokens=9000 with trim-to-fit functions for each response type. AnchorPhrase feature uses diceware 4-word phrases for session self-identification.",
+      "key_files": [
+        "cmd/ccrider/mcp/server.go",
+        "internal/interface/cli/mcp.go"
+      ],
+      "notable_patterns": [
+        "MaxResponseTokens = 9000: 'Claude Code hard-rejects responses >25k tokens and warns at >10k. We target 9k tokens to stay comfortably under the warning threshold'",
+        "coerceStringNumbers() pre-processes args map to handle LLMs sending numbers as strings: 'LLMs sometimes send numbers as strings (e.g. \"3913\" instead of 3913)'",
+        "AnchorPhrase retry loop: up to 5 attempts with 1-second delays and re-sync between attempts because 'Claude Code may not have flushed to disk yet'",
+        "generate_session_anchor uses 4-word diceware phrase and instructs the LLM to say it aloud so it gets indexed, then search for it — clever self-identification hack",
+        "Tool hints: ReadOnly=true, Destructive=false, OpenWorld=false, Idempotent=true — properly annotated",
+        "trimMessagesToFit() in tail mode removes from front to preserve most recent messages",
+        "trimMessagesToFit() in non-tail mode removes from front or back based on message size",
+        "MCP tool descriptions include direct instructions for LLM use (e.g., how to use anchor_phrase for context compaction recovery)",
+        "All tools sync DB first: importer.New(database).SyncAll(false) — ensures fresh data"
+      ],
+      "strengths": [
+        "generate_session_anchor is a uniquely creative solution to the context compaction problem",
+        "Token budget management is specific and justified with Claude Code's actual limits",
+        "Retry logic for anchor search acknowledges real-world write latency",
+        "Sync-before-query ensures MCP results are always current",
+        "coerceStringNumbers is a pragmatic fix for a real LLM behavior"
+      ],
+      "weaknesses": [
+        "Sync-before-every-query adds latency to every MCP call even when no changes",
+        "No streaming responses — full response assembled then sent",
+        "No authentication or access control on MCP server",
+        "generate_session_anchor is stateless — if user doesn't comply with 'say this phrase', it fails",
+        "No MCP resource endpoints — only tools exposed"
+      ]
+    },
+    "10_configuration": {
+      "approach": "TOML config at ~/.config/ccrider/config.toml for machine-readable settings. Separate text files for freeform config: resume_prompt.txt (Mustache template), terminal_command.txt. Config struct has: ResumePromptTemplate, TerminalCommand, ClaudeFlags, LLMProvider, LastExportDir, RepoExportDirs (per-repo export dir memory). Save() writes only TOML-serializable fields.",
+      "key_files": [
+        "internal/core/config/config.go"
+      ],
+      "notable_patterns": [
+        "DefaultResumePrompt uses Mustache-style {{variable}} and {{#conditional}}...{{/conditional}} templating for the resume message injected when starting a session",
+        "resume_prompt.txt separate from config.toml because it's multiline freeform text",
+        "RepoExportDirs map[string]string persists the last export dir per git repo root — nice UX detail",
+        "Config load gracefully falls back to defaults on any error (no fatal on missing config)",
+        "cbroglie/mustache used for template rendering",
+        "ClaudeFlags []string allows passing extra flags to 'claude --resume' invocations",
+        "LLMProvider in config is overridable by --provider CLI flag"
+      ],
+      "strengths": [
+        "Graceful fallback to defaults — new users don't need any config",
+        "Separate resume_prompt.txt for multiline template is more user-friendly than escaping in TOML",
+        "Per-repo export directory memory is a thoughtful UX feature",
+        "Mustache templating provides conditional logic in resume prompts without code"
+      ],
+      "weaknesses": [
+        "Config location (~/.config/ccrider/) is hardcoded — no XDG_CONFIG_HOME support",
+        "No config validation or error reporting on malformed TOML",
+        "No config command (like 'ccrider config set key value')",
+        "Database path is a CLI flag (--db), not in config file — inconsistent config surface"
+      ]
+    },
+    "11_testing": {
+      "approach": "Standard Go testing with table-driven tests. Test files: db/db_test.go, db/fts_test.go, core/search/search_test.go, core/importer/importer_test.go, core/export/export_test.go, core/models/session_test.go, tui/list_view_test.go, tui/export_view_test.go, pkg/ccsessions/parser_test.go, pkg/codexsessions/parser_test.go. All tests use in-memory temp file SQLite DBs. Makefile uses -race flag.",
+      "key_files": [
+        "internal/core/db/db_test.go",
+        "internal/core/db/fts_test.go",
+        "internal/core/search/search_test.go",
+        "pkg/ccsessions/parser_test.go",
+        "pkg/codexsessions/parser_test.go"
+      ],
+      "notable_patterns": [
+        "escapeFTS5Query has 15 named test cases covering: commas, hyphens, @ symbols, #, wildcards, embedded quotes, edge cases — thorough coverage of known FTS5 pitfalls",
+        "FTS trigger tests verify INSERT/UPDATE/DELETE all keep FTS in sync",
+        "Database tests verify WAL mode, foreign key enforcement, cascade deletes via PRAGMA checks",
+        "Parser tests use inline JSONL strings for fixture data",
+        "Race detector enabled in Makefile: -race flag catches data races in concurrent code",
+        "TestSearchOrdering soft-asserts BM25 ranking ('Note: This is a soft assertion as FTS5 ranking can be complex')",
+        "TestSessionValidation in models/session_test.go tests the Validate() method"
+      ],
+      "strengths": [
+        "Good coverage of db layer: schema, FTS, indexes, foreign keys, cascade deletes",
+        "escapeFTS5Query test coverage is excellent — reflects real battle-testing",
+        "Race detector in CI catches concurrency bugs",
+        "Temp file SQLite DBs make tests isolated and fast"
+      ],
+      "weaknesses": [
+        "No integration tests for MCP server tool handlers",
+        "No tests for LLM summarizer (would require mocking provider interface)",
+        "No tests for session launch/resume logic",
+        "TUI tests appear limited (list_view_test.go and export_view_test.go exist but likely basic)",
+        "No benchmark tests for search performance at scale"
+      ]
+    },
+    "12_code_quality": {
+      "approach": "Go 1.24.4. Standard error wrapping with fmt.Errorf('%w'). defer rows.Close() and defer tx.Rollback() everywhere. Explicit error checking throughout. No goroutine leaks observed. Concurrency: sync goroutine runs in background (goroutine in startSyncWithProgress), communicates via buffered channel. .golangci.yml configures linting.",
+      "key_files": [
+        ".golangci.yml",
+        "go.mod",
+        "internal/core/importer/importer.go",
+        "internal/core/session/launch.go"
+      ],
+      "notable_patterns": [
+        "Explicit 'DO NOT CHANGE THIS — see commits db2bc33 and 33050ea' comment in ResolveWorkingDir() protecting a subtle behavior (always use projectPath not lastCwd for claude resume)",
+        "defer tx.Rollback() after Begin() is the idiomatic Go transaction pattern — used consistently",
+        "defer func() { _ = rows.Close() }() pattern suppresses unused error return",
+        "String table name interpolation in migration005 loop: 'for _, table := range []string{...}' — safe because table list is hardcoded",
+        "extractProjectPath() legacy function is flagged in comments: 'LEGACY: ... This is buggy for paths with dashes/underscores'",
+        "Platform-specific file identity via build tags (file_identity_unix.go, file_identity_windows.go)",
+        "Progress reporter uses \\r carriage return for animated progress bar without newlines",
+        "coerceStringNumbers() in MCP handler is defensive coding for known LLM behavior",
+        "Hardcoded /tmp/ccrider-debug.log in TUI Init() is a code smell (development artifact in production code)"
+      ],
+      "strengths": [
+        "Consistent error wrapping with context enables debugging",
+        "Idiomatic transaction handling with defer rollback",
+        "Explicit comments protecting critical behavior (ResolveWorkingDir)",
+        "Build tag abstraction for platform-specific code",
+        "golangci-lint in Makefile enforces code quality"
+      ],
+      "weaknesses": [
+        "Hardcoded debug log path /tmp/ccrider-debug.log in production TUI Init()",
+        "No structured logging — fmt.Fprintf(os.Stderr) used for warnings throughout importer",
+        "String prefix hacks in TUI error handling ('NoClipboard:', 'Command:', 'success:') indicate missing type system use",
+        "Legacy function (extractProjectPath) retained in codebase with known bug documented",
+        "No context propagation for cancellation in DB operations"
+      ]
+    }
+  }
+}

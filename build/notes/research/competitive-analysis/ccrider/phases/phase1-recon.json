@@ -1,0 +1,85 @@
+{
+  "session_id": "research-ccrider-ct-1164",
+  "date": "2026-04-06",
+  "project": "contextify-wb4",
+  "branch": "main",
+  "status": "ready-for-review",
+  "project_name": "ccrider",
+  "description": "A Go CLI tool (v1.1.7) for searching, browsing, and resuming Claude Code and Codex CLI sessions. Indexes JSONL transcript files into SQLite with FTS5, provides a Bubbletea TUI, and exposes an MCP server so Claude itself can query past sessions.",
+  "value_proposition": "Provides full-text search and session browsing for ~/.claude/projects/ and ~/.codex/sessions/ transcripts in a single binary with no external runtime dependencies. Core differentiator: the MCP server enables Claude Code to search its own session history ('tell it to see what you have done'), and the 'resume' feature launches claude --resume in the correct directory with one keystroke. Explicitly positions against 'broken' existing tools that have incomplete schema support, no real search, and can't resume sessions.",
+  "target_audience": "Individual developers who use Claude Code or Codex CLI heavily and want a terminal-native way to search past sessions, resume conversations, and give their AI agent memory of prior context. No GUI, no cloud, no SaaS - pure local CLI/TUI tool.",
+  "tech_stack": {
+    "language": "Go 1.24.4",
+    "database": "SQLite with FTS5 via modernc.org/sqlite (pure-Go, CGO-free)",
+    "tui_framework": "Bubbletea + Bubbles + Lipgloss (Charm ecosystem)",
+    "mcp_framework": "github.com/mark3labs/mcp-go",
+    "cli_framework": "Cobra",
+    "llm_backends": ["Anthropic API (ANTHROPIC_API_KEY)", "AWS Bedrock"],
+    "llm_abstraction": "langchaingo",
+    "hashing": "BLAKE3 (zeebo/blake3) for file change detection",
+    "other_deps": ["go-diceware for anchor phrase generation", "mustache for resume prompt templates", "go-humanize for relative times", "olebedev/when for natural language date parsing"],
+    "build_system": "Makefile (go build, go test, golangci-lint)",
+    "distribution": "Homebrew tap (neilberkman/tap), GitHub releases via goreleaser, single binary"
+  },
+  "license": "MIT (Copyright 2025 Neil Berkman)",
+  "repo_structure": {
+    "cmd/ccrider/": "CLI entry point (main.go), mcp/ subdirectory for MCP server",
+    "internal/core/": "Business logic: db/ (schema, migrations, sessions, stats, FTS), importer/ (sync, progress), search/, session/, llm/ (summarizer, Anthropic/Bedrock providers, extractor), export/, config/, models/, terminal/",
+    "internal/interface/": "Thin UI wrappers: cli/ (command handlers), tui/ (Bubbletea terminal UI)",
+    "pkg/ccsessions/": "Public Claude Code JSONL parser library (reusable independently)",
+    "pkg/codexsessions/": "Public Codex CLI session parser library",
+    "docs/": "CONFIGURATION.md, MCP_SERVER.md, RESUME_PROMPT.md, plans/ (design doc, phase1 spec)",
+    "research/": "schema.md (Claude Code JSONL format documentation), requirements.md (original requirements spec)",
+    "test/": "setup_fake_sessions.sh and other test helpers"
+  },
+  "feature_overview": {
+    "transcript_monitoring": "Manual sync (ccrider sync) only - no daemon/watch mode yet (planned Phase 3). Incremental: mtime+size -> BLAKE3 hash -> parse chain for 3.9x speedup. Can handle 105MB JSONL lines.",
+    "search": "SQLite FTS5 full-text search. Dual FTS tables: porter stemming for natural language, unicode61 for code symbols. Supports date filters (ISO 8601, relative, natural language: 'yesterday', '3-days-ago'), project filters, provider filters (claude/codex). Filter-only mode (no text query required).",
+    "tui": "Bubbletea TUI with browse, search, and session view modes. Vim-style navigation (j/k, gg/G). Light and dark theme support. Press 'o' to open in new terminal (auto-detects Ghostty, iTerm, Terminal.app). Export session as Markdown ('e' key). Project-awareness: highlights sessions matching current directory.",
+    "session_resume": "Press 'r' to resume - executes claude --resume <sessionId> in correct cwd. Also: 'ccrider resume <id>' CLI. Recovery mode: if original file deleted, starts new session with context from indexed history.",
+    "mcp_server": "Built-in MCP server (ccrider serve-mcp). Tools: search_sessions, list_recent_sessions, get_session_messages, generate_session_anchor. generate_session_anchor creates diceware phrases for cross-session context tagging. Auto-syncs DB silently before each query. Read-only access.",
+    "llm_summarization": "Optional. Hierarchical chunk-based summarizer (100 msg chunks, 10 overlap). Backends: Anthropic API (ANTHROPIC_API_KEY env var) or AWS Bedrock. Uses claude-haiku-4-5. Skips sessions < 5 messages.",
+    "multi_provider": "Claude Code (~/.claude/projects/) and Codex CLI (~/.codex/sessions/) in single DB. [codex] tags in TUI. Provider filter param on all MCP tools and CLI.",
+    "export": "Export session as Markdown. Repo-aware (default export to <repo>/.ccrider/exports/). CLI: ccrider export <id> (stdout by default).",
+    "session_recovery": "When Claude Code auto-deletes session files (30-day default cleanup), ccrider still has the indexed content and can create a new recovery session with prior context."
+  },
+  "community_signals": {
+    "github_repo": "https://github.com/neilberkman/ccrider",
+    "homebrew_tap": "https://github.com/neilberkman/homebrew-tap",
+    "show_hn_badge": "Posted on Hacker News (https://news.ycombinator.com/item?id=46512501)",
+    "go_report_card": "https://goreportcard.com/report/github.com/neilberkman/ccrider",
+    "external_contributions": "3 PRs merged from external contributors: APE-147 (Codex response_item parsing fix), neilberkman (Codex support), Vladimir Istyufeev (BLAKE3 sync inspiration/PR #5), Marco Seguri (light theme)"
+  },
+  "health_metrics": {
+    "total_commits": 179,
+    "primary_author": "Neil Berkman (176 commits)",
+    "external_contributors": 3,
+    "first_commit_date": "2025-11-08",
+    "last_commit_date": "2026-04-06",
+    "age_months": 5,
+    "release_count": 29,
+    "current_version": "1.1.7",
+    "version_cadence": "Active: ~1-2 releases/month. Jumped from v0.2.6 to v0.9.0, then v0.10.0, v1.0.0, v1.1.x. Indicates fast iteration.",
+    "development_velocity": "High - 5 releases in March-April 2026 alone"
+  },
+  "positioning": {
+    "explicit_claim": "Fixes broken existing tools: 100% schema coverage, multi-provider, SQLite FTS5, single binary, native resume, incremental sync",
+    "terminal_only": "Deliberately terminal-native. No web UI, no Electron, no npm/pip dependencies.",
+    "local_first": "All data stays local. No cloud sync, no account required.",
+    "mcp_angle": "The 'killer feature' framing is the MCP server giving Claude Code memory of past sessions - 'when your coding agent forgets, tell it to see what you have done'",
+    "non_goals_implied": "No GUI, no real-time watch daemon (manual sync only), no cloud features, not a macOS app",
+    "design_inspiration": "Saša Jurić's Core/Interface pattern from Elixir community applied to Go"
+  },
+  "key_findings": [
+    "ccrider is a pure terminal CLI/TUI competitor - no GUI, no macOS app. Its entire UX is within the terminal. This is a fundamentally different form factor from Contextify.",
+    "The MCP server is ccrider's strongest differentiator: Claude Code can search its own session history mid-conversation. Contextify has no MCP server integration.",
+    "ccrider supports session RESUME (launching claude --resume), which Contextify does not offer - this is a workflow feature Contextify's HUD model doesn't have.",
+    "ccrider has multi-provider support (Claude Code + Codex CLI) already shipped. Contextify has both but positions additional providers as roadmap.",
+    "LLM summarization in ccrider is optional and requires user to bring their own API key (Anthropic or AWS Bedrock). Contextify's summaries use Apple Intelligence on-device - a significant UX and privacy advantage.",
+    "ccrider has no real-time monitoring - it only syncs on demand (ccrider sync). Contextify's core value prop is real-time HUD monitoring. These are different use cases.",
+    "ccrider is distributed as a single Go binary via Homebrew. Contextify is a macOS app (DMG + App Store). Very different distribution and installation UX.",
+    "ccrider has 29 releases in 5 months showing high velocity, with external contributors and a Show HN post. Suggests growing community interest in this problem space.",
+    "ccrider's session recovery feature (indexed content survives Claude Code's 30-day file deletion) directly competes with Contextify's database-first persistence model.",
+    "ccrider explicitly calls out that it parses all 5 Claude Code message types including file-history-snapshot - suggesting schema completeness is a known pain point among users."
+  ]
+}
