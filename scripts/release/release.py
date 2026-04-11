@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 
 # --- Paths & constants -------------------------------------------------------
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 XCODE_PROJECT = ROOT / "Contextify/Contextify.xcodeproj/project.pbxproj"
 DIST = ROOT / "dist"
 # Use stable name for GitHub's /releases/latest/download/ URL

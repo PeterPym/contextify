@@ -28,7 +28,7 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 # Paths
 # --------------------------------------------------------------------------- #
-ROOT = Path(__file__).resolve().parents[1]  # project root
+ROOT = Path(__file__).resolve().parents[2]  # project root
 # DMG builds use .derived-dmg; allow override via environment for flexibility
 DERIVED_ROOT = Path(os.environ.get("CONTEXTIFY_DERIVED_ROOT", ".derived-dmg"))
 DERIVED = ROOT / DERIVED_ROOT / "Build/Products/Release"
