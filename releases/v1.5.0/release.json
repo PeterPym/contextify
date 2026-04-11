@@ -1,0 +1,119 @@
+{
+  "$schema": "../schemas/release.schema.json",
+  "version": "1.5.0",
+  "target_channels": [
+  "dmg",
+  "appstore",
+  "linux"
+],
+  "created": "2026-04-11",
+  "updated": "2026-04-11",
+
+  "git": {
+    "tag": "v1.5.0",
+    "commit": "158af06fe76a7c6fd2670245014ad6870d45b7b7",
+    "branch": "main"
+  },
+
+  "phases": {
+    "pre_release": {
+      "status": "pending",
+      "completed_at": null,
+      "validation": {
+        "tests_passed": null,
+        "test_count": null,
+        "warnings": null,
+        "working_directory_clean": null
+      }
+    },
+
+    "build": {
+      "status": "pending",
+      "dmg": {
+        "built": false,
+        "path": null,
+        "sha256": null,
+        "size_bytes": null,
+        "signed": false,
+        "notarized": false,
+        "sparkle_signature": null
+      },
+      "appstore": {
+        "archived": false,
+        "archive_path": null,
+        "build_number": 1,
+        "exported": false,
+        "uploaded": false,
+        "upload_receipt": null
+      },
+      "linux": {
+        "built": false,
+        "shipped": false,
+        "shipped_at": null,
+        "github_release_url": null,
+        "x86_64": {
+          "built": false,
+          "path": null,
+          "sha256": null,
+          "size_bytes": null
+        },
+        "arm64": {
+          "built": false,
+          "path": null,
+          "sha256": null,
+          "size_bytes": null
+        }
+      }
+    },
+
+    "review_materials": {
+      "status": "pending",
+      "demo_video": {
+        "recorded": false,
+        "path": null,
+        "deployed": false
+      },
+      "sample_data": {
+        "generated": false,
+        "path": null,
+        "deployed": false
+      }
+    },
+
+    "submission": {
+      "status": "pending",
+      "submitted_at": null,
+      "rejection": null,
+      "resubmission": null
+    },
+
+    "marketing": {
+      "status": "pending",
+      "changelog": {
+        "written": false,
+        "published": false
+      },
+      "announcements": {
+        "twitter": false,
+        "mastodon": false,
+        "hacker_news": false,
+        "product_hunt": false
+      }
+    },
+
+    "post_release": {
+      "status": "pending",
+      "documentation_updated": false,
+      "support_faq_updated": false,
+      "monitoring_enabled": false
+    }
+  },
+
+  "notes": [
+    {
+      "date": "2026-04-11",
+      "author": "system",
+      "note": "Release initialized"
+    }
+  ]
+}
