@@ -6,9 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Changed
-- **CLI search text output** - Human-readable format now shows entry IDs, human dates, project summary, and drill-down hints instead of raw timestamps and scores
-- **Total Recall SKILL.md** - Text-first approach: canonical search commands no longer use `--json` by default. Added CRITICAL anti-piping guardrails. Restored `--hours`, `--exclude-tags`, `--device` flag documentation.
+## [1.5.0] - 2026-04-11
+
+### Contextify Cloud
+- Cloud sync: push and pull transcripts across devices with per-project sync controls, progress tracking, and ETA estimation
+- Team management with seat-based billing
+- CLI `cloud push`, `cloud pull`, and `cloud status` commands
+- Device provenance tracking across machines
+- 14-day free trial, no credit card required
+
+### Search Quality
+- Porter stemming for better natural-language query matching
+- Git-anchored search with `--anchor-files` flag
+- FTS5 hyphen pre-processing for queries like "pre-commit" and "e2e"
+- Improved handling of parentheses and unbalanced quotes
+
+### CLI Improvements
+- `--hours`, `--since`, `--until` time filtering
+- Short UUID prefix support for entry and context commands
+- Fuzzy project name suggestions on typo
+- Search scope summary showing entry, project, and device counts
+- Data freshness indicator in status output
+- Human-readable text output with entry IDs, dates, and drill-down hints
+
+### New Features
+- Menu bar mode with background utility operation
+- Launch at Login support (DMG and App Store)
+- Transcript tagging for excluding benchmarks from search
+- Sidechain transcript discovery (subagents/)
+- Proof-of-concept Gemini CLI and OpenCode transcript format support
+
+### Reliability
+- Cloud sync chunks large queries to stay under SQLite's 999-parameter limit
+- Automatic retry on transient 502/503/504 server errors
+- Cloud sync batch size increased from 500 to 2500 for faster sync
+- Graceful deferral when ingest is in progress
 
 ## [1.3.1] - 2026-02-18
 

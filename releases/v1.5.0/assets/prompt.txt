@@ -1,0 +1,289 @@
+Generate release notes for Contextify version 1.5.0.
+
+## Context
+
+Contextify is a macOS menu bar app that monitors Claude Code and Codex CLI conversations, providing real-time LLM-powered summaries in a timeline view.
+
+**Important:** These commits and diffs are already filtered to app-only paths. Website, documentation, and marketing changes exist but are out of scope for this changelog and must not be mentioned.
+
+## Commits since v1.3.2
+
+df9c480d fix(release): correct ROOT path in release scripts after scripts/ -> scripts/release/ move
+a04f4bd8 chore(release): bump version to 1.5.0 (build 1) and initialize release directory
+7d5790d3 fix: missing customTitle key should be no-op, not clear
+34449588 test: add custom-title clear regression tests
+afb409d1 fix: custom-title clear support + fresh DB slug index parity
+11fffbb1 fix: address audit findings - ProjectActivityMonitor discovery + custom_title parsing
+f742ca45 fix: address review feedback on transcript format drift
+2eda339b fix(test): handle timeout gracefully in CloudDispatchTests cloud status test (ct-1118)
+ef005044 fix(cloud): chunk IN() queries in exportForCloudPush to stay under SQLite 999 param limit (ct-1117)
+4f02bc47 fix(cloud): add retry for transient server errors 502/503/504 on push (ct-1119)
+818fc69e feat(parser): add v40 migration, extract slug/entrypoint, handle new record types
+71af54fe fix(cloud): log malformed tool_invocations.metadata_json instead of silent nil (ct-835)
+30ed43ee fix(cloud): preserve nested JSON in tool metadata, add ORDER BY, log malformed topics (ct-835)
+a7fe8447 test(cloud): add unit tests for cloud push export of summaries, usage, tools, metadata (ct-835)
+49c46026 feat(cloud): wire summaries, usage, tool_invocations, transcript_metadata into cloud push (ct-835)
+07b8054f fix(discovery): scan subagents/ subdirectories for sidechain transcripts
+59970873 fix(cloud): use weak self in ingest wait task, remove duplicate status poll (ct-509)
+d999ccb1 fix(cloud): preserve queued sync through ingest-blocked paths, use active DB for pending count (ct-509)
+f6512dad feat(cloud): harden sync reliability with coalescing requests and truthful status (ct-509)
+99946866 fix(parsers): address review feedback on PoC parsers (ct-1043)
+3df6761d test(parsers): add PoC parsers for Gemini CLI and OpenCode transcript formats (ct-1043)
+62a8a865 test(sync): add round-trip test proving identity convergence (ct-374)
+7a2a1818 test(cli): improve ct-886 regression test to exercise actual runtime path
+2d1c4927 fix(cli): use .parse([]) for child commands in cloud sync (ct-886)
+770bf736 test(cli): add dispatch-matrix tests for cloud CLI routing (ct-884)
+c33b4378 feat(cli): add cloud commands to macOS CLI via shared ContextifyCloudCommands target (ct-848)
+10a0591c docs: update sync batch size references from 500 to 2500 (ct-246)
+9337114a perf(sync): extract push batch size constant and increase to 2500 (ct-246)
+cc49a551 fix(tags): address review iteration 2 findings (ct-814)
+2d33b0f7 fix(cloud): handle duplicate transcript on pull when local ingest created it first (ct-834)
+a167cd0a refactor(tags): move to dedicated transcript_tags table per review (ct-814)
+5df28dd9 test(tags): add unit tests for tag CRUD and search exclude-tags filter (ct-814)
+92a17187 feat(schema): add transcript tags for benchmark/evaluation exclusion (ct-814)
+819b5dc1 fix(cloud): read uploaded_by_device_* fields from pull response (ct-468)
+a5e723ad feat(cli): add --anchor-files flag for AI-driven git-accelerated retrieval (ct-804)
+778cddc0 fix(cloud): address review feedback - HTTPResultBox sync, writeStdout, regression test
+d960984a fix(cloud): export transcript-referenced projects in push payload (ct-806)
+61e02a4b fix(cli): make cloud commands compile and run on Linux (ct-402)
+3d199c57 test(cli): add contract tests for databaseSummary, status timestamps, and project resolution (ct-796)
+3ac4b851 fix(cli): address review feedback - rename scopeSummary, add fuzzy fast-path, add tests
+80e3b06b feat(cli): add search scope summary with entry/project/device counts (ct-591)
+6b0a64d5 feat(cli): add data freshness check to status and skill (ct-93)
+07a33b9a feat(cli): add --hours flag and time-scoped intent detection in skill (ct-101)
+a2651bee fix(cli): scan all projects for fuzzy suggestions, constrain reverse-substring, block fallthrough (ct-795)
+322beb72 fix(cli): fix over-escaped ESCAPE clause, add 6+ match and underscore tests (ct-794)
+3d1bdd91 fix(cli): escape LIKE wildcards in prefix resolver, add totalMatches (ct-794)
+a0f5ec57 feat(cli): accept short UUID prefixes for entry and context commands (ct-794)
+74fcaba0 fix(ingest): correctness bugs found by ChatGPT Pro review (ct-737)
+12d45479 fix(db): bump schema version constant to 38 for porter migration (ct-763)
+3e7ae801 fix(search): normalize parens in safeWrapPreservingQuotes too (ct-763)
+b297ed38 fix(search): address review feedback on query builder (ct-763)
+9fa27953 feat(db): add migration v38 for porter stemming FTS index (ct-767)
+b8af2a79 fix(search): leave simple FTS5 tokens unquoted for porter stemming (ct-766)
+cb16f188 fix(cli): use cheap projectCount() query instead of listProjects().count (ct-725)
+d36cd778 fix(cli): address ChatGPT review feedback for ct-725 fuzzy suggestions
+3a540620 feat(cli): surface fuzzy project name suggestions on --project no-match (ct-725)
+ea4a0156 fix(cli): address review feedback R1/R2/R3 from ChatGPT review
+9cf3d158 fix(cli): name-based --project resolution now applies worktree expansion (ct-735)
+581a61e4 fix(cli): move unbalanced quote check before early return in buildSearchQuery (ct-734)
+1dd7e516 test: add safeWrapPreservingQuotes integration tests (TR-03)
+d1a30564 feat(cli): --project flag name-based lookup (F-03)
+45a9e302 feat(cli): FTS5 hyphen pre-processing and better error messages (F-02, F-05)
+36f273e7 feat(shim): suppress multi-install warning for non-TTY callers (F-01)
+0179c515 fix(cloud): precise exclusion summary copy distinguishing projects vs worktrees
+e513d44f fix(cloud): say 'worktrees excluded' not 'projects excluded' in summary
+b1de332f fix(cloud): align folder icons with fixed-width entry count column
+9994410e fix(cloud): sort projects by entry count, move folder icon left of count
+4a7b3f26 fix(cloud): resolve project count divergence in Cloud settings
+92a0ac72 fix(cloud): move Controls section above Project Sync in Cloud settings
+6688e80b fix(cloud): address code review - pull correctness, CLI safety, lock scope
+0688e3c6 feat(cloud): per-project sync controls with push+pull gating
+1aa0b21e fix(sync): address review feedback on sync cleanup batch
+abc7bc43 fix(sync): validate transcript_id FK before entry import (ct-489)
+b4d836a7 feat(sync): custom CloudPullImportError with support mailto URL (ct-487)
+29dc8b30 refactor(sync): extract resolveLocalProjectId helper in importFromCloudPull (ct-488)
+a73424c9 fix(sync): validate project FK resolution for transcripts and entries
+52b6686a fix(sync): throw on project root_path invariant failure instead of continue
+96e13cfe fix(sync): handle duplicate root_path on cloud pull project import (ct-485)
+3dc69b41 fix(ui): rename popover "View Details" to "View Activity" for consistency
+fa84f9ff feat(cloud): Status section with stats dashboard, icon buttons, UX polish
+fc927768 fix(settings): CLI tab HIG layout - section header, remove card wrapper
+9ff54395 fix(settings): Database tab HIG layout + reduce window height (ct-483)
+c2efeb2e fix(ui): address review feedback - dynamic dashboard URL + a11y label
+0e954cce fix(ui): cloud popover and settings UX polish (ct-456, ct-457)
+7ed7ea74 fix(cloud): normalize macos device ids for sync
+6861cf77 feat(sync): pre-flight ingest check + post-ingest sync trigger (ct-482)
+e8851182 fix(coordinator): guard against second sync waiter overwriting first
+7243f903 fix(coordinator): readers-writer pattern for concurrent ingest + SQLITE_BUSY retry
+c7db8c1a test(coordinator): add regression tests for write coordinator and error classification
+0b5142bf feat(settings): add deferred sync status to Cloud settings UI
+9765fdce feat(ingest): wrap per-transcript ingest in write coordinator scope
+c5cadaf5 feat(sync): integrate write coordinator and add .deferred sync state
+6d26480b feat(db): add DatabaseWriteCoordinator actor for sync/ingest mutual exclusion
+93a523e3 feat(sync): send per-entry device provenance through push payload
+fe2c738a fix(device-provenance): address review feedback iter-01
+7bf1c2b5 test(device): add regression tests for source_device_id stamping
+77c080ce feat(sync): propagate device identity through cloud push/pull
+706a85cc feat(ingest): stamp source_device_id/name from MachineID at local ingest
+8e456214 feat(schema): add source_device_id/name to transcript_entries (v36 migration)
+a1087b30 fix(menubar): address review feedback R1/R2/R3 (ct-458)
+e2a6b671 fix(menubar): Settings window stays above Keep on Top main window (ct-458)
+8571c0ef fix(lifecycle): immediate utility mode effect and Keep on Top reliability (ct-458)
+ecd362e6 fix(menubar): simplify popover and fix Settings via openSettings bridge (ct-458)
+e267d282 fix(menubar): track main window visibility for Show/Hide label (ct-458)
+12ca8312 feat(menubar): use branded Contextify logomark for status item icon (ct-458)
+7523956f fix(menubar): address audit warnings - dead code, conditional restoration, redundant defer (ct-458)
+7285a87a test(qa): add mode-transition QA script and automation breadcrumbs (ct-461)
+e34d1491 feat(menubar): add appearance-aware icon rendering with KVO safety (ct-462)
+d9a3ea39 feat(menubar): migrate from MenuBarExtra to NSStatusItem/NSPopover (ct-460)
+7cd6af64 feat(lifecycle): harden menu bar/background utility lifecycle (ct-459)
+98f5c0e6 feat(menubar): add menu bar extra and background utility mode (ct-429)
+9b9e75cd fix(cloud): use visibleActivePushSession to ensure consistent orphan filtering (ct-449 iter-02)
+89c22ff6 fix(cloud): ignore orphaned stalled server sessions in sync status display (ct-449)
+7d63a401 test(git): add regression test for GIT_* env isolation (ct-427)
+5766f578 fix(test): isolate git environment in GitProjectIdentityTests (ct-427)
+bcb8d2a7 fix(startup): defer follow-up alert to avoid chained presentation (ct-424 iter-03)
+e7b6fa01 fix(startup): DMG first-run follow-up alert on failure and clear stale errors (ct-424 iter-02)
+434a0533 fix(startup): address review feedback - prompt persistence, error surfacing, keyboard nav (ct-424)
+e006180c feat(startup): add first-run login item prompt for DMG and onboarding step for App Store (ct-417)
+c38a8853 feat(settings): add General tab with launch-at-login toggle (ct-417)
+0b72ad38 feat(startup): add LaunchAtLoginManager with SMAppService integration (ct-417)
+99e0e4d4 fix(settings): harden cloud connection sheet interactions
+dbcfe396 test(cloud): cover same-key connection edits
+11950d1a fix(cloud): clear stale state on connection changes
+aa22523d feat(settings): polish cloud connection summary and sheet actions
+06b6d2a9 fix(cloud): reset stale sync state on connection changes
+2fd016d4 fix(settings): preserve cloud sync state across connection edits
+6849fdc4 feat(settings): add cloud connection accessibility breadcrumbs
+ffa1f979 fix(settings): snapshot cloud connection inputs while saving
+242d2f57 feat(settings): summarize configured cloud connection
+024b0cdd fix(cli): guard git identity enrichment for Linux cloud push (ct-393)
+49a41b0f docs(codex): update Codex CLI format spec and document queued-input status
+30e610b0 fix(settings): open cloud sync page from activity button
+1b25f218 fix(settings): gate bulk progress on catch-up sessions
+b5036587 feat(settings): refresh cloud sync status UX
+8b760c69 fix(cloud): remap duplicate root-path projects on pull
+9ff8a79f fix(cloud): normalize repo origin trailing slash variants
+26cfd474 feat(cloud): add repo_group_key to sync payload
+fc032fd6 feat(cloud): wire client-side sync progress into Settings UI (ct-336)
+b898e69e feat(cloud): add client-side push progress tracking and ETA estimation
+b72aeeb3 feat(cli): add git-anchored total recall search
+f6364153 fix(sync): add client-side 409/429 error recovery
+c57cf757 feat(sync): include repo identity metadata in cloud payloads
+2bcaf5b5 fix(cli): add total recall skill provenance checks
+7a19d0b6 feat(cloud): deliver truthful native sync status UX and resilient checkpoints
+ed17a138 chore(cloud): address audit warnings - add log warning, remove dead scheduler
+a121805f fix(cloud): address review feedback - sync ordering, disconnect reset, XPC gate
+80844e63 feat(cloud): wire CloudSyncManager into app-level lifecycle
+658c3902 fix(cloud): fix SQL syntax error in exportForCloudPush keyset pagination
+0a4d2caf fix(xpc): enable hardened runtime on ContextifyBackgroundService target
+e7744d0e feat(xpc): add Phase 0 PoC for security-scoped bookmark sharing across XPC boundary
+5826ead5 Revert "feat(chronicle): add Project Chronicle Phase 1 - narrative synthesis"
+56512d03 fix(chronicle): fix missing-checkpoint fallback in fetchRecentEntries
+83efe5ca fix(chronicle): address P0/P1 review findings from review-loop iter-01
+3771f432 feat(chronicle): add ChronicleService with NotificationCenter hook and narrative document generation
+f677a751 test(chronicle): add ChronicleModelsTests and ChronicleRepositoryTests for Phase 1 components
+86386e6a feat(chronicle): add NarrativeAnalyzer actor and @Generable schemas
+fcbd39e7 feat(chronicle): add ChronicleRepository with GRDB CRUD for arcs, signposts, narrative state
+3e94eb0d feat(chronicle): add ChronicleArc, ChronicleSignpost, NarrativeState, TranscriptContinuity models
+e47a1902 feat(chronicle): add v36 migration for chronicle tables
+abc29711 fix: update self-referencing usage comments and remaining path refs
+4d3fabbb docs: update all path references after scripts/ reorganization
+dac77610 refactor(scripts): move scripts to logging/, release/, build/, transcripts/ subdirs
+e21e6de6 fix(settings): update verification command from contextify-query to contextify
+8509e432 fix(cloud): per-batch push cursor checkpoint and partialPushFailure error
+f63c3d92 fix(cloud): throw on push errors, remove API key from URL, fix JSON nil
+4d3644d1 fix(cloud): fail closed on push errors, CLI preserves push cursor
+6131fec1 fix(cloud): incremental push with keyset cursor and batched CLI push
+d7e5573c fix(cloud): final polish - distinct skip logs, cursor guard, toggle reset
+4d72cbe2 fix(cloud): address iter-2 review - read-write DB for pull, re-entrancy guard
+d68190c6 fix(cloud): address review feedback - off-main sync, push pagination, caching
+b0a3d4eb fix(cloud): address review loop feedback on sync implementation
+e79a109b feat(cloud): add Cloud tab to Settings with sync configuration UI
+3911b254 feat(cloud): add CloudSyncScheduler for periodic background sync
+2551e305 feat(cloud): add CloudSyncModels, CloudSyncClient, CloudSyncManager
+dcad7698 feat(cli): implement cloud pull local SQLite insertion
+40c0ab76 feat(db): add CloudPushExport for cloud sync data extraction
+
+## Files changed
+
+ Contextify/Contextify.xcodeproj/project.pbxproj    |  158 +-
+ Contextify/Contextify/AppDelegate.swift            |   83 +-
+ .../Contextify/AppPresentationController.swift     |  212 +++
+ .../menubar-icon.imageset/Contents.json            |   26 +
+ .../menubar-icon.imageset/menubar-icon@1x.png      |  Bin 0 -> 430 bytes
+ .../menubar-icon.imageset/menubar-icon@2x.png      |  Bin 0 -> 1009 bytes
+ .../menubar-icon.imageset/menubar-icon@3x.png      |  Bin 0 -> 1820 bytes
+ Contextify/Contextify/ContextifyApp.swift          |   96 +-
+ Contextify/Contextify/ContextifyXPCProtocol.swift  |   16 +
+ Contextify/Contextify/LaunchAtLoginManager.swift   |   61 +
+ Contextify/Contextify/MenuBarExtraContent.swift    |   38 +
+ .../Onboarding/AppStoreOnboardingView.swift        |   48 +-
+ .../Onboarding/LaunchAtLoginStepView.swift         |   99 ++
+ .../Contextify/Settings/CLISkillsSettingsTab.swift |   85 +-
+ .../Contextify/Settings/CloudSettingsView.swift    | 1440 +++++++++++++++++
+ .../Contextify/Settings/GeneralSettingsView.swift  |  122 ++
+ Contextify/Contextify/SettingsView.swift           |  137 +-
+ Contextify/Contextify/StatusBarView.swift          |  437 +++++-
+ Contextify/Contextify/StatusItemController.swift   |  596 +++++++
+ Contextify/Contextify/WindowAccessor.swift         |   23 +-
+ Contextify/Contextify/XPCBookmarkPoC.swift         |   78 +
+ .../ContextifyBackgroundService.entitlements       |    8 +
+ .../ContextifyBackgroundService.swift              |   47 +
+ .../ContextifyServiceDelegate.swift                |   14 +
+ .../ContextifyXPCProtocol.swift                    |   10 +
+ Contextify/ContextifyBackgroundService/Info.plist  |   22 +
+ Contextify/ContextifyBackgroundService/main.swift  |    6 +
+ Contextify/ContextifyQueryShim/main.swift          |    5 +-
+ Contextify/README.md                               |    2 +-
+ .../CLIHealthCheckerTests.swift                    |  114 ++
+ Tests/ContextifyCoreTests/CloudDispatchTests.swift |  319 ++++
+ .../ContextifyCoreTests/CloudSyncClientTests.swift |  849 ++++++++++
+ .../CloudSyncManagerTests.swift                    |  768 +++++++++
+ .../CloudSyncPrivacyTests.swift                    |  357 +++++
+ .../ContextifyQueryServiceTests.swift              | 1642 +++++++++++++++++++-
+ .../ConversationSearchServiceTests.swift           |   26 +-
+ .../DatabaseWriteCoordinatorTests.swift            |  443 ++++++
+ .../DeviceProvenanceTests.swift                    |  306 ++++
+ .../FTSHyphenPreprocessingTests.swift              |  111 ++
+ Tests/ContextifyCoreTests/FTSSafeWrapTests.swift   |  191 +++
+ .../GeminiCLIParserPoCTests.swift                  |  710 +++++++++
+ .../ContextifyCoreTests/GitAnchorSearchTests.swift |  139 ++
+ .../GitProjectIdentityTests.swift                  |  171 ++
+ Tests/ContextifyCoreTests/MenuBarStatusTests.swift |  268 ++++
+ .../ContextifyCoreTests/MetadataParserTests.swift  |   75 +-
+ .../OpenCodeParserPoCTests.swift                   |  765 +++++++++
+ .../ContextifyCoreTests/QueryTimeParserTests.swift |   25 +
+ .../TranscriptParserTests.swift                    |  126 ++
+ .../ContextifyCore/Cloud/CloudSyncClient.swift     |  268 ++++
+ .../ContextifyCore/Cloud/CloudSyncManager.swift    | 1382 ++++++++++++++++
+ .../ContextifyCore/Cloud/CloudSyncModels.swift     | 1206 ++++++++++++++
+ .../ContextifyCore/Cloud/GitProjectIdentity.swift  |  225 +++
+ .../Database/BulkIngestManager.swift               |   11 +-
+ .../Database/ContextifyQueryService.swift          | 1412 ++++++++++++++++-
+ .../ContextifyCore/Database/DatabaseSchema.swift   |  259 ++-
+ .../Database/DatabaseWriteCoordinator.swift        |  198 +++
+ .../ContextifyCore/Database/FTSQueryBuilder.swift  |  226 ++-
+ .../ContextifyCore/Database/HooverEngine.swift     |   84 +-
+ .../ContextifyCore/Database/HooverScheduler.swift  |   20 +-
+ app/Sources/ContextifyCore/Database/Models.swift   |   18 +-
+ .../ContextifyCore/Database/QueryTimeFilters.swift |   13 +-
+ .../ContextifyCore/Database/Repositories.swift     |   16 +
+ .../Database/TranscriptOrchestrator.swift          |  232 ++-
+ .../Database/TranscriptParsers.swift               |   53 +-
+ .../Discovery/LightweightDiscoveryService.swift    |   26 +-
+ app/Sources/ContextifyCore/HUDCore.swift           |   32 +
+ .../Installation/CLIHealthChecker.swift            |  316 +++-
+ app/Sources/ContextifyCore/MenuBarStatus.swift     |  260 ++++
+ .../ContextifyCore/Platform/MachineID.swift        |   93 +-
+ .../ContextifyCore/ProjectActivityMonitor.swift    |   36 +-
+ .../Projects/ProjectDiscoveryService.swift         |   26 +-
+ .../Search/ConversationSearchService.swift         |   40 +-
+ .../ContextifyCore/Search/GitAnchorSearch.swift    |  195 +++
+ .../ContextifyCore/TranscriptConverter.swift       |    2 +-
+ scripts/release/build-release.sh                   |  145 ++
+ scripts/release/release.py                         |  347 +++++
+ scripts/xc.sh                                      |  108 +-
+ 77 files changed, 18193 insertions(+), 330 deletions(-)
+
+## Instructions
+
+1. Generate app-focused release notes following Keep a Changelog conventions
+2. Categories: Added, Changed, Fixed, Removed (only include categories with content)
+3. Focus on user-visible behavior and benefits
+4. Be concise - one line per change, grouped logically
+5. Skip internal refactoring unless it affects users
+6. Do NOT mention website, docs, or marketing changes
+
+## Output format
+
+Return ONLY the Markdown content for this version's entry:
+
+### Added
+- Feature description
+
+### Fixed
+- Bug fix description
+
+Do not include the version header - I will add that.
