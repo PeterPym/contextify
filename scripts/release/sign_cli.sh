@@ -52,7 +52,7 @@ NC='\033[0m' # No Color
 
 # Script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Output locations
 OUTPUT_DIR="$ROOT_DIR/build/cli-release"
