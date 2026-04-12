@@ -1,0 +1,48 @@
+<html>
+<body>
+<h2>Contextify 1.5.0</h2>
+
+<h3>Contextify Cloud</h3>
+<p>Push your conversation database to the cloud and search it from any device.</p>
+<ul>
+  <li>Cloud sync with progress tracking and ETA estimation</li>
+  <li>Per-project opt-in/out controls for privacy</li>
+  <li>Team management with seat-based billing</li>
+  <li>CLI <code>cloud push</code>, <code>cloud pull</code>, and <code>cloud status</code> commands</li>
+  <li>Device provenance tracking across machines</li>
+  <li>14-day free trial, no credit card required</li>
+</ul>
+
+<h3>Search Quality</h3>
+<ul>
+  <li>Porter stemming for better natural-language matching</li>
+  <li>Git-anchored search: find conversations by the files they touched</li>
+  <li>FTS5 hyphen pre-processing for queries like "pre-commit" and "e2e"</li>
+  <li>Improved handling of parentheses and unbalanced quotes</li>
+</ul>
+
+<h3>CLI Improvements</h3>
+<ul>
+  <li><code>--hours</code>, <code>--since</code>, <code>--until</code> time filtering</li>
+  <li>Short UUID prefixes for entry and context commands</li>
+  <li>Fuzzy project name suggestions on typo</li>
+  <li>Search scope summary showing entry, project, and device counts</li>
+  <li>Data freshness indicator in status output</li>
+</ul>
+
+<h3>New Features</h3>
+<ul>
+  <li>Menu bar mode with background utility operation</li>
+  <li>Launch at Login support (DMG and App Store)</li>
+  <li>Transcript tagging for excluding benchmarks from search</li>
+  <li>Sidechain transcript discovery (subagents/)</li>
+</ul>
+
+<h3>Reliability</h3>
+<ul>
+  <li>Automatic retry on transient 502/503/504 server errors</li>
+  <li>Large query chunking to stay under SQLite limits</li>
+  <li>Graceful deferral when ingest is in progress</li>
+</ul>
+</body>
+</html>
