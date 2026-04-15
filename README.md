@@ -8,11 +8,12 @@ Monitor your AI coding sessions with real-time timeline and LLM-powered summarie
 
 - **Real-time timeline** of your AI coding sessions
 - **Local database backup** of all conversations
-- **LLM-generated summaries** using macOS on-device intelligence
+- **LLM-generated summaries** using macOS on-device Apple Intelligence
 - **Always-on-top window** to monitor sessions while you work
 - **Project-centric view** across multiple sessions
-- **Search** across all your AI conversations
+- **Full-text search** across all your AI conversations
 - **Total Recall** - teach your AI to search your conversation history
+- **Cloud sync** - sync your history across devices with optional [Contextify Cloud](https://contextify.sh/cloud/)
 - **Companion CLI** for macOS and Linux
 
 ## Download
@@ -32,14 +33,15 @@ contextify install-plugin
 curl -fsSL https://contextify.sh/install.sh | sh
 ```
 
-The CLI enables [Total Recall](https://contextify.sh/docs/cli) - semantic search of your conversation history from Claude Code or Codex CLI.
+The CLI enables [Total Recall](https://contextify.sh/docs/cli) - search your conversation history directly from Claude Code or Codex CLI.
 
 ## System Requirements
 
 - macOS 15 (Sequoia) or later
+- Apple Silicon (M1) or Intel
 - AI summaries require macOS 26 (Tahoe). On Sequoia, Lite Mode provides timeline and search.
 - Works with Claude Code and Codex CLI
-- Linux CLI requires a shared database (Dropbox, iCloud Drive) from a Mac with Contextify
+- Linux CLI requires a shared database (Dropbox, iCloud Drive) or Contextify Cloud
 
 ## Documentation
 
@@ -53,10 +55,8 @@ Visit [contextify.sh](https://contextify.sh) for documentation and support.
 
 ## Privacy
 
-Contextify stores all data locally on your Mac. No cloud services, no tracking, no analytics. Your conversations stay on your device.
-
-See our [Privacy Policy](https://contextify.sh/privacy.html) for details.
+Contextify is local-first. The free tier stores all data on your Mac with no account, no tracking, and no analytics. Cloud sync is opt-in and available on paid plans. See our [Privacy Policy](https://contextify.sh/privacy.html) for details.
 
 ## License
 
-Copyright 2025 Contextify. All rights reserved.
+Copyright 2025-2026 Contextify. All rights reserved.
