@@ -1,0 +1,10 @@
+{
+  "name": "query",
+  "version": "1.0.5",
+  "description": "Contextify Total Recall - Search past conversations and decisions with your AI (requires Contextify + contextify-query CLI)",
+  "author": {
+    "name": "Contextify"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/PeterPym/contextify"
+}

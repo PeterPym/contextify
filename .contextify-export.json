@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "profile": "claude_plugin_public",
+  "plugin_version": "1.0.5",
+  "source_commit": "f698db3add82fd6eea02edc10c7faf1765f3f9c1"
+}
